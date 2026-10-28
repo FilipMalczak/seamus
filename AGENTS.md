@@ -16,6 +16,7 @@ A deep agent harness that I fully own and can customize.
   * To supersede an entry, rename it by inserting `SUPERSEDED` between its number and slug; add or update a top-level Markdown quote linking to the superseding entry. Limit modifications to the rename and top comment. Multiple superseding entries are allowed and must all be linked. Superseded entries may remain partially valid.
 * Store durable, non-decision implementation knowledge in `./knowledge/`. Keep files focused, cross-link related concepts and decisions to preserve provenance, and follow the documented terminology and abstraction conventions.
 * Neither directory is for temporary notes, scratch work, or investigation debris.
+* In Markdown links, use paths relative to the directory containing the document, e.g. `./foo` or `../foo`. Never commit absolute local filesystem paths; they are machine-specific and non-portable.
 
 ## Planning Agents
 
@@ -129,6 +130,7 @@ Before declaring a task complete:
 * [ ] Durable implementation knowledge documented where appropriate.
 * [ ] Relevant knowledge files and decisions cross-linked.
 * [ ] Knowledge updated to reflect implementation changes.
+* [ ] Markdown links use document-relative paths; no machine-specific absolute filesystem paths are committed.
 * [ ] No unrelated code rewritten.
 * [ ] Tests pass.
 * [ ] Ruff linting and formatting checks pass.
