@@ -73,6 +73,8 @@ class HarnessStore:
         self._ensure_agent_slug_unique(name, current_agent_id=None)
 
         agent = Agent(name=name, config=config)
+        # Automatically create initial no-name session (which creates an open thread)
+        agent.create_session(name=None)
         self._agents[agent.id] = agent
         return agent
 

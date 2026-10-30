@@ -44,6 +44,26 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-008](./requirements.md#req-008-web-ui-with-navigation-tree-real-time-streaming--json-config-editor), [0003-react-web-ui.md](../decisions/0003-react-web-ui.md).
 - **Enforcement**: Composer input validation and disabled state bindings in `ChatArea.tsx`.
 
+### INV-009: Default Session and Open Thread Creation
+- **Statement**: Every newly created Agent automatically initializes with one default session (`name = None`), which immediately initializes with one open thread (`name = None`), ensuring an immediate conversational context exists.
+- **Justification**: [REQ-009](./requirements.md#req-009-default-session-and-open-thread-automatic-creation-zero-prompt-ux--auto-focus), [0003-react-web-ui.md](../decisions/0003-react-web-ui.md).
+- **Enforcement**: `HarnessStore.create_agent()` calls `agent.create_session(name=None)`.
+
+### INV-010: Entity Display Name Fallback
+- **Statement**: In the UI navigation tree and breadcrumbs, if an entity's `name` is non-empty, that name must be displayed; if `name` is empty or null, its full UUID must be displayed.
+- **Justification**: [REQ-009](./requirements.md#req-009-default-session-and-open-thread-automatic-creation-zero-prompt-ux--auto-focus), [0003-react-web-ui.md](../decisions/0003-react-web-ui.md).
+- **Enforcement**: Display interpolation in `Sidebar.tsx` and `ChatArea.tsx`.
+
+### INV-011: Zero-Prompt Creation and Auto-Focus Invariant
+- **Statement**: Entity creation actions (Agent, Session, Thread) in the UI must never open modal name prompts during creation. When an entity is created or selected, the message composer input field must be focused automatically to minimize time-to-typing.
+- **Justification**: [REQ-009](./requirements.md#req-009-default-session-and-open-thread-automatic-creation-zero-prompt-ux--auto-focus), [0003-react-web-ui.md](../decisions/0003-react-web-ui.md).
+- **Enforcement**: Direct entity creation handlers in `Sidebar.tsx` / `App.tsx` and composer autofocus effects in `ChatArea.tsx`.
+
+### INV-012: User Message Event Recording & Replay Invariant
+- **Statement**: Every user message input dispatched to a session must be converted into AG-UI text message events (`TextMessageStartEvent` with `role = 'user'`, `TextMessageContentEvent`, `TextMessageEndEvent`) and appended to the target thread's event history as well as broadcast over SSE. Replaying thread events must preserve all user inputs alongside assistant runs across thread switches and client reconnects.
+- **Justification**: [REQ-006](./requirements.md#req-006-thread-redirection-event-streaming--status-tracking), [0003-react-web-ui.md](../decisions/0003-react-web-ui.md).
+- **Enforcement**: `SessionAgentRunner.dispatch_user_input()` appends user AG-UI events to `thread.events`; `useThreadStream.ts` parses `role = 'user'` text messages on replay.
+
 ## Cross-References
 - [requirements.md](./requirements.md)
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)

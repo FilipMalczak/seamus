@@ -4,6 +4,38 @@ set -euo pipefail
 UI_URL="http://localhost:3000"
 BACKEND_HEALTH_URL="http://localhost:8000/health"
 TIMEOUT_SECONDS=60
+RESTART=false
+
+usage() {
+  cat <<EOF
+Usage: $0 [OPTIONS]
+
+Ensure Seamus services (FastAPI backend and React UI) are running and open in the default browser.
+
+Options:
+  -r, --restart    Restart all services and rebuild images to update to the latest version
+                   (preserves persistent data volumes; does not wipe state)
+  -h, --help       Show this help message and exit
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -r|--restart)
+      RESTART=true
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
 
 check_service_up() {
   if command -v curl >/dev/null 2>&1; then
@@ -32,11 +64,16 @@ open_in_browser() {
 
 echo "Checking Seamus service status..."
 
-if check_service_up "$UI_URL" && check_service_up "$BACKEND_HEALTH_URL"; then
+if [ "$RESTART" = false ] && check_service_up "$UI_URL" && check_service_up "$BACKEND_HEALTH_URL"; then
   echo "Seamus services are already running at $UI_URL."
 else
-  echo "Services are not fully up. Starting all services via Docker Compose..."
-  docker compose up -d --build
+  if [ "$RESTART" = true ]; then
+    echo "Restart requested. Rebuilding containers to update to latest version (preserving persistent data)..."
+  else
+    echo "Services are not fully up. Starting all services via Docker Compose..."
+  fi
+
+  docker compose up -d --build --force-recreate
 
   echo "Waiting for services to become healthy (timeout: ${TIMEOUT_SECONDS}s)..."
   elapsed=0
@@ -58,4 +95,3 @@ fi
 
 echo "Opening Seamus UI in default web browser ($UI_URL)..."
 open_in_browser "$UI_URL"
-

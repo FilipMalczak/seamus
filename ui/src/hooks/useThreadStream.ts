@@ -120,15 +120,56 @@ export function useThreadStream(
             }
             return prev;
           });
+        } else if (type === "TEXT_MESSAGE_START") {
+          const msgId = event.message_id || event.messageId || `msg-${Date.now()}`;
+          const role = event.role === "user" ? "user" : "assistant";
+          if (role === "assistant") {
+            setStatus("AWAITING_LLM");
+          }
+
+          setMessages((prev) => {
+            const existingIdx = prev.findIndex((m) => m.id === msgId);
+            if (existingIdx >= 0) {
+              return prev;
+            }
+            return [
+              ...prev,
+              {
+                id: msgId,
+                role,
+                text: "",
+                timestamp: new Date().toISOString(),
+              },
+            ];
+          });
         } else if (
           type === "TEXT_MESSAGE_CHUNK" ||
-          type === "TEXT_MESSAGE_CONTENT" ||
-          type === "TEXT_MESSAGE_START"
+          type === "TEXT_MESSAGE_CONTENT"
         ) {
-          setStatus("AWAITING_LLM");
+          const msgId = event.message_id || event.messageId;
           const delta = event.delta || event.content || event.text || "";
 
           setMessages((prev) => {
+            // If msgId matches an existing message, update it
+            if (msgId) {
+              const idx = prev.findIndex((m) => m.id === msgId);
+              if (idx >= 0) {
+                const target = prev[idx];
+                // If this is an optimistic user message that already has the exact text, don't duplicate
+                if (target.role === "user" && target.text === delta) {
+                  return prev;
+                }
+                const updated = {
+                  ...target,
+                  text: target.text ? target.text + delta : delta,
+                };
+                const copy = [...prev];
+                copy[idx] = updated;
+                return copy;
+              }
+            }
+
+            // Fallback: append to last assistant message if one exists
             const last = prev[prev.length - 1];
             if (last && last.role === "assistant") {
               return [
@@ -136,10 +177,11 @@ export function useThreadStream(
                 { ...last, text: last.text + delta },
               ];
             } else {
+              setStatus("AWAITING_LLM");
               return [
                 ...prev,
                 {
-                  id: event.message_id || event.messageId || `msg-${Date.now()}`,
+                  id: msgId || `msg-${Date.now()}`,
                   role: "assistant",
                   text: delta,
                   timestamp: new Date().toISOString(),
@@ -147,18 +189,24 @@ export function useThreadStream(
               ];
             }
           });
+        } else if (type === "TEXT_MESSAGE_END") {
+          // Message complete event
         } else if (type === "USER_MESSAGE") {
           // Replayed user message
           const text = event.content?.[0]?.text || event.text || "";
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: event.id || `user-${Date.now()}`,
-              role: "user",
-              text,
-              timestamp: new Date().toISOString(),
-            },
-          ]);
+          const msgId = event.id || `user-${Date.now()}`;
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === msgId)) return prev;
+            return [
+              ...prev,
+              {
+                id: msgId,
+                role: "user",
+                text,
+                timestamp: new Date().toISOString(),
+              },
+            ];
+          });
         }
       },
       (err) => {
@@ -184,9 +232,10 @@ export function useThreadStream(
       setSending(true);
       setStreamError(null);
 
-      // Optimistically append user message to chat UI
+      // Optimistically append user message to chat UI with deterministic messageId
+      const userMsgId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       const userMsg: ChatMessage = {
-        id: `user-${Date.now()}`,
+        id: userMsgId,
         role: "user",
         text: text.trim(),
         timestamp: new Date().toISOString(),
@@ -195,7 +244,7 @@ export function useThreadStream(
       setStatus("AWAITING_LLM");
 
       try {
-        await postUserInput(agentId, sessionId, text.trim());
+        await postUserInput(agentId, sessionId, text.trim(), userMsgId);
       } catch (err: any) {
         setStatus("AWAITING_USER");
         setStreamError(err instanceof Error ? err.message : String(err));

@@ -104,12 +104,13 @@ def test_agent_lifecycle_endpoints(client: TestClient) -> None:
     res_conflict = client.post("/api/v-alpha/agents", json={"name": "agent-one"})
     assert res_conflict.status_code == 409
 
-    # 4. GET on agent lists sessions (initially empty)
+    # 4. GET on agent lists sessions (contains default initial session with no name)
     detail_res = client.get(f"/api/v-alpha/agent/{agent_id}")
     assert detail_res.status_code == 200
     detail = detail_res.json()
     assert detail["name"] == "agent-one"
-    assert detail["sessions"] == []
+    assert len(detail["sessions"]) == 1
+    assert detail["sessions"][0]["name"] is None
 
     # Can also resolve by slug
     slug_detail = client.get("/api/v-alpha/agent/agent-one")
@@ -205,7 +206,9 @@ async def test_user_input_and_streaming() -> None:
 
         store = get_harness_store()
         agent_entity = store.resolve_agent("chat-agent")
-        session_entity = list(agent_entity.sessions.values())[0]
+        from seamus.domain.resolution import resolve_session
+
+        session_entity = resolve_session(agent_entity, "chat-session")
 
         # Inject fake runner with a small delay
         fake_agent = FakeAgent(delay=0.04)
@@ -241,6 +244,90 @@ async def test_user_input_and_streaming() -> None:
         stream_res = await client.get(stream_url)
         assert stream_res.status_code == 200
         content = stream_res.text
+        assert "Tell me a joke" in content
         assert "RUN_STARTED" in content
         assert "TOOL_CALL_START" in content
         assert "RUN_FINISHED" in content
+
+
+@pytest.mark.asyncio
+async def test_thread_switching_replays_user_messages() -> None:
+    """Verify that switching between threads preserves and replays user messages."""
+    app = create_app()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        # Create agent
+        agent_res = await client.post("/api/v-alpha/agents", json={"name": "multi-thread-agent"})
+        agent_id = agent_res.json()["id"]
+
+        # Default session is automatically created; get its ID
+        agent_detail = (await client.get(f"/api/v-alpha/agent/{agent_id}")).json()
+        session_id = agent_detail["sessions"][0]["id"]
+
+        # Thread 1 is the default open thread
+        session_detail = (
+            await client.get(f"/api/v-alpha/agent/{agent_id}/session/{session_id}")
+        ).json()
+        t1_id = session_detail["threads"][0]["id"]
+
+        # Inject fake runner
+        store = get_harness_store()
+        agent_entity = store.resolve_agent(agent_id)
+        from seamus.domain.resolution import resolve_session
+
+        session_entity = resolve_session(agent_entity, session_id)
+        fake_agent = FakeAgent(delay=0.01)
+        runner = SessionAgentRunner(session=session_entity, agent=fake_agent)
+        get_runner_registry().set_runner(session_id, runner)
+
+        # 1. Post to Thread 1 with a specific message_id
+        res1 = await client.post(
+            f"/api/v-alpha/agent/{agent_id}/session/{session_id}/input",
+            json={"message": "First message in T1", "message_id": "user-msg-t1"},
+        )
+        assert res1.status_code == 202
+        if runner._active_task is not None:
+            await runner._active_task
+
+        # 2. Create Thread 2 in the same session
+        t2_res = await client.post(
+            f"/api/v-alpha/agent/{agent_id}/session/{session_id}/thread",
+            json={"name": "thread-two"},
+        )
+        assert t2_res.status_code == 201
+        t2_id = t2_res.json()["id"]
+
+        # Post to Thread 2
+        res2 = await client.post(
+            f"/api/v-alpha/agent/{agent_id}/session/{session_id}/input",
+            json={"message": "Second message in T2", "message_id": "user-msg-t2"},
+        )
+        assert res2.status_code == 202
+        if runner._active_task is not None:
+            await runner._active_task
+
+        # 3. Stream Thread 1 (closed now)
+        t1_stream = await client.get(
+            f"/api/v-alpha/agent/{agent_id}/session/{session_id}/thread/{t1_id}?follow=false"
+        )
+        assert t1_stream.status_code == 200
+        assert "First message in T1" in t1_stream.text
+        assert "user-msg-t1" in t1_stream.text
+        assert "Second message in T2" not in t1_stream.text
+
+        # 4. Stream Thread 2 (open)
+        t2_stream = await client.get(
+            f"/api/v-alpha/agent/{agent_id}/session/{session_id}/thread/{t2_id}?follow=false"
+        )
+        assert t2_stream.status_code == 200
+        assert "Second message in T2" in t2_stream.text
+        assert "user-msg-t2" in t2_stream.text
+        assert "First message in T1" not in t2_stream.text
+
+        # 5. Switch back to Thread 1
+        t1_stream_back = await client.get(
+            f"/api/v-alpha/agent/{agent_id}/session/{session_id}/thread/{t1_id}?follow=false"
+        )
+        assert t1_stream_back.status_code == 200
+        assert "First message in T1" in t1_stream_back.text
+        assert "user-msg-t1" in t1_stream_back.text

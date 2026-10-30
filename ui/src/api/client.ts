@@ -125,6 +125,23 @@ export async function createThread(
   return handleResponse<ThreadInfo>(res);
 }
 
+export async function updateThread(
+  agentId: string,
+  sessionId: string,
+  threadId: string,
+  payload: { name?: string | null }
+): Promise<ThreadInfo> {
+  const res = await fetch(
+    `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/thread/${encodeURIComponent(threadId)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }
+  );
+  return handleResponse<ThreadInfo>(res);
+}
+
 export async function getThreadStatus(
   agentId: string,
   sessionId: string,
@@ -139,17 +156,18 @@ export async function getThreadStatus(
 export async function postUserInput(
   agentId: string,
   sessionId: string,
-  message: string
-): Promise<{ status: string; thread_id: string }> {
+  message: string,
+  messageId?: string
+): Promise<{ status: string; thread_id: string; message_id?: string }> {
   const res = await fetch(
     `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/input`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, message_id: messageId }),
     }
   );
-  return handleResponse<{ status: string; thread_id: string }>(res);
+  return handleResponse<{ status: string; thread_id: string; message_id?: string }>(res);
 }
 
 export function subscribeToThreadStream(

@@ -98,5 +98,11 @@ async def test_session_agent_runner_execution_and_status() -> None:
 
     open_thread = session.get_open_thread()
     assert open_thread.status == AgentStatus.AWAITING_USER
-    assert len(open_thread.events) == 4
+    # 3 user message events (START, CONTENT, END) + 4 agent execution events
+    assert len(open_thread.events) == 7
+    assert open_thread.events[0].type == EventType.TEXT_MESSAGE_START
+    assert getattr(open_thread.events[0], "role", None) == "user"
+    assert open_thread.events[1].type == EventType.TEXT_MESSAGE_CONTENT
+    assert getattr(open_thread.events[1], "delta", None) == "Hello, agent"
+    assert open_thread.events[2].type == EventType.TEXT_MESSAGE_END
     assert runner.is_awaiting_user() is True

@@ -35,10 +35,10 @@ Requirements, rationale, provenance, and stable IDs.
 - **Linked Invariants**: [INV-006](./invariants.md#inv-006-slug-format-and-scope-uniqueness).
 
 ### REQ-006: Thread Redirection, Event Streaming & Status Tracking
-- **Description**: `GET .../thread` without a thread ID must issue an HTTP 307 redirect to the current open thread. `GET .../thread/<T>` must stream past AG-UI events from history followed by live events over SSE. Execution status must be retrievable via `.../thread/<T>/status`.
-- **Rationale**: Allows clients to easily bind to the active conversation context, recover full history on reload, and display real-time execution state.
-- **Provenance**: [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md).
-- **Linked Invariants**: [INV-005](./invariants.md#inv-005-single-open-thread-invariant).
+- **Description**: `GET .../thread` without a thread ID must issue an HTTP 307 redirect to the current open thread. `GET .../thread/<T>` must stream past AG-UI events (including user input messages and agent execution events) from history followed by live events over SSE. Execution status must be retrievable via `.../thread/<T>/status`.
+- **Rationale**: Allows clients to easily bind to the active conversation context, recover full history on reload or thread switching, and display real-time execution state.
+- **Provenance**: [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md), [0003-react-web-ui.md](../decisions/0003-react-web-ui.md).
+- **Linked Invariants**: [INV-005](./invariants.md#inv-005-single-open-thread-invariant), [INV-012](./invariants.md#inv-012-user-message-event-recording--replay-invariant).
 
 ### REQ-007: Safe Non-Destructive API Surface
 - **Description**: The API must not support HTTP DELETE methods on any resource. Resource updates must use HTTP POST with the full replacement object to support explicit clearing of values.
@@ -54,6 +54,18 @@ Requirements, rationale, provenance, and stable IDs.
 - **Rationale**: Provides developers and users with immediate visual control, conversational interaction, and simple configuration editing without requiring backend API tools.
 - **Provenance**: [0003-react-web-ui.md](../decisions/0003-react-web-ui.md).
 - **Linked Invariants**: [INV-008](./invariants.md#inv-008-ui-client-side-busy-guard).
+
+### REQ-009: Default Session and Open Thread Automatic Creation, Zero-Prompt UX & Auto-Focus
+- **Description**: Creating an entity (Agent, Session, Thread) must never prompt for a name during creation. Creating an agent immediately instantiates a default session (`name = None`), which instantiates an initial open thread (`name = None`). Creating an entity auto-selects down to the active open thread and automatically focuses the message composer input field. Entity names can be renamed later via explicit edit actions; non-empty names are displayed in the tree and breadcrumbs, falling back to full UUIDs when unset or empty.
+- **Rationale**: Minimizes "time-to-typing-message" by eliminating modal prompt friction during creation while retaining optional renaming and unambiguous UUID identity.
+- **Provenance**: [0003-react-web-ui.md](../decisions/0003-react-web-ui.md).
+- **Linked Invariants**: [INV-009](./invariants.md#inv-009-default-session-and-open-thread-creation), [INV-010](./invariants.md#inv-010-entity-display-name-fallback).
+
+### REQ-010: Containerized Launch Automation & Safe Service Restart
+- **Description**: The repository must provide multi-container orchestration (`docker-compose.yml`) and an automated launch script (`run.sh`). Running `./run.sh` must ensure services are running and open the UI in the default browser. Running `./run.sh --restart` (`-r`) must rebuild container images and recreate running containers to apply latest code updates while strictly preserving persistent data volumes (avoiding data deletion).
+- **Rationale**: Streamlines local execution and development iteration while ensuring service updates never inadvertently wipe stored data.
+- **Provenance**: [0003-react-web-ui.md](../decisions/0003-react-web-ui.md).
+- **Linked Invariants**: [INV-007](./invariants.md#inv-007-no-resource-deletion-invariant).
 
 ## Cross-References
 - [invariants.md](./invariants.md)

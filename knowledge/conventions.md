@@ -24,6 +24,11 @@ Project-specific implementation, tooling, and development conventions not fully 
 - In-browser JSON config editor provides raw JSON inspection and modification, formatting, and syntax validation before sending full-object updates.
 - Real-time event consumption uses standard SSE, gracefully handling past event replay and live event broadcast.
 
+## Container Orchestration & Launch Conventions
+- Docker Compose defines `backend` (FastAPI) and `frontend` (Nginx).
+- `./run.sh` provides 1-click startup and opens UI in the default browser.
+- `./run.sh --restart` (`-r`) rebuilds container images and recreates running containers to apply updates. Restarting must NEVER wipe persistent data volumes. Resetting persistent data is reserved for a future `--reseed` flag.
+
 ## Git and Workflow Conventions
 - Feature branches formatted as `NNNN-short-task-description` branched from `master`.
 - Numbering checked against decisions and local/remote branches.

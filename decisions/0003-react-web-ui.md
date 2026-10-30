@@ -24,7 +24,7 @@ With the Seamus MVP backend service exposing `/api/v-alpha/` endpoints for agent
 4. **Chat & Real-Time Streaming**:
    - The main screen connects to `GET /api/v-alpha/agent/<A>/session/<S>/thread/<T>` over Server-Sent Events (SSE).
    - Past AG-UI events are replayed from thread history, followed by live broadcasts.
-   - Message inputs are dispatched via `POST /api/v-alpha/agent/<A>/session/<S>/input`.
+   - Message inputs are dispatched via `POST /api/v-alpha/agent/<A>/session/<S>/input`. Dispatched user messages are converted into AG-UI text message events (`TextMessageStartEvent` with `role = 'user'`, `TextMessageContentEvent`, `TextMessageEndEvent`) and appended to `thread.events`, ensuring full conversation history replays when switching between threads.
    - The UI guards against posting when the agent is not in the `AWAITING_USER` state, disabling the send button and showing informative status feedback.
 5. **In-Browser JSON Config Editor**:
    - Provide a modal editor supporting raw JSON inspection and modification for `ConfigTemplate` and entity configs.
@@ -32,6 +32,16 @@ With the Seamus MVP backend service exposing `/api/v-alpha/` endpoints for agent
 6. **Backend Static Serving**:
    - In production, FastAPI optionally mounts `ui/dist` at root `/` and `/assets`.
    - In development, Vite dev server proxies `/api` and `/health` to `http://localhost:8000`.
+7. **Zero-Prompt Creation, Default Entity Initialization & Input Auto-Focus**:
+   - Creating an entity (Agent, Session, Thread) never prompts for a name during creation.
+   - Creating an agent automatically instantiates a default session (`name = None`), which creates an initial open thread (`name = None`), immediately selected and followed in the UI.
+   - Creating or selecting an entity immediately focuses the message composer input field to minimize "time-to-typing-message".
+   - Entities can be renamed later via explicit pencil action buttons.
+   - If `name` is non-empty, it is displayed in the navigation tree and breadcrumbs; otherwise, the full UUID is displayed.
+8. **Multi-Service Container Orchestration & Launch Automation**:
+   - Provide `docker-compose.yml` coordinating `backend` and `frontend` with hot reverse proxying.
+   - Provide `./run.sh` launch script that ensures services are healthy before opening the browser.
+   - `./run.sh --restart` (`-r`) rebuilds images and recreates running containers to apply updates. Restarting preserves persistent data volumes and does not wipe state (a separate `--reseed` flag will be used for resetting data when persistent storage is added).
 
 ## Consequences
 

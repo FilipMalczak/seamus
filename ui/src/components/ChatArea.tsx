@@ -33,6 +33,7 @@ export function ChatArea({
 }: ChatAreaProps) {
   const [inputText, setInputText] = useState<string>("");
   const viewportEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const { messages, status, streamError, sending, sendMessage } =
     useThreadStream(agentId, sessionId, thread?.id ?? null);
@@ -44,6 +45,16 @@ export function ChatArea({
   useEffect(() => {
     viewportEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Auto-focus the message composer whenever active thread changes, opens, or finishes processing
+  useEffect(() => {
+    if (isOpen && !isBusy && !sending) {
+      const timer = setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [thread?.id, isOpen, isBusy, sending]);
 
   const handleSend = async () => {
     if (!inputText.trim() || isBusy || !isOpen || sending) return;
@@ -115,12 +126,12 @@ export function ChatArea({
     <main className="chat-main">
       <div className="chat-top-bar">
         <div className="chat-breadcrumbs">
-          <span className="crumb-agent">{agentName || "Agent"}</span>
+          <span className="crumb-agent">{agentName || agentId || "Agent"}</span>
           <span className="crumb-sep">/</span>
-          <span className="crumb-session">{sessionName || "Session"}</span>
+          <span className="crumb-session">{sessionName || sessionId || "Session"}</span>
           <span className="crumb-sep">/</span>
           <span className="crumb-thread">
-            {thread.name || `${thread.id.slice(0, 8)}...`}
+            {thread.name || thread.id}
           </span>
           <span className={`thread-state-badge ${isOpen ? "state-open" : "state-closed"}`}>
             {isOpen ? "Active Open Thread" : "Closed Thread"}
@@ -203,6 +214,7 @@ export function ChatArea({
       <div className="composer-container">
         <div className="composer-box">
           <textarea
+            ref={textareaRef}
             className="composer-textarea"
             placeholder={
               !isOpen
@@ -216,6 +228,7 @@ export function ChatArea({
             onKeyDown={handleKeyDown}
             disabled={!isOpen || isBusy || sending}
             rows={2}
+            autoFocus
           />
 
           <button

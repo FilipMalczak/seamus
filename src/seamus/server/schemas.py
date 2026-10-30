@@ -61,6 +61,7 @@ class UserInputRequest(BaseModel):
 
     message: str | None = None
     text: str | None = None
+    message_id: str | None = None
 
     def get_text(self) -> str:
         """Return the user message text from either 'message' or 'text'."""

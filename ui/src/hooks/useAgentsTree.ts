@@ -6,6 +6,9 @@ import {
   getAgent,
   getSession,
   listAgents,
+  updateAgent,
+  updateSession,
+  updateThread,
 } from "../api/client";
 import type { AgentSummary, SessionDetail } from "../api/types";
 
@@ -28,7 +31,7 @@ export function useAgentsTree() {
       setError(null);
       const agentList = await listAgents();
 
-      // Fetch details for agents to have their sessions
+      // Fetch details for agents to have their sessions and threads
       const fullList: FullAgentNode[] = await Promise.all(
         agentList.map(async (a) => {
           try {
@@ -57,7 +60,7 @@ export function useAgentsTree() {
 
       setAgents(fullList);
 
-      // Auto-select if nothing selected yet
+      // Auto-select first agent, session, and open thread if nothing selected yet
       if (fullList.length > 0 && !selectedAgentId) {
         const firstAgent = fullList[0];
         const sessionKeys = Object.keys(firstAgent.sessionsMap || {});
@@ -96,7 +99,24 @@ export function useAgentsTree() {
     async (name?: string | null) => {
       const created = await createAgent({ name: name || null });
       await refreshTree();
-      setSelectedAgentId(created.id);
+      // The backend creates a default session & thread for the new agent.
+      // Auto-select them immediately so user can type right away.
+      try {
+        const detail = await getAgent(created.id);
+        setSelectedAgentId(created.id);
+        if (detail.sessions && detail.sessions.length > 0) {
+          const defSession = detail.sessions[0];
+          setSelectedSessionId(defSession.id);
+          const sDetail = await getSession(created.id, defSession.id);
+          const openThread =
+            sDetail.threads.find((t) => t.is_open) || sDetail.threads[0];
+          if (openThread) {
+            setSelectedThreadId(openThread.id);
+          }
+        }
+      } catch {
+        setSelectedAgentId(created.id);
+      }
       return created;
     },
     [refreshTree]
@@ -129,6 +149,38 @@ export function useAgentsTree() {
     [refreshTree]
   );
 
+  const handleUpdateAgentName = useCallback(
+    async (agentId: string, newName: string | null) => {
+      const agent = agents.find((a) => a.id === agentId);
+      if (!agent) return;
+      await updateAgent(agentId, { name: newName || null, config: agent.config });
+      await refreshTree();
+    },
+    [agents, refreshTree]
+  );
+
+  const handleUpdateSessionName = useCallback(
+    async (agentId: string, sessionId: string, newName: string | null) => {
+      const agent = agents.find((a) => a.id === agentId);
+      const session = agent?.sessionsMap?.[sessionId];
+      if (!session) return;
+      await updateSession(agentId, sessionId, {
+        name: newName || null,
+        config: session.config,
+      });
+      await refreshTree();
+    },
+    [agents, refreshTree]
+  );
+
+  const handleUpdateThreadName = useCallback(
+    async (agentId: string, sessionId: string, threadId: string, newName: string | null) => {
+      await updateThread(agentId, sessionId, threadId, { name: newName || null });
+      await refreshTree();
+    },
+    [refreshTree]
+  );
+
   // Helper getters
   const activeAgent = agents.find((a) => a.id === selectedAgentId);
   const activeSession = activeAgent?.sessionsMap?.[selectedSessionId ?? ""];
@@ -148,6 +200,9 @@ export function useAgentsTree() {
     createAgent: handleCreateAgent,
     createSession: handleCreateSession,
     createThread: handleCreateThread,
+    updateAgentName: handleUpdateAgentName,
+    updateSessionName: handleUpdateSessionName,
+    updateThreadName: handleUpdateThreadName,
     refreshTree,
   };
 }

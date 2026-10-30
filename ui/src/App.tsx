@@ -38,6 +38,9 @@ export function App() {
     createAgent,
     createSession,
     createThread,
+    updateAgentName,
+    updateSessionName,
+    updateThreadName,
     refreshTree,
   } = useAgentsTree();
 
@@ -105,6 +108,9 @@ export function App() {
           onCreateAgent={createAgent}
           onCreateSession={createSession}
           onCreateThread={createThread}
+          onUpdateAgentName={updateAgentName}
+          onUpdateSessionName={updateSessionName}
+          onUpdateThreadName={updateThreadName}
           onEditConfig={handleEditEntityConfig}
         />
 
@@ -116,10 +122,7 @@ export function App() {
           thread={activeThread || null}
           onNewThread={() => {
             if (selectedAgentId && selectedSessionId) {
-              const name = window.prompt("New thread name/slug (optional):");
-              if (name !== null) {
-                createThread(selectedAgentId, selectedSessionId, name.trim() || null);
-              }
+              createThread(selectedAgentId, selectedSessionId, null);
             }
           }}
         />

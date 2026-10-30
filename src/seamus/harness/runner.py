@@ -7,7 +7,12 @@ from collections.abc import AsyncGenerator
 from typing import Any
 from uuid import uuid4
 
-from ag_ui.core.events import EventType
+from ag_ui.core.events import (
+    EventType,
+    TextMessageContentEvent,
+    TextMessageEndEvent,
+    TextMessageStartEvent,
+)
 from ag_ui.core.types import RunAgentInput, TextInputContent, UserMessage
 from ag_ui.encoder import EventEncoder
 from ag_ui_langgraph import LangGraphAgent
@@ -99,7 +104,11 @@ class SessionAgentRunner:
             self._active_task is None or self._active_task.done()
         )
 
-    async def dispatch_user_input(self, text: str) -> None:
+    async def dispatch_user_input(
+        self,
+        text: str,
+        message_id: str | None = None,
+    ) -> str:
         """Dispatch a user message to the active thread and start execution."""
         async with self._lock:
             thread = self.session.get_open_thread()
@@ -114,16 +123,31 @@ class SessionAgentRunner:
             thread.touch()
             self.session.touch()
 
+            user_msg_id = message_id or uuid4().hex
             user_msg = UserMessage(
-                id=uuid4().hex,
+                id=user_msg_id,
                 role="user",
                 content=[TextInputContent(text=text)],
             )
+
+            # Record user message as AG-UI events in thread history so they replay on reconnect
+            user_start = TextMessageStartEvent(message_id=user_msg_id, role="user")
+            user_content = TextMessageContentEvent(message_id=user_msg_id, delta=text)
+            user_end = TextMessageEndEvent(message_id=user_msg_id)
+
+            thread.append_event(user_start)
+            thread.append_event(user_content)
+            thread.append_event(user_end)
+            await self.broadcaster.broadcast(user_start)
+            await self.broadcaster.broadcast(user_content)
+            await self.broadcaster.broadcast(user_end)
 
             # Start execution task in the background
             self._active_task = asyncio.create_task(
                 self._run_loop(thread=thread, user_message=user_msg)
             )
+
+            return user_msg_id
 
     async def _run_loop(self, thread: Thread, user_message: UserMessage) -> None:
         """Internal execution loop consuming LangGraphAgent run generator."""

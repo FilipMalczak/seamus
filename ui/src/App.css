@@ -331,11 +331,26 @@ body {
   font-weight: 600;
 }
 
-.thread-left {
+.thread-left-btn {
   display: flex;
   align-items: center;
   gap: 6px;
   overflow: hidden;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  flex: 1;
+}
+
+.thread-right-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .thread-name {

@@ -20,11 +20,16 @@ Seamus consists of a Python FastAPI backend (DeepAgent runtime & AG-UI streaming
 Ensure the entire application stack is up and open it in your browser:
 
 ```bash
+# Ensure services are up and open browser
 ./run.sh
+
+# Rebuild and restart services to update to latest version
+./run.sh --restart
 ```
 
-- If services are already running on `http://localhost:3000` $\to$ **no-op** (opens browser immediately).
-- If services are stopped $\to$ spins up both `backend` and `frontend` via Docker Compose, waits for health checks, and opens the default browser.
+- **Default (`./run.sh`)**: If services are already running on `http://localhost:3000` $\to$ **no-op** (opens browser immediately). If stopped $\to$ spins up both `backend` and `frontend` via Docker Compose, waits for health checks, and opens the default browser.
+- **Restart (`./run.sh --restart` / `-r`)**: Rebuilds images and recreates running containers to update to the latest code version. Does **not** delete data or volumes (persistent data is preserved; a future `--reseed` flag will be used when explicit data reset is required).
+- **Help (`./run.sh --help` / `-h`)**: Displays script usage and option descriptions.
 
 ### Option 2: Multi-Service Docker Compose
 

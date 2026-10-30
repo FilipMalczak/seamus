@@ -131,7 +131,7 @@ async def post_user_input(
     runner = registry.get_runner(session)
 
     try:
-        await runner.dispatch_user_input(text)
+        user_msg_id = await runner.dispatch_user_input(text, message_id=payload.message_id)
     except SessionBusyError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -143,4 +143,5 @@ async def post_user_input(
         "status": "accepted",
         "thread_id": str(open_thread.id),
         "session_id": str(session.id),
+        "message_id": user_msg_id,
     }
