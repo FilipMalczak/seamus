@@ -22,6 +22,31 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [AGENTS.md](../AGENTS.md), [0001-project-initialization.md](../decisions/0001-project-initialization.md).
 - **Linked Invariants**: [INV-003](./invariants.md#inv-003-knowledge-synchronization).
 
+### REQ-004: Config Template Singleton & Derivation
+- **Description**: The harness must provide a singleton service-wide config template that may be partially complete. Creating an agent derives a copied config merged with agent overrides. Creating a session derives an isolated copy of the agent's config. Complete configuration is required to initialize a session's agent.
+- **Rationale**: Decouples global defaults from individual agent and conversation instances while preventing configuration mutations across active sessions.
+- **Provenance**: [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md).
+- **Linked Invariants**: [INV-004](./invariants.md#inv-004-config-completeness-invariant).
+
+### REQ-005: Hierarchical REST API with Dual Identifier Resolution
+- **Description**: The server must expose a structured REST API under `/api/v-alpha/` for agents, sessions, and threads. Entities must support identification by UUID or slug name in all path parameters.
+- **Rationale**: Enables human-readable URLs for clients while retaining globally unique machine-readable keys.
+- **Provenance**: [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md).
+- **Linked Invariants**: [INV-006](./invariants.md#inv-006-slug-format-and-scope-uniqueness).
+
+### REQ-006: Thread Redirection, Event Streaming & Status Tracking
+- **Description**: `GET .../thread` without a thread ID must issue an HTTP 307 redirect to the current open thread. `GET .../thread/<T>` must stream past AG-UI events from history followed by live events over SSE. Execution status must be retrievable via `.../thread/<T>/status`.
+- **Rationale**: Allows clients to easily bind to the active conversation context, recover full history on reload, and display real-time execution state.
+- **Provenance**: [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md).
+- **Linked Invariants**: [INV-005](./invariants.md#inv-005-single-open-thread-invariant).
+
+### REQ-007: Safe Non-Destructive API Surface
+- **Description**: The API must not support HTTP DELETE methods on any resource. Resource updates must use HTTP POST with the full replacement object to support explicit clearing of values.
+- **Rationale**: Eliminates catastrophic accidental data deletion at the API boundary and disambiguates partial updates from field deletions.
+- **Provenance**: [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md).
+- **Linked Invariants**: [INV-007](./invariants.md#inv-007-no-resource-deletion-invariant).
+
 ## Cross-References
 - [invariants.md](./invariants.md)
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
+- [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
