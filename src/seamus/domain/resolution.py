@@ -43,4 +43,3 @@ def resolve_thread(session: Session, identifier: str) -> Thread:
 
     msg = f"Thread '{identifier}' not found in session '{session.id}'."
     raise EntityNotFoundError(msg)
-

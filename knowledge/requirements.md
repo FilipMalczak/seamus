@@ -46,7 +46,17 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md).
 - **Linked Invariants**: [INV-007](./invariants.md#inv-007-no-resource-deletion-invariant).
 
+### REQ-008: Web UI with Navigation Tree, Real-Time Streaming & JSON Config Editor
+- **Description**: The harness must provide a web user interface featuring:
+  1. A hierarchical tree sidebar organizing Agents, Sessions, and Threads with operational status badges.
+  2. A conversational workspace connecting to the SSE stream to display past messages, live streaming tokens, and tool calls.
+  3. An in-browser modal for editing raw JSON configuration templates with format validation.
+- **Rationale**: Provides developers and users with immediate visual control, conversational interaction, and simple configuration editing without requiring backend API tools.
+- **Provenance**: [0003-react-web-ui.md](../decisions/0003-react-web-ui.md).
+- **Linked Invariants**: [INV-008](./invariants.md#inv-008-ui-client-side-busy-guard).
+
 ## Cross-References
 - [invariants.md](./invariants.md)
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
+- [0003-react-web-ui.md](../decisions/0003-react-web-ui.md)

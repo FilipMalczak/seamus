@@ -46,3 +46,9 @@ coverage.xml
 *.swo
 *~
 .DS_Store
+
+# Node / Frontend
+node_modules/
+.npm/
+ui/dist/
+*.tsbuildinfo

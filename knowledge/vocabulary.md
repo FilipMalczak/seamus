@@ -35,8 +35,15 @@ The operational state of a thread's agent:
 - `EXECUTING_TOOL`: Executing an external tool or sub-routine.
 - `ERROR`: Terminated due to an unhandled failure.
 
+### Navigation Tree
+The frontend hierarchical sidebar component displaying Agents, their child Sessions, and constituent Threads with lifecycle and operational status indicators.
+
+### JSON Config Editor
+An in-browser modal interface for inspecting and updating raw JSON configurations for the singleton ConfigTemplate, Agents, and Sessions with client-side syntax validation.
+
 ## Cross-References
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
+- [0003-react-web-ui.md](../decisions/0003-react-web-ui.md)
 - [architecture.md](./architecture.md)
 - [abstractions.md](./abstractions.md)

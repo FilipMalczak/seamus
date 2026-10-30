@@ -25,4 +25,3 @@ __all__ = [
     "resolve_thread",
     "validate_slug",
 ]
-

@@ -29,4 +29,3 @@ async def update_config_template(payload: AgentConfig) -> ConfigTemplateResponse
         config=updated,
         is_complete=updated.is_complete(),
     )
-

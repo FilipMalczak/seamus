@@ -11,6 +11,13 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 |                                     Seamus                                      |
 |                                                                                 |
 |  +---------------------------------------------------------------------------+  |
+|  |                             React Web UI                                  |  |
+|  |         [Sidebar Navigation Tree]  <--->  [Real-Time Chat & Tool Cards]   |  |
+|  |         [In-Browser JSON Config Editor Modal]                             |  |
+|  +---------------------------------------------------------------------------+  |
+|                                       | (HTTP REST & SSE Stream)                |
+|                                       v                                         |
+|  +---------------------------------------------------------------------------+  |
 |  |                             FastAPI Server                                |  |
 |  |                       (Prefix: /api/v-alpha/)                             |  |
 |  |   +---------------------+   +---------------------+   +---------------+   |  |
@@ -36,27 +43,31 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 
 ## Component Boundaries
 
-1. **Configuration (`seamus.config`)**:
+1. **Web User Interface (`ui`)**:
+   - Location: `ui/`
+   - Responsibility: React 19 single-page application built with Vite and TypeScript. Houses navigation sidebar tree, conversational message pane, SSE streaming client, and in-browser JSON config editor.
+2. **Configuration (`seamus.config`)**:
    - Location: `src/seamus/config/`
    - Responsibility: `InferenceConfig`, `AgentConfig`, and singleton `ConfigTemplate` management with copy-on-derive semantics and completeness validation.
-2. **Domain Entities (`seamus.domain`)**:
+3. **Domain Entities (`seamus.domain`)**:
    - Location: `src/seamus/domain/`
    - Responsibility: Models for `Agent`, `Session`, `Thread`, and `AgentStatus`. Dual-resolution logic mapping UUIDs and slugs to entities.
-3. **Harness & Runner (`seamus.harness`)**:
+4. **Harness & Runner (`seamus.harness`)**:
    - Location: `src/seamus/harness/`
    - Responsibility: In-memory store repository, `SessionAgentRunner` wrapping `create_deep_agent` and `ag_ui_langgraph.LangGraphAgent`, and event broadcasting/replay queues.
-4. **Server & REST API (`seamus.server`)**:
+5. **Server & REST API (`seamus.server`)**:
    - Location: `src/seamus/server/`
-   - Responsibility: FastAPI application factory mounted at `/api/v-alpha/`, Pydantic request/response schemas, routes for config template, agents, sessions, input dispatch, thread redirection, and SSE streaming.
-5. **Decisions (`decisions`)**:
+   - Responsibility: FastAPI application factory mounted at `/api/v-alpha/`, Pydantic request/response schemas, routes for config template, agents, sessions, input dispatch, thread redirection, and SSE streaming. Optionally serves built `ui/dist` bundle in production.
+6. **Decisions (`decisions`)**:
    - Location: `decisions/`
    - Responsibility: Append-only architectural and project direction decision records.
-6. **Knowledge (`knowledge`)**:
+7. **Knowledge (`knowledge`)**:
    - Location: `knowledge/`
    - Responsibility: Durable conceptual, architectural, and requirement specifications.
 
 ## Cross-References
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
+- [0003-react-web-ui.md](../decisions/0003-react-web-ui.md)
 - [abstractions.md](./abstractions.md)
 - [vocabulary.md](./vocabulary.md)

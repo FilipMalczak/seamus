@@ -17,6 +17,13 @@ Project-specific implementation, tooling, and development conventions not fully 
 - Session thread shortcut `GET .../session/<S>/thread` redirects with `307 Temporary Redirect` to the active open thread `.../thread/<T_open>`.
 - Thread message streaming `GET .../thread/<T>` uses `text/event-stream` (SSE), first replaying past events from memory and then streaming live AG-UI events.
 
+## Frontend & UI Conventions
+- Single-page application housed under `ui/` using React 19, TypeScript, and Vite.
+- All backend communication routed through `/api/v-alpha/` and `/health`.
+- Tree hierarchy reflects Agent $\to$ Session $\to$ Thread containment.
+- In-browser JSON config editor provides raw JSON inspection and modification, formatting, and syntax validation before sending full-object updates.
+- Real-time event consumption uses standard SSE, gracefully handling past event replay and live event broadcast.
+
 ## Git and Workflow Conventions
 - Feature branches formatted as `NNNN-short-task-description` branched from `master`.
 - Numbering checked against decisions and local/remote branches.
@@ -27,9 +34,11 @@ Project-specific implementation, tooling, and development conventions not fully 
 - Pytest test files named `test_*.py` located under `tests/`.
 - Test observable behaviors and edge cases rather than private implementation details.
 - Avoid external network calls during unit and integration test runs by using test doubles or mock run providers.
+- Frontend builds verified with `npm run build` in `ui/`.
 
 ## Cross-References
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
+- [0003-react-web-ui.md](../decisions/0003-react-web-ui.md)
 - [abstractions.md](./abstractions.md)
 - [invariants.md](./invariants.md)

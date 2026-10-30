@@ -144,4 +144,3 @@ async def post_user_input(
         "thread_id": str(open_thread.id),
         "session_id": str(session.id),
     }
-

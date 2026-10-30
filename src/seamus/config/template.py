@@ -77,4 +77,3 @@ def reset_config_template_store(store: ConfigTemplateStore | None = None) -> Con
     global _GLOBAL_TEMPLATE_STORE
     _GLOBAL_TEMPLATE_STORE = store
     return get_config_template_store()
-

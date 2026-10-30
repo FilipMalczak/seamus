@@ -45,6 +45,14 @@ def test_health_check(client: TestClient) -> None:
     assert res.json() == {"status": "ok", "service": "seamus"}
 
 
+def test_ui_root_serving(client: TestClient) -> None:
+    """Verify that root / serves the built React UI if ui/dist exists."""
+    res = client.get("/")
+    assert res.status_code == 200
+    assert "Seamus Agent Harness" in res.text
+    assert '<div id="root">' in res.text
+
+
 def test_no_delete_invariant_on_routes() -> None:
     """Enforce INV-007: No DELETE routes exist anywhere in the application."""
     app = create_app()

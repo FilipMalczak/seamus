@@ -14,4 +14,3 @@ api_router.include_router(sessions_router)
 api_router.include_router(threads_router)
 
 __all__ = ["api_router"]
-

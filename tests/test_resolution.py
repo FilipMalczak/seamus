@@ -46,4 +46,3 @@ def test_resolve_session_and_thread() -> None:
 
     with pytest.raises(EntityNotFoundError):
         resolve_thread(session, "unknown-thread")
-

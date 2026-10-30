@@ -176,4 +176,3 @@ def reset_harness_store(store: HarnessStore | None = None) -> HarnessStore:
     global _GLOBAL_STORE
     _GLOBAL_STORE = store
     return get_harness_store()
-

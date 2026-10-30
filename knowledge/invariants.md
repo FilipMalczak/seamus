@@ -39,7 +39,13 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-007](./requirements.md#req-007-safe-non-destructive-api-surface), [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md).
 - **Enforcement**: Server router definitions and automated route inspection in API test suite.
 
+### INV-008: UI Client-Side Busy Guard
+- **Statement**: The web UI must disable message submission and display active status when a thread's status is not `AWAITING_USER` or when a thread is marked closed (`is_open = False`), preventing unnecessary 409 Conflict round-trips.
+- **Justification**: [REQ-008](./requirements.md#req-008-web-ui-with-navigation-tree-real-time-streaming--json-config-editor), [0003-react-web-ui.md](../decisions/0003-react-web-ui.md).
+- **Enforcement**: Composer input validation and disabled state bindings in `ChatArea.tsx`.
+
 ## Cross-References
 - [requirements.md](./requirements.md)
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
+- [0003-react-web-ui.md](../decisions/0003-react-web-ui.md)

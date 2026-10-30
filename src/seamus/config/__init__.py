@@ -15,4 +15,3 @@ __all__ = [
     "get_config_template_store",
     "reset_config_template_store",
 ]
-

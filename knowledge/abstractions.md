@@ -9,6 +9,13 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - Exports public version `__version__`.
 - All modules must be typed and covered by PEP 561 marker `py.typed`.
 
+### `ui` (`ui`)
+- React 19 single-page application.
+- `api/client`: Typed async HTTP and SSE streaming client for `/api/v-alpha/`.
+- `components/Sidebar`: Hierarchical tree component displaying agents, sessions, and threads.
+- `components/ChatArea`: Conversational UI consuming live and replayed AG-UI events.
+- `components/ConfigModal`: Interactive in-browser JSON editor for config templates and entity configs.
+
 ### `seamus.config` (`src/seamus/config`)
 - Configuration abstractions and stores.
 - `InferenceFormat`: Supported inference protocol shapes (e.g. `openai`).
@@ -32,7 +39,7 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 
 ### `seamus.server` (`src/seamus/server`)
 - Web framework and protocol mapping.
-- `create_app`: Factory assembling FastAPI app, CORS middleware, and APIRouters under `/api/v-alpha/`.
+- `create_app`: Factory assembling FastAPI app, CORS middleware, and APIRouters under `/api/v-alpha/`. Optionally mounts built `ui/dist` directory for standalone web serving.
 - Schemas: Pydantic request and response models enforcing API contracts and masking secrets where appropriate.
 
 ## Design Principles
@@ -43,5 +50,6 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 ## Cross-References
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
+- [0003-react-web-ui.md](../decisions/0003-react-web-ui.md)
 - [architecture.md](./architecture.md)
 - [conventions.md](./conventions.md)
