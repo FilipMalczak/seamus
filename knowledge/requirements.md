@@ -79,6 +79,12 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0005-logfire-integration.md](../decisions/0005-logfire-integration.md).
 - **Linked Invariants**: [INV-014](./invariants.md#inv-014-hierarchical-agent-session-thread-execution-spans).
 
+### REQ-013: External System Navigation Links & Telemetry Visibility Guard
+- **Description**: The Web UI navigation panel must provide external system shortcut links pinned to the bottom of the left sidebar. The Logfire dashboard icon must link to `https://logfire-eu.pydantic.dev/filip-malczak/${LOGFIRE_SERVICE_NAME=seamus}`. The Logfire icon must only be rendered when telemetry export is active, accounting for `LOGFIRE_SEND_TO_LOGFIRE` toggles and token presence. Furthermore, health check probes to `/health` must be excluded from FastAPI tracing.
+- **Rationale**: Gives users direct access to companion observability systems without manual URL management while preventing visual clutter when telemetry is disabled and avoiding probe trace spam.
+- **Provenance**: [0006-external-system-links.md](../decisions/0006-external-system-links.md).
+- **Linked Invariants**: [INV-015](./invariants.md#inv-015-external-system-link-visibility--telemetry-guard).
+
 ## Cross-References
 - [invariants.md](./invariants.md)
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
@@ -86,3 +92,4 @@ Requirements, rationale, provenance, and stable IDs.
 - [0003-react-web-ui.md](../decisions/0003-react-web-ui.md)
 - [0004-inline-tree-editing-session-status.md](../decisions/0004-inline-tree-editing-session-status.md)
 - [0005-logfire-integration.md](../decisions/0005-logfire-integration.md)
+- [0006-external-system-links.md](../decisions/0006-external-system-links.md)

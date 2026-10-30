@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Flame,
   Loader2,
   MessageSquare,
   Pencil,
@@ -14,7 +15,7 @@ import {
   Sparkles,
   Wrench,
 } from "lucide-react";
-import type { AgentConfig, AgentStatus } from "../api/types";
+import type { AgentConfig, AgentStatus, SystemInfoResponse } from "../api/types";
 import type { FullAgentNode } from "../hooks/useAgentsTree";
 
 interface SidebarProps {
@@ -23,6 +24,7 @@ interface SidebarProps {
   selectedSessionId: string | null;
   selectedThreadId: string | null;
   activeStatus?: AgentStatus;
+  systemInfo?: SystemInfoResponse | null;
   onSelectThread: (agentId: string, sessionId: string, threadId: string) => void;
   onCreateAgent: (name?: string | null) => Promise<any>;
   onCreateSession: (agentId: string, name?: string | null) => Promise<any>;
@@ -39,6 +41,7 @@ export function Sidebar({
   selectedSessionId,
   selectedThreadId,
   activeStatus,
+  systemInfo,
   onSelectThread,
   onCreateAgent,
   onCreateSession,
@@ -524,6 +527,23 @@ export function Sidebar({
           })
         )}
       </div>
+
+      {systemInfo?.logfire?.enabled && (
+        <div className="sidebar-footer">
+          <div className="system-links-row">
+            <a
+              href={`https://logfire-eu.pydantic.dev/filip-malczak/${systemInfo.logfire.service_name || "seamus"}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="system-link-icon system-link-logfire"
+              title={`Open Logfire Dashboard (${systemInfo.logfire.service_name || "seamus"})`}
+              aria-label="Open Logfire Dashboard"
+            >
+              <Flame size={18} />
+            </a>
+          </div>
+        </div>
+      )}
     </aside>
   );
 }

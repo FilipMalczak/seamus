@@ -47,11 +47,15 @@ OpenTelemetry-compatible observability constructs powered by Pydantic Logfire:
 - **Trace**: A directed acyclic tree of nested spans representing a complete end-to-end operation, such as an agent run or an HTTP request.
 - **Scrubbing**: Automatic redaction of sensitive credentials and tokens; configured in Seamus to whitelist domain `session` attributes while redacting secrets.
 
+### External System Links & Navigation Footer
+Pinned shortcut interface located at the bottom of the navigation tree left panel. Houses quick-launch icons linking to external companion platforms (such as the Logfire telemetry project dashboard), conditionally displayed based on integration availability.
+
 ## Cross-References
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
 - [0003-react-web-ui.md](../decisions/0003-react-web-ui.md)
 - [0004-inline-tree-editing-session-status.md](../decisions/0004-inline-tree-editing-session-status.md)
 - [0005-logfire-integration.md](../decisions/0005-logfire-integration.md)
+- [0006-external-system-links.md](../decisions/0006-external-system-links.md)
 - [architecture.md](./architecture.md)
 - [abstractions.md](./abstractions.md)

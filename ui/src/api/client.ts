@@ -5,6 +5,7 @@ import type {
   AgentStatus,
   ConfigTemplateResponse,
   SessionDetail,
+  SystemInfoResponse,
   ThreadInfo,
 } from "./types";
 
@@ -29,6 +30,11 @@ async function handleResponse<T>(res: Response): Promise<T> {
 export async function getConfigTemplate(): Promise<ConfigTemplateResponse> {
   const res = await fetch(`${BASE_URL}/config-template`);
   return handleResponse<ConfigTemplateResponse>(res);
+}
+
+export async function getSystemInfo(): Promise<SystemInfoResponse> {
+  const res = await fetch(`${BASE_URL}/system/info`);
+  return handleResponse<SystemInfoResponse>(res);
 }
 
 export async function updateConfigTemplate(config: AgentConfig): Promise<ConfigTemplateResponse> {

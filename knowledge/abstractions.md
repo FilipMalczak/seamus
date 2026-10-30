@@ -40,12 +40,15 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 ### `seamus.server` (`src/seamus/server`)
 - Web framework and protocol mapping.
 - `create_app`: Factory assembling FastAPI app, CORS middleware, and APIRouters under `/api/v-alpha/`. Optionally mounts built `ui/dist` directory for standalone web serving.
-- Schemas: Pydantic request and response models enforcing API contracts and masking secrets where appropriate.
+- Routes: Modular endpoint packages for config templates, agents, sessions, threads, and system metadata (`routes/system.py`).
+- Schemas: Pydantic request and response models enforcing API contracts (including `SystemInfoResponse` and `SystemLogfireInfo`) and masking secrets where appropriate.
 
 ### `seamus.telemetry` (`src/seamus/telemetry.py`)
 - Logfire configuration and OpenTelemetry environment management.
-- `setup_telemetry`: Initializes Logfire with `send_to_logfire='if-token-present'`, custom scrubbing preserving `session` identifiers, and sets LangChain/LangGraph OTel export environment variables (`LANGSMITH_OTEL_ENABLED=true`, etc.).
-- `instrument_fastapi`: Hooks Logfire request tracing into FastAPI applications.
+- `setup_telemetry`: Initializes Logfire respecting `LOGFIRE_SEND_TO_LOGFIRE`, custom scrubbing preserving `session` identifiers, and sets LangChain/LangGraph OTel export environment variables (`LANGSMITH_OTEL_ENABLED=true`, etc.).
+- `is_logfire_enabled`: Evaluates whether telemetry export to Logfire is actively enabled.
+- `get_logfire_service_name`: Retrieves the active or configured service name for trace identification.
+- `instrument_fastapi`: Hooks Logfire request tracing into FastAPI applications with configurable route exclusion (`excluded_urls`, filtering `/health`).
 
 ## Design Principles
 - **Explicit over Implicit**: Prefer concrete, simple classes and protocols rather than speculative abstraction layers.
@@ -58,5 +61,6 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - [0003-react-web-ui.md](../decisions/0003-react-web-ui.md)
 - [0004-inline-tree-editing-session-status.md](../decisions/0004-inline-tree-editing-session-status.md)
 - [0005-logfire-integration.md](../decisions/0005-logfire-integration.md)
+- [0006-external-system-links.md](../decisions/0006-external-system-links.md)
 - [architecture.md](./architecture.md)
 - [conventions.md](./conventions.md)

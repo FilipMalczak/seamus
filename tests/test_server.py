@@ -45,6 +45,21 @@ def test_health_check(client: TestClient) -> None:
     assert res.json() == {"status": "ok", "service": "seamus"}
 
 
+def test_system_info_endpoint(client: TestClient) -> None:
+    """Verify that /api/v-alpha/system/info returns system info with Logfire metadata."""
+    res = client.get("/api/v-alpha/system/info")
+    assert res.status_code == 200
+    data = res.json()
+    assert "logfire" in data
+    assert "enabled" in data["logfire"]
+    assert "service_name" in data["logfire"]
+    assert "url" in data["logfire"]
+    if data["logfire"]["enabled"]:
+        assert data["logfire"]["url"].startswith("https://logfire-eu.pydantic.dev/filip-malczak/")
+    else:
+        assert data["logfire"]["url"] is None
+
+
 def test_ui_root_serving(client: TestClient) -> None:
     """Verify that root / serves the built React UI if ui/dist exists."""
     res = client.get("/")
