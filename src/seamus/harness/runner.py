@@ -3,7 +3,7 @@
 import asyncio
 import json
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping
 from typing import Any
 from uuid import uuid4
 
@@ -18,6 +18,7 @@ from ag_ui.core.types import RunAgentInput, TextInputContent, UserMessage
 from ag_ui.encoder import EventEncoder
 from ag_ui_langgraph import LangGraphAgent
 from deepagents import create_deep_agent
+from langchain_core.outputs import ChatGenerationChunk, ChatResult
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import SecretStr
@@ -25,6 +26,101 @@ from pydantic import SecretStr
 from seamus.domain.entities import Agent, AgentStatus, Session, Thread
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_reasoning_text(payload: Mapping[str, Any]) -> str | None:
+    """Extract reasoning text from OpenAI-compatible or OpenRouter message/delta payloads."""
+    for key in ("reasoning", "reasoning_content"):
+        val = payload.get(key)
+        if isinstance(val, str) and val:
+            return val
+
+    details = payload.get("reasoning_details")
+    if isinstance(details, list):
+        parts: list[str] = []
+        for item in details:
+            if isinstance(item, Mapping):
+                text = item.get("text") or item.get("summary")
+                if isinstance(text, str) and text:
+                    parts.append(text)
+        if parts:
+            return "".join(parts)
+
+    return None
+
+
+class ReasoningChatOpenAI(ChatOpenAI):
+    """ChatOpenAI subclass that preserves OpenAI-compatible and OpenRouter reasoning fields."""
+
+    def _convert_chunk_to_generation_chunk(
+        self,
+        chunk: dict[str, Any],
+        default_chunk_class: type,
+        base_generation_info: dict[str, Any] | None,
+    ) -> ChatGenerationChunk | None:
+        gen_chunk = super()._convert_chunk_to_generation_chunk(
+            chunk, default_chunk_class, base_generation_info
+        )
+        if gen_chunk is not None:
+            choices = chunk.get("choices") or chunk.get("chunk", {}).get("choices") or []
+            if choices and isinstance(choices[0], Mapping):
+                delta = choices[0].get("delta")
+                if isinstance(delta, Mapping):
+                    reasoning_text = _extract_reasoning_text(delta)
+                    if reasoning_text:
+                        gen_chunk.message.additional_kwargs["reasoning_content"] = reasoning_text
+        return gen_chunk
+
+    def _create_chat_result(
+        self,
+        response: dict[str, Any] | Any,
+        generation_info: dict[str, Any] | None = None,
+    ) -> ChatResult:
+        result = super()._create_chat_result(response, generation_info)
+        response_dict: Mapping[str, Any] = (
+            response
+            if isinstance(response, Mapping)
+            else response.model_dump(
+                exclude={"choices": {"__all__": {"message": {"parsed"}}}},
+                warnings=False,
+            )
+            if hasattr(response, "model_dump")
+            else {}
+        )
+        choices = response_dict.get("choices") or []
+        for choice, gen in zip(choices, result.generations, strict=False):
+            if isinstance(choice, Mapping):
+                msg_dict = choice.get("message")
+                if isinstance(msg_dict, Mapping):
+                    reasoning_text = _extract_reasoning_text(msg_dict)
+                    if reasoning_text:
+                        gen.message.additional_kwargs["reasoning_content"] = reasoning_text
+        return result
+
+
+class SeamusLangGraphAgent(LangGraphAgent):  # type: ignore[misc]
+    """LangGraphAgent subclass that preserves full checkpoint message history in graph input."""
+
+    def langgraph_default_merge_state(
+        self,
+        state: Any,
+        messages: list[Any],
+        input: RunAgentInput,
+    ) -> Any:
+        existing_messages = list(state.get("messages", [])) if isinstance(state, Mapping) else []
+        merged = super().langgraph_default_merge_state(state, messages, input)
+        if isinstance(merged, dict):
+            delta_messages = list(merged.get("messages", []))
+            delta_by_id = {
+                getattr(m, "id", None): m for m in delta_messages if getattr(m, "id", None)
+            }
+            existing_ids = {
+                getattr(m, "id", None) for m in existing_messages if getattr(m, "id", None)
+            }
+            combined = [delta_by_id.get(getattr(m, "id", None), m) for m in existing_messages]
+            combined.extend(m for m in delta_messages if getattr(m, "id", None) not in existing_ids)
+            merged["messages"] = combined
+        return merged
 
 
 class SessionBusyError(RuntimeError):
@@ -90,12 +186,12 @@ class SessionAgentRunner:
             return None
 
     def _build_deep_agent(self) -> LangGraphAgent:
-        """Instantiate the DeepAgent graph and wrap it in a LangGraphAgent."""
+        """Instantiate the DeepAgent graph and wrap it in a SeamusLangGraphAgent."""
         self.session.config.validate_complete()
         api_key = self.session.config.inference.api_key or ""
         base_url = self.session.config.inference.base_url
 
-        llm = ChatOpenAI(
+        llm = ReasoningChatOpenAI(
             model=self.session.config.model_name,
             api_key=SecretStr(api_key),
             base_url=base_url,
@@ -107,7 +203,7 @@ class SessionAgentRunner:
             checkpointer=checkpointer,
         )
 
-        return LangGraphAgent(
+        return SeamusLangGraphAgent(
             name=f"session-agent-{self.session.id}",
             graph=graph,
             description=f"DeepAgent for session {self.session.id}",
@@ -257,6 +353,12 @@ class SessionAgentRunner:
             EventType.TEXT_MESSAGE_CHUNK,
             EventType.TEXT_MESSAGE_CONTENT,
             EventType.TEXT_MESSAGE_END,
+            EventType.REASONING_START,
+            EventType.REASONING_MESSAGE_START,
+            EventType.REASONING_MESSAGE_CONTENT,
+            EventType.REASONING_MESSAGE_CHUNK,
+            EventType.REASONING_MESSAGE_END,
+            EventType.REASONING_END,
         ):
             thread.status = AgentStatus.AWAITING_LLM
         elif event_type in (EventType.RUN_FINISHED,):

@@ -57,5 +57,6 @@ Pinned shortcut interface located at the bottom of the navigation tree left pane
 - [0004-inline-tree-editing-session-status.md](../decisions/0004-inline-tree-editing-session-status.md)
 - [0005-logfire-integration.md](../decisions/0005-logfire-integration.md)
 - [0006-external-system-links.md](../decisions/0006-external-system-links.md)
+- [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md)
 - [architecture.md](./architecture.md)
 - [abstractions.md](./abstractions.md)

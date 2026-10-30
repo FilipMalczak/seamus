@@ -1,10 +1,14 @@
+import { useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { Bot, User } from "lucide-react";
+import { Bot, Brain, ChevronDown, ChevronRight, User } from "lucide-react";
 import type { ChatMessage } from "../api/types";
 import { ToolCallItem } from "./ToolCallItem";
 
 export function MessageItem({ message }: { message: ChatMessage }) {
   const isUser = message.role === "user";
+  const [reasoningOpen, setReasoningOpen] = useState<boolean>(false);
+  const hasReasoning = Boolean(message.reasoning && message.reasoning.trim().length > 0);
+  const showReasoningCard = !isUser && (hasReasoning || message.isReasoning);
 
   return (
     <div className={`message-row ${isUser ? "user-row" : "assistant-row"}`}>
@@ -22,6 +26,36 @@ export function MessageItem({ message }: { message: ChatMessage }) {
             })}
           </span>
         </div>
+
+        {showReasoningCard && (
+          <div className="reasoning-card">
+            <button
+              type="button"
+              className="reasoning-card-header"
+              onClick={() => setReasoningOpen((prev) => !prev)}
+              title="Toggle agent reasoning"
+            >
+              <div className="reasoning-card-title">
+                <Brain
+                  className={`size-3.5 text-sky-400 ${message.isReasoning ? "animate-pulse" : ""}`}
+                />
+                <span className="reasoning-label">
+                  {message.isReasoning ? "Thinking..." : "Thought process"}
+                </span>
+              </div>
+              {reasoningOpen ? (
+                <ChevronDown className="size-3.5" />
+              ) : (
+                <ChevronRight className="size-3.5" />
+              )}
+            </button>
+            {(reasoningOpen || message.isReasoning) && hasReasoning && (
+              <div className="reasoning-card-body">
+                <p className="reasoning-text">{message.reasoning}</p>
+              </div>
+            )}
+          </div>
+        )}
 
         {message.text && (
           <div className={`message-bubble ${isUser ? "user-bubble" : "assistant-bubble"}`}>

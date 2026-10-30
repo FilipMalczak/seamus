@@ -72,6 +72,8 @@ export type ChatMessage = {
   id: string;
   role: "user" | "assistant" | "system";
   text: string;
+  reasoning?: string;
+  isReasoning?: boolean;
   toolCalls?: ToolCallRecord[];
   timestamp: string;
 };

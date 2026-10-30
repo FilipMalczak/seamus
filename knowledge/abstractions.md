@@ -33,7 +33,9 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 
 ### `seamus.harness` (`src/seamus/harness`)
 - Execution engine and state storage.
-- `SessionAgentRunner`: Encapsulates DeepAgent graph instantiation, checkpointer management (`MemorySaver`), input handling, and event lifecycle mapping.
+- `ReasoningChatOpenAI`: `ChatOpenAI` subclass extracting OpenAI-compatible and OpenRouter reasoning fields (`reasoning`, `reasoning_content`, `reasoning_details`) into `additional_kwargs["reasoning_content"]`.
+- `SeamusLangGraphAgent`: `LangGraphAgent` subclass preserving full checkpoint message history in `langgraph_default_merge_state` so `gen_ai.prompt.messages` remains a prefix of `gen_ai.completion.messages`.
+- `SessionAgentRunner`: Encapsulates DeepAgent graph instantiation, checkpointer management (`MemorySaver`), input handling, and event lifecycle mapping (including `REASONING_*` events).
 - `EventBroadcaster`: Fan-out pub-sub queue mechanism for multiplexing real-time AG-UI SSE events to multiple active thread consumers.
 - `HarnessStore`: In-memory repository managing agents, sessions, and threads with scope-bound slug uniqueness.
 
@@ -62,5 +64,6 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - [0004-inline-tree-editing-session-status.md](../decisions/0004-inline-tree-editing-session-status.md)
 - [0005-logfire-integration.md](../decisions/0005-logfire-integration.md)
 - [0006-external-system-links.md](../decisions/0006-external-system-links.md)
+- [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md)
 - [architecture.md](./architecture.md)
 - [conventions.md](./conventions.md)

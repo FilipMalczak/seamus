@@ -79,6 +79,11 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-013](./requirements.md#req-013-external-system-navigation-links--telemetry-visibility-guard), [0006-external-system-links.md](../decisions/0006-external-system-links.md).
 - **Enforcement**: `seamus.telemetry.is_logfire_enabled()` evaluates send status and token presence; `GET /api/v-alpha/system/info` exposes `SystemInfoResponse`; `Sidebar.tsx` conditionally mounts the icon; `instrument_fastapi` filters `/health` with `excluded_urls`.
 
+### INV-016: AG-UI Reasoning Stream & Multi-Turn Span Message Alignment
+- **Statement**: Provider reasoning deltas (`reasoning`, `reasoning_content`, `reasoning_details`) must be preserved on LangChain message chunks so `ag_ui_langgraph` emits `REASONING_*` events that are recorded in thread history, replayed over SSE, and rendered in `MessageItem.tsx`. In addition, `SeamusLangGraphAgent.langgraph_default_merge_state` must retain existing checkpoint messages ahead of new turn messages so `gen_ai.prompt.messages` remains a prefix of `gen_ai.completion.messages` on `LangGraph` spans in Logfire.
+- **Justification**: [REQ-014](./requirements.md#req-014-ag-ui-reasoning-exposure--multi-turn-trace-message-alignment), [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md).
+- **Enforcement**: `ReasoningChatOpenAI` and `SeamusLangGraphAgent` in `seamus.harness.runner`, `useThreadStream.ts`, `MessageItem.tsx`, and unit/telemetry test suites.
+
 ## Cross-References
 - [requirements.md](./requirements.md)
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
@@ -87,3 +92,4 @@ Properties and rules that must always hold across the repository.
 - [0004-inline-tree-editing-session-status.md](../decisions/0004-inline-tree-editing-session-status.md)
 - [0005-logfire-integration.md](../decisions/0005-logfire-integration.md)
 - [0006-external-system-links.md](../decisions/0006-external-system-links.md)
+- [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md)

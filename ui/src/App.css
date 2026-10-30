@@ -839,6 +839,58 @@ body {
   font-size: 0.8rem;
 }
 
+/* Reasoning / Thinking Card */
+.reasoning-card {
+  background: var(--bg-secondary);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 6px;
+  overflow: hidden;
+  font-size: 0.8rem;
+  margin-bottom: 0.2rem;
+}
+
+.reasoning-card-header {
+  width: 100%;
+  background: rgba(56, 189, 248, 0.08);
+  border: none;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.reasoning-card-header:hover {
+  color: var(--text-primary);
+  background: rgba(56, 189, 248, 0.14);
+}
+
+.reasoning-card-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.reasoning-label {
+  font-size: 0.78rem;
+}
+
+.reasoning-card-body {
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.2);
+  border-top: 1px solid rgba(56, 189, 248, 0.15);
+}
+
+.reasoning-text {
+  white-space: pre-wrap;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  font-style: italic;
+}
+
 /* Tool Calls */
 .tool-calls-container {
   display: flex;

@@ -120,6 +120,80 @@ export function useThreadStream(
             }
             return prev;
           });
+        } else if (
+          type === "REASONING_START" ||
+          type === "REASONING_MESSAGE_START"
+        ) {
+          setStatus("AWAITING_LLM");
+          const msgId = event.message_id || event.messageId || `reasoning-${Date.now()}`;
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last && last.role === "assistant" && !last.text) {
+              return [
+                ...prev.slice(0, -1),
+                { ...last, isReasoning: true },
+              ];
+            }
+            return [
+              ...prev,
+              {
+                id: msgId,
+                role: "assistant",
+                text: "",
+                reasoning: "",
+                isReasoning: true,
+                timestamp: new Date().toISOString(),
+              },
+            ];
+          });
+        } else if (
+          type === "REASONING_MESSAGE_CONTENT" ||
+          type === "REASONING_MESSAGE_CHUNK"
+        ) {
+          setStatus("AWAITING_LLM");
+          const msgId = event.message_id || event.messageId;
+          const delta = event.delta || event.content || event.text || "";
+          if (!delta) return;
+
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last && last.role === "assistant") {
+              const currentReasoning = last.reasoning || "";
+              return [
+                ...prev.slice(0, -1),
+                {
+                  ...last,
+                  reasoning: currentReasoning + delta,
+                  isReasoning: true,
+                },
+              ];
+            }
+            return [
+              ...prev,
+              {
+                id: msgId || `reasoning-${Date.now()}`,
+                role: "assistant",
+                text: "",
+                reasoning: delta,
+                isReasoning: true,
+                timestamp: new Date().toISOString(),
+              },
+            ];
+          });
+        } else if (
+          type === "REASONING_MESSAGE_END" ||
+          type === "REASONING_END"
+        ) {
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last && last.role === "assistant" && last.isReasoning) {
+              return [
+                ...prev.slice(0, -1),
+                { ...last, isReasoning: false },
+              ];
+            }
+            return prev;
+          });
         } else if (type === "TEXT_MESSAGE_START") {
           const msgId = event.message_id || event.messageId || `msg-${Date.now()}`;
           const role = event.role === "user" ? "user" : "assistant";
@@ -131,6 +205,13 @@ export function useThreadStream(
             const existingIdx = prev.findIndex((m) => m.id === msgId);
             if (existingIdx >= 0) {
               return prev;
+            }
+            const last = prev[prev.length - 1];
+            if (role === "assistant" && last && last.role === "assistant" && !last.text) {
+              return [
+                ...prev.slice(0, -1),
+                { ...last, id: msgId, isReasoning: false },
+              ];
             }
             return [
               ...prev,

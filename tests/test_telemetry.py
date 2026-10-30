@@ -227,3 +227,68 @@ def test_fastapi_request_instrumentation(logfire_test_exporter: TestExporter) ->
         or "FastAPI" in s.get("name", "")
     ]
     assert len(api_spans) > 0
+
+
+async def test_langgraph_multi_turn_no_duplicate_user_message(
+    logfire_test_exporter: TestExporter,
+) -> None:
+    """Verify multi-turn SeamusLangGraphAgent runs do not duplicate the leading user message."""
+    import json
+
+    from ag_ui.core.types import RunAgentInput, TextInputContent, UserMessage
+    from langchain_core.messages import AIMessage
+    from langchain_core.tracers.langchain import wait_for_all_tracers
+    from langgraph.checkpoint.memory import MemorySaver
+    from langgraph.graph import MessagesState, StateGraph
+
+    from seamus.harness.runner import SeamusLangGraphAgent
+
+    setup_telemetry(send_to_logfire=False)
+
+    async def call_model(state: MessagesState) -> dict[str, Any]:
+        turn = len(state["messages"])
+        return {"messages": [AIMessage(id=f"ai-{turn}", content=f"Reply {turn}")]}
+
+    builder = StateGraph(MessagesState)
+    builder.add_node("model", call_model)
+    builder.set_entry_point("model")
+    graph = builder.compile(checkpointer=MemorySaver())
+
+    agent = SeamusLangGraphAgent(name="test-agent", graph=graph)
+
+    inp1 = RunAgentInput(
+        thread_id="thread-1",
+        run_id="run-1",
+        messages=[UserMessage(id="u1", role="user", content=[TextInputContent(text="hey there")])],
+    )
+    async for _ in agent.run(inp1):
+        pass
+    wait_for_all_tracers()
+    logfire_test_exporter.clear()
+
+    inp2 = RunAgentInput(
+        thread_id="thread-1",
+        run_id="run-2",
+        messages=[
+            UserMessage(
+                id="u2",
+                role="user",
+                content=[TextInputContent(text="what can you help me with>")],
+            )
+        ],
+    )
+    async for _ in agent.run(inp2):
+        pass
+    wait_for_all_tracers()
+
+    spans = logfire_test_exporter.exported_spans_as_dict()
+    lg_spans = [s for s in spans if s["name"] == "LangGraph"]
+    assert len(lg_spans) == 1
+    raw_all_msgs = lg_spans[0]["attributes"].get("all_messages_events")
+    assert isinstance(raw_all_msgs, str)
+    all_msgs = json.loads(raw_all_msgs)
+
+    assert len(all_msgs) == 4
+    assert [m["role"] for m in all_msgs] == ["user", "assistant", "user", "assistant"]
+    assert all_msgs[0]["content"] == [{"type": "text", "text": "hey there"}]
+    assert all_msgs[2]["content"] == [{"type": "text", "text": "what can you help me with>"}]

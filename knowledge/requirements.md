@@ -85,6 +85,12 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0006-external-system-links.md](../decisions/0006-external-system-links.md).
 - **Linked Invariants**: [INV-015](./invariants.md#inv-015-external-system-link-visibility--telemetry-guard).
 
+### REQ-014: AG-UI Reasoning Exposure & Multi-Turn Trace Message Alignment
+- **Description**: The harness must extract reasoning content (`reasoning`, `reasoning_content`, `reasoning_details`) from OpenAI-compatible and OpenRouter model responses so `ag_ui_langgraph` emits AG-UI 1.0 `REASONING_*` events over SSE, persists them for thread replay, and surfaces a collapsible thought process block in the Web UI. Furthermore, `LangGraph` chain spans in Logfire must receive full checkpoint history in their input state so multi-turn traces display the conversation without duplicate leading user messages.
+- **Rationale**: Surfaces model chain-of-thought for inspection in both the live UI and telemetry while preventing misleading duplicate user messages on multi-turn `LangGraph` spans.
+- **Provenance**: [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md).
+- **Linked Invariants**: [INV-016](./invariants.md#inv-016-ag-ui-reasoning-stream--multi-turn-span-message-alignment).
+
 ## Cross-References
 - [invariants.md](./invariants.md)
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
@@ -93,3 +99,4 @@ Requirements, rationale, provenance, and stable IDs.
 - [0004-inline-tree-editing-session-status.md](../decisions/0004-inline-tree-editing-session-status.md)
 - [0005-logfire-integration.md](../decisions/0005-logfire-integration.md)
 - [0006-external-system-links.md](../decisions/0006-external-system-links.md)
+- [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md)

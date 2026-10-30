@@ -54,7 +54,7 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
    - Responsibility: Models for `Agent`, `Session`, `Thread`, and `AgentStatus`. Dual-resolution logic mapping UUIDs and slugs to entities.
 4. **Harness & Runner (`seamus.harness`)**:
    - Location: `src/seamus/harness/`
-   - Responsibility: In-memory store repository, `SessionAgentRunner` wrapping `create_deep_agent` and `ag_ui_langgraph.LangGraphAgent`, and event broadcasting/replay queues.
+   - Responsibility: In-memory store repository, `SessionAgentRunner` wrapping `create_deep_agent`, `ReasoningChatOpenAI`, and `SeamusLangGraphAgent`, and event broadcasting/replay queues.
 5. **Server & REST API (`seamus.server`)**:
    - Location: `src/seamus/server/`
    - Responsibility: FastAPI application factory mounted at `/api/v-alpha/`, Pydantic request/response schemas, routes for config template, agents, sessions, input dispatch, thread redirection, system integration metadata (`/api/v-alpha/system/info`), and SSE streaming. Optionally serves built `ui/dist` bundle in production.
@@ -75,5 +75,6 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 - [0004-inline-tree-editing-session-status.md](../decisions/0004-inline-tree-editing-session-status.md)
 - [0005-logfire-integration.md](../decisions/0005-logfire-integration.md)
 - [0006-external-system-links.md](../decisions/0006-external-system-links.md)
+- [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md)
 - [abstractions.md](./abstractions.md)
 - [vocabulary.md](./vocabulary.md)
