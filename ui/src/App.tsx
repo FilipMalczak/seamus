@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { getConfigTemplate, updateConfigTemplate } from "./api/client";
-import type { AgentConfig } from "./api/types";
+import type { AgentConfig, AgentStatus } from "./api/types";
 import { ChatArea } from "./components/ChatArea";
 import { ConfigModal } from "./components/ConfigModal";
 import { Header } from "./components/Header";
@@ -10,6 +10,7 @@ import "./App.css";
 
 export function App() {
   const [configTemplate, setConfigTemplate] = useState<AgentConfig | null>(null);
+  const [activeStatus, setActiveStatus] = useState<AgentStatus>("AWAITING_USER");
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -104,6 +105,7 @@ export function App() {
           selectedAgentId={selectedAgentId}
           selectedSessionId={selectedSessionId}
           selectedThreadId={selectedThreadId}
+          activeStatus={activeStatus}
           onSelectThread={selectThread}
           onCreateAgent={createAgent}
           onCreateSession={createSession}
@@ -120,6 +122,7 @@ export function App() {
           sessionId={selectedSessionId}
           sessionName={activeSession?.name || null}
           thread={activeThread || null}
+          onStatusChange={setActiveStatus}
           onNewThread={() => {
             if (selectedAgentId && selectedSessionId) {
               createThread(selectedAgentId, selectedSessionId, null);

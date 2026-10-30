@@ -22,6 +22,7 @@ interface SidebarProps {
   selectedAgentId: string | null;
   selectedSessionId: string | null;
   selectedThreadId: string | null;
+  activeStatus?: AgentStatus;
   onSelectThread: (agentId: string, sessionId: string, threadId: string) => void;
   onCreateAgent: (name?: string | null) => Promise<any>;
   onCreateSession: (agentId: string, name?: string | null) => Promise<any>;
@@ -37,6 +38,7 @@ export function Sidebar({
   selectedAgentId,
   selectedSessionId,
   selectedThreadId,
+  activeStatus,
   onSelectThread,
   onCreateAgent,
   onCreateSession,
@@ -124,15 +126,30 @@ export function Sidebar({
   const renderSessionStatusIcon = (st: AgentStatus) => {
     switch (st) {
       case "AWAITING_USER":
-        return <CheckCircle2 className="size-3 text-emerald-400" />;
+        return <CheckCircle2 size={13} className="status-icon-ready" />;
       case "AWAITING_LLM":
-        return <Loader2 className="size-3 text-sky-400 animate-spin" />;
+        return <Loader2 size={13} className="status-icon-thinking animate-spin" />;
       case "EXECUTING_TOOL":
-        return <Wrench className="size-3 text-amber-400 animate-pulse" />;
+        return <Wrench size={13} className="status-icon-tool animate-pulse" />;
       case "ERROR":
-        return <AlertCircle className="size-3 text-rose-400" />;
+        return <AlertCircle size={13} className="status-icon-error" />;
       default:
         return null;
+    }
+  };
+
+  const formatStatusLabel = (st: AgentStatus) => {
+    switch (st) {
+      case "AWAITING_USER":
+        return "Ready";
+      case "AWAITING_LLM":
+        return "Thinking...";
+      case "EXECUTING_TOOL":
+        return "Executing Tool...";
+      case "ERROR":
+        return "Error";
+      default:
+        return st;
     }
   };
 
@@ -280,7 +297,9 @@ export function Sidebar({
                         const openThread =
                           threads.find((t) => t.is_open) || threads[0];
                         const sessionStatus: AgentStatus =
-                          openThread?.status || "AWAITING_USER";
+                          session.id === selectedSessionId && activeStatus
+                            ? activeStatus
+                            : openThread?.status || "AWAITING_USER";
                         const isEditingSession =
                           editingKey === `session:${session.id}`;
                         // If name is set and not empty, use it; otherwise display the full UUID
@@ -310,13 +329,6 @@ export function Sidebar({
 
                               <MessageSquare className="size-3.5 text-indigo-400 node-icon" />
 
-                              <span
-                                className="session-status-icon"
-                                title={`Session Status: ${sessionStatus}`}
-                              >
-                                {renderSessionStatusIcon(sessionStatus)}
-                              </span>
-
                               {isEditingSession ? (
                                 <input
                                   type="text"
@@ -340,6 +352,13 @@ export function Sidebar({
                                   {sessionDisplay}
                                 </span>
                               )}
+
+                              <span
+                                className={`session-status-badge status-${sessionStatus.toLowerCase().replace(/_/g, "-")}`}
+                                title={`Session Status: ${formatStatusLabel(sessionStatus)}`}
+                              >
+                                {renderSessionStatusIcon(sessionStatus)}
+                              </span>
 
                               <div className="node-actions">
                                 <button

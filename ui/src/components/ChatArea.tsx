@@ -21,6 +21,7 @@ interface ChatAreaProps {
   sessionName: string | null;
   thread: ThreadInfo | null;
   onNewThread: () => void;
+  onStatusChange?: (status: AgentStatus) => void;
 }
 
 export function ChatArea({
@@ -30,6 +31,7 @@ export function ChatArea({
   sessionName,
   thread,
   onNewThread,
+  onStatusChange,
 }: ChatAreaProps) {
   const [inputText, setInputText] = useState<string>("");
   const viewportEndRef = useRef<HTMLDivElement>(null);
@@ -40,6 +42,11 @@ export function ChatArea({
 
   const isOpen = thread?.is_open ?? false;
   const isBusy = status !== "AWAITING_USER";
+
+  // Notify parent of active thread status changes
+  useEffect(() => {
+    onStatusChange?.(status);
+  }, [status, onStatusChange]);
 
   // Auto-scroll to bottom as new messages/tokens arrive
   useEffect(() => {
