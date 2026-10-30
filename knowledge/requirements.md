@@ -67,8 +67,15 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0003-react-web-ui.md](../decisions/0003-react-web-ui.md).
 - **Linked Invariants**: [INV-007](./invariants.md#inv-007-no-resource-deletion-invariant).
 
+### REQ-011: Inline Tree Node Renaming and Session Node Status Visibility
+- **Description**: The navigation tree must support inline name editing for agents, sessions, and threads without browser modal prompts. Initiating an edit must convert the label into an editable text field and change the edit button into a tick-box-only `<Check />` accept button. In addition, Session nodes must display a small status icon reflecting the operational state (`AWAITING_USER`, `AWAITING_LLM`, `EXECUTING_TOOL`, `ERROR`) of the session's active open thread.
+- **Rationale**: Eliminates modal interruptions, provides seamless in-place editing, and surfaces session-level execution status directly in the navigation tree.
+- **Provenance**: [0004-inline-tree-editing-session-status.md](../decisions/0004-inline-tree-editing-session-status.md).
+- **Linked Invariants**: [INV-010](./invariants.md#inv-010-entity-display-name-fallback), [INV-013](./invariants.md#inv-013-inline-tree-editing-and-session-status-invariant).
+
 ## Cross-References
 - [invariants.md](./invariants.md)
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
 - [0003-react-web-ui.md](../decisions/0003-react-web-ui.md)
+- [0004-inline-tree-editing-session-status.md](../decisions/0004-inline-tree-editing-session-status.md)

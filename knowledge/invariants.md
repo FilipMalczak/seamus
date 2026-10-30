@@ -64,8 +64,14 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-006](./requirements.md#req-006-thread-redirection-event-streaming--status-tracking), [0003-react-web-ui.md](../decisions/0003-react-web-ui.md).
 - **Enforcement**: `SessionAgentRunner.dispatch_user_input()` appends user AG-UI events to `thread.events`; `useThreadStream.ts` parses `role = 'user'` text messages on replay.
 
+### INV-013: Inline Tree Editing & Session Status Invariant
+- **Statement**: The navigation tree must never trigger browser `prompt()` dialogs for renaming; editing must occur inline within the tree node label with a tick-box accept button (`<Check />`). In addition, Session nodes must visibly surface the operational status of their active open thread using standard status icons.
+- **Justification**: [REQ-011](./requirements.md#req-011-inline-tree-node-renaming-and-session-node-status-visibility), [0004-inline-tree-editing-session-status.md](../decisions/0004-inline-tree-editing-session-status.md).
+- **Enforcement**: `Sidebar.tsx` inline editing state and `renderSessionStatusIcon()` renderer.
+
 ## Cross-References
 - [requirements.md](./requirements.md)
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
 - [0003-react-web-ui.md](../decisions/0003-react-web-ui.md)
+- [0004-inline-tree-editing-session-status.md](../decisions/0004-inline-tree-editing-session-status.md)

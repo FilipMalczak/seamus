@@ -1,15 +1,20 @@
-import { useState } from "react";
+import { useState, type KeyboardEvent } from "react";
 import {
+  AlertCircle,
   Bot,
+  Check,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Loader2,
   MessageSquare,
   Pencil,
   Plus,
   Settings,
   Sparkles,
+  Wrench,
 } from "lucide-react";
-import type { AgentConfig } from "../api/types";
+import type { AgentConfig, AgentStatus } from "../api/types";
 import type { FullAgentNode } from "../hooks/useAgentsTree";
 
 interface SidebarProps {
@@ -44,6 +49,10 @@ export function Sidebar({
   const [expandedAgents, setExpandedAgents] = useState<Record<string, boolean>>({});
   const [expandedSessions, setExpandedSessions] = useState<Record<string, boolean>>({});
 
+  // Inline editing state
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState<string>("");
+
   const toggleAgent = (agentId: string) => {
     setExpandedAgents((prev) => ({
       ...prev,
@@ -70,42 +79,60 @@ export function Sidebar({
     await onCreateThread(agentId, sessionId, null);
   };
 
-  const handleEditAgentName = async (agentId: string, currentName: string | null) => {
-    const entered = window.prompt(
-      "Edit agent name (leave empty to remove name and use UUID):",
-      currentName || ""
-    );
-    if (entered !== null) {
-      await onUpdateAgentName(agentId, entered.trim() || null);
+  const startEditing = (key: string, currentName: string | null) => {
+    setEditingKey(key);
+    setEditingValue(currentName || "");
+  };
+
+  const handleSaveAgent = async (agentId: string) => {
+    const trimmed = editingValue.trim();
+    await onUpdateAgentName(agentId, trimmed || null);
+    setEditingKey(null);
+  };
+
+  const handleSaveSession = async (agentId: string, sessionId: string) => {
+    const trimmed = editingValue.trim();
+    await onUpdateSessionName(agentId, sessionId, trimmed || null);
+    setEditingKey(null);
+  };
+
+  const handleSaveThread = async (
+    agentId: string,
+    sessionId: string,
+    threadId: string
+  ) => {
+    const trimmed = editingValue.trim();
+    await onUpdateThreadName(agentId, sessionId, threadId, trimmed || null);
+    setEditingKey(null);
+  };
+
+  const handleKeyDown = (
+    e: KeyboardEvent<HTMLInputElement>,
+    onSave: () => void
+  ) => {
+    if (e.key === "Enter") {
+      e.stopPropagation();
+      e.preventDefault();
+      onSave();
+    } else if (e.key === "Escape") {
+      e.stopPropagation();
+      e.preventDefault();
+      setEditingKey(null);
     }
   };
 
-  const handleEditSessionName = async (
-    agentId: string,
-    sessionId: string,
-    currentName: string | null
-  ) => {
-    const entered = window.prompt(
-      "Edit session name (leave empty to remove name and use UUID):",
-      currentName || ""
-    );
-    if (entered !== null) {
-      await onUpdateSessionName(agentId, sessionId, entered.trim() || null);
-    }
-  };
-
-  const handleEditThreadName = async (
-    agentId: string,
-    sessionId: string,
-    threadId: string,
-    currentName: string | null
-  ) => {
-    const entered = window.prompt(
-      "Edit thread name (leave empty to remove name and use UUID):",
-      currentName || ""
-    );
-    if (entered !== null) {
-      await onUpdateThreadName(agentId, sessionId, threadId, entered.trim() || null);
+  const renderSessionStatusIcon = (st: AgentStatus) => {
+    switch (st) {
+      case "AWAITING_USER":
+        return <CheckCircle2 className="size-3 text-emerald-400" />;
+      case "AWAITING_LLM":
+        return <Loader2 className="size-3 text-sky-400 animate-spin" />;
+      case "EXECUTING_TOOL":
+        return <Wrench className="size-3 text-amber-400 animate-pulse" />;
+      case "ERROR":
+        return <AlertCircle className="size-3 text-rose-400" />;
+      default:
+        return null;
     }
   };
 
@@ -145,6 +172,7 @@ export function Sidebar({
             const isAgentExpanded = expandedAgents[agent.id] ?? true;
             const sessions = Object.values(agent.sessionsMap || {});
             const isAgentSelected = agent.id === selectedAgentId;
+            const isEditingAgent = editingKey === `agent:${agent.id}`;
             // If name is set and not empty, use it; otherwise display the full UUID
             const agentDisplay =
               agent.name && agent.name.trim() !== "" ? agent.name : agent.id;
@@ -169,18 +197,42 @@ export function Sidebar({
 
                   <Bot className="size-4 text-sky-400 node-icon" />
 
-                  <span className="node-label" title={`Agent: ${agentDisplay}`}>
-                    {agentDisplay}
-                  </span>
+                  {isEditingAgent ? (
+                    <input
+                      type="text"
+                      className="inline-edit-input"
+                      value={editingValue}
+                      onChange={(e) => setEditingValue(e.target.value)}
+                      onKeyDown={(e) => handleKeyDown(e, () => handleSaveAgent(agent.id))}
+                      onClick={(e) => e.stopPropagation()}
+                      autoFocus
+                      placeholder={agent.id}
+                    />
+                  ) : (
+                    <span className="node-label" title={`Agent: ${agentDisplay}`}>
+                      {agentDisplay}
+                    </span>
+                  )}
 
                   <div className="node-actions">
                     <button
                       type="button"
                       className="icon-action-btn"
-                      onClick={() => handleEditAgentName(agent.id, agent.name)}
-                      title="Edit Agent Name"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (isEditingAgent) {
+                          handleSaveAgent(agent.id);
+                        } else {
+                          startEditing(`agent:${agent.id}`, agent.name);
+                        }
+                      }}
+                      title={isEditingAgent ? "Accept Name" : "Edit Agent Name"}
                     >
-                      <Pencil className="size-3" />
+                      {isEditingAgent ? (
+                        <Check className="size-3 text-emerald-400" />
+                      ) : (
+                        <Pencil className="size-3" />
+                      )}
                     </button>
                     <button
                       type="button"
@@ -225,6 +277,12 @@ export function Sidebar({
                         const isSessionExpanded = expandedSessions[session.id] ?? true;
                         const isSessionSelected = session.id === selectedSessionId;
                         const threads = session.threads || [];
+                        const openThread =
+                          threads.find((t) => t.is_open) || threads[0];
+                        const sessionStatus: AgentStatus =
+                          openThread?.status || "AWAITING_USER";
+                        const isEditingSession =
+                          editingKey === `session:${session.id}`;
                         // If name is set and not empty, use it; otherwise display the full UUID
                         const sessionDisplay =
                           session.name && session.name.trim() !== ""
@@ -253,26 +311,55 @@ export function Sidebar({
                               <MessageSquare className="size-3.5 text-indigo-400 node-icon" />
 
                               <span
-                                className="node-label"
-                                title={`Session: ${sessionDisplay}`}
+                                className="session-status-icon"
+                                title={`Session Status: ${sessionStatus}`}
                               >
-                                {sessionDisplay}
+                                {renderSessionStatusIcon(sessionStatus)}
                               </span>
+
+                              {isEditingSession ? (
+                                <input
+                                  type="text"
+                                  className="inline-edit-input"
+                                  value={editingValue}
+                                  onChange={(e) => setEditingValue(e.target.value)}
+                                  onKeyDown={(e) =>
+                                    handleKeyDown(e, () =>
+                                      handleSaveSession(agent.id, session.id)
+                                    )
+                                  }
+                                  onClick={(e) => e.stopPropagation()}
+                                  autoFocus
+                                  placeholder={session.id}
+                                />
+                              ) : (
+                                <span
+                                  className="node-label"
+                                  title={`Session: ${sessionDisplay}`}
+                                >
+                                  {sessionDisplay}
+                                </span>
+                              )}
 
                               <div className="node-actions">
                                 <button
                                   type="button"
                                   className="icon-action-btn"
-                                  onClick={() =>
-                                    handleEditSessionName(
-                                      agent.id,
-                                      session.id,
-                                      session.name
-                                    )
-                                  }
-                                  title="Edit Session Name"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (isEditingSession) {
+                                      handleSaveSession(agent.id, session.id);
+                                    } else {
+                                      startEditing(`session:${session.id}`, session.name);
+                                    }
+                                  }}
+                                  title={isEditingSession ? "Accept Name" : "Edit Session Name"}
                                 >
-                                  <Pencil className="size-3" />
+                                  {isEditingSession ? (
+                                    <Check className="size-3 text-emerald-400" />
+                                  ) : (
+                                    <Pencil className="size-3" />
+                                  )}
                                 </button>
                                 <button
                                   type="button"
@@ -295,6 +382,8 @@ export function Sidebar({
                                   threads.map((thread) => {
                                     const isThreadSelected =
                                       thread.id === selectedThreadId;
+                                    const isEditingThread =
+                                      editingKey === `thread:${thread.id}`;
                                     // If name is set and not empty, use it; otherwise display the full UUID
                                     const threadDisplay =
                                       thread.name && thread.name.trim() !== ""
@@ -313,13 +402,15 @@ export function Sidebar({
                                         <button
                                           type="button"
                                           className="thread-left-btn"
-                                          onClick={() =>
-                                            onSelectThread(
-                                              agent.id,
-                                              session.id,
-                                              thread.id
-                                            )
-                                          }
+                                          onClick={() => {
+                                            if (!isEditingThread) {
+                                              onSelectThread(
+                                                agent.id,
+                                                session.id,
+                                                thread.id
+                                              );
+                                            }
+                                          }}
                                           title={`Thread: ${threadDisplay} (${
                                             thread.is_open ? "Open" : "Closed"
                                           })`}
@@ -332,26 +423,60 @@ export function Sidebar({
                                             }`}
                                           />
                                           <Sparkles className="size-3 text-sky-400" />
-                                          <span className="thread-name">
-                                            {threadDisplay}
-                                          </span>
+                                          {isEditingThread ? (
+                                            <input
+                                              type="text"
+                                              className="inline-edit-input"
+                                              value={editingValue}
+                                              onChange={(e) =>
+                                                setEditingValue(e.target.value)
+                                              }
+                                              onKeyDown={(e) =>
+                                                handleKeyDown(e, () =>
+                                                  handleSaveThread(
+                                                    agent.id,
+                                                    session.id,
+                                                    thread.id
+                                                  )
+                                                )
+                                              }
+                                              onClick={(e) => e.stopPropagation()}
+                                              autoFocus
+                                              placeholder={thread.id}
+                                            />
+                                          ) : (
+                                            <span className="thread-name">
+                                              {threadDisplay}
+                                            </span>
+                                          )}
                                         </button>
 
                                         <div className="thread-right-actions">
                                           <button
                                             type="button"
                                             className="icon-action-btn"
-                                            onClick={() =>
-                                              handleEditThreadName(
-                                                agent.id,
-                                                session.id,
-                                                thread.id,
-                                                thread.name
-                                              )
-                                            }
-                                            title="Edit Thread Name"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              if (isEditingThread) {
+                                                handleSaveThread(
+                                                  agent.id,
+                                                  session.id,
+                                                  thread.id
+                                                );
+                                              } else {
+                                                startEditing(
+                                                  `thread:${thread.id}`,
+                                                  thread.name
+                                                );
+                                              }
+                                            }}
+                                            title={isEditingThread ? "Accept Name" : "Edit Thread Name"}
                                           >
-                                            <Pencil className="size-2.5" />
+                                            {isEditingThread ? (
+                                              <Check className="size-2.5 text-emerald-400" />
+                                            ) : (
+                                              <Pencil className="size-2.5" />
+                                            )}
                                           </button>
                                           <span
                                             className={`badge-status ${

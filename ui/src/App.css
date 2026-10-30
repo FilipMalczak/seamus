@@ -264,6 +264,28 @@ body {
   white-space: nowrap;
 }
 
+.inline-edit-input {
+  flex: 1;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--accent-primary);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-family: inherit;
+  padding: 1px 6px;
+  outline: none;
+  min-width: 50px;
+  max-width: 100%;
+}
+
+.session-status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
 .node-actions {
   display: flex;
   align-items: center;
