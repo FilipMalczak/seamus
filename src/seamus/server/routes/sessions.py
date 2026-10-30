@@ -128,7 +128,7 @@ async def post_user_input(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     registry = get_runner_registry()
-    runner = registry.get_runner(session)
+    runner = registry.get_runner(session, agent=agent)
 
     try:
         user_msg_id = await runner.dispatch_user_input(text, message_id=payload.message_id)

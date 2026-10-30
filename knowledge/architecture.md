@@ -58,10 +58,13 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 5. **Server & REST API (`seamus.server`)**:
    - Location: `src/seamus/server/`
    - Responsibility: FastAPI application factory mounted at `/api/v-alpha/`, Pydantic request/response schemas, routes for config template, agents, sessions, input dispatch, thread redirection, and SSE streaming. Optionally serves built `ui/dist` bundle in production.
-6. **Decisions (`decisions`)**:
+6. **Telemetry & Observability (`seamus.telemetry`)**:
+   - Location: `src/seamus/telemetry.py`
+   - Responsibility: Logfire initialization, custom domain scrubbing (preserving `session`), FastAPI request instrumentation, and OpenTelemetry environment setup for LangChain/LangGraph tracing.
+7. **Decisions (`decisions`)**:
    - Location: `decisions/`
    - Responsibility: Append-only architectural and project direction decision records.
-7. **Knowledge (`knowledge`)**:
+8. **Knowledge (`knowledge`)**:
    - Location: `knowledge/`
    - Responsibility: Durable conceptual, architectural, and requirement specifications.
 
@@ -69,5 +72,7 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
 - [0003-react-web-ui.md](../decisions/0003-react-web-ui.md)
+- [0004-inline-tree-editing-session-status.md](../decisions/0004-inline-tree-editing-session-status.md)
+- [0005-logfire-integration.md](../decisions/0005-logfire-integration.md)
 - [abstractions.md](./abstractions.md)
 - [vocabulary.md](./vocabulary.md)

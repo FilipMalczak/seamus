@@ -73,9 +73,16 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0004-inline-tree-editing-session-status.md](../decisions/0004-inline-tree-editing-session-status.md).
 - **Linked Invariants**: [INV-010](./invariants.md#inv-010-entity-display-name-fallback), [INV-013](./invariants.md#inv-013-inline-tree-editing-and-session-status-invariant).
 
+### REQ-012: Logfire Tracing with Agent, Session, and Thread Hierarchical Spans
+- **Description**: The harness must integrate Pydantic Logfire for observability. Agent execution runs must generate a three-level hierarchical trace (`agent` wraps `session`, which wraps `thread`), enclosing LangGraph agent execution, model invocations, and tool runs. Store entity creation/update operations and FastAPI REST endpoints must also emit structured spans with standardized attributes. Telemetry initialization must automatically load environment variables from `.env` and provide a comprehensive `.env.template`.
+- **Rationale**: Provides clear visibility into deep multi-turn agent execution, latency bottlenecks, and error states while preserving Seamus domain terminology.
+- **Provenance**: [0005-logfire-integration.md](../decisions/0005-logfire-integration.md).
+- **Linked Invariants**: [INV-014](./invariants.md#inv-014-hierarchical-agent-session-thread-execution-spans).
+
 ## Cross-References
 - [invariants.md](./invariants.md)
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
 - [0003-react-web-ui.md](../decisions/0003-react-web-ui.md)
 - [0004-inline-tree-editing-session-status.md](../decisions/0004-inline-tree-editing-session-status.md)
+- [0005-logfire-integration.md](../decisions/0005-logfire-integration.md)

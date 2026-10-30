@@ -42,6 +42,11 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `create_app`: Factory assembling FastAPI app, CORS middleware, and APIRouters under `/api/v-alpha/`. Optionally mounts built `ui/dist` directory for standalone web serving.
 - Schemas: Pydantic request and response models enforcing API contracts and masking secrets where appropriate.
 
+### `seamus.telemetry` (`src/seamus/telemetry.py`)
+- Logfire configuration and OpenTelemetry environment management.
+- `setup_telemetry`: Initializes Logfire with `send_to_logfire='if-token-present'`, custom scrubbing preserving `session` identifiers, and sets LangChain/LangGraph OTel export environment variables (`LANGSMITH_OTEL_ENABLED=true`, etc.).
+- `instrument_fastapi`: Hooks Logfire request tracing into FastAPI applications.
+
 ## Design Principles
 - **Explicit over Implicit**: Prefer concrete, simple classes and protocols rather than speculative abstraction layers.
 - **Separation of Concerns**: Keep framework/harness mechanics separate from application and agent domain code.
@@ -51,5 +56,7 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
 - [0003-react-web-ui.md](../decisions/0003-react-web-ui.md)
+- [0004-inline-tree-editing-session-status.md](../decisions/0004-inline-tree-editing-session-status.md)
+- [0005-logfire-integration.md](../decisions/0005-logfire-integration.md)
 - [architecture.md](./architecture.md)
 - [conventions.md](./conventions.md)

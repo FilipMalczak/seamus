@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from seamus.server.routes import api_router
+from seamus.telemetry import instrument_fastapi, setup_telemetry
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 UI_DIST_DIR = REPO_ROOT / "ui" / "dist"
@@ -15,6 +16,8 @@ UI_DIST_DIR = REPO_ROOT / "ui" / "dist"
 
 def create_app(dist_dir: Path | None = None) -> FastAPI:
     """Create, configure, and return the FastAPI application instance."""
+    setup_telemetry()
+
     app = FastAPI(
         title="Seamus Agent Harness Server",
         description=(
@@ -24,6 +27,8 @@ def create_app(dist_dir: Path | None = None) -> FastAPI:
         docs_url="/docs",
         redoc_url="/redoc",
     )
+
+    instrument_fastapi(app)
 
     # Enable permissive CORS for web UI clients
     app.add_middleware(

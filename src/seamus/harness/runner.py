@@ -7,6 +7,7 @@ from collections.abc import AsyncGenerator
 from typing import Any
 from uuid import uuid4
 
+import logfire
 from ag_ui.core.events import (
     EventType,
     TextMessageContentEvent,
@@ -21,7 +22,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import SecretStr
 
-from seamus.domain.entities import AgentStatus, Session, Thread
+from seamus.domain.entities import Agent, AgentStatus, Session, Thread
 
 logger = logging.getLogger(__name__)
 
@@ -62,16 +63,31 @@ class SessionAgentRunner:
         self,
         session: Session,
         agent: LangGraphAgent | None = None,
+        agent_entity: Agent | None = None,
     ) -> None:
         self.session = session
         self.broadcaster = EventBroadcaster()
         self._lock = asyncio.Lock()
         self._active_task: asyncio.Task[None] | None = None
+        self._agent_entity = agent_entity
 
         if agent is not None:
             self._agent = agent
         else:
             self._agent = self._build_deep_agent()
+
+    def _resolve_agent_entity(self) -> Agent | None:
+        """Resolve the parent Agent entity if not already provided."""
+        if self._agent_entity is not None:
+            return self._agent_entity
+        try:
+            from seamus.harness.store import get_harness_store
+
+            store = get_harness_store()
+            self._agent_entity = store.resolve_agent(str(self.session.agent_id))
+            return self._agent_entity
+        except Exception:
+            return None
 
     def _build_deep_agent(self) -> LangGraphAgent:
         """Instantiate the DeepAgent graph and wrap it in a LangGraphAgent."""
@@ -142,6 +158,13 @@ class SessionAgentRunner:
             await self.broadcaster.broadcast(user_content)
             await self.broadcaster.broadcast(user_end)
 
+            logfire.info(
+                "Dispatched user input to thread {thread_id} in session {session_id}",
+                thread_id=str(thread.id),
+                session_id=str(self.session.id),
+                message_id=user_msg_id,
+            )
+
             # Start execution task in the background
             self._active_task = asyncio.create_task(
                 self._run_loop(thread=thread, user_message=user_msg)
@@ -150,29 +173,71 @@ class SessionAgentRunner:
             return user_msg_id
 
     async def _run_loop(self, thread: Thread, user_message: UserMessage) -> None:
-        """Internal execution loop consuming LangGraphAgent run generator."""
+        """Internal execution loop with hierarchical agent, session, and thread spans."""
+        agent_entity = self._resolve_agent_entity()
+        agent_id_str = str(self.session.agent_id)
+        agent_name = agent_entity.name if agent_entity else None
+        agent_identifier = agent_name or agent_id_str
+
+        session_id_str = str(self.session.id)
+        session_name = self.session.name
+        session_identifier = session_name or session_id_str
+
+        thread_id_str = str(thread.id)
+        thread_name = thread.name
+        thread_identifier = thread_name or thread_id_str
+
+        run_id = uuid4().hex
         input_data = RunAgentInput(
             thread_id=thread.id.hex,
-            run_id=uuid4().hex,
+            run_id=run_id,
             messages=[user_message],
         )
 
         request_agent = self._agent.clone()
-        try:
-            async for event in request_agent.run(input_data):
-                self._update_status_from_event(thread, event)
-                thread.append_event(event)
-                await self.broadcaster.broadcast(event)
-        except Exception as exc:
-            logger.exception("Error during session agent execution")
-            thread.status = AgentStatus.ERROR
-            thread.touch()
-            await self.broadcaster.broadcast({"type": "RUN_ERROR", "message": str(exc)})
-        finally:
-            if thread.status != AgentStatus.ERROR:
-                thread.status = AgentStatus.AWAITING_USER
-            thread.touch()
-            self.session.touch()
+        with logfire.span(
+            f"agent {agent_identifier}",
+            agent_id=agent_id_str,
+            agent_name=agent_name,
+            agent_identifier=agent_identifier,
+            model=self.session.config.model_name,
+        ):
+            with logfire.span(
+                f"session {session_identifier}",
+                session_id=session_id_str,
+                session_name=session_name,
+                session_identifier=session_identifier,
+                agent_id=agent_id_str,
+            ):
+                with logfire.span(
+                    f"thread {thread_identifier}",
+                    thread_id=thread_id_str,
+                    thread_name=thread_name,
+                    thread_identifier=thread_identifier,
+                    session_id=session_id_str,
+                    agent_id=agent_id_str,
+                    run_id=run_id,
+                ):
+                    try:
+                        async for event in request_agent.run(input_data):
+                            self._update_status_from_event(thread, event)
+                            thread.append_event(event)
+                            await self.broadcaster.broadcast(event)
+                    except Exception as exc:
+                        logger.exception("Error during session agent execution")
+                        logfire.error(
+                            "Session execution failed in thread {thread}: {error}",
+                            thread=thread_identifier,
+                            error=str(exc),
+                        )
+                        thread.status = AgentStatus.ERROR
+                        thread.touch()
+                        await self.broadcaster.broadcast({"type": "RUN_ERROR", "message": str(exc)})
+                    finally:
+                        if thread.status != AgentStatus.ERROR:
+                            thread.status = AgentStatus.AWAITING_USER
+                        thread.touch()
+                        self.session.touch()
 
     def _update_status_from_event(self, thread: Thread, event: Any) -> None:
         """Update thread status based on AG-UI event type."""
@@ -245,11 +310,13 @@ class RunnerRegistry:
     def __init__(self) -> None:
         self._runners: dict[str, SessionAgentRunner] = {}
 
-    def get_runner(self, session: Session) -> SessionAgentRunner:
+    def get_runner(self, session: Session, agent: Agent | None = None) -> SessionAgentRunner:
         """Get or create the SessionAgentRunner for a session."""
         session_key = str(session.id)
         if session_key not in self._runners:
-            self._runners[session_key] = SessionAgentRunner(session=session)
+            self._runners[session_key] = SessionAgentRunner(session=session, agent_entity=agent)
+        elif agent is not None and self._runners[session_key]._agent_entity is None:
+            self._runners[session_key]._agent_entity = agent
         return self._runners[session_key]
 
     def set_runner(self, session_id: str, runner: SessionAgentRunner) -> None:
