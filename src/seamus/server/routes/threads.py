@@ -89,7 +89,7 @@ async def stream_thread(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
     registry = get_runner_registry()
-    runner = registry.get_runner(session)
+    runner = registry.get_runner(session, agent=agent)
     accept_header = request.headers.get("accept")
 
     return StreamingResponse(

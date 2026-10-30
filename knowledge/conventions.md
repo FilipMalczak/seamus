@@ -39,11 +39,19 @@ Project-specific implementation, tooling, and development conventions not fully 
 - Pytest test files named `test_*.py` located under `tests/`.
 - Test observable behaviors and edge cases rather than private implementation details.
 - Avoid external network calls during unit and integration test runs by using test doubles or mock run providers.
+- Logfire test assertions use `TestExporter` and `SimpleSpanProcessor` with `send_to_logfire=False`.
 - Frontend builds verified with `npm run build` in `ui/`.
+
+## Telemetry & Tracing Conventions
+- Use `f"agent {agent_identifier}"`, `f"session {session_identifier}"`, and `f"thread {thread_identifier}"` for span naming so spans are immediately distinguishable in traces.
+- Spans must include entity IDs, names, and operational attributes (`agent_id`, `session_id`, `thread_id`, `model`, `run_id`).
+- Standard logfire scrubbing callback must preserve Seamus domain `session` attributes while redacting secrets.
 
 ## Cross-References
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
 - [0003-react-web-ui.md](../decisions/0003-react-web-ui.md)
+- [0004-inline-tree-editing-session-status.md](../decisions/0004-inline-tree-editing-session-status.md)
+- [0005-logfire-integration.md](../decisions/0005-logfire-integration.md)
 - [abstractions.md](./abstractions.md)
 - [invariants.md](./invariants.md)

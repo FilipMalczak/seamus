@@ -41,9 +41,17 @@ The frontend hierarchical sidebar component displaying Agents, their child Sessi
 ### JSON Config Editor
 An in-browser modal interface for inspecting and updating raw JSON configurations for the singleton ConfigTemplate, Agents, and Sessions with client-side syntax validation.
 
+### Telemetry & Spans
+OpenTelemetry-compatible observability constructs powered by Pydantic Logfire:
+- **Span**: A timed duration representing a single unit of execution or lifecycle operation (e.g., `agent`, `session`, `thread`). Spans contain start/end timestamps, structured attributes (`agent_id`, `session_id`, `thread_id`, `model`), and child spans.
+- **Trace**: A directed acyclic tree of nested spans representing a complete end-to-end operation, such as an agent run or an HTTP request.
+- **Scrubbing**: Automatic redaction of sensitive credentials and tokens; configured in Seamus to whitelist domain `session` attributes while redacting secrets.
+
 ## Cross-References
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
 - [0003-react-web-ui.md](../decisions/0003-react-web-ui.md)
+- [0004-inline-tree-editing-session-status.md](../decisions/0004-inline-tree-editing-session-status.md)
+- [0005-logfire-integration.md](../decisions/0005-logfire-integration.md)
 - [architecture.md](./architecture.md)
 - [abstractions.md](./abstractions.md)

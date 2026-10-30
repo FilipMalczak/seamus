@@ -69,9 +69,15 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-011](./requirements.md#req-011-inline-tree-node-renaming-and-session-node-status-visibility), [0004-inline-tree-editing-session-status.md](../decisions/0004-inline-tree-editing-session-status.md).
 - **Enforcement**: `Sidebar.tsx` inline editing state and `renderSessionStatusIcon()` renderer.
 
+### INV-014: Hierarchical Agent-Session-Thread Execution Spans
+- **Statement**: Every execution run dispatched to a thread must be wrapped in a strict three-level hierarchical trace: an Agent span (`agent {agent_identifier}`) as the root enclosing a Session span (`session {session_identifier}`), which encloses a Thread span (`thread {thread_identifier}`). All underlying LangGraph graph executions, model invocations, and tool executions must execute within the Thread span context, establishing a clean child hierarchy.
+- **Justification**: [REQ-012](./requirements.md#req-012-logfire-tracing-with-agent-session-and-thread-hierarchical-spans), [0005-logfire-integration.md](../decisions/0005-logfire-integration.md).
+- **Enforcement**: `SessionAgentRunner._run_loop()` wraps execution in nested `logfire.span(...)` contexts with standardized attributes.
+
 ## Cross-References
 - [requirements.md](./requirements.md)
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
 - [0003-react-web-ui.md](../decisions/0003-react-web-ui.md)
 - [0004-inline-tree-editing-session-status.md](../decisions/0004-inline-tree-editing-session-status.md)
+- [0005-logfire-integration.md](../decisions/0005-logfire-integration.md)

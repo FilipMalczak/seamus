@@ -2,6 +2,8 @@
 
 from uuid import UUID
 
+import logfire
+
 from seamus.config.models import AgentConfig
 from seamus.domain.entities import Agent, Session, Thread
 from seamus.domain.resolution import (
@@ -73,10 +75,18 @@ class HarnessStore:
         self._ensure_agent_slug_unique(name, current_agent_id=None)
 
         agent = Agent(name=name, config=config)
-        # Automatically create initial no-name session (which creates an open thread)
-        agent.create_session(name=None)
-        self._agents[agent.id] = agent
-        return agent
+        agent_ident = agent.name or str(agent.id)
+        with logfire.span(
+            f"agent {agent_ident}",
+            agent_id=str(agent.id),
+            agent_name=agent.name,
+            agent_identifier=agent_ident,
+            operation="create",
+        ):
+            # Automatically create initial no-name session (which creates an open thread)
+            agent.create_session(name=None)
+            self._agents[agent.id] = agent
+            return agent
 
     def update_agent(
         self,
@@ -89,10 +99,18 @@ class HarnessStore:
         config.validate_complete()
         self._ensure_agent_slug_unique(name, current_agent_id=agent.id)
 
-        agent.name = name
-        agent.config = config.model_copy(deep=True)
-        agent.touch()
-        return agent
+        agent_ident = name or str(agent.id)
+        with logfire.span(
+            f"agent {agent_ident}",
+            agent_id=str(agent.id),
+            agent_name=name,
+            agent_identifier=agent_ident,
+            operation="update",
+        ):
+            agent.name = name
+            agent.config = config.model_copy(deep=True)
+            agent.touch()
+            return agent
 
     def create_session(
         self,
@@ -104,9 +122,25 @@ class HarnessStore:
         agent = self.resolve_agent(agent_identifier)
         self._ensure_session_slug_unique(agent, name, current_session_id=None)
 
-        session = agent.create_session(config=config, name=name)
-        session.config.validate_complete()
-        return session
+        agent_ident = agent.name or str(agent.id)
+        with logfire.span(
+            f"agent {agent_ident}",
+            agent_id=str(agent.id),
+            agent_name=agent.name,
+            agent_identifier=agent_ident,
+        ):
+            session = agent.create_session(config=config, name=name)
+            session_ident = session.name or str(session.id)
+            with logfire.span(
+                f"session {session_ident}",
+                session_id=str(session.id),
+                session_name=session.name,
+                session_identifier=session_ident,
+                agent_id=str(agent.id),
+                operation="create",
+            ):
+                session.config.validate_complete()
+                return session
 
     def update_session(
         self,
@@ -121,11 +155,20 @@ class HarnessStore:
         config.validate_complete()
         self._ensure_session_slug_unique(agent, name, current_session_id=session.id)
 
-        session.name = name
-        session.config = config.model_copy(deep=True)
-        session.touch()
-        agent.touch()
-        return session
+        session_ident = name or str(session.id)
+        with logfire.span(
+            f"session {session_ident}",
+            session_id=str(session.id),
+            session_name=name,
+            session_identifier=session_ident,
+            agent_id=str(agent.id),
+            operation="update",
+        ):
+            session.name = name
+            session.config = config.model_copy(deep=True)
+            session.touch()
+            agent.touch()
+            return session
 
     def create_thread(
         self,
@@ -138,9 +181,34 @@ class HarnessStore:
         session = resolve_session(agent, session_identifier)
         self._ensure_thread_slug_unique(session, name, current_thread_id=None)
 
-        thread = session.create_thread(name=name)
-        agent.touch()
-        return thread
+        agent_ident = agent.name or str(agent.id)
+        session_ident = session.name or str(session.id)
+        with logfire.span(
+            f"agent {agent_ident}",
+            agent_id=str(agent.id),
+            agent_name=agent.name,
+            agent_identifier=agent_ident,
+        ):
+            with logfire.span(
+                f"session {session_ident}",
+                session_id=str(session.id),
+                session_name=session.name,
+                session_identifier=session_ident,
+                agent_id=str(agent.id),
+            ):
+                thread = session.create_thread(name=name)
+                thread_ident = thread.name or str(thread.id)
+                with logfire.span(
+                    f"thread {thread_ident}",
+                    thread_id=str(thread.id),
+                    thread_name=thread.name,
+                    thread_identifier=thread_ident,
+                    session_id=str(session.id),
+                    agent_id=str(agent.id),
+                    operation="create",
+                ):
+                    agent.touch()
+                    return thread
 
     def update_thread(
         self,
@@ -155,11 +223,21 @@ class HarnessStore:
         thread = resolve_thread(session, thread_identifier)
         self._ensure_thread_slug_unique(session, name, current_thread_id=thread.id)
 
-        thread.name = name
-        thread.touch()
-        session.touch()
-        agent.touch()
-        return thread
+        thread_ident = name or str(thread.id)
+        with logfire.span(
+            f"thread {thread_ident}",
+            thread_id=str(thread.id),
+            thread_name=name,
+            thread_identifier=thread_ident,
+            session_id=str(session.id),
+            agent_id=str(agent.id),
+            operation="update",
+        ):
+            thread.name = name
+            thread.touch()
+            session.touch()
+            agent.touch()
+            return thread
 
 
 _GLOBAL_STORE: HarnessStore | None = None
