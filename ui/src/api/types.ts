@@ -76,3 +76,14 @@ export type ChatMessage = {
   timestamp: string;
 };
 
+export interface SystemLogfireInfo {
+  enabled: boolean;
+  service_name: string;
+  url: string | null;
+}
+
+export interface SystemInfoResponse {
+  logfire: SystemLogfireInfo;
+}
+
+

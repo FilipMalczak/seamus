@@ -45,7 +45,7 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 
 1. **Web User Interface (`ui`)**:
    - Location: `ui/`
-   - Responsibility: React 19 single-page application built with Vite and TypeScript. Houses navigation sidebar tree, conversational message pane, SSE streaming client, and in-browser JSON config editor.
+   - Responsibility: React 19 single-page application built with Vite and TypeScript. Houses navigation sidebar tree with external system integration footer, conversational message pane, SSE streaming client, and in-browser JSON config editor.
 2. **Configuration (`seamus.config`)**:
    - Location: `src/seamus/config/`
    - Responsibility: `InferenceConfig`, `AgentConfig`, and singleton `ConfigTemplate` management with copy-on-derive semantics and completeness validation.
@@ -57,10 +57,10 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
    - Responsibility: In-memory store repository, `SessionAgentRunner` wrapping `create_deep_agent` and `ag_ui_langgraph.LangGraphAgent`, and event broadcasting/replay queues.
 5. **Server & REST API (`seamus.server`)**:
    - Location: `src/seamus/server/`
-   - Responsibility: FastAPI application factory mounted at `/api/v-alpha/`, Pydantic request/response schemas, routes for config template, agents, sessions, input dispatch, thread redirection, and SSE streaming. Optionally serves built `ui/dist` bundle in production.
+   - Responsibility: FastAPI application factory mounted at `/api/v-alpha/`, Pydantic request/response schemas, routes for config template, agents, sessions, input dispatch, thread redirection, system integration metadata (`/api/v-alpha/system/info`), and SSE streaming. Optionally serves built `ui/dist` bundle in production.
 6. **Telemetry & Observability (`seamus.telemetry`)**:
    - Location: `src/seamus/telemetry.py`
-   - Responsibility: Logfire initialization, custom domain scrubbing (preserving `session`), FastAPI request instrumentation, and OpenTelemetry environment setup for LangChain/LangGraph tracing.
+   - Responsibility: Logfire initialization, evaluation of `LOGFIRE_SEND_TO_LOGFIRE`, custom domain scrubbing (preserving `session`), FastAPI request instrumentation with `/health` exclusions, and OpenTelemetry environment setup for LangChain/LangGraph tracing.
 7. **Decisions (`decisions`)**:
    - Location: `decisions/`
    - Responsibility: Append-only architectural and project direction decision records.
@@ -74,5 +74,6 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 - [0003-react-web-ui.md](../decisions/0003-react-web-ui.md)
 - [0004-inline-tree-editing-session-status.md](../decisions/0004-inline-tree-editing-session-status.md)
 - [0005-logfire-integration.md](../decisions/0005-logfire-integration.md)
+- [0006-external-system-links.md](../decisions/0006-external-system-links.md)
 - [abstractions.md](./abstractions.md)
 - [vocabulary.md](./vocabulary.md)

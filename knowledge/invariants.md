@@ -74,6 +74,11 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-012](./requirements.md#req-012-logfire-tracing-with-agent-session-and-thread-hierarchical-spans), [0005-logfire-integration.md](../decisions/0005-logfire-integration.md).
 - **Enforcement**: `SessionAgentRunner._run_loop()` wraps execution in nested `logfire.span(...)` contexts with standardized attributes.
 
+### INV-015: External System Link Visibility & Telemetry Guard
+- **Statement**: External system icons in the navigation tree left panel must be strictly conditional on integration availability. The Logfire navigation icon must only render when Logfire is actively configured to send telemetry, accurately reflecting `LOGFIRE_SEND_TO_LOGFIRE` overrides and token presence. Furthermore, system `/health` heartbeat checks must never produce request telemetry spans.
+- **Justification**: [REQ-013](./requirements.md#req-013-external-system-navigation-links--telemetry-visibility-guard), [0006-external-system-links.md](../decisions/0006-external-system-links.md).
+- **Enforcement**: `seamus.telemetry.is_logfire_enabled()` evaluates send status and token presence; `GET /api/v-alpha/system/info` exposes `SystemInfoResponse`; `Sidebar.tsx` conditionally mounts the icon; `instrument_fastapi` filters `/health` with `excluded_urls`.
+
 ## Cross-References
 - [requirements.md](./requirements.md)
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
@@ -81,3 +86,4 @@ Properties and rules that must always hold across the repository.
 - [0003-react-web-ui.md](../decisions/0003-react-web-ui.md)
 - [0004-inline-tree-editing-session-status.md](../decisions/0004-inline-tree-editing-session-status.md)
 - [0005-logfire-integration.md](../decisions/0005-logfire-integration.md)
+- [0006-external-system-links.md](../decisions/0006-external-system-links.md)

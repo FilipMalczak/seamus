@@ -17,7 +17,12 @@ from seamus.domain.entities import Agent
 from seamus.harness.runner import SessionAgentRunner
 from seamus.harness.store import HarnessStore
 from seamus.server.app import create_app
-from seamus.telemetry import _scrub_callback, setup_telemetry
+from seamus.telemetry import (
+    _scrub_callback,
+    get_logfire_service_name,
+    is_logfire_enabled,
+    setup_telemetry,
+)
 
 
 class MockLangGraphAgent:
@@ -54,14 +59,48 @@ def test_setup_telemetry() -> None:
     assert os.environ.get("LANGSMITH_TRACING") == "true"
 
 
-def test_setup_telemetry_loads_env_file(tmp_path: Path) -> None:
+def test_setup_telemetry_loads_env_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify setup_telemetry loads environment variables from a custom or found .env file."""
+    monkeypatch.delenv("LOGFIRE_SERVICE_NAME", raising=False)
+    monkeypatch.delenv("TEST_ENV_VAR", raising=False)
     env_file = tmp_path / ".env"
     env_file.write_text("LOGFIRE_SERVICE_NAME=custom-seamus-test\nTEST_ENV_VAR=loaded_ok\n")
 
     setup_telemetry(send_to_logfire=False, force_reconfigure=True, env_file=env_file)
     assert os.environ.get("TEST_ENV_VAR") == "loaded_ok"
     assert os.environ.get("LOGFIRE_SERVICE_NAME") == "custom-seamus-test"
+
+
+def test_is_logfire_enabled_and_service_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify is_logfire_enabled evaluates LOGFIRE_SEND_TO_LOGFIRE and LOGFIRE_TOKEN properly."""
+    monkeypatch.setenv("LOGFIRE_SERVICE_NAME", "my-test-service")
+    assert get_logfire_service_name() == "my-test-service"
+
+    # Explicit send_to_logfire=False
+    setup_telemetry(send_to_logfire=False, force_reconfigure=True)
+    assert not is_logfire_enabled()
+
+    # Explicit send_to_logfire=True
+    setup_telemetry(send_to_logfire=True, force_reconfigure=True)
+    assert is_logfire_enabled()
+
+    # Via LOGFIRE_SEND_TO_LOGFIRE=false
+    monkeypatch.setenv("LOGFIRE_SEND_TO_LOGFIRE", "false")
+    monkeypatch.setenv("LOGFIRE_TOKEN", "some-token")
+    setup_telemetry(force_reconfigure=True)
+    assert not is_logfire_enabled()
+
+    # Via LOGFIRE_SEND_TO_LOGFIRE=if-token-present with token
+    monkeypatch.setenv("LOGFIRE_SEND_TO_LOGFIRE", "if-token-present")
+    monkeypatch.setenv("LOGFIRE_TOKEN", "valid-token")
+    setup_telemetry(force_reconfigure=True)
+    assert is_logfire_enabled()
+
+    # Via LOGFIRE_SEND_TO_LOGFIRE=if-token-present without token
+    monkeypatch.setenv("LOGFIRE_TOKEN", "")
+    logfire.DEFAULT_LOGFIRE_INSTANCE.config.token = None
+    setup_telemetry(force_reconfigure=True)
+    assert not is_logfire_enabled()
 
 
 def test_env_template_exists_and_contains_logfire_vars() -> None:
@@ -157,19 +196,34 @@ def test_store_entity_lifecycle_spans(logfire_test_exporter: TestExporter) -> No
 
 
 def test_fastapi_request_instrumentation(logfire_test_exporter: TestExporter) -> None:
-    """Verify that FastAPI requests produce Logfire spans."""
+    """Verify that FastAPI requests produce Logfire spans while /health is excluded."""
     app = create_app()
     client = TestClient(app)
 
-    response = client.get("/health")
-    assert response.status_code == 200
+    # Health check should NOT generate trace spans
+    health_response = client.get("/health")
+    assert health_response.status_code == 200
 
-    spans = logfire_test_exporter.exported_spans_as_dict()
-    http_spans = [
+    spans_after_health = logfire_test_exporter.exported_spans_as_dict()
+    health_spans = [
         s
-        for s in spans
+        for s in spans_after_health
         if "/health" in s.get("name", "")
         or s.get("attributes", {}).get("http.target") == "/health"
         or "health" in str(s.get("attributes", {}))
     ]
-    assert len(http_spans) > 0
+    assert len(health_spans) == 0
+
+    # API endpoints SHOULD generate trace spans
+    api_response = client.get("/api/v-alpha/system/info")
+    assert api_response.status_code == 200
+
+    spans_after_api = logfire_test_exporter.exported_spans_as_dict()
+    api_spans = [
+        s
+        for s in spans_after_api
+        if "/api/v-alpha" in s.get("name", "")
+        or "/system/info" in str(s.get("attributes", {}))
+        or "FastAPI" in s.get("name", "")
+    ]
+    assert len(api_spans) > 0

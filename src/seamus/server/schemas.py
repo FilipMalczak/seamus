@@ -131,3 +131,17 @@ class AgentDetailResponse(BaseModel):
     last_touched_at: datetime
     config: AgentConfig
     sessions: list[SessionSummaryResponse]
+
+
+class SystemLogfireInfo(BaseModel):
+    """Information about Logfire telemetry integration."""
+
+    enabled: bool
+    service_name: str
+    url: str | None = None
+
+
+class SystemInfoResponse(BaseModel):
+    """Information about system integrations and external systems."""
+
+    logfire: SystemLogfireInfo

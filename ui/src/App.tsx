@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { getConfigTemplate, updateConfigTemplate } from "./api/client";
-import type { AgentConfig, AgentStatus } from "./api/types";
+import { getConfigTemplate, getSystemInfo, updateConfigTemplate } from "./api/client";
+import type { AgentConfig, AgentStatus, SystemInfoResponse } from "./api/types";
 import { ChatArea } from "./components/ChatArea";
 import { ConfigModal } from "./components/ConfigModal";
 import { Header } from "./components/Header";
@@ -11,6 +11,7 @@ import "./App.css";
 export function App() {
   const [configTemplate, setConfigTemplate] = useState<AgentConfig | null>(null);
   const [activeStatus, setActiveStatus] = useState<AgentStatus>("AWAITING_USER");
+  const [systemInfo, setSystemInfo] = useState<SystemInfoResponse | null>(null);
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -54,8 +55,18 @@ export function App() {
     }
   };
 
+  const loadSystem = async () => {
+    try {
+      const res = await getSystemInfo();
+      setSystemInfo(res);
+    } catch (err) {
+      console.warn("Failed to load system info:", err);
+    }
+  };
+
   useEffect(() => {
     loadTemplate();
+    loadSystem();
   }, []);
 
   const handleOpenGlobalConfig = () => {
@@ -106,6 +117,7 @@ export function App() {
           selectedSessionId={selectedSessionId}
           selectedThreadId={selectedThreadId}
           activeStatus={activeStatus}
+          systemInfo={systemInfo}
           onSelectThread={selectThread}
           onCreateAgent={createAgent}
           onCreateSession={createSession}
