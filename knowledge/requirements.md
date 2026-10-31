@@ -104,6 +104,7 @@ Requirements, rationale, provenance, and stable IDs.
 - **Linked Invariants**: [INV-019](./invariants.md#inv-019-client-side-markdown-rendering--content-safety).
 
 ## Cross-References
+- [backlog.md](./backlog.md)
 - [invariants.md](./invariants.md)
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)

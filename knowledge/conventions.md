@@ -59,4 +59,5 @@ Project-specific implementation, tooling, and development conventions not fully 
 - [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md)
 - [0008-git-persistence.md](../decisions/0008-git-persistence.md)
 - [abstractions.md](./abstractions.md)
+- [backlog.md](./backlog.md)
 - [invariants.md](./invariants.md)
