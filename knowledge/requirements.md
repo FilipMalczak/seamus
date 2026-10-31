@@ -115,6 +115,12 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0011-agent-inspector.md](../decisions/0011-agent-inspector.md).
 - **Linked Invariants**: [INV-021](./invariants.md#inv-021-agent-inspection-and-credential-redaction).
 
+### REQ-019: Gitea Sync PRs and Thread Acceptance Lifecycle
+- **Description**: The UI must not provide explicit manual controls to open or spawn threads. When a session starts, the harness must open an automated Sync PR in Gitea from `session/{session_id}` to `main`. The top bar must provide an "Accept" action button with only a tick icon (green and inviting) in place of "New Thread". Accepting a thread closes the active thread, approves and merges the session's active Sync PR into `main`, spawns a new open thread on the same session branch, and opens a new Sync PR to `main`.
+- **Rationale**: Replaces ad-hoc manual thread opening with a rigorous human-in-the-loop acceptance workflow that automatically merges validated thread outputs into the base repository branch while keeping subsequent work in clean isolated Sync PR cycles.
+- **Provenance**: [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md).
+- **Linked Invariants**: [INV-022](./invariants.md#inv-022-thread-acceptance-and-sync-pr-lifecycle).
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [invariants.md](./invariants.md)
@@ -129,3 +135,4 @@ Requirements, rationale, provenance, and stable IDs.
 - [0009-ui-markdown-renderer.md](../decisions/0009-ui-markdown-renderer.md)
 - [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md)
 - [0011-agent-inspector.md](../decisions/0011-agent-inspector.md)
+- [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md)

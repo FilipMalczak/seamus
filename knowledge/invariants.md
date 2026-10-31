@@ -109,6 +109,11 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-018](./requirements.md#req-018-deepagent-inspection-console--branch-state-provenance), [0011-agent-inspector.md](../decisions/0011-agent-inspector.md).
 - **Enforcement**: `seamus.harness.inspector.build_agent_inspect_report()`, `AgentInspectReport` schema validation, and unit tests in `tests/test_inspector.py`.
 
+### INV-022: Thread Acceptance and Sync PR Lifecycle
+- **Statement**: When Gitea persistence is enabled, every active session with an open thread must maintain an open Sync PR from `session/{session_id}` to `main`. Thread acceptance must be atomic: closing the active thread, merging the active Sync PR into `main`, creating a new thread on the same session branch, and opening a renewed Sync PR to `main`. The UI must not provide manual controls to create or open arbitrary threads.
+- **Justification**: [REQ-019](./requirements.md#req-019-gitea-sync-prs-and-thread-acceptance-lifecycle), [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md).
+- **Enforcement**: `HarnessStore.accept_thread()`, `GitWorkspaceManager.open_sync_pr()`, `GitWorkspaceManager.merge_sync_pr()`, `POST .../thread/{thread_identifier}/accept`, and UI component removal of manual thread creation in `Sidebar.tsx` and `ChatArea.tsx`.
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [requirements.md](./requirements.md)
@@ -123,3 +128,4 @@ Properties and rules that must always hold across the repository.
 - [0009-ui-markdown-renderer.md](../decisions/0009-ui-markdown-renderer.md)
 - [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md)
 - [0011-agent-inspector.md](../decisions/0011-agent-inspector.md)
+- [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md)

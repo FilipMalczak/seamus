@@ -29,7 +29,6 @@ interface SidebarProps {
   onSelectThread: (agentId: string, sessionId: string, threadId: string) => void;
   onCreateAgent: (name?: string | null) => Promise<any>;
   onCreateSession: (agentId: string, name?: string | null) => Promise<any>;
-  onCreateThread: (agentId: string, sessionId: string, name?: string | null) => Promise<any>;
   onUpdateAgentName: (agentId: string, newName: string | null) => Promise<void>;
   onUpdateSessionName: (agentId: string, sessionId: string, newName: string | null) => Promise<void>;
   onUpdateThreadName: (agentId: string, sessionId: string, threadId: string, newName: string | null) => Promise<void>;
@@ -48,7 +47,6 @@ export function Sidebar({
   onSelectThread,
   onCreateAgent,
   onCreateSession,
-  onCreateThread,
   onUpdateAgentName,
   onUpdateSessionName,
   onUpdateThreadName,
@@ -83,10 +81,6 @@ export function Sidebar({
 
   const handleCreateSession = async (agentId: string) => {
     await onCreateSession(agentId, null);
-  };
-
-  const handleCreateThread = async (agentId: string, sessionId: string) => {
-    await onCreateThread(agentId, sessionId, null);
   };
 
   const startEditing = (key: string, currentName: string | null) => {
@@ -414,16 +408,6 @@ export function Sidebar({
                                   ) : (
                                     <Pencil className="size-3" />
                                   )}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="icon-action-btn"
-                                  onClick={() =>
-                                    handleCreateThread(agent.id, session.id)
-                                  }
-                                  title="New Thread"
-                                >
-                                  <Plus className="size-3.5" />
                                 </button>
                                 <button
                                   type="button"

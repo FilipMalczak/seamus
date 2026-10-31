@@ -34,6 +34,12 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Revisit Trigger**: When users require step-by-step historical regression debugging or auditing past tool configurations across lengthy agent trajectories.
 - **Provenance**: [0011-agent-inspector.md](../decisions/0011-agent-inspector.md).
 
+### Merge Rules on Gitea Sync PRs
+- **Description**: Sync PRs from `session/{session_id}` to `main` are automatically created, approved, and merged upon user acceptance without enforced branch protection rules, required review approvals, or automated CI/CD status check validations.
+- **Why Deferred**: Kept initial Sync PR synchronization and thread acceptance responsive and single-operator-friendly without blocking on multi-user review workflows or external CI runner infrastructure.
+- **Revisit Trigger**: When multi-operator review requirements, automated compliance checks, or CI-based test gating are introduced for agent repository merges.
+- **Provenance**: [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md), [vocabulary.md](./vocabulary.md#sync-pr).
+
 ## Technical debt
 
 ### Hardcoded Logfire Cloud Region and Organization in System Info Route
@@ -78,8 +84,13 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Validates actual HTTP interactions, Gitea API responses, and container volume persistence in CI/CD pipelines.
 - **Provenance**: [0008-git-persistence.md](../decisions/0008-git-persistence.md), [conventions.md](./conventions.md#container-orchestration--launch-conventions).
 
-### Session Branch Merge and Pull Request Workflow
-- **Description**: Agents currently commit state and workspace changes to isolated `session/{session_id}` branches. Add API endpoints and UI controls allowing users to review diffs, open pull requests, and merge/squash completed session work back into the agent `main` branch.
-- **Rationale**: Enables human-in-the-loop approval and consolidation of agent deliverables into the agent baseline repository.
-- **Provenance**: [0008-git-persistence.md](../decisions/0008-git-persistence.md#2-repository--branch-layout), [vocabulary.md](./vocabulary.md#session-branch).
+### Detailed End-to-End Testing of Thread Acceptance and Sync PR Lifecycle
+- **Description**: Perform in-depth end-to-end testing of the thread acceptance lifecycle and Gitea Sync PR merges across complex multi-turn trajectories, concurrent operations, and error states. This testing should take place after prerequisite issues (such as tool call rendering fixes) are resolved.
+- **Rationale**: Ensures the automated Sync PR merge, thread closure, and branch synchronization are robust under realistic usage before full operational release.
+- **Provenance**: [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md).
+
+### Restrict Sync PRs to Only Cover data/ Working Directory
+- **Description**: Scope Sync PRs from `session/{session_id}` to `main` so that they only propagate agent workspace deliverables under `data/`, rather than merging the full session branch tree which includes `agent/config/` and `agent/state/`.
+- **Rationale**: The repository's base branch (`main`) should represent clean, merged project deliverables without session-specific thread checkpoints, events, or session configuration blobs polluting base history.
+- **Provenance**: [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md), [0008-git-persistence.md](../decisions/0008-git-persistence.md).
 

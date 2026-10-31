@@ -149,6 +149,20 @@ export async function updateThread(
   return handleResponse<ThreadInfo>(res);
 }
 
+export async function acceptThread(
+  agentId: string,
+  sessionId: string,
+  threadId: string
+): Promise<ThreadInfo> {
+  const res = await fetch(
+    `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/thread/${encodeURIComponent(threadId)}/accept`,
+    {
+      method: "POST",
+    }
+  );
+  return handleResponse<ThreadInfo>(res);
+}
+
 export async function getThreadStatus(
   agentId: string,
   sessionId: string,

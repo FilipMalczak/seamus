@@ -59,16 +59,16 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `instrument_fastapi`: Hooks Logfire request tracing into FastAPI applications with configurable route exclusion (`excluded_urls`, filtering `/health`).
 
 ### Persistence Subsystem (`src/seamus/persistence/`)
-- `GiteaClient`: REST API client wrapping `httpx` to manage Gitea repositories, branches, and raw file access.
-- `GitWorkspaceManager`: Local Git repository orchestrator handling repository initialization on `main`, session working tree cloning on `session/{session_id}`, whole-directory configuration commits (`config:` prefix on `agent/config/**`), thread state updates (`state:` prefix on `agent/state/**`), and checkpoint commits (`checkpoint:` prefix staging `data/` and `agent/state/**`).
+- `GiteaClient`: REST API client wrapping `httpx` to manage Gitea repositories, branches, raw file access, and Pull Request lifecycle (`create_pull_request`, `get_pull_request`, `list_pull_requests`, `approve_pull_request`, `merge_pull_request`).
+- `GitWorkspaceManager`: Local Git repository orchestrator handling repository initialization on `main`, session working tree cloning on `session/{session_id}`, whole-directory configuration commits (`config:` prefix on `agent/config/**`), thread state updates (`state:` prefix on `agent/state/**`), checkpoint commits (`checkpoint:` prefix staging `data/` and `agent/state/**`), and Sync PR lifecycle management (`open_sync_pr`, `get_active_sync_pr`, `merge_sync_pr`).
 - `GitCheckpointSaver`: Subclass of `MemorySaver` (and wrapping LangGraph `BaseCheckpointSaver`) intercepting `put`, `aput`, and writes to persist graph checkpoint state, human-readable messages, and automatically commit all modified files in `data/` and `agent/state/` to Gitea.
 - `PersistenceSettings`: Runtime configuration specifying Gitea URL, credentials, and local workspace directory.
 
 ### Web UI Presentation Subsystem (`ui/src/`)
 - `MarkdownRenderer`: Reusable Markdown rendering component wrapping `react-markdown` with `remark-gfm`. Provides custom renderers for fenced code blocks (with language label bar and copy-to-clipboard action), tables (with horizontal overflow wrapper), and anchor links (`target="_blank"` with `rel="noopener noreferrer"`). Supports `variant="user" | "assistant"` for bubble contrast.
 - `MessageItem`: Renders individual conversational message bubbles, reasoning/thought process expandable drawers, tool call traces, and embeds `MarkdownRenderer` for message text.
-- `Sidebar`: Navigation sidebar managing hierarchical tree nodes (Agents, Sessions, Threads) with inline renaming, operational status pills, and external system links footer.
-- `ChatArea`: Conversation viewport orchestrating SSE stream binding, message listing, auto-scroll, thread status banners, and composer textarea with auto-focus.
+- `Sidebar`: Navigation sidebar managing hierarchical tree nodes (Agents, Sessions, Threads) with inline renaming, operational status pills, and external system links footer without manual thread creation triggers.
+- `ChatArea`: Conversation viewport orchestrating SSE stream binding, message listing, auto-scroll, thread status banners, top bar "Accept" action button with tick icon, and composer textarea with auto-focus.
 - `AgentInspector`: Tabbed agent inspection console surfacing decomposed system prompts (composite, scaffold, custom) with Markdown rendering and copy action, tool inventory with expandable JSON parameter schemas, inference runtime parameters, message trajectory, and workspace file listing.
 
 ## Design Principles
@@ -88,6 +88,7 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - [0009-ui-markdown-renderer.md](../decisions/0009-ui-markdown-renderer.md)
 - [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md)
 - [0011-agent-inspector.md](../decisions/0011-agent-inspector.md)
+- [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md)
 - [architecture.md](./architecture.md)
 - [backlog.md](./backlog.md)
 - [conventions.md](./conventions.md)
