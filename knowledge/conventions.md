@@ -25,15 +25,17 @@ Project-specific implementation, tooling, and development conventions not fully 
 - Real-time event consumption uses standard SSE, gracefully handling past event replay and live event broadcast.
 
 ## Container Orchestration & Launch Conventions
-- Docker Compose defines `backend` (FastAPI) and `frontend` (Nginx).
+- Docker Compose defines `backend` (FastAPI), `frontend` (Nginx), `gitea` (Git persistence service on port 3001), and `postgres` (intermediate database backing Gitea).
 - `./run.sh` provides 1-click startup and opens UI in the default browser.
-- `./run.sh --restart` (`-r`) rebuilds container images and recreates running containers to apply updates. Restarting must NEVER wipe persistent data volumes. Resetting persistent data is reserved for a future `--reseed` flag.
+- `./run.sh --restart` (`-r`) rebuilds application container images (`backend`, `frontend`) and recreates running application containers to apply code updates while preserving infrastructure containers (`postgres`, `gitea`) and persistent data volumes (`gitea-data`, `postgres-data`, `backend-workspaces`).
+- `./run.sh --clean` (`-c`) stops all services, removes all persistent volumes and data storages, and restarts all services with clean data.
 
 ## Git and Workflow Conventions
 - Feature branches formatted as `NNNN-short-task-description` branched from `master`.
 - Numbering checked against decisions and local/remote branches.
 - Commits require explicit user instruction or authorization in approved plan.
 - All production and `./knowledge/` modifications staged prior to review.
+- In agent repositories, commits are strictly partitioned by prefix: `config:` for agent/session configuration updates on `agent/config/**`, `checkpoint:` for automated checkpoint workspace commits on `data/` and `agent/state/**`, and `state:` for turn-completion thread event updates.
 
 ## Testing Conventions
 - Pytest test files named `test_*.py` located under `tests/`.
@@ -55,5 +57,6 @@ Project-specific implementation, tooling, and development conventions not fully 
 - [0005-logfire-integration.md](../decisions/0005-logfire-integration.md)
 - [0006-external-system-links.md](../decisions/0006-external-system-links.md)
 - [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md)
+- [0008-git-persistence.md](../decisions/0008-git-persistence.md)
 - [abstractions.md](./abstractions.md)
 - [invariants.md](./invariants.md)

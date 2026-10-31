@@ -141,7 +141,15 @@ class SystemLogfireInfo(BaseModel):
     url: str | None = None
 
 
+class SystemGiteaInfo(BaseModel):
+    """Information about Gitea persistence integration."""
+
+    enabled: bool
+    url: str | None = None
+
+
 class SystemInfoResponse(BaseModel):
     """Information about system integrations and external systems."""
 
     logfire: SystemLogfireInfo
+    gitea: SystemGiteaInfo

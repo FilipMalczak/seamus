@@ -10,7 +10,7 @@ import {
   updateSession,
   updateThread,
 } from "../api/client";
-import type { AgentSummary, SessionDetail } from "../api/types";
+import type { AgentConfig, AgentSummary, SessionDetail } from "../api/types";
 
 export type FullAgentNode = AgentSummary & {
   sessionsMap?: Record<string, SessionDetail>;
@@ -181,6 +181,30 @@ export function useAgentsTree() {
     [refreshTree]
   );
 
+  const handleUpdateAgentConfig = useCallback(
+    async (agentId: string, newConfig: AgentConfig) => {
+      const agent = agents.find((a) => a.id === agentId);
+      if (!agent) return;
+      await updateAgent(agentId, { name: agent.name, config: newConfig });
+      await refreshTree();
+    },
+    [agents, refreshTree]
+  );
+
+  const handleUpdateSessionConfig = useCallback(
+    async (agentId: string, sessionId: string, newConfig: AgentConfig) => {
+      const agent = agents.find((a) => a.id === agentId);
+      const session = agent?.sessionsMap?.[sessionId];
+      if (!session) return;
+      await updateSession(agentId, sessionId, {
+        name: session.name,
+        config: newConfig,
+      });
+      await refreshTree();
+    },
+    [agents, refreshTree]
+  );
+
   // Helper getters
   const activeAgent = agents.find((a) => a.id === selectedAgentId);
   const activeSession = activeAgent?.sessionsMap?.[selectedSessionId ?? ""];
@@ -203,6 +227,8 @@ export function useAgentsTree() {
     updateAgentName: handleUpdateAgentName,
     updateSessionName: handleUpdateSessionName,
     updateThreadName: handleUpdateThreadName,
+    updateAgentConfig: handleUpdateAgentConfig,
+    updateSessionConfig: handleUpdateSessionConfig,
     refreshTree,
   };
 }

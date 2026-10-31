@@ -18,12 +18,13 @@ from ag_ui.core.types import RunAgentInput, TextInputContent, UserMessage
 from ag_ui.encoder import EventEncoder
 from ag_ui_langgraph import LangGraphAgent
 from deepagents import create_deep_agent
+from deepagents.backends.filesystem import FilesystemBackend
 from langchain_core.outputs import ChatGenerationChunk, ChatResult
 from langchain_openai import ChatOpenAI
-from langgraph.checkpoint.memory import MemorySaver
 from pydantic import SecretStr
 
 from seamus.domain.entities import Agent, AgentStatus, Session, Thread
+from seamus.persistence import GitCheckpointSaver, get_workspace_manager
 
 logger = logging.getLogger(__name__)
 
@@ -197,9 +198,25 @@ class SessionAgentRunner:
             base_url=base_url,
         )
 
-        checkpointer = MemorySaver()
+        # Prepare Git workspace and isolate agent files under data/
+        ws_mgr = get_workspace_manager()
+        agent_entity = self._resolve_agent_entity()
+        if agent_entity is not None:
+            ws_mgr.create_session_workspace(self.session, agent_entity)
+
+        data_dir = ws_mgr.get_session_data_dir(self.session.agent_id, self.session.id)
+        data_dir.mkdir(parents=True, exist_ok=True)
+        filesystem_backend = FilesystemBackend(root_dir=data_dir, virtual_mode=True)
+
+        checkpointer = GitCheckpointSaver(
+            agent_id=self.session.agent_id,
+            session_id=self.session.id,
+            workspace_manager=ws_mgr,
+        )
+
         graph = create_deep_agent(
             model=llm,
+            backend=filesystem_backend,
             checkpointer=checkpointer,
         )
 
@@ -253,6 +270,14 @@ class SessionAgentRunner:
             await self.broadcaster.broadcast(user_start)
             await self.broadcaster.broadcast(user_content)
             await self.broadcaster.broadcast(user_end)
+
+            try:
+                ws_mgr = get_workspace_manager()
+                ws_mgr.save_thread_events(
+                    self.session.agent_id, self.session.id, thread.id, thread.events
+                )
+            except Exception:
+                logger.exception("Failed to save thread events on user input dispatch")
 
             logfire.info(
                 "Dispatched user input to thread {thread_id} in session {session_id}",
@@ -334,6 +359,21 @@ class SessionAgentRunner:
                             thread.status = AgentStatus.AWAITING_USER
                         thread.touch()
                         self.session.touch()
+                        try:
+                            ws_mgr = get_workspace_manager()
+                            ws_mgr.save_thread_events(
+                                self.session.agent_id, self.session.id, thread.id, thread.events
+                            )
+                            ws_mgr.commit_state_changes(
+                                self.session.agent_id, self.session.id, thread.id
+                            )
+                        except Exception:
+                            logger.exception(
+                                "Failed to commit state changes on turn completion "
+                                "for session %s thread %s",
+                                self.session.id,
+                                thread.id,
+                            )
 
     def _update_status_from_event(self, thread: Thread, event: Any) -> None:
         """Update thread status based on AG-UI event type."""

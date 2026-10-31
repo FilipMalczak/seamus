@@ -2,7 +2,8 @@
 
 from fastapi import APIRouter
 
-from seamus.server.schemas import SystemInfoResponse, SystemLogfireInfo
+from seamus.persistence import get_persistence_settings
+from seamus.server.schemas import SystemGiteaInfo, SystemInfoResponse, SystemLogfireInfo
 from seamus.telemetry import get_logfire_service_name, is_logfire_enabled
 
 router = APIRouter(prefix="/system", tags=["system"])
@@ -11,14 +12,24 @@ router = APIRouter(prefix="/system", tags=["system"])
 @router.get("/info", response_model=SystemInfoResponse)
 async def get_system_info() -> SystemInfoResponse:
     """Return system information including external integrations and telemetry status."""
-    enabled = is_logfire_enabled()
+    logfire_on = is_logfire_enabled()
     service_name = get_logfire_service_name()
-    url = f"https://logfire-eu.pydantic.dev/filip-malczak/{service_name}" if enabled else None
+    logfire_url = (
+        f"https://logfire-eu.pydantic.dev/filip-malczak/{service_name}" if logfire_on else None
+    )
+
+    persist_settings = get_persistence_settings()
+    gitea_on = persist_settings.enabled
+    gitea_url = persist_settings.gitea_external_url if gitea_on else None
 
     return SystemInfoResponse(
         logfire=SystemLogfireInfo(
-            enabled=enabled,
+            enabled=logfire_on,
             service_name=service_name,
-            url=url,
-        )
+            url=logfire_url,
+        ),
+        gitea=SystemGiteaInfo(
+            enabled=gitea_on,
+            url=gitea_url,
+        ),
     )

@@ -43,6 +43,8 @@ export function App() {
     updateAgentName,
     updateSessionName,
     updateThreadName,
+    updateAgentConfig,
+    updateSessionConfig,
     refreshTree,
   } = useAgentsTree();
 
@@ -125,6 +127,8 @@ export function App() {
           onUpdateAgentName={updateAgentName}
           onUpdateSessionName={updateSessionName}
           onUpdateThreadName={updateThreadName}
+          onUpdateAgentConfig={updateAgentConfig}
+          onUpdateSessionConfig={updateSessionConfig}
           onEditConfig={handleEditEntityConfig}
         />
 

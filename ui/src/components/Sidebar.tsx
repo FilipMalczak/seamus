@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronRight,
   Flame,
+  GitBranch,
   Loader2,
   MessageSquare,
   Pencil,
@@ -32,6 +33,8 @@ interface SidebarProps {
   onUpdateAgentName: (agentId: string, newName: string | null) => Promise<void>;
   onUpdateSessionName: (agentId: string, sessionId: string, newName: string | null) => Promise<void>;
   onUpdateThreadName: (agentId: string, sessionId: string, threadId: string, newName: string | null) => Promise<void>;
+  onUpdateAgentConfig?: (agentId: string, config: AgentConfig) => Promise<void>;
+  onUpdateSessionConfig?: (agentId: string, sessionId: string, config: AgentConfig) => Promise<void>;
   onEditConfig: (title: string, config: AgentConfig, onSave: (cfg: AgentConfig) => Promise<void>) => void;
 }
 
@@ -49,6 +52,8 @@ export function Sidebar({
   onUpdateAgentName,
   onUpdateSessionName,
   onUpdateThreadName,
+  onUpdateAgentConfig,
+  onUpdateSessionConfig,
   onEditConfig,
 }: SidebarProps) {
   const [expandedAgents, setExpandedAgents] = useState<Record<string, boolean>>({});
@@ -269,7 +274,11 @@ export function Sidebar({
                         onEditConfig(
                           `Agent Config (${agentDisplay})`,
                           agent.config,
-                          async () => {}
+                          async (updated) => {
+                            if (onUpdateAgentConfig) {
+                              await onUpdateAgentConfig(agent.id, updated);
+                            }
+                          }
                         )
                       }
                       title="View / Edit Agent Config"
@@ -392,6 +401,25 @@ export function Sidebar({
                                   title="New Thread"
                                 >
                                   <Plus className="size-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="icon-action-btn"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onEditConfig(
+                                      `Session Config (${sessionDisplay})`,
+                                      session.config,
+                                      async (updated) => {
+                                        if (onUpdateSessionConfig) {
+                                          await onUpdateSessionConfig(agent.id, session.id, updated);
+                                        }
+                                      }
+                                    );
+                                  }}
+                                  title="View / Edit Session Config"
+                                >
+                                  <Settings className="size-3.5" />
                                 </button>
                               </div>
                             </div>
@@ -528,19 +556,33 @@ export function Sidebar({
         )}
       </div>
 
-      {systemInfo?.logfire?.enabled && (
+      {(systemInfo?.logfire?.enabled || systemInfo?.gitea?.enabled) && (
         <div className="sidebar-footer">
           <div className="system-links-row">
-            <a
-              href={`https://logfire-eu.pydantic.dev/filip-malczak/${systemInfo.logfire.service_name || "seamus"}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="system-link-icon system-link-logfire"
-              title={`Open Logfire Dashboard (${systemInfo.logfire.service_name || "seamus"})`}
-              aria-label="Open Logfire Dashboard"
-            >
-              <Flame size={18} />
-            </a>
+            {systemInfo?.logfire?.enabled && (
+              <a
+                href={`https://logfire-eu.pydantic.dev/filip-malczak/${systemInfo.logfire.service_name || "seamus"}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="system-link-icon system-link-logfire"
+                title={`Open Logfire Dashboard (${systemInfo.logfire.service_name || "seamus"})`}
+                aria-label="Open Logfire Dashboard"
+              >
+                <Flame size={18} />
+              </a>
+            )}
+            {systemInfo?.gitea?.enabled && systemInfo.gitea.url && (
+              <a
+                href={systemInfo.gitea.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="system-link-icon system-link-gitea"
+                title={`Open Gitea (${systemInfo.gitea.url})`}
+                aria-label="Open Gitea"
+              >
+                <GitBranch size={18} />
+              </a>
+            )}
           </div>
         </div>
       )}

@@ -48,7 +48,19 @@ OpenTelemetry-compatible observability constructs powered by Pydantic Logfire:
 - **Scrubbing**: Automatic redaction of sensitive credentials and tokens; configured in Seamus to whitelist domain `session` attributes while redacting secrets.
 
 ### External System Links & Navigation Footer
-Pinned shortcut interface located at the bottom of the navigation tree left panel. Houses quick-launch icons linking to external companion platforms (such as the Logfire telemetry project dashboard), conditionally displayed based on integration availability.
+Pinned shortcut interface located at the bottom of the navigation tree left panel. Houses quick-launch icons linking to external companion platforms (such as the Logfire telemetry project dashboard and Gitea), conditionally displayed based on integration availability.
+
+### Agent Repository
+A dedicated Git repository in Gitea (`agent-{agent_id}`) tracking all versioned state for an Agent. Its `main` branch stores the base configuration (`agent/config/config.json`), a state placeholder (`agent/state/.gitkeep`), and an empty workspace baseline (`data/.gitkeep`).
+
+### Session Branch
+An isolated Git branch (`session/{session_id}`) created from `main` holding the session-specific configuration in `agent/config/config.json`, thread conversation and checkpoint state in `agent/state/threads/{thread_id}/`, and agent-generated workspace files in `data/`.
+
+### Checkpoint Commit
+An automated Git commit generated whenever a LangGraph checkpointer saves state, committing all new, modified, or deleted files under `data/` and `agent/state/` with the commit message prefix `checkpoint:`. Turn-completion event updates commit with the prefix `state:`.
+
+### Store Hydration
+The startup process wherein `HarnessStore` discovers repositories and branches on Gitea to reconstruct in-memory domain entities (`Agent`, `Session`, `Thread`) without needing a direct SQL database in the harness backend.
 
 ## Cross-References
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
@@ -58,5 +70,6 @@ Pinned shortcut interface located at the bottom of the navigation tree left pane
 - [0005-logfire-integration.md](../decisions/0005-logfire-integration.md)
 - [0006-external-system-links.md](../decisions/0006-external-system-links.md)
 - [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md)
+- [0008-git-persistence.md](../decisions/0008-git-persistence.md)
 - [architecture.md](./architecture.md)
 - [abstractions.md](./abstractions.md)

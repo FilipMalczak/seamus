@@ -1,0 +1,208 @@
+"""Integration tests for GitWorkspaceManager with local Git repositories."""
+
+import json
+import subprocess
+from pathlib import Path
+from unittest.mock import MagicMock
+
+import pytest
+
+from seamus.config.models import AgentConfig, InferenceConfig, InferenceFormat
+from seamus.domain.entities import Agent, Session
+from seamus.persistence.config import PersistenceSettings
+from seamus.persistence.workspace import GitWorkspaceManager
+
+
+@pytest.fixture
+def test_config() -> AgentConfig:
+    return AgentConfig(
+        inference=InferenceConfig(
+            format=InferenceFormat.OPENAI,
+            base_url="https://openrouter.ai/api/v1",
+            api_key="sk-test-key",
+        ),
+        model_name="openai/gpt-oss-120b",
+    )
+
+
+@pytest.fixture
+def git_environment(tmp_path: Path) -> tuple[GitWorkspaceManager, Path, Path]:
+    bare_remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "--bare", str(bare_remote)], check=True, capture_output=True)
+
+    workspace_dir = tmp_path / "workspaces"
+    settings = PersistenceSettings(
+        workspace_dir=workspace_dir,
+        enabled=True,
+    )
+
+    mock_client = MagicMock()
+    mock_client.get_or_create_repo.return_value = {"name": "test-repo"}
+    mock_client.get_authenticated_clone_url.return_value = str(bare_remote)
+    mock_client.list_branches.return_value = ["main"]
+
+    manager = GitWorkspaceManager(settings=settings, client=mock_client)
+    return manager, bare_remote, workspace_dir
+
+
+def test_initialize_agent_repo(
+    git_environment: tuple[GitWorkspaceManager, Path, Path], test_config: AgentConfig
+) -> None:
+    manager, bare_remote, workspace_dir = git_environment
+    agent = Agent(name="test-agent", config=test_config)
+
+    agent_dir = manager.initialize_agent_repo(agent)
+    assert (agent_dir / ".git").exists()
+    assert (agent_dir / "agent" / "config" / "config.json").exists()
+    assert (agent_dir / "agent" / "state" / ".gitkeep").exists()
+    assert (agent_dir / "data" / ".gitkeep").exists()
+
+    config_data = json.loads((agent_dir / "agent" / "config" / "config.json").read_text())
+    assert config_data["id"] == str(agent.id)
+    assert config_data["name"] == "test-agent"
+    assert config_data["config"]["model_name"] == "openai/gpt-oss-120b"
+
+    # Verify commit log
+    log = subprocess.run(
+        ["git", "log", "-1", "--pretty=%s"],
+        cwd=agent_dir,
+        check=True,
+        text=True,
+        capture_output=True,
+    ).stdout.strip()
+    assert f"config: initialize agent [agent={agent.id}]" == log
+
+
+def test_session_workspace_and_checkpoint_commits(
+    git_environment: tuple[GitWorkspaceManager, Path, Path], test_config: AgentConfig
+) -> None:
+    manager, bare_remote, workspace_dir = git_environment
+    agent = Agent(name="test-agent", config=test_config)
+    manager.initialize_agent_repo(agent)
+
+    session = Session(agent_id=agent.id, name="test-session", config=test_config)
+    thread = session.create_thread(name="test-thread")
+
+    session_dir = manager.create_session_workspace(session, agent)
+    assert (session_dir / ".git").exists()
+    assert (session_dir / "data").exists()
+    assert (session_dir / "agent" / "config" / "config.json").exists()
+
+    # Verify session branch
+    current_branch = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=session_dir,
+        check=True,
+        text=True,
+        capture_output=True,
+    ).stdout.strip()
+    assert current_branch == f"session/{session.id}"
+
+    # Verify initial clean status
+    committed = manager.commit_checkpoint_changes(agent.id, session.id, thread.id, "cp-0")
+    assert committed is False
+
+    # Create workspace files in data/
+    test_file = session_dir / "data" / "output.txt"
+    test_file.write_text("Hello agent world!", encoding="utf-8")
+
+    # Commit checkpoint changes
+    committed = manager.commit_checkpoint_changes(agent.id, session.id, thread.id, "cp-1")
+    assert committed is True
+
+    # Verify commit message
+    log = subprocess.run(
+        ["git", "log", "-1", "--pretty=%s"],
+        cwd=session_dir,
+        check=True,
+        text=True,
+        capture_output=True,
+    ).stdout.strip()
+    expected_msg = f"checkpoint: [session={session.id} thread={thread.id} checkpoint=cp-1]"
+    assert log == expected_msg
+
+    # Second commit with no new changes should return False
+    assert manager.commit_checkpoint_changes(agent.id, session.id, thread.id, "cp-2") is False
+
+
+def test_commit_agent_and_session_config(
+    git_environment: tuple[GitWorkspaceManager, Path, Path], test_config: AgentConfig
+) -> None:
+    manager, bare_remote, workspace_dir = git_environment
+    agent = Agent(name="test-agent", config=test_config)
+    manager.initialize_agent_repo(agent)
+
+    # Update agent name and commit config
+    agent.name = "renamed-agent"
+    manager.commit_agent_config(agent)
+
+    agent_dir = manager.get_agent_workspace_path(agent.id)
+    log = subprocess.run(
+        ["git", "log", "-1", "--pretty=%s"],
+        cwd=agent_dir,
+        check=True,
+        text=True,
+        capture_output=True,
+    ).stdout.strip()
+    assert f"config: update agent config [agent={agent.id}]" == log
+
+    # Update session config
+    session = Session(agent_id=agent.id, name="test-session", config=test_config)
+    manager.create_session_workspace(session, agent)
+
+    session.name = "renamed-session"
+    manager.commit_session_config(session)
+
+    session_dir = manager.get_session_workspace_path(agent.id, session.id)
+    session_log = subprocess.run(
+        ["git", "log", "-1", "--pretty=%s"],
+        cwd=session_dir,
+        check=True,
+        text=True,
+        capture_output=True,
+    ).stdout.strip()
+    assert f"config: update session config [session={session.id}]" == session_log
+
+
+def test_save_and_load_thread_state_and_events(
+    git_environment: tuple[GitWorkspaceManager, Path, Path], test_config: AgentConfig
+) -> None:
+    manager, bare_remote, workspace_dir = git_environment
+    agent = Agent(name="test-agent", config=test_config)
+    manager.initialize_agent_repo(agent)
+
+    session = Session(agent_id=agent.id, name="test-session", config=test_config)
+    thread = session.create_thread(name="test-thread")
+    manager.create_session_workspace(session, agent)
+
+    # Save thread events
+    sample_events = [
+        {"type": "TEXT_MESSAGE_START", "messageId": "m1", "role": "user"},
+        {"type": "TEXT_MESSAGE_CONTENT", "messageId": "m1", "delta": "hello"},
+        {"type": "TEXT_MESSAGE_END", "messageId": "m1"},
+    ]
+    saved_path = manager.save_thread_events(agent.id, session.id, thread.id, sample_events)
+    assert saved_path.exists()
+
+    loaded_events = manager.load_thread_events(agent.id, session.id, thread.id)
+    assert len(loaded_events) == 3
+
+    # Save checkpoints and messages
+    cp_data = {"storage": {"t1": {}}, "writes": [], "blobs": []}
+    cp_path = manager.save_thread_checkpoints(agent.id, session.id, thread.id, cp_data)
+    assert cp_path.exists()
+    assert manager.load_thread_checkpoints(agent.id, session.id, thread.id) == cp_data
+
+    # Commit state changes
+    committed = manager.commit_state_changes(agent.id, session.id, thread.id)
+    assert committed is True
+
+    session_dir = manager.get_session_workspace_path(agent.id, session.id)
+    log = subprocess.run(
+        ["git", "log", "-1", "--pretty=%s"],
+        cwd=session_dir,
+        check=True,
+        text=True,
+        capture_output=True,
+    ).stdout.strip()
+    assert log == f"state: update thread events [session={session.id} thread={thread.id}]"

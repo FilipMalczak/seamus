@@ -84,6 +84,16 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-014](./requirements.md#req-014-ag-ui-reasoning-exposure--multi-turn-trace-message-alignment), [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md).
 - **Enforcement**: `ReasoningChatOpenAI` and `SeamusLangGraphAgent` in `seamus.harness.runner`, `useThreadStream.ts`, `MessageItem.tsx`, and unit/telemetry test suites.
 
+### INV-017: Git-Tracked Agent Workspace & Config Boundary
+- **Statement**: The agent's filesystem operations must be strictly constrained to `<session_workspace>/data/` via `FilesystemBackend(virtual_mode=True)`. Agents must never have filesystem access or visibility to `agent/` or `.git/`.
+- **Justification**: [REQ-015](./requirements.md#req-015-gitea-backed-versioned-agent-persistence--workspace-isolation), [0008-git-persistence.md](../decisions/0008-git-persistence.md).
+- **Enforcement**: `SessionAgentRunner._build_deep_agent()` sets `root_dir = data_dir` on `FilesystemBackend`.
+
+### INV-018: Atomic Checkpoint Data & State Persistence & Commit Delineation
+- **Statement**: LangGraph checkpoints must automatically serialize state and trigger Git commits of all modified files in `data/` and `agent/state/` with commit messages prefixed with `checkpoint:`, while thread event updates commit with `state:`, and configuration changes commit the whole `agent/config/**` directory with commit messages prefixed with `config:`. Commits must be immediately pushed to the Gitea remote on the session branch or main branch.
+- **Justification**: [REQ-015](./requirements.md#req-015-gitea-backed-versioned-agent-persistence--workspace-isolation), [0008-git-persistence.md](../decisions/0008-git-persistence.md).
+- **Enforcement**: `GitCheckpointSaver.put()`, `aput()`, and writes hooks in `seamus.persistence`, and `HarnessStore` mutation calls to `GitWorkspaceManager`.
+
 ## Cross-References
 - [requirements.md](./requirements.md)
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
@@ -93,3 +103,4 @@ Properties and rules that must always hold across the repository.
 - [0005-logfire-integration.md](../decisions/0005-logfire-integration.md)
 - [0006-external-system-links.md](../decisions/0006-external-system-links.md)
 - [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md)
+- [0008-git-persistence.md](../decisions/0008-git-persistence.md)
