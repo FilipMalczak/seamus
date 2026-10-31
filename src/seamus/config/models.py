@@ -35,6 +35,7 @@ class AgentConfig(BaseModel):
 
     inference: InferenceConfig = Field(default_factory=InferenceConfig)
     model_name: str = "openai/gpt-oss-120b"
+    system_prompt: str | None = None
 
     def is_complete(self) -> bool:
         """Return True if this configuration is complete enough to initialize an agent."""

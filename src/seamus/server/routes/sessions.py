@@ -1,10 +1,12 @@
 """Routes for session lifecycle and user input dispatch."""
 
+import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 
 from seamus.domain.resolution import EntityNotFoundError, resolve_session
+from seamus.harness.inspector import AgentInspectReport, build_agent_inspect_report
 from seamus.harness.runner import SessionBusyError, get_runner_registry
 from seamus.harness.store import SlugConflictError, get_harness_store
 from seamus.server.schemas import (
@@ -16,6 +18,7 @@ from seamus.server.schemas import (
 )
 
 router = APIRouter(prefix="/agent/{agent_identifier}/session", tags=["sessions"])
+logger = logging.getLogger(__name__)
 
 
 def _to_session_detail(session: Any) -> SessionDetailResponse:
@@ -145,3 +148,29 @@ async def post_user_input(
         "session_id": str(session.id),
         "message_id": user_msg_id,
     }
+
+
+@router.get(
+    "/{session_identifier}/inspect",
+    response_model=AgentInspectReport,
+)
+async def inspect_session_agent(
+    agent_identifier: str,
+    session_identifier: str,
+    thread_id: str | None = Query(None, description="Optional thread identifier to inspect"),
+) -> AgentInspectReport:
+    """Return an agent inspection report reflecting state as of the latest inference run."""
+    try:
+        return build_agent_inspect_report(
+            agent_identifier=agent_identifier,
+            session_identifier=session_identifier,
+            thread_identifier=thread_id,
+        )
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Failed to build agent inspect report")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate inspect report: {exc}",
+        ) from exc

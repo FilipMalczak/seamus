@@ -109,6 +109,12 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md).
 - **Linked Invariants**: [INV-017](./invariants.md#inv-017-git-tracked-agent-workspace--config-boundary), [INV-020](./invariants.md#inv-020-runtime-managed-opensandbox-authentication).
 
+### REQ-018: DeepAgent Inspection Console & Branch State Provenance
+- **Description**: The harness must provide an agent inspection endpoint (`/api/v-alpha/agent/{agent}/session/{session}/inspect`) and UI tab (`[Inspector]`) surfacing the agent state as of its latest inference run. The inspector report must decompose system prompts (composite, sandbox scaffolding, and custom additions), list registered tools with their input JSON argument schemas and execution backends, display model and inference parameters with credentials redacted, surface Gitea branch and commit SHA provenance, and list message trajectory turns and workspace files.
+- **Rationale**: Developers require immediate visibility into how a DeepAgent is configured and acting on a specific Git branch to verify instructions and tool schemas without digging through raw Git JSON blobs.
+- **Provenance**: [0011-agent-inspector.md](../decisions/0011-agent-inspector.md).
+- **Linked Invariants**: [INV-021](./invariants.md#inv-021-agent-inspection-and-credential-redaction).
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [invariants.md](./invariants.md)
@@ -122,3 +128,4 @@ Requirements, rationale, provenance, and stable IDs.
 - [0008-git-persistence.md](../decisions/0008-git-persistence.md)
 - [0009-ui-markdown-renderer.md](../decisions/0009-ui-markdown-renderer.md)
 - [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md)
+- [0011-agent-inspector.md](../decisions/0011-agent-inspector.md)

@@ -1,6 +1,7 @@
 import type {
   AgentConfig,
   AgentDetail,
+  AgentInspectReport,
   AgentSummary,
   AgentStatus,
   ConfigTemplateResponse,
@@ -242,5 +243,21 @@ export function subscribeToThreadStream(
   return () => {
     controller.abort();
   };
+}
+
+export async function getAgentInspection(
+  agentId: string,
+  sessionId: string,
+  threadId?: string | null
+): Promise<AgentInspectReport> {
+  const url = new URL(
+    `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/inspect`,
+    window.location.origin
+  );
+  if (threadId) {
+    url.searchParams.set("thread_id", threadId);
+  }
+  const res = await fetch(url.toString());
+  return handleResponse<AgentInspectReport>(res);
 }
 

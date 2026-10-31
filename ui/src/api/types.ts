@@ -7,6 +7,7 @@ export type InferenceConfig = {
 export type AgentConfig = {
   inference: InferenceConfig;
   model_name: string;
+  system_prompt?: string | null;
 };
 
 export type ConfigTemplateResponse = {
@@ -93,6 +94,79 @@ export interface SystemGiteaInfo {
 export interface SystemInfoResponse {
   logfire: SystemLogfireInfo;
   gitea: SystemGiteaInfo;
+}
+
+export interface ToolInspectInfo {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  backend: string;
+}
+
+export interface SubAgentInspectInfo {
+  name: string;
+  description: string;
+  subagent_type?: string | null;
+  model?: string | null;
+}
+
+export interface GitInspectInfo {
+  branch: string;
+  commit_sha: string | null;
+  commit_message: string | null;
+  commit_time: string | null;
+  repo_name: string;
+  gitea_url: string | null;
+}
+
+export interface InferenceInspectInfo {
+  model_name: string;
+  format: string;
+  base_url: string;
+  api_key_configured: boolean;
+}
+
+export interface PromptInspectInfo {
+  composite: string;
+  scaffold: string;
+  custom: string;
+}
+
+export interface MessageHistoryItem {
+  id: string | null;
+  role: string;
+  content: string | null;
+  reasoning?: string | null;
+  tool_calls?: Array<Record<string, unknown>> | null;
+  tool_call_id?: string | null;
+}
+
+export interface HistoryInspectInfo {
+  message_count: number;
+  checkpoint_step: number;
+  messages: MessageHistoryItem[];
+}
+
+export interface WorkspaceInspectInfo {
+  operational_dir: string;
+  files: string[];
+}
+
+export interface AgentInspectReport {
+  agent_id: string;
+  agent_name: string | null;
+  session_id: string;
+  session_name: string | null;
+  thread_id: string;
+  thread_name: string | null;
+  status: AgentStatus;
+  git: GitInspectInfo;
+  inference: InferenceInspectInfo;
+  prompts: PromptInspectInfo;
+  tools: ToolInspectInfo[];
+  subagents: SubAgentInspectInfo[];
+  history: HistoryInspectInfo;
+  workspace: WorkspaceInspectInfo;
 }
 
 

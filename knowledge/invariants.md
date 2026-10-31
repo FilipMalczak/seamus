@@ -104,6 +104,11 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-017](./requirements.md#req-017-containerized-opensandbox-execution--operational-directory-mount), [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md).
 - **Enforcement**: `seamus.harness.sandbox.get_or_create_sandbox_api_key()`, `opensandbox/entrypoint.sh`, `.env.template`, and unit tests in `tests/test_sandbox.py`.
 
+### INV-021: Agent Inspection & Credential Redaction Invariant
+- **Statement**: The agent inspector report must never expose raw API keys or secrets (API keys are reported solely as a boolean `api_key_configured` flag). System prompts must be decomposed into composite, scaffold, and custom layers, and all tools must expose their JSON parameter schemas and target backend.
+- **Justification**: [REQ-018](./requirements.md#req-018-deepagent-inspection-console--branch-state-provenance), [0011-agent-inspector.md](../decisions/0011-agent-inspector.md).
+- **Enforcement**: `seamus.harness.inspector.build_agent_inspect_report()`, `AgentInspectReport` schema validation, and unit tests in `tests/test_inspector.py`.
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [requirements.md](./requirements.md)
@@ -117,3 +122,4 @@ Properties and rules that must always hold across the repository.
 - [0008-git-persistence.md](../decisions/0008-git-persistence.md)
 - [0009-ui-markdown-renderer.md](../decisions/0009-ui-markdown-renderer.md)
 - [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md)
+- [0011-agent-inspector.md](../decisions/0011-agent-inspector.md)

@@ -28,6 +28,12 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Revisit Trigger**: Revisit during future sidebar UI/UX design reviews if users report ambiguity with the current branch buttons.
 - **Provenance**: [0008-git-persistence.md](../decisions/0008-git-persistence.md#6-web-ui-session-configuration-editing--external-gitea-links-ui).
 
+### Historical Time-Travel in Agent Inspector
+- **Description**: The Agent Inspector provides semi-live inspection reflecting the agent state as of the latest inference run. Historical time-travel inspection (inspecting the agent's prompts, tool schemas, and checkpoint state at an arbitrary past point in time or specific historical commit/checkpoint) was postponed.
+- **Why Deferred**: Inspecting the latest inference state provides immediate observability for debugging current agent behavior. Historical time-travel is a low-priority nicety rather than an essential power feature for the initial inspector release.
+- **Revisit Trigger**: When users require step-by-step historical regression debugging or auditing past tool configurations across lengthy agent trajectories.
+- **Provenance**: [0011-agent-inspector.md](../decisions/0011-agent-inspector.md).
+
 ## Technical debt
 
 ### Hardcoded Logfire Cloud Region and Organization in System Info Route

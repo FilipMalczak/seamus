@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { Eye, MessageSquare } from "lucide-react";
 import { getConfigTemplate, getSystemInfo, updateConfigTemplate } from "./api/client";
 import type { AgentConfig, AgentStatus, SystemInfoResponse } from "./api/types";
+import { AgentInspector } from "./components/AgentInspector";
 import { ChatArea } from "./components/ChatArea";
 import { ConfigModal } from "./components/ConfigModal";
 import { Header } from "./components/Header";
@@ -12,6 +14,7 @@ export function App() {
   const [configTemplate, setConfigTemplate] = useState<AgentConfig | null>(null);
   const [activeStatus, setActiveStatus] = useState<AgentStatus>("AWAITING_USER");
   const [systemInfo, setSystemInfo] = useState<SystemInfoResponse | null>(null);
+  const [activeMainTab, setActiveMainTab] = useState<"chat" | "inspector">("chat");
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -132,19 +135,62 @@ export function App() {
           onEditConfig={handleEditEntityConfig}
         />
 
-        <ChatArea
-          agentId={selectedAgentId}
-          agentName={activeAgent?.name || null}
-          sessionId={selectedSessionId}
-          sessionName={activeSession?.name || null}
-          thread={activeThread || null}
-          onStatusChange={setActiveStatus}
-          onNewThread={() => {
-            if (selectedAgentId && selectedSessionId) {
-              createThread(selectedAgentId, selectedSessionId, null);
-            }
-          }}
-        />
+        <div className="main-panel">
+          <div className="main-panel-tabs">
+            <button
+              type="button"
+              className={`main-tab ${activeMainTab === "chat" ? "active" : ""}`}
+              onClick={() => setActiveMainTab("chat")}
+            >
+              <MessageSquare className="size-4" />
+              <span>Chat</span>
+            </button>
+            <button
+              type="button"
+              className={`main-tab ${activeMainTab === "inspector" ? "active" : ""}`}
+              onClick={() => setActiveMainTab("inspector")}
+            >
+              <Eye className="size-4" />
+              <span>Inspector</span>
+              {selectedSessionId && <span className="main-tab-badge">Semi-Live</span>}
+            </button>
+          </div>
+
+          <div className="main-panel-content">
+            <div
+              style={{
+                display: activeMainTab === "chat" ? "flex" : "none",
+                height: "100%",
+                width: "100%",
+                flexDirection: "column",
+              }}
+            >
+              <ChatArea
+                agentId={selectedAgentId}
+                agentName={activeAgent?.name || null}
+                sessionId={selectedSessionId}
+                sessionName={activeSession?.name || null}
+                thread={activeThread || null}
+                onStatusChange={setActiveStatus}
+                onNewThread={() => {
+                  if (selectedAgentId && selectedSessionId) {
+                    createThread(selectedAgentId, selectedSessionId, null);
+                  }
+                }}
+              />
+            </div>
+
+            {activeMainTab === "inspector" && (
+              <AgentInspector
+                agentId={selectedAgentId}
+                sessionId={selectedSessionId}
+                threadId={selectedThreadId}
+                agentName={activeAgent?.name || null}
+                sessionName={activeSession?.name || null}
+              />
+            )}
+          </div>
+        </div>
       </div>
 
       <ConfigModal
