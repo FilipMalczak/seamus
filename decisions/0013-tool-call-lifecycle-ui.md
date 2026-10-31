@@ -32,7 +32,12 @@ Investigation of the end-to-end event stream revealed:
 3. **Backend Status Transition Alignment (`seamus.harness.runner`)**:
    - Keep thread status in `AgentStatus.EXECUTING_TOOL` on `TOOL_CALL_END`, transitioning to `AgentStatus.AWAITING_LLM` only on `TOOL_CALL_RESULT` or assistant text events.
 
-4. **UI Presentation & Badge Indicators (`ui/src/components/ToolCallItem.tsx`, `ui/src/App.css`)**:
+4. **Interweaved Chronological Message Flow & Auto-Collapse**:
+   - Model assistant message streams as a chronological sequence of `MessagePart` blocks (`"reasoning"`, `"tool_call"`, and `"text"`), rendering thinking, tool executions, and text responses interweaved in their actual temporal sequence.
+   - **Auto-Collapse for Completed Tools**: Tools in `pending` and `wip` states render expanded to expose live execution progress; once tool execution completes (`done` or `error`), tool cards auto-collapse into compact title bars, preserving manual expansion controls.
+   - **Auto-Collapse for Finished Thinking**: While reasoning is streaming, the thinking drawer is expanded with live output and an animated indicator; as soon as reasoning concludes or a subsequent block (tool call or text) begins emitting, the thinking drawer auto-collapses into a compact `"Thought process"` drawer.
+
+5. **UI Presentation & Badge Indicators (`ui/src/components/ToolCallItem.tsx`, `ui/src/App.css`)**:
    - Render distinct visual badges and indicators:
      - `Pending`: Amber badge with clock icon indicating arguments being prepared.
      - `WIP`: Cyan badge with spinning loader indicating active sandbox execution.
@@ -42,6 +47,8 @@ Investigation of the end-to-end event stream revealed:
 
 ## Consequences
 
+- Thought process blocks, tool calls, and text responses render interweaved in their exact chronological order within each turn.
+- Tool cards automatically collapse upon completion, and reasoning blocks automatically collapse once streaming finishes or subsequent content begins emitting.
 - Tool calls visibly progress through clear lifecycle phases (**Pending** -> **WIP** -> **Done**).
 - Tool names, input arguments, and execution outputs render reliably during live streaming and upon reconnect / replay.
 - Thread status remains in `EXECUTING_TOOL` throughout the entire duration of tool execution.

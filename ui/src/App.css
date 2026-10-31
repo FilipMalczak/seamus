@@ -1270,6 +1270,13 @@ body {
   font-style: italic;
 }
 
+.message-parts-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  width: 100%;
+}
+
 /* Tool Calls */
 .tool-calls-container {
   display: flex;

@@ -1,12 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getThreadStatus, postUserInput, subscribeToThreadStream } from "../api/client";
-import type { AgentStatus, ChatMessage, ToolCallRecord } from "../api/types";
+import type { AgentStatus, ChatMessage, MessagePart, ToolCallRecord } from "../api/types";
 
 function findLastIndex<T>(arr: T[], predicate: (val: T) => boolean): number {
   for (let i = arr.length - 1; i >= 0; i--) {
     if (predicate(arr[i])) return i;
   }
   return -1;
+}
+
+function stopStreamingReasoningParts(parts?: MessagePart[]): MessagePart[] {
+  if (!parts || parts.length === 0) return [];
+  let changed = false;
+  const updated = parts.map((p) => {
+    if (p.type === "reasoning" && p.isStreaming) {
+      changed = true;
+      return { ...p, isStreaming: false };
+    }
+    return p;
+  });
+  return changed ? updated : parts;
 }
 
 export function useThreadStream(
@@ -69,6 +82,19 @@ export function useThreadStream(
           const callName = event.tool_call_name || event.toolCallName || "tool";
 
           setMessages((prev) => {
+            const newCall: ToolCallRecord = {
+              id: callId,
+              name: callName,
+              status: "pending",
+              rawArgs: "",
+              args: {},
+            };
+            const toolPart: MessagePart = {
+              type: "tool_call",
+              id: callId,
+              toolCall: newCall,
+            };
+
             const msgIdx = findLastIndex(prev, (m) =>
               Boolean(m.toolCalls?.some((c) => c.id === callId))
             );
@@ -84,33 +110,49 @@ export function useThreadStream(
                     }
                   : c
               );
+              const updatedParts = (target.parts || []).map((p) =>
+                p.type === "tool_call" && p.toolCall.id === callId
+                  ? {
+                      ...p,
+                      toolCall: {
+                        ...p.toolCall,
+                        name: callName || p.toolCall.name,
+                        status: "pending" as const,
+                      },
+                    }
+                  : p
+              );
               const copy = [...prev];
-              copy[msgIdx] = { ...target, toolCalls: updatedCalls };
+              copy[msgIdx] = {
+                ...target,
+                toolCalls: updatedCalls,
+                parts: updatedParts,
+              };
               return copy;
             }
 
             const last = prev[prev.length - 1];
-            const newCall: ToolCallRecord = {
-              id: callId,
-              name: callName,
-              status: "pending",
-              rawArgs: "",
-              args: {},
-            };
-
             if (last && last.role === "assistant") {
+              // Auto-collapse any active reasoning bubble because a new tool bubble started emitting!
+              const stoppedParts = stopStreamingReasoningParts(last.parts);
               return [
                 ...prev.slice(0, -1),
-                { ...last, toolCalls: [...(last.toolCalls || []), newCall] },
+                {
+                  ...last,
+                  isReasoning: false,
+                  toolCalls: [...(last.toolCalls || []), newCall],
+                  parts: [...stoppedParts, toolPart],
+                },
               ];
             } else {
               return [
                 ...prev,
                 {
-                  id: `msg-${Date.now()}`,
+                  id: `asst-${Date.now()}`,
                   role: "assistant",
                   text: "",
                   toolCalls: [newCall],
+                  parts: [toolPart],
                   timestamp: new Date().toISOString(),
                 },
               ];
@@ -141,7 +183,9 @@ export function useThreadStream(
             const existingCalls = target.toolCalls || [];
             const callIdx = existingCalls.findIndex((c) => c.id === callId);
 
+            let updatedCall: ToolCallRecord;
             let updatedCalls: ToolCallRecord[];
+
             if (callIdx >= 0) {
               const existing = existingCalls[callIdx];
               const accumulatedRaw = (existing.rawArgs || "") + delta;
@@ -159,8 +203,7 @@ export function useThreadStream(
                 }
               }
 
-              updatedCalls = [...existingCalls];
-              updatedCalls[callIdx] = {
+              updatedCall = {
                 ...existing,
                 name: callName || existing.name,
                 rawArgs: accumulatedRaw,
@@ -170,6 +213,8 @@ export function useThreadStream(
                     ? existing.status
                     : "pending",
               };
+              updatedCalls = [...existingCalls];
+              updatedCalls[callIdx] = updatedCall;
             } else {
               let parsed: any = explicitArgs || {};
               if (delta) {
@@ -179,20 +224,42 @@ export function useThreadStream(
                   // Partial JSON
                 }
               }
-              updatedCalls = [
-                ...existingCalls,
-                {
-                  id: callId,
-                  name: callName || "tool",
-                  rawArgs: delta,
-                  args: parsed,
-                  status: "pending",
-                },
+              updatedCall = {
+                id: callId,
+                name: callName || "tool",
+                rawArgs: delta,
+                args: parsed,
+                status: "pending",
+              };
+              updatedCalls = [...existingCalls, updatedCall];
+            }
+
+            // Sync into chronological parts
+            const currentParts = target.parts || [];
+            const partIdx = currentParts.findIndex(
+              (p) => p.type === "tool_call" && p.toolCall.id === callId
+            );
+            let updatedParts: MessagePart[];
+            if (partIdx >= 0) {
+              updatedParts = [...currentParts];
+              updatedParts[partIdx] = {
+                type: "tool_call",
+                id: callId,
+                toolCall: updatedCall,
+              };
+            } else {
+              updatedParts = [
+                ...currentParts,
+                { type: "tool_call", id: callId, toolCall: updatedCall },
               ];
             }
 
             const copy = [...prev];
-            copy[msgIdx] = { ...target, toolCalls: updatedCalls };
+            copy[msgIdx] = {
+              ...target,
+              toolCalls: updatedCalls,
+              parts: updatedParts,
+            };
             return copy;
           });
         } else if (type === "TOOL_CALL_END") {
@@ -223,8 +290,27 @@ export function useThreadStream(
               };
             });
 
+            const updatedParts = (target.parts || []).map((p) => {
+              if (p.type !== "tool_call") return p;
+              if (callId && p.toolCall.id !== callId) return p;
+              const matched = updatedCalls.find((c) => c.id === p.toolCall.id);
+              return matched
+                ? { ...p, toolCall: matched }
+                : {
+                    ...p,
+                    toolCall: {
+                      ...p.toolCall,
+                      status: p.toolCall.status === "done" ? ("done" as const) : ("wip" as const),
+                    },
+                  };
+            });
+
             const copy = [...prev];
-            copy[msgIdx] = { ...target, toolCalls: updatedCalls };
+            copy[msgIdx] = {
+              ...target,
+              toolCalls: updatedCalls,
+              parts: updatedParts,
+            };
             return copy;
           });
         } else if (type === "TOOL_CALL_RESULT") {
@@ -255,8 +341,28 @@ export function useThreadStream(
                 : c
             );
 
+            const updatedParts = (target.parts || []).map((p) => {
+              if (p.type !== "tool_call") return p;
+              if (callId && p.toolCall.id !== callId) return p;
+              const matched = updatedCalls.find((c) => c.id === p.toolCall.id);
+              return matched
+                ? { ...p, toolCall: matched }
+                : {
+                    ...p,
+                    toolCall: {
+                      ...p.toolCall,
+                      result,
+                      status: isError ? ("error" as const) : ("done" as const),
+                    },
+                  };
+            });
+
             const copy = [...prev];
-            copy[msgIdx] = { ...target, toolCalls: updatedCalls };
+            copy[msgIdx] = {
+              ...target,
+              toolCalls: updatedCalls,
+              parts: updatedParts,
+            };
             return copy;
           });
         } else if (
@@ -265,25 +371,43 @@ export function useThreadStream(
         ) {
           setStatus("AWAITING_LLM");
           const msgId = event.message_id || event.messageId || `reasoning-${Date.now()}`;
+
           setMessages((prev) => {
             const last = prev[prev.length - 1];
-            if (last && last.role === "assistant" && !last.text) {
+            if (last && last.role === "assistant") {
+              const currentParts = last.parts || [];
+              const lastPart = currentParts[currentParts.length - 1];
+              let updatedParts = currentParts;
+              if (lastPart && lastPart.type === "reasoning" && lastPart.isStreaming) {
+                // Already streaming this reasoning part
+              } else {
+                updatedParts = [
+                  ...stopStreamingReasoningParts(currentParts),
+                  { type: "reasoning", id: msgId, content: "", isStreaming: true },
+                ];
+              }
               return [
                 ...prev.slice(0, -1),
-                { ...last, isReasoning: true },
+                {
+                  ...last,
+                  isReasoning: true,
+                  parts: updatedParts,
+                },
+              ];
+            } else {
+              return [
+                ...prev,
+                {
+                  id: `asst-${Date.now()}`,
+                  role: "assistant",
+                  text: "",
+                  reasoning: "",
+                  isReasoning: true,
+                  parts: [{ type: "reasoning", id: msgId, content: "", isStreaming: true }],
+                  timestamp: new Date().toISOString(),
+                },
               ];
             }
-            return [
-              ...prev,
-              {
-                id: msgId,
-                role: "assistant",
-                text: "",
-                reasoning: "",
-                isReasoning: true,
-                timestamp: new Date().toISOString(),
-              },
-            ];
           });
         } else if (
           type === "REASONING_MESSAGE_CONTENT" ||
@@ -298,26 +422,53 @@ export function useThreadStream(
             const last = prev[prev.length - 1];
             if (last && last.role === "assistant") {
               const currentReasoning = last.reasoning || "";
+              const currentParts = last.parts || [];
+              const lastPart = currentParts[currentParts.length - 1];
+              let updatedParts: MessagePart[];
+
+              if (lastPart && lastPart.type === "reasoning" && lastPart.isStreaming) {
+                updatedParts = [
+                  ...currentParts.slice(0, -1),
+                  { ...lastPart, content: lastPart.content + delta, isStreaming: true },
+                ];
+              } else {
+                updatedParts = [
+                  ...stopStreamingReasoningParts(currentParts),
+                  {
+                    type: "reasoning",
+                    id: msgId || `reasoning-${Date.now()}`,
+                    content: delta,
+                    isStreaming: true,
+                  },
+                ];
+              }
+
               return [
                 ...prev.slice(0, -1),
                 {
                   ...last,
                   reasoning: currentReasoning + delta,
                   isReasoning: true,
+                  parts: updatedParts,
+                },
+              ];
+            } else {
+              const newMsgId = msgId || `reasoning-${Date.now()}`;
+              return [
+                ...prev,
+                {
+                  id: `asst-${Date.now()}`,
+                  role: "assistant",
+                  text: "",
+                  reasoning: delta,
+                  isReasoning: true,
+                  parts: [
+                    { type: "reasoning", id: newMsgId, content: delta, isStreaming: true },
+                  ],
+                  timestamp: new Date().toISOString(),
                 },
               ];
             }
-            return [
-              ...prev,
-              {
-                id: msgId || `reasoning-${Date.now()}`,
-                role: "assistant",
-                text: "",
-                reasoning: delta,
-                isReasoning: true,
-                timestamp: new Date().toISOString(),
-              },
-            ];
           });
         } else if (
           type === "REASONING_MESSAGE_END" ||
@@ -325,10 +476,14 @@ export function useThreadStream(
         ) {
           setMessages((prev) => {
             const last = prev[prev.length - 1];
-            if (last && last.role === "assistant" && last.isReasoning) {
+            if (last && last.role === "assistant") {
               return [
                 ...prev.slice(0, -1),
-                { ...last, isReasoning: false },
+                {
+                  ...last,
+                  isReasoning: false,
+                  parts: stopStreamingReasoningParts(last.parts),
+                },
               ];
             }
             return prev;
@@ -346,10 +501,21 @@ export function useThreadStream(
               return prev;
             }
             const last = prev[prev.length - 1];
-            if (role === "assistant" && last && last.role === "assistant" && !last.text) {
+            if (role === "assistant" && last && last.role === "assistant") {
+              // Another bubble started emitting (text)! Auto-collapse any active reasoning bubble
+              const stoppedParts = stopStreamingReasoningParts(last.parts);
+              const textPart: MessagePart = {
+                type: "text",
+                id: msgId,
+                content: "",
+              };
               return [
                 ...prev.slice(0, -1),
-                { ...last, id: msgId, isReasoning: false },
+                {
+                  ...last,
+                  isReasoning: false,
+                  parts: [...stoppedParts, textPart],
+                },
               ];
             }
             return [
@@ -358,6 +524,10 @@ export function useThreadStream(
                 id: msgId,
                 role,
                 text: "",
+                parts:
+                  role === "assistant"
+                    ? [{ type: "text", id: msgId, content: "" }]
+                    : undefined,
                 timestamp: new Date().toISOString(),
               },
             ];
@@ -379,9 +549,27 @@ export function useThreadStream(
                 if (target.role === "user" && target.text === delta) {
                   return prev;
                 }
+                const currentParts = target.parts || [];
+                const stopped = stopStreamingReasoningParts(currentParts);
+                const lastPart = stopped[stopped.length - 1];
+                let updatedParts: MessagePart[];
+                if (lastPart && lastPart.type === "text") {
+                  updatedParts = [
+                    ...stopped.slice(0, -1),
+                    { ...lastPart, content: lastPart.content + delta },
+                  ];
+                } else {
+                  updatedParts = [
+                    ...stopped,
+                    { type: "text", id: msgId, content: delta },
+                  ];
+                }
+
                 const updated = {
                   ...target,
                   text: target.text ? target.text + delta : delta,
+                  parts: updatedParts,
+                  isReasoning: false,
                 };
                 const copy = [...prev];
                 copy[idx] = updated;
@@ -392,18 +580,45 @@ export function useThreadStream(
             // Fallback: append to last assistant message if one exists
             const last = prev[prev.length - 1];
             if (last && last.role === "assistant") {
+              const currentParts = last.parts || [];
+              const stopped = stopStreamingReasoningParts(currentParts);
+              const lastPart = stopped[stopped.length - 1];
+              let updatedParts: MessagePart[];
+              if (lastPart && lastPart.type === "text") {
+                updatedParts = [
+                  ...stopped.slice(0, -1),
+                  { ...lastPart, content: lastPart.content + delta },
+                ];
+              } else {
+                updatedParts = [
+                  ...stopped,
+                  {
+                    type: "text",
+                    id: msgId || `text-${Date.now()}`,
+                    content: delta,
+                  },
+                ];
+              }
+
               return [
                 ...prev.slice(0, -1),
-                { ...last, text: last.text + delta },
+                {
+                  ...last,
+                  text: last.text + delta,
+                  parts: updatedParts,
+                  isReasoning: false,
+                },
               ];
             } else {
               setStatus("AWAITING_LLM");
+              const newMsgId = msgId || `msg-${Date.now()}`;
               return [
                 ...prev,
                 {
-                  id: msgId || `msg-${Date.now()}`,
+                  id: newMsgId,
                   role: "assistant",
                   text: delta,
+                  parts: [{ type: "text", id: newMsgId, content: delta }],
                   timestamp: new Date().toISOString(),
                 },
               ];
@@ -484,11 +699,40 @@ export function useThreadStream(
                     };
                   });
 
+                  // Build chronological parts
+                  const parts: MessagePart[] = [];
+                  const reasoningText = m.reasoning || m.reasoning_content;
+                  if (reasoningText) {
+                    parts.push({
+                      type: "reasoning",
+                      id: `reasoning-${m.id || rebuilt.length}`,
+                      content: reasoningText,
+                      isStreaming: false,
+                    });
+                  }
+                  for (const tc of toolCalls) {
+                    parts.push({
+                      type: "tool_call",
+                      id: tc.id,
+                      toolCall: tc,
+                    });
+                  }
+                  if (text) {
+                    parts.push({
+                      type: "text",
+                      id: `text-${m.id || rebuilt.length}`,
+                      content: text,
+                    });
+                  }
+
                   rebuilt.push({
                     id: m.id || `asst-${rebuilt.length}`,
                     role: "assistant",
                     text,
+                    reasoning: reasoningText || undefined,
+                    isReasoning: false,
                     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+                    parts: parts.length > 0 ? parts : undefined,
                     timestamp: new Date().toISOString(),
                   });
                 }
@@ -497,8 +741,8 @@ export function useThreadStream(
             }
 
             return prev.map((msg) => {
-              if (msg.role !== "assistant" || !msg.toolCalls) return msg;
-              const updated = msg.toolCalls.map((c) => {
+              if (msg.role !== "assistant") return msg;
+              const updatedCalls = (msg.toolCalls || []).map((c) => {
                 const snapRes = toolResults.get(c.id);
                 if (snapRes !== undefined) {
                   return {
@@ -509,7 +753,34 @@ export function useThreadStream(
                 }
                 return c;
               });
-              return { ...msg, toolCalls: updated };
+
+              const updatedParts = (msg.parts || []).map((p) => {
+                if (p.type === "reasoning") {
+                  return { ...p, isStreaming: false };
+                }
+                if (p.type === "tool_call") {
+                  const snapRes = toolResults.get(p.toolCall.id);
+                  if (snapRes !== undefined) {
+                    return {
+                      ...p,
+                      toolCall: {
+                        ...p.toolCall,
+                        result:
+                          p.toolCall.result !== undefined ? p.toolCall.result : snapRes,
+                        status: "done" as const,
+                      },
+                    };
+                  }
+                }
+                return p;
+              });
+
+              return {
+                ...msg,
+                isReasoning: false,
+                toolCalls: updatedCalls,
+                parts: updatedParts,
+              };
             });
           });
         }

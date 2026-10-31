@@ -73,6 +73,11 @@ export type ToolCallRecord = {
   result?: unknown;
 };
 
+export type MessagePart =
+  | { type: "reasoning"; id: string; content: string; isStreaming?: boolean }
+  | { type: "tool_call"; id: string; toolCall: ToolCallRecord }
+  | { type: "text"; id: string; content: string };
+
 export type ChatMessage = {
   id: string;
   role: "user" | "assistant" | "system";
@@ -80,6 +85,7 @@ export type ChatMessage = {
   reasoning?: string;
   isReasoning?: boolean;
   toolCalls?: ToolCallRecord[];
+  parts?: MessagePart[];
   timestamp: string;
 };
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CheckCircle2,
   ChevronDown,
@@ -11,9 +11,19 @@ import {
 import type { ToolCallRecord } from "../api/types";
 
 export function ToolCallItem({ toolCall }: { toolCall: ToolCallRecord }) {
-  const [isOpen, setIsOpen] = useState<boolean>(true);
-
   const status = toolCall.status || (toolCall.result !== undefined ? "done" : "pending");
+  const isDone = status === "done" || status === "error";
+
+  const [userToggled, setUserToggled] = useState<boolean>(false);
+  const [isOpen, setIsOpen] = useState<boolean>(!isDone);
+
+  // Auto-collapse when tool execution completes (unless user manually toggled)
+  useEffect(() => {
+    if (!userToggled) {
+      setIsOpen(!isDone);
+    }
+  }, [isDone, userToggled]);
+
   const hasArgs =
     (toolCall.args &&
       (typeof toolCall.args === "string"
@@ -66,7 +76,10 @@ export function ToolCallItem({ toolCall }: { toolCall: ToolCallRecord }) {
       <button
         type="button"
         className="tool-card-header"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => {
+          setUserToggled(true);
+          setIsOpen((prev) => !prev);
+        }}
         title="Toggle tool execution details"
       >
         <div className="tool-card-title">
