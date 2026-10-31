@@ -62,10 +62,14 @@ export type AgentDetail = {
   sessions: SessionSummary[];
 };
 
+export type ToolCallStatus = "pending" | "wip" | "done" | "error";
+
 export type ToolCallRecord = {
   id: string;
   name: string;
-  args?: Record<string, unknown>;
+  status?: ToolCallStatus;
+  args?: Record<string, unknown> | string;
+  rawArgs?: string;
   result?: unknown;
 };
 

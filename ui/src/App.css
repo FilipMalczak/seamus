@@ -1310,20 +1310,44 @@ body {
   font-size: 0.78rem;
 }
 
-.badge-tool-complete {
+.badge-tool-complete,
+.badge-tool-running,
+.badge-tool-pending,
+.badge-tool-error {
   font-size: 0.65rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+}
+
+.badge-tool-complete {
   background: rgba(16, 185, 129, 0.2);
   color: var(--success-color);
-  padding: 1px 5px;
-  border-radius: 4px;
+  border: 1px solid rgba(16, 185, 129, 0.35);
 }
 
 .badge-tool-running {
-  font-size: 0.65rem;
+  background: rgba(14, 165, 233, 0.2);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
+.badge-tool-pending {
   background: rgba(245, 158, 11, 0.2);
   color: var(--warning-color);
-  padding: 1px 5px;
-  border-radius: 4px;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.badge-tool-error {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.35);
 }
 
 .tool-card-body {

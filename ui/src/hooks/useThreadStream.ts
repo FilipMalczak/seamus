@@ -2,6 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getThreadStatus, postUserInput, subscribeToThreadStream } from "../api/client";
 import type { AgentStatus, ChatMessage, ToolCallRecord } from "../api/types";
 
+function findLastIndex<T>(arr: T[], predicate: (val: T) => boolean): number {
+  for (let i = arr.length - 1; i >= 0; i--) {
+    if (predicate(arr[i])) return i;
+  }
+  return -1;
+}
+
 export function useThreadStream(
   agentId: string | null,
   sessionId: string | null,
@@ -56,38 +63,45 @@ export function useThreadStream(
         } else if (type === "RUN_ERROR") {
           setStatus("ERROR");
           setStreamError(event.message || "Execution encountered an error.");
-        } else if (
-          type === "TOOL_CALL_START" ||
-          type === "TOOL_CALL_ARGS" ||
-          type === "TOOL_CALL_CHUNK"
-        ) {
+        } else if (type === "TOOL_CALL_START") {
           setStatus("EXECUTING_TOOL");
           const callId = event.tool_call_id || event.toolCallId || "tool-call";
           const callName = event.tool_call_name || event.toolCallName || "tool";
-          const args = event.args || {};
 
           setMessages((prev) => {
+            const msgIdx = findLastIndex(prev, (m) =>
+              Boolean(m.toolCalls?.some((c) => c.id === callId))
+            );
+
+            if (msgIdx >= 0) {
+              const target = prev[msgIdx];
+              const updatedCalls = (target.toolCalls || []).map((c) =>
+                c.id === callId
+                  ? {
+                      ...c,
+                      name: callName || c.name,
+                      status: "pending" as const,
+                    }
+                  : c
+              );
+              const copy = [...prev];
+              copy[msgIdx] = { ...target, toolCalls: updatedCalls };
+              return copy;
+            }
+
             const last = prev[prev.length - 1];
+            const newCall: ToolCallRecord = {
+              id: callId,
+              name: callName,
+              status: "pending",
+              rawArgs: "",
+              args: {},
+            };
+
             if (last && last.role === "assistant") {
-              const existingCalls = last.toolCalls || [];
-              const foundIdx = existingCalls.findIndex((c) => c.id === callId);
-              let updatedCalls: ToolCallRecord[];
-              if (foundIdx >= 0) {
-                updatedCalls = [...existingCalls];
-                updatedCalls[foundIdx] = {
-                  ...updatedCalls[foundIdx],
-                  name: callName || updatedCalls[foundIdx].name,
-                  args: { ...updatedCalls[foundIdx].args, ...args },
-                };
-              } else {
-                updatedCalls = [
-                  ...existingCalls,
-                  { id: callId, name: callName, args },
-                ];
-              }
               return [
                 ...prev.slice(0, -1),
-                { ...last, toolCalls: updatedCalls },
+                { ...last, toolCalls: [...(last.toolCalls || []), newCall] },
               ];
             } else {
               return [
@@ -96,29 +110,154 @@ export function useThreadStream(
                   id: `msg-${Date.now()}`,
                   role: "assistant",
                   text: "",
-                  toolCalls: [{ id: callId, name: callName, args }],
+                  toolCalls: [newCall],
                   timestamp: new Date().toISOString(),
                 },
               ];
             }
           });
-        } else if (type === "TOOL_CALL_RESULT" || type === "TOOL_CALL_END") {
-          setStatus("AWAITING_LLM");
-          const callId = event.tool_call_id || event.toolCallId;
-          const result = event.result ?? event.output;
+        } else if (
+          type === "TOOL_CALL_ARGS" ||
+          type === "TOOL_CALL_CHUNK"
+        ) {
+          setStatus("EXECUTING_TOOL");
+          const callId = event.tool_call_id || event.toolCallId || "tool-call";
+          const delta =
+            event.delta || (typeof event.args === "string" ? event.args : "") || "";
+          const explicitArgs =
+            typeof event.args === "object" && event.args !== null ? event.args : null;
+          const callName = event.tool_call_name || event.toolCallName;
 
           setMessages((prev) => {
-            const last = prev[prev.length - 1];
-            if (last && last.role === "assistant" && last.toolCalls) {
-              const updatedCalls = last.toolCalls.map((c) =>
-                !callId || c.id === callId ? { ...c, result } : c
-              );
-              return [
-                ...prev.slice(0, -1),
-                { ...last, toolCalls: updatedCalls },
+            let msgIdx = findLastIndex(prev, (m) =>
+              Boolean(m.toolCalls?.some((c) => c.id === callId))
+            );
+            if (msgIdx < 0 && prev.length > 0 && prev[prev.length - 1].role === "assistant") {
+              msgIdx = prev.length - 1;
+            }
+            if (msgIdx < 0) return prev;
+
+            const target = prev[msgIdx];
+            const existingCalls = target.toolCalls || [];
+            const callIdx = existingCalls.findIndex((c) => c.id === callId);
+
+            let updatedCalls: ToolCallRecord[];
+            if (callIdx >= 0) {
+              const existing = existingCalls[callIdx];
+              const accumulatedRaw = (existing.rawArgs || "") + delta;
+              let parsed = existing.args;
+              if (explicitArgs) {
+                parsed = {
+                  ...(typeof parsed === "object" && parsed !== null ? parsed : {}),
+                  ...explicitArgs,
+                };
+              } else if (accumulatedRaw) {
+                try {
+                  parsed = JSON.parse(accumulatedRaw);
+                } catch {
+                  // Partial JSON chunk, keep accumulating
+                }
+              }
+
+              updatedCalls = [...existingCalls];
+              updatedCalls[callIdx] = {
+                ...existing,
+                name: callName || existing.name,
+                rawArgs: accumulatedRaw,
+                args: parsed,
+                status:
+                  existing.status === "wip" || existing.status === "done"
+                    ? existing.status
+                    : "pending",
+              };
+            } else {
+              let parsed: any = explicitArgs || {};
+              if (delta) {
+                try {
+                  parsed = JSON.parse(delta);
+                } catch {
+                  // Partial JSON
+                }
+              }
+              updatedCalls = [
+                ...existingCalls,
+                {
+                  id: callId,
+                  name: callName || "tool",
+                  rawArgs: delta,
+                  args: parsed,
+                  status: "pending",
+                },
               ];
             }
-            return prev;
+
+            const copy = [...prev];
+            copy[msgIdx] = { ...target, toolCalls: updatedCalls };
+            return copy;
+          });
+        } else if (type === "TOOL_CALL_END") {
+          setStatus("EXECUTING_TOOL");
+          const callId = event.tool_call_id || event.toolCallId;
+
+          setMessages((prev) => {
+            const msgIdx = findLastIndex(prev, (m) =>
+              Boolean(m.toolCalls?.some((c) => !callId || c.id === callId))
+            );
+            if (msgIdx < 0) return prev;
+
+            const target = prev[msgIdx];
+            const updatedCalls = (target.toolCalls || []).map((c) => {
+              if (callId && c.id !== callId) return c;
+              let parsed = c.args;
+              if ((!parsed || Object.keys(parsed).length === 0) && c.rawArgs) {
+                try {
+                  parsed = JSON.parse(c.rawArgs);
+                } catch {
+                  // Not valid JSON
+                }
+              }
+              return {
+                ...c,
+                args: parsed,
+                status: c.status === "done" ? ("done" as const) : ("wip" as const),
+              };
+            });
+
+            const copy = [...prev];
+            copy[msgIdx] = { ...target, toolCalls: updatedCalls };
+            return copy;
+          });
+        } else if (type === "TOOL_CALL_RESULT") {
+          setStatus("AWAITING_LLM");
+          const callId = event.tool_call_id || event.toolCallId;
+          const result = event.content ?? event.result ?? event.output;
+          const isError = Boolean(
+            event.is_error || event.isError || event.status === "error"
+          );
+
+          setMessages((prev) => {
+            let msgIdx = findLastIndex(prev, (m) =>
+              Boolean(m.toolCalls?.some((c) => !callId || c.id === callId))
+            );
+            if (msgIdx < 0 && prev.length > 0 && prev[prev.length - 1].role === "assistant") {
+              msgIdx = prev.length - 1;
+            }
+            if (msgIdx < 0) return prev;
+
+            const target = prev[msgIdx];
+            const updatedCalls = (target.toolCalls || []).map((c) =>
+              !callId || c.id === callId
+                ? {
+                    ...c,
+                    result,
+                    status: isError ? ("error" as const) : ("done" as const),
+                  }
+                : c
+            );
+
+            const copy = [...prev];
+            copy[msgIdx] = { ...target, toolCalls: updatedCalls };
+            return copy;
           });
         } else if (
           type === "REASONING_START" ||
@@ -287,6 +426,91 @@ export function useThreadStream(
                 timestamp: new Date().toISOString(),
               },
             ];
+          });
+        } else if (type === "MESSAGES_SNAPSHOT") {
+          const snapshotMsgs = event.messages || [];
+          if (!Array.isArray(snapshotMsgs) || snapshotMsgs.length === 0) return;
+
+          const toolResults = new Map<string, unknown>();
+          for (const m of snapshotMsgs) {
+            const role = m.role || m.type;
+            const callRef = m.toolCallId || m.tool_call_id;
+            if (role === "tool" && callRef) {
+              toolResults.set(callRef, m.content);
+            }
+          }
+
+          setMessages((prev) => {
+            if (prev.length === 0) {
+              const rebuilt: ChatMessage[] = [];
+              for (const m of snapshotMsgs) {
+                const role = m.role || m.type;
+                if (role === "user") {
+                  const text =
+                    typeof m.content === "string"
+                      ? m.content
+                      : m.content?.[0]?.text || "";
+                  rebuilt.push({
+                    id: m.id || `user-${rebuilt.length}`,
+                    role: "user",
+                    text,
+                    timestamp: new Date().toISOString(),
+                  });
+                } else if (role === "assistant") {
+                  const text = typeof m.content === "string" ? m.content : "";
+                  const rawCalls = m.toolCalls || m.tool_calls || [];
+                  const toolCalls: ToolCallRecord[] = rawCalls.map((tc: any) => {
+                    const id = tc.id;
+                    const name = tc.function?.name || tc.name || "tool";
+                    const rawArgs =
+                      tc.function?.arguments ||
+                      (typeof tc.args === "string"
+                        ? tc.args
+                        : JSON.stringify(tc.args || {}));
+                    let parsedArgs: any = undefined;
+                    try {
+                      parsedArgs = JSON.parse(rawArgs);
+                    } catch {
+                      parsedArgs = rawArgs;
+                    }
+                    const res = toolResults.get(id);
+                    return {
+                      id,
+                      name,
+                      status: res !== undefined ? ("done" as const) : ("wip" as const),
+                      rawArgs,
+                      args: parsedArgs,
+                      result: res,
+                    };
+                  });
+
+                  rebuilt.push({
+                    id: m.id || `asst-${rebuilt.length}`,
+                    role: "assistant",
+                    text,
+                    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+                    timestamp: new Date().toISOString(),
+                  });
+                }
+              }
+              return rebuilt;
+            }
+
+            return prev.map((msg) => {
+              if (msg.role !== "assistant" || !msg.toolCalls) return msg;
+              const updated = msg.toolCalls.map((c) => {
+                const snapRes = toolResults.get(c.id);
+                if (snapRes !== undefined) {
+                  return {
+                    ...c,
+                    result: c.result !== undefined ? c.result : snapRes,
+                    status: "done" as const,
+                  };
+                }
+                return c;
+              });
+              return { ...msg, toolCalls: updated };
+            });
           });
         }
       },

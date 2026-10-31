@@ -1,12 +1,65 @@
 import { useState } from "react";
-import { ChevronDown, ChevronRight, Wrench } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Clock,
+  Loader2,
+  Wrench,
+  XCircle,
+} from "lucide-react";
 import type { ToolCallRecord } from "../api/types";
 
 export function ToolCallItem({ toolCall }: { toolCall: ToolCallRecord }) {
   const [isOpen, setIsOpen] = useState<boolean>(true);
 
-  const hasArgs = toolCall.args && Object.keys(toolCall.args).length > 0;
+  const status = toolCall.status || (toolCall.result !== undefined ? "done" : "pending");
+  const hasArgs =
+    (toolCall.args &&
+      (typeof toolCall.args === "string"
+        ? toolCall.args.trim().length > 0
+        : Object.keys(toolCall.args).length > 0)) ||
+    Boolean(toolCall.rawArgs && toolCall.rawArgs.trim().length > 0);
   const hasResult = toolCall.result !== undefined;
+
+  const renderBadge = () => {
+    switch (status) {
+      case "pending":
+        return (
+          <span className="badge-tool-pending" title="Tool call arguments preparing">
+            <Clock className="size-2.5" />
+            <span>Pending</span>
+          </span>
+        );
+      case "wip":
+        return (
+          <span className="badge-tool-running" title="Tool executing in sandbox/backend">
+            <Loader2 className="size-2.5 animate-spin" />
+            <span>WIP</span>
+          </span>
+        );
+      case "done":
+        return (
+          <span className="badge-tool-complete" title="Tool execution completed">
+            <CheckCircle2 className="size-2.5" />
+            <span>Done</span>
+          </span>
+        );
+      case "error":
+        return (
+          <span className="badge-tool-error" title="Tool execution encountered an error">
+            <XCircle className="size-2.5" />
+            <span>Failed</span>
+          </span>
+        );
+      default:
+        return (
+          <span className="badge-tool-pending">
+            <span>{status}</span>
+          </span>
+        );
+    }
+  };
 
   return (
     <div className="tool-card">
@@ -19,11 +72,7 @@ export function ToolCallItem({ toolCall }: { toolCall: ToolCallRecord }) {
         <div className="tool-card-title">
           <Wrench className="size-3.5 text-amber-400" />
           <span className="tool-name">{toolCall.name}</span>
-          {hasResult ? (
-            <span className="badge-tool-complete">Completed</span>
-          ) : (
-            <span className="badge-tool-running">Running...</span>
-          )}
+          {renderBadge()}
         </div>
         {isOpen ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
       </button>
@@ -33,7 +82,11 @@ export function ToolCallItem({ toolCall }: { toolCall: ToolCallRecord }) {
           {hasArgs && (
             <div className="tool-block">
               <span className="tool-label">Input Arguments:</span>
-              <pre className="code-block">{JSON.stringify(toolCall.args, null, 2)}</pre>
+              <pre className="code-block">
+                {typeof toolCall.args === "object" && toolCall.args !== null
+                  ? JSON.stringify(toolCall.args, null, 2)
+                  : toolCall.rawArgs || String(toolCall.args)}
+              </pre>
             </div>
           )}
           {hasResult && (
@@ -51,4 +104,3 @@ export function ToolCallItem({ toolCall }: { toolCall: ToolCallRecord }) {
     </div>
   );
 }
-

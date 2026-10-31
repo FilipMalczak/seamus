@@ -80,6 +80,9 @@ An automated Gitea pull request opened from a session branch (`session/{session_
 ### Thread Acceptance
 The explicit human-in-the-loop lifecycle transition triggered by the top bar "Accept" action. Closes the active thread, merges the session's active Sync PR into `main`, spawns a fresh thread on the same session branch, and opens a new Sync PR to `main`.
 
+### Tool Call Lifecycle States
+The deterministic execution phases of an invoked agent tool: `Pending` (arguments preparing / streaming), `WIP` (tool executing within backend sandbox), `Done` (execution finished successfully with output result), and `Failed` (tool execution errored).
+
 ## Cross-References
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
@@ -93,6 +96,7 @@ The explicit human-in-the-loop lifecycle transition triggered by the top bar "Ac
 - [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md)
 - [0011-agent-inspector.md](../decisions/0011-agent-inspector.md)
 - [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md)
+- [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md)
 - [architecture.md](./architecture.md)
 - [abstractions.md](./abstractions.md)
 - [backlog.md](./backlog.md)

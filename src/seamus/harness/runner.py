@@ -431,11 +431,11 @@ class SessionAgentRunner:
             EventType.TOOL_CALL_START,
             EventType.TOOL_CALL_ARGS,
             EventType.TOOL_CALL_CHUNK,
+            EventType.TOOL_CALL_END,
         ):
             thread.status = AgentStatus.EXECUTING_TOOL
         elif event_type in (
             EventType.TOOL_CALL_RESULT,
-            EventType.TOOL_CALL_END,
             EventType.TEXT_MESSAGE_START,
             EventType.TEXT_MESSAGE_CHUNK,
             EventType.TEXT_MESSAGE_CONTENT,

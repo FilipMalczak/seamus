@@ -85,6 +85,7 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 - [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md)
 - [0011-agent-inspector.md](../decisions/0011-agent-inspector.md)
 - [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md)
+- [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md)
 - [abstractions.md](./abstractions.md)
 - [backlog.md](./backlog.md)
 - [vocabulary.md](./vocabulary.md)
