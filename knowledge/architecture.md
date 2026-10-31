@@ -54,17 +54,20 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
    - Responsibility: Models for `Agent`, `Session`, `Thread`, and `AgentStatus`. Dual-resolution logic mapping UUIDs and slugs to entities.
 4. **Harness & Runner (`seamus.harness`)**:
    - Location: `src/seamus/harness/`
-   - Responsibility: In-memory store repository, `SessionAgentRunner` wrapping `create_deep_agent`, `ReasoningChatOpenAI`, and `SeamusLangGraphAgent`, and event broadcasting/replay queues.
-5. **Server & REST API (`seamus.server`)**:
+   - Responsibility: In-memory store repository with Gitea hydration, `SessionAgentRunner` wrapping `create_deep_agent`, `ReasoningChatOpenAI`, `SeamusLangGraphAgent`, and event broadcasting/replay queues.
+5. **Persistence & Git Workspace (`seamus.persistence`)**:
+   - Location: `src/seamus/persistence/`
+   - Responsibility: Gitea REST API client (`GiteaClient`), workspace clone/branch management (`GitWorkspaceManager`), and checkpoint-driven Git commits (`GitCheckpointSaver`). Maintains strict separation between `agent/config/`, `agent/state/`, and agent-accessible `data/`. Persists thread events (`events.json`), checkpoints/HITL state (`checkpoints.json`), and human-readable messages (`messages.json`).
+6. **Server & REST API (`seamus.server`)**:
    - Location: `src/seamus/server/`
    - Responsibility: FastAPI application factory mounted at `/api/v-alpha/`, Pydantic request/response schemas, routes for config template, agents, sessions, input dispatch, thread redirection, system integration metadata (`/api/v-alpha/system/info`), and SSE streaming. Optionally serves built `ui/dist` bundle in production.
-6. **Telemetry & Observability (`seamus.telemetry`)**:
+7. **Telemetry & Observability (`seamus.telemetry`)**:
    - Location: `src/seamus/telemetry.py`
    - Responsibility: Logfire initialization, evaluation of `LOGFIRE_SEND_TO_LOGFIRE`, custom domain scrubbing (preserving `session`), FastAPI request instrumentation with `/health` exclusions, and OpenTelemetry environment setup for LangChain/LangGraph tracing.
-7. **Decisions (`decisions`)**:
+8. **Decisions (`decisions`)**:
    - Location: `decisions/`
    - Responsibility: Append-only architectural and project direction decision records.
-8. **Knowledge (`knowledge`)**:
+9. **Knowledge (`knowledge`)**:
    - Location: `knowledge/`
    - Responsibility: Durable conceptual, architectural, and requirement specifications.
 
@@ -76,5 +79,6 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 - [0005-logfire-integration.md](../decisions/0005-logfire-integration.md)
 - [0006-external-system-links.md](../decisions/0006-external-system-links.md)
 - [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md)
+- [0008-git-persistence.md](../decisions/0008-git-persistence.md)
 - [abstractions.md](./abstractions.md)
 - [vocabulary.md](./vocabulary.md)

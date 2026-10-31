@@ -53,3 +53,6 @@ node_modules/
 .npm/
 ui/dist/
 *.tsbuildinfo
+
+# Seamus runtime local workspaces and storage
+.seamus/

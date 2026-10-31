@@ -84,8 +84,15 @@ export interface SystemLogfireInfo {
   url: string | null;
 }
 
+export interface SystemGiteaInfo {
+  enabled: boolean;
+  url: string | null;
+  owner: string | null;
+}
+
 export interface SystemInfoResponse {
   logfire: SystemLogfireInfo;
+  gitea: SystemGiteaInfo;
 }
 
 

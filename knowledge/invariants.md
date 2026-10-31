@@ -75,14 +75,24 @@ Properties and rules that must always hold across the repository.
 - **Enforcement**: `SessionAgentRunner._run_loop()` wraps execution in nested `logfire.span(...)` contexts with standardized attributes.
 
 ### INV-015: External System Link Visibility & Telemetry Guard
-- **Statement**: External system icons in the navigation tree left panel must be strictly conditional on integration availability. The Logfire navigation icon must only render when Logfire is actively configured to send telemetry, accurately reflecting `LOGFIRE_SEND_TO_LOGFIRE` overrides and token presence. Furthermore, system `/health` heartbeat checks must never produce request telemetry spans.
-- **Justification**: [REQ-013](./requirements.md#req-013-external-system-navigation-links--telemetry-visibility-guard), [0006-external-system-links.md](../decisions/0006-external-system-links.md).
-- **Enforcement**: `seamus.telemetry.is_logfire_enabled()` evaluates send status and token presence; `GET /api/v-alpha/system/info` exposes `SystemInfoResponse`; `Sidebar.tsx` conditionally mounts the icon; `instrument_fastapi` filters `/health` with `excluded_urls`.
+- **Statement**: External system icons in the navigation tree left panel must be strictly conditional on integration availability. The Logfire navigation icon must only render when Logfire is actively configured to send telemetry, accurately reflecting `LOGFIRE_SEND_TO_LOGFIRE` overrides and token presence. Gitea navigation icons (Home, Agent Git branch, and Session Git branch composite buttons) must only render when Gitea persistence is enabled, with contextual branch buttons reflecting active/disabled selection states. Furthermore, system `/health` heartbeat checks must never produce request telemetry spans.
+- **Justification**: [REQ-013](./requirements.md#req-013-external-system-navigation-links--telemetry-visibility-guard), [REQ-015](./requirements.md#req-015-gitea-backed-versioned-agent-persistence--workspace-isolation), [0006-external-system-links.md](../decisions/0006-external-system-links.md), [0008-git-persistence.md](../decisions/0008-git-persistence.md).
+- **Enforcement**: `seamus.telemetry.is_logfire_enabled()` evaluates send status and token presence; `GET /api/v-alpha/system/info` exposes `SystemInfoResponse`; `Sidebar.tsx` conditionally mounts the footer icons with contextual branch URL resolution; `instrument_fastapi` filters `/health` with `excluded_urls`.
 
 ### INV-016: AG-UI Reasoning Stream & Multi-Turn Span Message Alignment
 - **Statement**: Provider reasoning deltas (`reasoning`, `reasoning_content`, `reasoning_details`) must be preserved on LangChain message chunks so `ag_ui_langgraph` emits `REASONING_*` events that are recorded in thread history, replayed over SSE, and rendered in `MessageItem.tsx`. In addition, `SeamusLangGraphAgent.langgraph_default_merge_state` must retain existing checkpoint messages ahead of new turn messages so `gen_ai.prompt.messages` remains a prefix of `gen_ai.completion.messages` on `LangGraph` spans in Logfire.
 - **Justification**: [REQ-014](./requirements.md#req-014-ag-ui-reasoning-exposure--multi-turn-trace-message-alignment), [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md).
 - **Enforcement**: `ReasoningChatOpenAI` and `SeamusLangGraphAgent` in `seamus.harness.runner`, `useThreadStream.ts`, `MessageItem.tsx`, and unit/telemetry test suites.
+
+### INV-017: Git-Tracked Agent Workspace & Config Boundary
+- **Statement**: The agent's filesystem operations must be strictly constrained to `<session_workspace>/data/` via `FilesystemBackend(virtual_mode=True)`. Agents must never have filesystem access or visibility to `agent/` or `.git/`.
+- **Justification**: [REQ-015](./requirements.md#req-015-gitea-backed-versioned-agent-persistence--workspace-isolation), [0008-git-persistence.md](../decisions/0008-git-persistence.md).
+- **Enforcement**: `SessionAgentRunner._build_deep_agent()` sets `root_dir = data_dir` on `FilesystemBackend`.
+
+### INV-018: Atomic Checkpoint Data & State Persistence & Commit Delineation
+- **Statement**: LangGraph checkpoints must automatically serialize state and trigger Git commits of all modified files in `data/` and `agent/state/` with commit messages prefixed with `checkpoint:`, while thread event updates commit with `state:`, and configuration changes commit the whole `agent/config/**` directory with commit messages prefixed with `config:`. Commits must be immediately pushed to the Gitea remote on the session branch or main branch.
+- **Justification**: [REQ-015](./requirements.md#req-015-gitea-backed-versioned-agent-persistence--workspace-isolation), [0008-git-persistence.md](../decisions/0008-git-persistence.md).
+- **Enforcement**: `GitCheckpointSaver.put()`, `aput()`, and writes hooks in `seamus.persistence`, and `HarnessStore` mutation calls to `GitWorkspaceManager`.
 
 ## Cross-References
 - [requirements.md](./requirements.md)
@@ -93,3 +103,4 @@ Properties and rules that must always hold across the repository.
 - [0005-logfire-integration.md](../decisions/0005-logfire-integration.md)
 - [0006-external-system-links.md](../decisions/0006-external-system-links.md)
 - [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md)
+- [0008-git-persistence.md](../decisions/0008-git-persistence.md)

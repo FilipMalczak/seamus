@@ -52,6 +52,12 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `get_logfire_service_name`: Retrieves the active or configured service name for trace identification.
 - `instrument_fastapi`: Hooks Logfire request tracing into FastAPI applications with configurable route exclusion (`excluded_urls`, filtering `/health`).
 
+### Persistence Subsystem (`src/seamus/persistence/`)
+- `GiteaClient`: REST API client wrapping `httpx` to manage Gitea repositories, branches, and raw file access.
+- `GitWorkspaceManager`: Local Git repository orchestrator handling repository initialization on `main`, session working tree cloning on `session/{session_id}`, whole-directory configuration commits (`config:` prefix on `agent/config/**`), thread state updates (`state:` prefix on `agent/state/**`), and checkpoint commits (`checkpoint:` prefix staging `data/` and `agent/state/**`).
+- `GitCheckpointSaver`: Subclass of `MemorySaver` (and wrapping LangGraph `BaseCheckpointSaver`) intercepting `put`, `aput`, and writes to persist graph checkpoint state, human-readable messages, and automatically commit all modified files in `data/` and `agent/state/` to Gitea.
+- `PersistenceSettings`: Runtime configuration specifying Gitea URL, credentials, and local workspace directory.
+
 ## Design Principles
 - **Explicit over Implicit**: Prefer concrete, simple classes and protocols rather than speculative abstraction layers.
 - **Separation of Concerns**: Keep framework/harness mechanics separate from application and agent domain code.
@@ -65,5 +71,6 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - [0005-logfire-integration.md](../decisions/0005-logfire-integration.md)
 - [0006-external-system-links.md](../decisions/0006-external-system-links.md)
 - [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md)
+- [0008-git-persistence.md](../decisions/0008-git-persistence.md)
 - [architecture.md](./architecture.md)
 - [conventions.md](./conventions.md)

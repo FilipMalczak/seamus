@@ -61,10 +61,10 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0003-react-web-ui.md](../decisions/0003-react-web-ui.md).
 - **Linked Invariants**: [INV-009](./invariants.md#inv-009-default-session-and-open-thread-creation), [INV-010](./invariants.md#inv-010-entity-display-name-fallback).
 
-### REQ-010: Containerized Launch Automation & Safe Service Restart
-- **Description**: The repository must provide multi-container orchestration (`docker-compose.yml`) and an automated launch script (`run.sh`). Running `./run.sh` must ensure services are running and open the UI in the default browser. Running `./run.sh --restart` (`-r`) must rebuild container images and recreate running containers to apply latest code updates while strictly preserving persistent data volumes (avoiding data deletion).
-- **Rationale**: Streamlines local execution and development iteration while ensuring service updates never inadvertently wipe stored data.
-- **Provenance**: [0003-react-web-ui.md](../decisions/0003-react-web-ui.md).
+### REQ-010: Containerized Launch Automation, Safe Service Restart & Clean Reset
+- **Description**: The repository must provide multi-container orchestration (`docker-compose.yml`) and an automated launch script (`run.sh`). Running `./run.sh` must ensure services are running and open the UI in the default browser. Running `./run.sh --restart` (`-r`) must rebuild application container images (`backend`, `frontend`) and recreate running application containers to apply latest code updates while strictly preserving infrastructure services (`postgres`, `gitea`) and persistent data volumes (avoiding data deletion). Running `./run.sh --clean` (`-c`) must tear down all containers, purge persistent volumes (`postgres-data`, `gitea-data`, `backend-workspaces`) and data storages, and restart all services cleanly.
+- **Rationale**: Streamlines local execution and development iteration while ensuring service updates never inadvertently wipe stored data unless explicitly requested via `--clean`.
+- **Provenance**: [0003-react-web-ui.md](../decisions/0003-react-web-ui.md), [0008-git-persistence.md](../decisions/0008-git-persistence.md).
 - **Linked Invariants**: [INV-007](./invariants.md#inv-007-no-resource-deletion-invariant).
 
 ### REQ-011: Inline Tree Node Renaming and Session Node Status Visibility
@@ -91,6 +91,12 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md).
 - **Linked Invariants**: [INV-016](./invariants.md#inv-016-ag-ui-reasoning-stream--multi-turn-span-message-alignment).
 
+### REQ-015: Gitea-Backed Versioned Agent Persistence & Workspace Isolation
+- **Description**: The harness must integrate Gitea (backed by PostgreSQL) as the golden source of truth for agent, session, and workspace persistence without requiring direct SQL dependencies in the Seamus backend. Each agent maps to a Git repository (`agent-{agent_id}`) with a `main` branch storing agent configuration (`agent/config/config.json`) and empty data baseline. Each session branches to `session/{session_id}` storing session configuration and threads metadata in `agent/config/config.json`, and thread state (AG-UI event history, LangGraph checkpoints/writes/blobs, and human-readable messages) under `agent/state/threads/{thread_id}/`. The agent's `FilesystemBackend` must be strictly isolated to `<workspace>/data/`. Changes to `data/` and `agent/state/` must be committed on every LangGraph checkpoint (`checkpoint:` commits), thread event updates committed on turn completion (`state:` commits), and configuration directory changes committed on updates (`config:` commits). On server restart, `HarnessStore` must hydrate agents, sessions, and thread events directly by querying Gitea repositories and branches, and `GitCheckpointSaver` must restore checkpoints from disk so conversation memory and HITL state resume seamlessly.
+- **Rationale**: Guarantees all agent modifications, conversation events, and execution graph states are Git-versioned, isolates agent tools from configuration and Git internals, and ensures persistent state without external SQL database requirements in the harness backend.
+- **Provenance**: [0008-git-persistence.md](../decisions/0008-git-persistence.md).
+- **Linked Invariants**: [INV-017](./invariants.md#inv-017-git-tracked-agent-workspace--config-boundary), [INV-018](./invariants.md#inv-018-atomic-checkpoint-data-persistence).
+
 ## Cross-References
 - [invariants.md](./invariants.md)
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
@@ -100,3 +106,4 @@ Requirements, rationale, provenance, and stable IDs.
 - [0005-logfire-integration.md](../decisions/0005-logfire-integration.md)
 - [0006-external-system-links.md](../decisions/0006-external-system-links.md)
 - [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md)
+- [0008-git-persistence.md](../decisions/0008-git-persistence.md)
