@@ -389,6 +389,53 @@ class GitWorkspaceManager:
         msgs_file.write_text(json.dumps(messages, indent=2), encoding="utf-8")
         return msgs_file
 
+    def load_thread_messages(
+        self,
+        agent_id: UUID,
+        session_id: UUID,
+        thread_id: UUID,
+    ) -> list[dict[str, Any]]:
+        """Load human-readable conversation messages from the thread state directory."""
+        msgs_file = self.get_thread_state_dir(agent_id, session_id, thread_id) / "messages.json"
+        if not msgs_file.exists():
+            return []
+        try:
+            content = msgs_file.read_text(encoding="utf-8")
+            data = json.loads(content)
+            return data if isinstance(data, list) else []
+        except Exception:
+            logger.exception("Failed to load thread messages from %s", msgs_file)
+            return []
+
+    def get_session_git_info(
+        self,
+        agent_id: UUID,
+        session_id: UUID,
+    ) -> dict[str, str | None]:
+        """Return git commit SHA, message, and timestamp for the session branch."""
+        session_dir = self.get_session_workspace_path(agent_id, session_id)
+        if not (session_dir / ".git").exists():
+            return {
+                "commit_sha": None,
+                "commit_message": None,
+                "commit_time": None,
+            }
+        try:
+            sha = self._run_git(session_dir, ["rev-parse", "HEAD"]).stdout.strip()
+            msg = self._run_git(session_dir, ["log", "-1", "--format=%s"]).stdout.strip()
+            ts = self._run_git(session_dir, ["log", "-1", "--format=%cI"]).stdout.strip()
+            return {
+                "commit_sha": sha or None,
+                "commit_message": msg or None,
+                "commit_time": ts or None,
+            }
+        except Exception:
+            return {
+                "commit_sha": None,
+                "commit_message": None,
+                "commit_time": None,
+            }
+
     def commit_checkpoint_changes(
         self,
         agent_id: UUID,

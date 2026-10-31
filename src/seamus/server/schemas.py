@@ -7,6 +7,45 @@ from pydantic import BaseModel
 
 from seamus.config.models import AgentConfig
 from seamus.domain.entities import AgentStatus
+from seamus.harness.inspector import (
+    AgentInspectReport,
+    GitInspectInfo,
+    HistoryInspectInfo,
+    InferenceInspectInfo,
+    MessageHistoryItem,
+    PromptInspectInfo,
+    SubAgentInspectInfo,
+    ToolInspectInfo,
+    WorkspaceInspectInfo,
+)
+
+__all__ = [
+    "AgentCreateRequest",
+    "AgentDetailResponse",
+    "AgentInspectReport",
+    "AgentSummaryResponse",
+    "AgentUpdateRequest",
+    "ConfigTemplateResponse",
+    "GitInspectInfo",
+    "HistoryInspectInfo",
+    "InferenceInspectInfo",
+    "MessageHistoryItem",
+    "PromptInspectInfo",
+    "SessionCreateRequest",
+    "SessionDetailResponse",
+    "SessionSummaryResponse",
+    "SessionUpdateRequest",
+    "SubAgentInspectInfo",
+    "SystemGiteaInfo",
+    "SystemInfoResponse",
+    "SystemLogfireInfo",
+    "ThreadCreateRequest",
+    "ThreadResponse",
+    "ThreadUpdateRequest",
+    "ToolInspectInfo",
+    "UserInputRequest",
+    "WorkspaceInspectInfo",
+]
 
 
 class ConfigTemplateResponse(BaseModel):

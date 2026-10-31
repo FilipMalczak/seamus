@@ -219,7 +219,15 @@ class SessionAgentRunner:
             settings=sandbox_settings,
         )
         self._sandbox_backend = sandbox_backend
-        system_prompt = build_sandbox_system_prompt(sandbox_settings.workdir)
+        sandbox_prompt = build_sandbox_system_prompt(sandbox_settings.workdir)
+        custom_prompt = (self.session.config.system_prompt or "").strip()
+        if custom_prompt:
+            effective_prompt = f"{sandbox_prompt}\n\n{custom_prompt}"
+        else:
+            effective_prompt = sandbox_prompt
+
+        self._sandbox_system_prompt = sandbox_prompt
+        self._effective_system_prompt = effective_prompt
 
         checkpointer = GitCheckpointSaver(
             agent_id=self.session.agent_id,
@@ -230,7 +238,7 @@ class SessionAgentRunner:
         graph = create_deep_agent(
             model=llm,
             backend=sandbox_backend,
-            system_prompt=system_prompt,
+            system_prompt=effective_prompt,
             checkpointer=checkpointer,
         )
 
@@ -239,6 +247,31 @@ class SessionAgentRunner:
             graph=graph,
             description=f"DeepAgent for session {self.session.id}",
         )
+
+    @property
+    def sandbox_system_prompt(self) -> str:
+        """Return the base OpenSandbox scaffolding system prompt."""
+        if not hasattr(self, "_sandbox_system_prompt"):
+            sandbox_settings = get_sandbox_settings()
+            self._sandbox_system_prompt = build_sandbox_system_prompt(sandbox_settings.workdir)
+        return self._sandbox_system_prompt
+
+    @property
+    def effective_system_prompt(self) -> str:
+        """Return the composite effective system prompt passed to the agent."""
+        if not hasattr(self, "_effective_system_prompt"):
+            sandbox_prompt = self.sandbox_system_prompt
+            custom_prompt = (self.session.config.system_prompt or "").strip()
+            if custom_prompt:
+                self._effective_system_prompt = f"{sandbox_prompt}\n\n{custom_prompt}"
+            else:
+                self._effective_system_prompt = sandbox_prompt
+        return self._effective_system_prompt
+
+    @property
+    def agent(self) -> LangGraphAgent:
+        """Return the underlying LangGraphAgent instance."""
+        return self._agent
 
     def is_awaiting_user(self) -> bool:
         """Check if the session's active thread is currently awaiting user input."""

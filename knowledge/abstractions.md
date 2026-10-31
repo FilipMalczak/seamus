@@ -40,6 +40,8 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `build_sandbox_system_prompt`: Generates system prompt instructions informing the agent that `/workspace` is its Git-tracked operational directory and all paths outside it are transient.
 - `SeamusOpenSandboxBackend`: `OpenSandboxBackend` (`langchain_opensandbox`) subclass providing lazy per-session `SandboxSync` container provisioning and mounting only `<session_workspace>/data` at `/workspace` inside the sandbox container.
 - `SessionAgentRunner`: Encapsulates DeepAgent graph instantiation (with `SeamusOpenSandboxBackend`, `build_sandbox_system_prompt`, and `GitCheckpointSaver`), input handling, and event lifecycle mapping (including `REASONING_*` events).
+- `AgentInspectReport`: Data model capturing identity, Gitea branch provenance, model & inference settings, decomposed system prompts (scaffold vs. custom), tool argument schemas, execution status, and trajectory history.
+- `build_agent_inspect_report`: Harness inspection service extracting semi-live agent state from active `SessionAgentRunner` instances or persisted Gitea branch state.
 - `EventBroadcaster`: Fan-out pub-sub queue mechanism for multiplexing real-time AG-UI SSE events to multiple active thread consumers.
 - `HarnessStore`: In-memory repository managing agents, sessions, and threads with scope-bound slug uniqueness.
 
@@ -67,6 +69,7 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `MessageItem`: Renders individual conversational message bubbles, reasoning/thought process expandable drawers, tool call traces, and embeds `MarkdownRenderer` for message text.
 - `Sidebar`: Navigation sidebar managing hierarchical tree nodes (Agents, Sessions, Threads) with inline renaming, operational status pills, and external system links footer.
 - `ChatArea`: Conversation viewport orchestrating SSE stream binding, message listing, auto-scroll, thread status banners, and composer textarea with auto-focus.
+- `AgentInspector`: Tabbed agent inspection console surfacing decomposed system prompts (composite, scaffold, custom) with Markdown rendering and copy action, tool inventory with expandable JSON parameter schemas, inference runtime parameters, message trajectory, and workspace file listing.
 
 ## Design Principles
 - **Explicit over Implicit**: Prefer concrete, simple classes and protocols rather than speculative abstraction layers.
@@ -84,6 +87,7 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - [0008-git-persistence.md](../decisions/0008-git-persistence.md)
 - [0009-ui-markdown-renderer.md](../decisions/0009-ui-markdown-renderer.md)
 - [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md)
+- [0011-agent-inspector.md](../decisions/0011-agent-inspector.md)
 - [architecture.md](./architecture.md)
 - [backlog.md](./backlog.md)
 - [conventions.md](./conventions.md)

@@ -68,6 +68,12 @@ An isolated container environment managed by a locally hosted `opensandbox-serve
 ### Operational Directory (`/workspace`)
 The mount path inside an agent's execution sandbox container where the session's Git-tracked `data/` directory is mounted. Files inside `/workspace` are version-controlled and persisted across checkpoints; all paths outside `/workspace` in the sandbox container are transient.
 
+### Agent Inspector
+An introspection subsystem (accessible via the `GET .../inspect` endpoint and the UI `[Inspector]` tab) surfacing the full runtime manifest of an agent as of its latest inference run: decomposed system prompt layers, registered tool parameter schemas, execution backend bindings, inference configuration with credential masking, Gitea branch/commit provenance, and message trajectory.
+
+### Composite System Prompt
+The effective prompt received by the language model assembled from two primary layers: base sandbox operational scaffolding (`build_sandbox_system_prompt`) and user-configured custom instructions.
+
 ## Cross-References
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
@@ -77,7 +83,9 @@ The mount path inside an agent's execution sandbox container where the session's
 - [0006-external-system-links.md](../decisions/0006-external-system-links.md)
 - [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md)
 - [0008-git-persistence.md](../decisions/0008-git-persistence.md)
+- [0009-ui-markdown-renderer.md](../decisions/0009-ui-markdown-renderer.md)
 - [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md)
+- [0011-agent-inspector.md](../decisions/0011-agent-inspector.md)
 - [architecture.md](./architecture.md)
 - [abstractions.md](./abstractions.md)
 - [backlog.md](./backlog.md)
