@@ -121,6 +121,12 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md).
 - **Linked Invariants**: [INV-022](./invariants.md#inv-022-thread-acceptance-and-sync-pr-lifecycle).
 
+### REQ-020: Tool Call Lifecycle Visibility & Accurate UI Stream Rendering
+- **Description**: The Web UI must track and render the full lifecycle of agent tool calls across distinct states (`Pending`, `WIP`, `Done`, and `Failed`), displaying the actual tool name, parsed arguments, and execution result. Tool results transmitted in `TOOL_CALL_RESULT.content` and `MESSAGES_SNAPSHOT` must be accurately extracted and rendered without being lost or remaining stuck in the `Running` state.
+- **Rationale**: Eliminates developer blind spots during tool execution by providing unambiguous visual progression and output inspection for sandbox operations.
+- **Provenance**: [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md).
+- **Linked Invariants**: [INV-023](./invariants.md#inv-023-tool-call-lifecycle-and-state-representation).
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [invariants.md](./invariants.md)
@@ -136,3 +142,4 @@ Requirements, rationale, provenance, and stable IDs.
 - [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md)
 - [0011-agent-inspector.md](../decisions/0011-agent-inspector.md)
 - [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md)
+- [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md)

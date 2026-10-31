@@ -348,9 +348,7 @@ class HarnessStore:
             try:
                 ws_mgr.commit_session_config(session)
             except Exception:
-                logger.exception(
-                    "Failed to commit session config for new thread in %s", session.id
-                )
+                logger.exception("Failed to commit session config for new thread in %s", session.id)
 
             try:
                 ws_mgr.open_sync_pr(session, agent)

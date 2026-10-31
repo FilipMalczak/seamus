@@ -15,6 +15,9 @@ from ag_ui.core.events import (
     RunFinishedEvent,
     RunStartedEvent,
     TextMessageChunkEvent,
+    ToolCallArgsEvent,
+    ToolCallEndEvent,
+    ToolCallResultEvent,
     ToolCallStartEvent,
 )
 from ag_ui.core.types import RunAgentInput, TextInputContent, UserMessage
@@ -290,3 +293,58 @@ def test_seamus_langgraph_agent_preserves_checkpoint_messages() -> None:
     merged = agent.langgraph_default_merge_state(state, [u2], input_data)
     merged_msgs = merged["messages"]
     assert [m.id for m in merged_msgs] == ["u1", "a1", "u2"]
+
+
+def test_tool_call_lifecycle_status_transitions() -> None:
+    config = AgentConfig(
+        inference=InferenceConfig(api_key="mock-key"),
+        model_name="mock-model",
+    )
+    agent = Agent(config=config, name="agent")
+    session = agent.create_session(name="session")
+    runner = SessionAgentRunner(session=session, agent=FakeAgent())
+    thread = session.get_open_thread()
+
+    runner._update_status_from_event(
+        thread,
+        RunStartedEvent(type=EventType.RUN_STARTED, thread_id="t", run_id="r"),
+    )
+    assert session.get_open_thread().status == AgentStatus.AWAITING_LLM
+
+    runner._update_status_from_event(
+        thread,
+        ToolCallStartEvent(
+            type=EventType.TOOL_CALL_START, tool_call_id="call-1", tool_call_name="execute"
+        ),
+    )
+    assert session.get_open_thread().status == AgentStatus.EXECUTING_TOOL
+
+    runner._update_status_from_event(
+        thread,
+        ToolCallArgsEvent(
+            type=EventType.TOOL_CALL_ARGS, tool_call_id="call-1", delta='{"cmd": "ls"}'
+        ),
+    )
+    assert session.get_open_thread().status == AgentStatus.EXECUTING_TOOL
+
+    runner._update_status_from_event(
+        thread, ToolCallEndEvent(type=EventType.TOOL_CALL_END, tool_call_id="call-1")
+    )
+    assert session.get_open_thread().status == AgentStatus.EXECUTING_TOOL
+
+    runner._update_status_from_event(
+        thread,
+        ToolCallResultEvent(
+            type=EventType.TOOL_CALL_RESULT,
+            tool_call_id="call-1",
+            message_id="m1",
+            content="file.txt",
+        ),
+    )
+    assert session.get_open_thread().status == AgentStatus.AWAITING_LLM
+
+    runner._update_status_from_event(
+        thread,
+        RunFinishedEvent(type=EventType.RUN_FINISHED, thread_id="t", run_id="r"),
+    )
+    assert session.get_open_thread().status == AgentStatus.AWAITING_USER

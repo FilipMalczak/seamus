@@ -114,6 +114,11 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-019](./requirements.md#req-019-gitea-sync-prs-and-thread-acceptance-lifecycle), [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md).
 - **Enforcement**: `HarnessStore.accept_thread()`, `GitWorkspaceManager.open_sync_pr()`, `GitWorkspaceManager.merge_sync_pr()`, `POST .../thread/{thread_identifier}/accept`, and UI component removal of manual thread creation in `Sidebar.tsx` and `ChatArea.tsx`.
 
+### INV-023: Tool Call Lifecycle and State Representation
+- **Statement**: Tool calls must strictly progress through deterministic lifecycle states (`Pending` -> `WIP` -> `Done` or `Failed`). During argument streaming (`TOOL_CALL_START`, `TOOL_CALL_ARGS`), tool calls remain in `pending`; upon completion of argument streaming (`TOOL_CALL_END`), tool calls transition to `wip` and thread status remains in `EXECUTING_TOOL`; upon receipt of execution output (`TOOL_CALL_RESULT`), output is extracted from `content` and the call transitions to `done` (or `error` on failure). Replayed event streams and snapshots (`MESSAGES_SNAPSHOT`) must reconcile all tool calls with their final execution state without leaving calls in `Running` or resetting tool names. Within the conversation UI, thought processes, tool calls, and text responses must be interweaved in their actual chronological sequence. Completed tools and reasoning blocks whose streaming has finished (or been succeeded by another block) must automatically collapse, while preserving user manual toggle controls.
+- **Justification**: [REQ-020](./requirements.md#req-020-tool-call-lifecycle-visibility--accurate-ui-stream-rendering), [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md).
+- **Enforcement**: `seamus.harness.runner.SessionAgentRunner._update_status_from_event()`, `useThreadStream.ts`, `ToolCallItem.tsx`, `MessageItem.tsx`, and tests in `tests/test_runner.py`.
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [requirements.md](./requirements.md)
@@ -129,3 +134,4 @@ Properties and rules that must always hold across the repository.
 - [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md)
 - [0011-agent-inspector.md](../decisions/0011-agent-inspector.md)
 - [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md)
+- [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md)

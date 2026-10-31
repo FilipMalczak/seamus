@@ -62,12 +62,21 @@ export type AgentDetail = {
   sessions: SessionSummary[];
 };
 
+export type ToolCallStatus = "pending" | "wip" | "done" | "error";
+
 export type ToolCallRecord = {
   id: string;
   name: string;
-  args?: Record<string, unknown>;
+  status?: ToolCallStatus;
+  args?: Record<string, unknown> | string;
+  rawArgs?: string;
   result?: unknown;
 };
+
+export type MessagePart =
+  | { type: "reasoning"; id: string; content: string; isStreaming?: boolean }
+  | { type: "tool_call"; id: string; toolCall: ToolCallRecord }
+  | { type: "text"; id: string; content: string };
 
 export type ChatMessage = {
   id: string;
@@ -76,6 +85,7 @@ export type ChatMessage = {
   reasoning?: string;
   isReasoning?: boolean;
   toolCalls?: ToolCallRecord[];
+  parts?: MessagePart[];
   timestamp: string;
 };
 

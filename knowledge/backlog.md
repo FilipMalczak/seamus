@@ -69,11 +69,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Mounting `/var/run/docker.sock` and provisioning sibling containers grants privileged daemon control to the sandbox server; hardening these boundaries is critical before untrusted or multi-tenant workloads run in sandboxes.
 - **Provenance**: [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md#5-containerized-local-opensandbox-server-opensandbox-docker-composeyml-runsh), [architecture.md](./architecture.md#component-boundaries).
 
-### Fix Tool Call Rendering in Web UI
-- **Description**: The Web UI rendering for agent tool calls (`TOOL_CALL_START`, `TOOL_CALL_ARGS`, `TOOL_CALL_CHUNK`, `TOOL_CALL_RESULT`, `TOOL_CALL_END` in `ui/src/hooks/useThreadStream.ts` and `ui/src/components/MessageItem.tsx`) appears broken. Investigate event parsing, state accumulation across streaming and replayed AG-UI tool events, and component rendering to ensure tool calls, arguments, and outputs display reliably.
-- **Rationale**: Clear visibility into agent tool invocations (such as sandbox file operations and `execute` commands) and their results is essential for inspecting and debugging agent runs in the UI.
-- **Provenance**: [0003-react-web-ui.md](../decisions/0003-react-web-ui.md), [abstractions.md](./abstractions.md#web-ui-presentation-subsystem-uisrc).
-
 ### Dynamic Model Catalog and Dropdowns in UI Configuration Modals
 - **Description**: The in-browser `ConfigModal` currently requires raw JSON editing for all configuration fields. Add structured input fields or dropdowns for supported model names and inference formats while preserving the raw JSON editing tab.
 - **Rationale**: Reduces syntax errors and configuration friction when configuring agents and sessions.
@@ -85,9 +80,9 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Provenance**: [0008-git-persistence.md](../decisions/0008-git-persistence.md), [conventions.md](./conventions.md#container-orchestration--launch-conventions).
 
 ### Detailed End-to-End Testing of Thread Acceptance and Sync PR Lifecycle
-- **Description**: Perform in-depth end-to-end testing of the thread acceptance lifecycle and Gitea Sync PR merges across complex multi-turn trajectories, concurrent operations, and error states. This testing should take place after prerequisite issues (such as tool call rendering fixes) are resolved.
+- **Description**: Perform in-depth end-to-end testing of the thread acceptance lifecycle and Gitea Sync PR merges across complex multi-turn trajectories, concurrent operations, and error states following the resolution of tool call rendering in [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md).
 - **Rationale**: Ensures the automated Sync PR merge, thread closure, and branch synchronization are robust under realistic usage before full operational release.
-- **Provenance**: [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md).
+- **Provenance**: [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md), [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md).
 
 ### Restrict Sync PRs to Only Cover data/ Working Directory
 - **Description**: Scope Sync PRs from `session/{session_id}` to `main` so that they only propagate agent workspace deliverables under `data/`, rather than merging the full session branch tree which includes `agent/config/` and `agent/state/`.

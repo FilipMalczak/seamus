@@ -1,6 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getThreadStatus, postUserInput, subscribeToThreadStream } from "../api/client";
-import type { AgentStatus, ChatMessage, ToolCallRecord } from "../api/types";
+import type { AgentStatus, ChatMessage, MessagePart, ToolCallRecord } from "../api/types";
+
+function findLastIndex<T>(arr: T[], predicate: (val: T) => boolean): number {
+  for (let i = arr.length - 1; i >= 0; i--) {
+    if (predicate(arr[i])) return i;
+  }
+  return -1;
+}
+
+function stopStreamingReasoningParts(parts?: MessagePart[]): MessagePart[] {
+  if (!parts || parts.length === 0) return [];
+  let changed = false;
+  const updated = parts.map((p) => {
+    if (p.type === "reasoning" && p.isStreaming) {
+      changed = true;
+      return { ...p, isStreaming: false };
+    }
+    return p;
+  });
+  return changed ? updated : parts;
+}
 
 export function useThreadStream(
   agentId: string | null,
@@ -56,69 +76,294 @@ export function useThreadStream(
         } else if (type === "RUN_ERROR") {
           setStatus("ERROR");
           setStreamError(event.message || "Execution encountered an error.");
-        } else if (
-          type === "TOOL_CALL_START" ||
-          type === "TOOL_CALL_ARGS" ||
-          type === "TOOL_CALL_CHUNK"
-        ) {
+        } else if (type === "TOOL_CALL_START") {
           setStatus("EXECUTING_TOOL");
           const callId = event.tool_call_id || event.toolCallId || "tool-call";
           const callName = event.tool_call_name || event.toolCallName || "tool";
-          const args = event.args || {};
 
           setMessages((prev) => {
+            const newCall: ToolCallRecord = {
+              id: callId,
+              name: callName,
+              status: "pending",
+              rawArgs: "",
+              args: {},
+            };
+            const toolPart: MessagePart = {
+              type: "tool_call",
+              id: callId,
+              toolCall: newCall,
+            };
+
+            const msgIdx = findLastIndex(prev, (m) =>
+              Boolean(m.toolCalls?.some((c) => c.id === callId))
+            );
+
+            if (msgIdx >= 0) {
+              const target = prev[msgIdx];
+              const updatedCalls = (target.toolCalls || []).map((c) =>
+                c.id === callId
+                  ? {
+                      ...c,
+                      name: callName || c.name,
+                      status: "pending" as const,
+                    }
+                  : c
+              );
+              const updatedParts = (target.parts || []).map((p) =>
+                p.type === "tool_call" && p.toolCall.id === callId
+                  ? {
+                      ...p,
+                      toolCall: {
+                        ...p.toolCall,
+                        name: callName || p.toolCall.name,
+                        status: "pending" as const,
+                      },
+                    }
+                  : p
+              );
+              const copy = [...prev];
+              copy[msgIdx] = {
+                ...target,
+                toolCalls: updatedCalls,
+                parts: updatedParts,
+              };
+              return copy;
+            }
+
             const last = prev[prev.length - 1];
             if (last && last.role === "assistant") {
-              const existingCalls = last.toolCalls || [];
-              const foundIdx = existingCalls.findIndex((c) => c.id === callId);
-              let updatedCalls: ToolCallRecord[];
-              if (foundIdx >= 0) {
-                updatedCalls = [...existingCalls];
-                updatedCalls[foundIdx] = {
-                  ...updatedCalls[foundIdx],
-                  name: callName || updatedCalls[foundIdx].name,
-                  args: { ...updatedCalls[foundIdx].args, ...args },
-                };
-              } else {
-                updatedCalls = [
-                  ...existingCalls,
-                  { id: callId, name: callName, args },
-                ];
-              }
+              // Auto-collapse any active reasoning bubble because a new tool bubble started emitting!
+              const stoppedParts = stopStreamingReasoningParts(last.parts);
               return [
                 ...prev.slice(0, -1),
-                { ...last, toolCalls: updatedCalls },
+                {
+                  ...last,
+                  isReasoning: false,
+                  toolCalls: [...(last.toolCalls || []), newCall],
+                  parts: [...stoppedParts, toolPart],
+                },
               ];
             } else {
               return [
                 ...prev,
                 {
-                  id: `msg-${Date.now()}`,
+                  id: `asst-${Date.now()}`,
                   role: "assistant",
                   text: "",
-                  toolCalls: [{ id: callId, name: callName, args }],
+                  toolCalls: [newCall],
+                  parts: [toolPart],
                   timestamp: new Date().toISOString(),
                 },
               ];
             }
           });
-        } else if (type === "TOOL_CALL_RESULT" || type === "TOOL_CALL_END") {
-          setStatus("AWAITING_LLM");
-          const callId = event.tool_call_id || event.toolCallId;
-          const result = event.result ?? event.output;
+        } else if (
+          type === "TOOL_CALL_ARGS" ||
+          type === "TOOL_CALL_CHUNK"
+        ) {
+          setStatus("EXECUTING_TOOL");
+          const callId = event.tool_call_id || event.toolCallId || "tool-call";
+          const delta =
+            event.delta || (typeof event.args === "string" ? event.args : "") || "";
+          const explicitArgs =
+            typeof event.args === "object" && event.args !== null ? event.args : null;
+          const callName = event.tool_call_name || event.toolCallName;
 
           setMessages((prev) => {
-            const last = prev[prev.length - 1];
-            if (last && last.role === "assistant" && last.toolCalls) {
-              const updatedCalls = last.toolCalls.map((c) =>
-                !callId || c.id === callId ? { ...c, result } : c
-              );
-              return [
-                ...prev.slice(0, -1),
-                { ...last, toolCalls: updatedCalls },
+            let msgIdx = findLastIndex(prev, (m) =>
+              Boolean(m.toolCalls?.some((c) => c.id === callId))
+            );
+            if (msgIdx < 0 && prev.length > 0 && prev[prev.length - 1].role === "assistant") {
+              msgIdx = prev.length - 1;
+            }
+            if (msgIdx < 0) return prev;
+
+            const target = prev[msgIdx];
+            const existingCalls = target.toolCalls || [];
+            const callIdx = existingCalls.findIndex((c) => c.id === callId);
+
+            let updatedCall: ToolCallRecord;
+            let updatedCalls: ToolCallRecord[];
+
+            if (callIdx >= 0) {
+              const existing = existingCalls[callIdx];
+              const accumulatedRaw = (existing.rawArgs || "") + delta;
+              let parsed = existing.args;
+              if (explicitArgs) {
+                parsed = {
+                  ...(typeof parsed === "object" && parsed !== null ? parsed : {}),
+                  ...explicitArgs,
+                };
+              } else if (accumulatedRaw) {
+                try {
+                  parsed = JSON.parse(accumulatedRaw);
+                } catch {
+                  // Partial JSON chunk, keep accumulating
+                }
+              }
+
+              updatedCall = {
+                ...existing,
+                name: callName || existing.name,
+                rawArgs: accumulatedRaw,
+                args: parsed,
+                status:
+                  existing.status === "wip" || existing.status === "done"
+                    ? existing.status
+                    : "pending",
+              };
+              updatedCalls = [...existingCalls];
+              updatedCalls[callIdx] = updatedCall;
+            } else {
+              let parsed: any = explicitArgs || {};
+              if (delta) {
+                try {
+                  parsed = JSON.parse(delta);
+                } catch {
+                  // Partial JSON
+                }
+              }
+              updatedCall = {
+                id: callId,
+                name: callName || "tool",
+                rawArgs: delta,
+                args: parsed,
+                status: "pending",
+              };
+              updatedCalls = [...existingCalls, updatedCall];
+            }
+
+            // Sync into chronological parts
+            const currentParts = target.parts || [];
+            const partIdx = currentParts.findIndex(
+              (p) => p.type === "tool_call" && p.toolCall.id === callId
+            );
+            let updatedParts: MessagePart[];
+            if (partIdx >= 0) {
+              updatedParts = [...currentParts];
+              updatedParts[partIdx] = {
+                type: "tool_call",
+                id: callId,
+                toolCall: updatedCall,
+              };
+            } else {
+              updatedParts = [
+                ...currentParts,
+                { type: "tool_call", id: callId, toolCall: updatedCall },
               ];
             }
-            return prev;
+
+            const copy = [...prev];
+            copy[msgIdx] = {
+              ...target,
+              toolCalls: updatedCalls,
+              parts: updatedParts,
+            };
+            return copy;
+          });
+        } else if (type === "TOOL_CALL_END") {
+          setStatus("EXECUTING_TOOL");
+          const callId = event.tool_call_id || event.toolCallId;
+
+          setMessages((prev) => {
+            const msgIdx = findLastIndex(prev, (m) =>
+              Boolean(m.toolCalls?.some((c) => !callId || c.id === callId))
+            );
+            if (msgIdx < 0) return prev;
+
+            const target = prev[msgIdx];
+            const updatedCalls = (target.toolCalls || []).map((c) => {
+              if (callId && c.id !== callId) return c;
+              let parsed = c.args;
+              if ((!parsed || Object.keys(parsed).length === 0) && c.rawArgs) {
+                try {
+                  parsed = JSON.parse(c.rawArgs);
+                } catch {
+                  // Not valid JSON
+                }
+              }
+              return {
+                ...c,
+                args: parsed,
+                status: c.status === "done" ? ("done" as const) : ("wip" as const),
+              };
+            });
+
+            const updatedParts = (target.parts || []).map((p) => {
+              if (p.type !== "tool_call") return p;
+              if (callId && p.toolCall.id !== callId) return p;
+              const matched = updatedCalls.find((c) => c.id === p.toolCall.id);
+              return matched
+                ? { ...p, toolCall: matched }
+                : {
+                    ...p,
+                    toolCall: {
+                      ...p.toolCall,
+                      status: p.toolCall.status === "done" ? ("done" as const) : ("wip" as const),
+                    },
+                  };
+            });
+
+            const copy = [...prev];
+            copy[msgIdx] = {
+              ...target,
+              toolCalls: updatedCalls,
+              parts: updatedParts,
+            };
+            return copy;
+          });
+        } else if (type === "TOOL_CALL_RESULT") {
+          setStatus("AWAITING_LLM");
+          const callId = event.tool_call_id || event.toolCallId;
+          const result = event.content ?? event.result ?? event.output;
+          const isError = Boolean(
+            event.is_error || event.isError || event.status === "error"
+          );
+
+          setMessages((prev) => {
+            let msgIdx = findLastIndex(prev, (m) =>
+              Boolean(m.toolCalls?.some((c) => !callId || c.id === callId))
+            );
+            if (msgIdx < 0 && prev.length > 0 && prev[prev.length - 1].role === "assistant") {
+              msgIdx = prev.length - 1;
+            }
+            if (msgIdx < 0) return prev;
+
+            const target = prev[msgIdx];
+            const updatedCalls = (target.toolCalls || []).map((c) =>
+              !callId || c.id === callId
+                ? {
+                    ...c,
+                    result,
+                    status: isError ? ("error" as const) : ("done" as const),
+                  }
+                : c
+            );
+
+            const updatedParts = (target.parts || []).map((p) => {
+              if (p.type !== "tool_call") return p;
+              if (callId && p.toolCall.id !== callId) return p;
+              const matched = updatedCalls.find((c) => c.id === p.toolCall.id);
+              return matched
+                ? { ...p, toolCall: matched }
+                : {
+                    ...p,
+                    toolCall: {
+                      ...p.toolCall,
+                      result,
+                      status: isError ? ("error" as const) : ("done" as const),
+                    },
+                  };
+            });
+
+            const copy = [...prev];
+            copy[msgIdx] = {
+              ...target,
+              toolCalls: updatedCalls,
+              parts: updatedParts,
+            };
+            return copy;
           });
         } else if (
           type === "REASONING_START" ||
@@ -126,25 +371,43 @@ export function useThreadStream(
         ) {
           setStatus("AWAITING_LLM");
           const msgId = event.message_id || event.messageId || `reasoning-${Date.now()}`;
+
           setMessages((prev) => {
             const last = prev[prev.length - 1];
-            if (last && last.role === "assistant" && !last.text) {
+            if (last && last.role === "assistant") {
+              const currentParts = last.parts || [];
+              const lastPart = currentParts[currentParts.length - 1];
+              let updatedParts = currentParts;
+              if (lastPart && lastPart.type === "reasoning" && lastPart.isStreaming) {
+                // Already streaming this reasoning part
+              } else {
+                updatedParts = [
+                  ...stopStreamingReasoningParts(currentParts),
+                  { type: "reasoning", id: msgId, content: "", isStreaming: true },
+                ];
+              }
               return [
                 ...prev.slice(0, -1),
-                { ...last, isReasoning: true },
+                {
+                  ...last,
+                  isReasoning: true,
+                  parts: updatedParts,
+                },
+              ];
+            } else {
+              return [
+                ...prev,
+                {
+                  id: `asst-${Date.now()}`,
+                  role: "assistant",
+                  text: "",
+                  reasoning: "",
+                  isReasoning: true,
+                  parts: [{ type: "reasoning", id: msgId, content: "", isStreaming: true }],
+                  timestamp: new Date().toISOString(),
+                },
               ];
             }
-            return [
-              ...prev,
-              {
-                id: msgId,
-                role: "assistant",
-                text: "",
-                reasoning: "",
-                isReasoning: true,
-                timestamp: new Date().toISOString(),
-              },
-            ];
           });
         } else if (
           type === "REASONING_MESSAGE_CONTENT" ||
@@ -159,26 +422,53 @@ export function useThreadStream(
             const last = prev[prev.length - 1];
             if (last && last.role === "assistant") {
               const currentReasoning = last.reasoning || "";
+              const currentParts = last.parts || [];
+              const lastPart = currentParts[currentParts.length - 1];
+              let updatedParts: MessagePart[];
+
+              if (lastPart && lastPart.type === "reasoning" && lastPart.isStreaming) {
+                updatedParts = [
+                  ...currentParts.slice(0, -1),
+                  { ...lastPart, content: lastPart.content + delta, isStreaming: true },
+                ];
+              } else {
+                updatedParts = [
+                  ...stopStreamingReasoningParts(currentParts),
+                  {
+                    type: "reasoning",
+                    id: msgId || `reasoning-${Date.now()}`,
+                    content: delta,
+                    isStreaming: true,
+                  },
+                ];
+              }
+
               return [
                 ...prev.slice(0, -1),
                 {
                   ...last,
                   reasoning: currentReasoning + delta,
                   isReasoning: true,
+                  parts: updatedParts,
+                },
+              ];
+            } else {
+              const newMsgId = msgId || `reasoning-${Date.now()}`;
+              return [
+                ...prev,
+                {
+                  id: `asst-${Date.now()}`,
+                  role: "assistant",
+                  text: "",
+                  reasoning: delta,
+                  isReasoning: true,
+                  parts: [
+                    { type: "reasoning", id: newMsgId, content: delta, isStreaming: true },
+                  ],
+                  timestamp: new Date().toISOString(),
                 },
               ];
             }
-            return [
-              ...prev,
-              {
-                id: msgId || `reasoning-${Date.now()}`,
-                role: "assistant",
-                text: "",
-                reasoning: delta,
-                isReasoning: true,
-                timestamp: new Date().toISOString(),
-              },
-            ];
           });
         } else if (
           type === "REASONING_MESSAGE_END" ||
@@ -186,10 +476,14 @@ export function useThreadStream(
         ) {
           setMessages((prev) => {
             const last = prev[prev.length - 1];
-            if (last && last.role === "assistant" && last.isReasoning) {
+            if (last && last.role === "assistant") {
               return [
                 ...prev.slice(0, -1),
-                { ...last, isReasoning: false },
+                {
+                  ...last,
+                  isReasoning: false,
+                  parts: stopStreamingReasoningParts(last.parts),
+                },
               ];
             }
             return prev;
@@ -207,10 +501,21 @@ export function useThreadStream(
               return prev;
             }
             const last = prev[prev.length - 1];
-            if (role === "assistant" && last && last.role === "assistant" && !last.text) {
+            if (role === "assistant" && last && last.role === "assistant") {
+              // Another bubble started emitting (text)! Auto-collapse any active reasoning bubble
+              const stoppedParts = stopStreamingReasoningParts(last.parts);
+              const textPart: MessagePart = {
+                type: "text",
+                id: msgId,
+                content: "",
+              };
               return [
                 ...prev.slice(0, -1),
-                { ...last, id: msgId, isReasoning: false },
+                {
+                  ...last,
+                  isReasoning: false,
+                  parts: [...stoppedParts, textPart],
+                },
               ];
             }
             return [
@@ -219,6 +524,10 @@ export function useThreadStream(
                 id: msgId,
                 role,
                 text: "",
+                parts:
+                  role === "assistant"
+                    ? [{ type: "text", id: msgId, content: "" }]
+                    : undefined,
                 timestamp: new Date().toISOString(),
               },
             ];
@@ -240,9 +549,27 @@ export function useThreadStream(
                 if (target.role === "user" && target.text === delta) {
                   return prev;
                 }
+                const currentParts = target.parts || [];
+                const stopped = stopStreamingReasoningParts(currentParts);
+                const lastPart = stopped[stopped.length - 1];
+                let updatedParts: MessagePart[];
+                if (lastPart && lastPart.type === "text") {
+                  updatedParts = [
+                    ...stopped.slice(0, -1),
+                    { ...lastPart, content: lastPart.content + delta },
+                  ];
+                } else {
+                  updatedParts = [
+                    ...stopped,
+                    { type: "text", id: msgId, content: delta },
+                  ];
+                }
+
                 const updated = {
                   ...target,
                   text: target.text ? target.text + delta : delta,
+                  parts: updatedParts,
+                  isReasoning: false,
                 };
                 const copy = [...prev];
                 copy[idx] = updated;
@@ -253,18 +580,45 @@ export function useThreadStream(
             // Fallback: append to last assistant message if one exists
             const last = prev[prev.length - 1];
             if (last && last.role === "assistant") {
+              const currentParts = last.parts || [];
+              const stopped = stopStreamingReasoningParts(currentParts);
+              const lastPart = stopped[stopped.length - 1];
+              let updatedParts: MessagePart[];
+              if (lastPart && lastPart.type === "text") {
+                updatedParts = [
+                  ...stopped.slice(0, -1),
+                  { ...lastPart, content: lastPart.content + delta },
+                ];
+              } else {
+                updatedParts = [
+                  ...stopped,
+                  {
+                    type: "text",
+                    id: msgId || `text-${Date.now()}`,
+                    content: delta,
+                  },
+                ];
+              }
+
               return [
                 ...prev.slice(0, -1),
-                { ...last, text: last.text + delta },
+                {
+                  ...last,
+                  text: last.text + delta,
+                  parts: updatedParts,
+                  isReasoning: false,
+                },
               ];
             } else {
               setStatus("AWAITING_LLM");
+              const newMsgId = msgId || `msg-${Date.now()}`;
               return [
                 ...prev,
                 {
-                  id: msgId || `msg-${Date.now()}`,
+                  id: newMsgId,
                   role: "assistant",
                   text: delta,
+                  parts: [{ type: "text", id: newMsgId, content: delta }],
                   timestamp: new Date().toISOString(),
                 },
               ];
@@ -287,6 +641,147 @@ export function useThreadStream(
                 timestamp: new Date().toISOString(),
               },
             ];
+          });
+        } else if (type === "MESSAGES_SNAPSHOT") {
+          const snapshotMsgs = event.messages || [];
+          if (!Array.isArray(snapshotMsgs) || snapshotMsgs.length === 0) return;
+
+          const toolResults = new Map<string, unknown>();
+          for (const m of snapshotMsgs) {
+            const role = m.role || m.type;
+            const callRef = m.toolCallId || m.tool_call_id;
+            if (role === "tool" && callRef) {
+              toolResults.set(callRef, m.content);
+            }
+          }
+
+          setMessages((prev) => {
+            if (prev.length === 0) {
+              const rebuilt: ChatMessage[] = [];
+              for (const m of snapshotMsgs) {
+                const role = m.role || m.type;
+                if (role === "user") {
+                  const text =
+                    typeof m.content === "string"
+                      ? m.content
+                      : m.content?.[0]?.text || "";
+                  rebuilt.push({
+                    id: m.id || `user-${rebuilt.length}`,
+                    role: "user",
+                    text,
+                    timestamp: new Date().toISOString(),
+                  });
+                } else if (role === "assistant") {
+                  const text = typeof m.content === "string" ? m.content : "";
+                  const rawCalls = m.toolCalls || m.tool_calls || [];
+                  const toolCalls: ToolCallRecord[] = rawCalls.map((tc: any) => {
+                    const id = tc.id;
+                    const name = tc.function?.name || tc.name || "tool";
+                    const rawArgs =
+                      tc.function?.arguments ||
+                      (typeof tc.args === "string"
+                        ? tc.args
+                        : JSON.stringify(tc.args || {}));
+                    let parsedArgs: any = undefined;
+                    try {
+                      parsedArgs = JSON.parse(rawArgs);
+                    } catch {
+                      parsedArgs = rawArgs;
+                    }
+                    const res = toolResults.get(id);
+                    return {
+                      id,
+                      name,
+                      status: res !== undefined ? ("done" as const) : ("wip" as const),
+                      rawArgs,
+                      args: parsedArgs,
+                      result: res,
+                    };
+                  });
+
+                  // Build chronological parts
+                  const parts: MessagePart[] = [];
+                  const reasoningText = m.reasoning || m.reasoning_content;
+                  if (reasoningText) {
+                    parts.push({
+                      type: "reasoning",
+                      id: `reasoning-${m.id || rebuilt.length}`,
+                      content: reasoningText,
+                      isStreaming: false,
+                    });
+                  }
+                  for (const tc of toolCalls) {
+                    parts.push({
+                      type: "tool_call",
+                      id: tc.id,
+                      toolCall: tc,
+                    });
+                  }
+                  if (text) {
+                    parts.push({
+                      type: "text",
+                      id: `text-${m.id || rebuilt.length}`,
+                      content: text,
+                    });
+                  }
+
+                  rebuilt.push({
+                    id: m.id || `asst-${rebuilt.length}`,
+                    role: "assistant",
+                    text,
+                    reasoning: reasoningText || undefined,
+                    isReasoning: false,
+                    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+                    parts: parts.length > 0 ? parts : undefined,
+                    timestamp: new Date().toISOString(),
+                  });
+                }
+              }
+              return rebuilt;
+            }
+
+            return prev.map((msg) => {
+              if (msg.role !== "assistant") return msg;
+              const updatedCalls = (msg.toolCalls || []).map((c) => {
+                const snapRes = toolResults.get(c.id);
+                if (snapRes !== undefined) {
+                  return {
+                    ...c,
+                    result: c.result !== undefined ? c.result : snapRes,
+                    status: "done" as const,
+                  };
+                }
+                return c;
+              });
+
+              const updatedParts = (msg.parts || []).map((p) => {
+                if (p.type === "reasoning") {
+                  return { ...p, isStreaming: false };
+                }
+                if (p.type === "tool_call") {
+                  const snapRes = toolResults.get(p.toolCall.id);
+                  if (snapRes !== undefined) {
+                    return {
+                      ...p,
+                      toolCall: {
+                        ...p.toolCall,
+                        result:
+                          p.toolCall.result !== undefined ? p.toolCall.result : snapRes,
+                        status: "done" as const,
+                      },
+                    };
+                  }
+                }
+                return p;
+              });
+
+              return {
+                ...msg,
+                isReasoning: false,
+                toolCalls: updatedCalls,
+                parts: updatedParts,
+              };
+            });
           });
         }
       },
