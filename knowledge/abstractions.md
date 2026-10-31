@@ -80,4 +80,5 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - [0008-git-persistence.md](../decisions/0008-git-persistence.md)
 - [0009-ui-markdown-renderer.md](../decisions/0009-ui-markdown-renderer.md)
 - [architecture.md](./architecture.md)
+- [backlog.md](./backlog.md)
 - [conventions.md](./conventions.md)

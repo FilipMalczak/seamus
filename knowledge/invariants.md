@@ -100,6 +100,7 @@ Properties and rules that must always hold across the repository.
 - **Enforcement**: `MarkdownRenderer.tsx`, `MessageItem.tsx`, and CSS constraints in `ui/src/App.css`.
 
 ## Cross-References
+- [backlog.md](./backlog.md)
 - [requirements.md](./requirements.md)
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)

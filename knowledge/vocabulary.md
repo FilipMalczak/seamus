@@ -1,4 +1,4 @@
- by# Vocabulary
+# Vocabulary
 
 Canonical terms, definitions, and conceptual distinctions used throughout Seamus.
 
@@ -73,3 +73,4 @@ The startup process wherein `HarnessStore` discovers repositories and branches o
 - [0008-git-persistence.md](../decisions/0008-git-persistence.md)
 - [architecture.md](./architecture.md)
 - [abstractions.md](./abstractions.md)
+- [backlog.md](./backlog.md)

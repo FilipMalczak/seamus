@@ -82,4 +82,5 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 - [0008-git-persistence.md](../decisions/0008-git-persistence.md)
 - [0009-ui-markdown-renderer.md](../decisions/0009-ui-markdown-renderer.md)
 - [abstractions.md](./abstractions.md)
+- [backlog.md](./backlog.md)
 - [vocabulary.md](./vocabulary.md)
