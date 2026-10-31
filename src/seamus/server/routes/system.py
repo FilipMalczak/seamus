@@ -21,6 +21,7 @@ async def get_system_info() -> SystemInfoResponse:
     persist_settings = get_persistence_settings()
     gitea_on = persist_settings.enabled
     gitea_url = persist_settings.gitea_external_url if gitea_on else None
+    gitea_owner = persist_settings.gitea_admin_user if gitea_on else None
 
     return SystemInfoResponse(
         logfire=SystemLogfireInfo(
@@ -31,5 +32,6 @@ async def get_system_info() -> SystemInfoResponse:
         gitea=SystemGiteaInfo(
             enabled=gitea_on,
             url=gitea_url,
+            owner=gitea_owner,
         ),
     )

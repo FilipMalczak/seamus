@@ -161,6 +161,29 @@ export function Sidebar({
     }
   };
 
+  // Active agent and session Gitea branch resolution
+  const activeAgentId =
+    selectedAgentId ||
+    (selectedSessionId
+      ? agents.find((a) =>
+          Boolean(a.sessionsMap && a.sessionsMap[selectedSessionId])
+        )?.id
+      : null);
+
+  const giteaOwner = systemInfo?.gitea?.owner || "seamus";
+  const agentBranchUrl =
+    systemInfo?.gitea?.enabled && systemInfo.gitea.url && activeAgentId
+      ? `${systemInfo.gitea.url}/${giteaOwner}/agent-${activeAgentId}/src/branch/main`
+      : null;
+
+  const sessionBranchUrl =
+    systemInfo?.gitea?.enabled &&
+    systemInfo.gitea.url &&
+    activeAgentId &&
+    selectedSessionId
+      ? `${systemInfo.gitea.url}/${giteaOwner}/agent-${activeAgentId}/src/branch/session/${selectedSessionId}`
+      : null;
+
   return (
     <aside className="sidebar-container">
       <div className="sidebar-header">
@@ -572,16 +595,80 @@ export function Sidebar({
               </a>
             )}
             {systemInfo?.gitea?.enabled && systemInfo.gitea.url && (
-              <a
-                href={systemInfo.gitea.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="system-link-icon system-link-gitea"
-                title={`Open Gitea (${systemInfo.gitea.url})`}
-                aria-label="Open Gitea"
-              >
-                <GitBranch size={18} />
-              </a>
+              <>
+                <a
+                  href={systemInfo.gitea.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="system-link-icon system-link-gitea"
+                  title={`Open Gitea (${systemInfo.gitea.url})`}
+                  aria-label="Open Gitea"
+                >
+                  <GitBranch size={18} />
+                </a>
+
+                {agentBranchUrl ? (
+                  <a
+                    href={agentBranchUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="system-link-icon system-link-gitea-agent"
+                    title={`Open Agent Git Branch (main) on Gitea (${activeAgentId})`}
+                    aria-label="Open Agent Git Branch on Gitea"
+                  >
+                    <span className="composite-icon-wrapper">
+                      <Bot size={15} className="composite-base-icon text-sky-400" />
+                      <span className="composite-badge">
+                        <GitBranch size={8} />
+                      </span>
+                    </span>
+                  </a>
+                ) : (
+                  <span
+                    className="system-link-icon system-link-disabled"
+                    title="Select an agent to open its Git branch"
+                    aria-label="Agent Git Branch disabled (none selected)"
+                  >
+                    <span className="composite-icon-wrapper">
+                      <Bot size={15} className="composite-base-icon text-sky-400" />
+                      <span className="composite-badge">
+                        <GitBranch size={8} />
+                      </span>
+                    </span>
+                  </span>
+                )}
+
+                {sessionBranchUrl ? (
+                  <a
+                    href={sessionBranchUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="system-link-icon system-link-gitea-session"
+                    title={`Open Session Git Branch on Gitea (${selectedSessionId})`}
+                    aria-label="Open Session Git Branch on Gitea"
+                  >
+                    <span className="composite-icon-wrapper">
+                      <MessageSquare size={14} className="composite-base-icon text-indigo-400" />
+                      <span className="composite-badge">
+                        <GitBranch size={8} />
+                      </span>
+                    </span>
+                  </a>
+                ) : (
+                  <span
+                    className="system-link-icon system-link-disabled"
+                    title="Select a session to open its Git branch"
+                    aria-label="Session Git Branch disabled (none selected)"
+                  >
+                    <span className="composite-icon-wrapper">
+                      <MessageSquare size={14} className="composite-base-icon text-indigo-400" />
+                      <span className="composite-badge">
+                        <GitBranch size={8} />
+                      </span>
+                    </span>
+                  </span>
+                )}
+              </>
             )}
           </div>
         </div>

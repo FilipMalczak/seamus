@@ -16,7 +16,7 @@ Seamus agents require durable, version-controlled persistence. Unlike harnesses 
    - Maintain the Gitea Web UI accessible on `http://localhost:3001` with automated user initialization (`seamus`) and auto-install configuration.
 
 2. **Repository & Branch Layout**:
-   - Each Agent is mapped to a dedicated Git repository named `agent-{agent_id}` owned by the `seamus` service user.
+   - Each Agent is mapped to a dedicated public Git repository (`private=False`) named `agent-{agent_id}` owned by the `seamus` service user, browsable without authentication.
    - **Repository Structure**:
      ```text
      <repo> (agent-{agent_id})
@@ -65,10 +65,15 @@ Seamus agents require durable, version-controlled persistence. Unlike harnesses 
    - Reconstructs `thread.events` from `agent/state/threads/{thread_id}/events.json`.
    - Restores the entire hierarchy without external database dependencies.
 
-6. **Web UI Session Configuration Editing & External Gitea Link (`ui`)**:
+6. **Web UI Session Configuration Editing & External Gitea Links (`ui`)**:
    - Add a `Settings` icon button to Session nodes in `Sidebar.tsx` opening `ConfigModal` to inspect and modify session-specific `AgentConfig`.
    - Wire up `updateSession` and `updateAgent` API persistence handlers on modal save.
-   - Add an external system navigation link in the bottom-left sidebar linking to Gitea (`http://localhost:3001`), exposed dynamically via `GET /api/v-alpha/system/info`.
+   - Add an external system navigation link in the bottom-left sidebar linking to Gitea home (`http://localhost:3001`), exposed dynamically via `GET /api/v-alpha/system/info`.
+   - Add two contextual branch navigation buttons to the bottom-left sidebar footer:
+     1. **Agent Git Branch**: Direct link to `{gitea_url}/{owner}/agent-{agent_id}/src/branch/main` using a composite icon (base `Bot` icon in sky-400 badged with a mini `GitBranch` at bottom-right).
+     2. **Session Git Branch**: Direct link to `{gitea_url}/{owner}/agent-{agent_id}/src/branch/session/{session_id}` using a composite icon (base `MessageSquare` icon in indigo-400 badged with a mini `GitBranch` at bottom-right).
+     - Both buttons display in an inactive/disabled state with descriptive tooltips when no agent or session is selected, activating upon selection.
+     - *Note*: Option B (Git base with entity badge) was evaluated and may be reconsidered in the future.
 
 7. **Container Launch Script Refinement (`run.sh`)**:
    - Refined `--restart` (`-r`) to rebuild only the application containers we own (`backend`, `frontend`) and recreate them to apply code updates while preserving infrastructure containers (`postgres`, `gitea`) and all persistent volumes.

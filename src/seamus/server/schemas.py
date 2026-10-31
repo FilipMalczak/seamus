@@ -146,6 +146,7 @@ class SystemGiteaInfo(BaseModel):
 
     enabled: bool
     url: str | None = None
+    owner: str | None = None
 
 
 class SystemInfoResponse(BaseModel):

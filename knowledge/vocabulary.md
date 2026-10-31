@@ -1,4 +1,4 @@
-# Vocabulary
+ by# Vocabulary
 
 Canonical terms, definitions, and conceptual distinctions used throughout Seamus.
 
@@ -48,7 +48,7 @@ OpenTelemetry-compatible observability constructs powered by Pydantic Logfire:
 - **Scrubbing**: Automatic redaction of sensitive credentials and tokens; configured in Seamus to whitelist domain `session` attributes while redacting secrets.
 
 ### External System Links & Navigation Footer
-Pinned shortcut interface located at the bottom of the navigation tree left panel. Houses quick-launch icons linking to external companion platforms (such as the Logfire telemetry project dashboard and Gitea), conditionally displayed based on integration availability.
+Pinned shortcut interface located at the bottom of the navigation tree left panel. Houses quick-launch icons linking to external companion platforms: Logfire telemetry dashboard, Gitea Home, and contextual composite buttons for the selected Agent Git branch (`main`) and Session Git branch (`session/{session_id}`). Display is conditionally controlled based on integration availability and active selection.
 
 ### Agent Repository
 A dedicated Git repository in Gitea (`agent-{agent_id}`) tracking all versioned state for an Agent. Its `main` branch stores the base configuration (`agent/config/config.json`), a state placeholder (`agent/state/.gitkeep`), and an empty workspace baseline (`data/.gitkeep`).

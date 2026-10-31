@@ -65,9 +65,12 @@ def test_client_get_or_create_repo_created(test_settings: PersistenceSettings) -
     mock_post.json.return_value = {"id": 2, "name": "agent-new"}
 
     with patch("httpx.Client.get", return_value=mock_get):
-        with patch("httpx.Client.post", return_value=mock_post):
+        with patch("httpx.Client.post", return_value=mock_post) as mock_post_call:
             res = client.get_or_create_repo("agent-new")
             assert res["name"] == "agent-new"
+            assert mock_post_call.call_args is not None
+            create_payload = mock_post_call.call_args.kwargs["json"]
+            assert create_payload["private"] is False
 
 
 def test_client_get_or_create_repo_error(test_settings: PersistenceSettings) -> None:

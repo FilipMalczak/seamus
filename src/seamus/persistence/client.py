@@ -52,9 +52,9 @@ class GiteaClient:
         self,
         repo_name: str,
         description: str = "",
-        private: bool = True,
+        private: bool = False,
     ) -> dict[str, Any]:
-        """Fetch repository details, or create a new empty repository if not found."""
+        """Fetch repository details, or create a new public repository if not found."""
         owner = self.settings.gitea_admin_user
         with httpx.Client(timeout=10.0, auth=self.auth) as client:
             # Check if repository already exists
@@ -62,6 +62,19 @@ class GiteaClient:
             if get_res.status_code == 200:
                 data = get_res.json()
                 if isinstance(data, dict):
+                    # Ensure public visibility if private is False but existing repo was private
+                    if not private and data.get("private") is True:
+                        try:
+                            patch_res = client.patch(
+                                f"{self.base_url}/api/v1/repos/{owner}/{repo_name}",
+                                json={"private": False},
+                            )
+                            if patch_res.status_code == 200:
+                                updated = patch_res.json()
+                                if isinstance(updated, dict):
+                                    return updated
+                        except Exception:
+                            logger.exception("Failed to update repository %s visibility", repo_name)
                     return data
                 return {}
 

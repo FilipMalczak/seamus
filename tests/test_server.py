@@ -59,6 +59,11 @@ def test_system_info_endpoint(client: TestClient) -> None:
     else:
         assert data["logfire"]["url"] is None
 
+    assert "gitea" in data
+    assert "enabled" in data["gitea"]
+    assert "url" in data["gitea"]
+    assert "owner" in data["gitea"]
+
 
 def test_ui_root_serving(client: TestClient) -> None:
     """Verify that root / serves the built React UI if ui/dist exists."""

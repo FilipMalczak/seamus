@@ -244,6 +244,77 @@ body {
   box-shadow: 0 0 10px rgba(249, 115, 22, 0.25);
 }
 
+.system-link-gitea {
+  color: #609926;
+}
+
+.system-link-gitea:hover {
+  background: rgba(96, 153, 38, 0.15);
+  border-color: rgba(96, 153, 38, 0.4);
+  color: #dcfce7;
+  box-shadow: 0 0 10px rgba(96, 153, 38, 0.25);
+}
+
+.system-link-gitea-agent:hover {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: rgba(56, 189, 248, 0.4);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
+}
+
+.system-link-gitea-session:hover {
+  background: rgba(129, 140, 248, 0.15);
+  border-color: rgba(129, 140, 248, 0.4);
+  box-shadow: 0 0 10px rgba(129, 140, 248, 0.25);
+}
+
+.system-link-disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.system-link-disabled:hover {
+  transform: none;
+  background: var(--bg-tertiary);
+  border-color: var(--border-color);
+  box-shadow: none;
+}
+
+.composite-icon-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+}
+
+.composite-base-icon {
+  flex-shrink: 0;
+  transform: translate(-1px, -1px);
+}
+
+.composite-badge {
+  position: absolute;
+  bottom: -4px;
+  right: -5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: #609926;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.system-link-gitea-agent:hover .composite-badge,
+.system-link-gitea-session:hover .composite-badge {
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #86efac;
+}
+
 .tree-empty {
   padding: 2rem 1rem;
   text-align: center;
