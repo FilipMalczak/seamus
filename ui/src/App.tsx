@@ -42,7 +42,7 @@ export function App() {
     selectThread,
     createAgent,
     createSession,
-    createThread,
+    acceptThread,
     updateAgentName,
     updateSessionName,
     updateThreadName,
@@ -126,7 +126,6 @@ export function App() {
           onSelectThread={selectThread}
           onCreateAgent={createAgent}
           onCreateSession={createSession}
-          onCreateThread={createThread}
           onUpdateAgentName={updateAgentName}
           onUpdateSessionName={updateSessionName}
           onUpdateThreadName={updateThreadName}
@@ -172,9 +171,9 @@ export function App() {
                 sessionName={activeSession?.name || null}
                 thread={activeThread || null}
                 onStatusChange={setActiveStatus}
-                onNewThread={() => {
-                  if (selectedAgentId && selectedSessionId) {
-                    createThread(selectedAgentId, selectedSessionId, null);
+                onAcceptThread={async () => {
+                  if (selectedAgentId && selectedSessionId && activeThread) {
+                    await acceptThread(selectedAgentId, selectedSessionId, activeThread.id);
                   }
                 }}
               />

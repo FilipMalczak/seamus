@@ -206,3 +206,50 @@ def test_save_and_load_thread_state_and_events(
         capture_output=True,
     ).stdout.strip()
     assert log == f"state: update thread events [session={session.id} thread={thread.id}]"
+
+
+def test_sync_pr_workspace_operations(
+    git_environment: tuple[GitWorkspaceManager, Path, Path],
+    test_config: AgentConfig,
+) -> None:
+    manager, _, _ = git_environment
+    agent = Agent(name="test-agent", config=test_config)
+    session = Session(agent_id=agent.id, name="test-session", config=test_config)
+
+    # Mock client PR methods
+    mock_pr = {"id": 1, "number": 10, "head": {"ref": f"session/{session.id}"}, "mergeable": True}
+    manager.client.list_pull_requests = MagicMock(return_value=[])  # type: ignore[method-assign]
+    manager.client.create_pull_request = MagicMock(return_value=mock_pr)  # type: ignore[method-assign]
+    manager.client.approve_pull_request = MagicMock(return_value={"state": "APPROVED"})  # type: ignore[method-assign]
+    manager.client.merge_pull_request = MagicMock(return_value=True)  # type: ignore[method-assign]
+    manager.client.get_pull_request = MagicMock(return_value=mock_pr)  # type: ignore[method-assign]
+
+    # 1. Open Sync PR
+    opened = manager.open_sync_pr(session, agent)
+    assert opened is not None
+    assert opened["number"] == 10
+    manager.client.create_pull_request.assert_called_once()
+    create_call = manager.client.create_pull_request.call_args
+    assert create_call.kwargs["head"] == f"session/{session.id}"
+    assert create_call.kwargs["base"] == "main"
+
+    # 2. Get active Sync PR
+    manager.client.list_pull_requests.return_value = [mock_pr]
+    active = manager.get_active_sync_pr(session, agent)
+    assert active is not None
+    assert active["number"] == 10
+
+    # 3. Merge Sync PR
+    merged = manager.merge_sync_pr(session, agent)
+    assert merged is True
+    manager.client.approve_pull_request.assert_called_once_with(
+        repo_name=manager.get_agent_repo_name(session.agent_id),
+        index=10,
+        body="Accepted by user",
+    )
+    manager.client.merge_pull_request.assert_called_once_with(
+        repo_name=manager.get_agent_repo_name(session.agent_id),
+        index=10,
+        do="merge",
+        delete_branch=False,
+    )

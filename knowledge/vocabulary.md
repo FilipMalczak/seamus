@@ -74,6 +74,12 @@ An introspection subsystem (accessible via the `GET .../inspect` endpoint and th
 ### Composite System Prompt
 The effective prompt received by the language model assembled from two primary layers: base sandbox operational scaffolding (`build_sandbox_system_prompt`) and user-configured custom instructions.
 
+### Sync PR
+An automated Gitea pull request opened from a session branch (`session/{session_id}`) targeting the repository's base branch (`main`). Created upon session workspace initialization and renewed after each thread acceptance.
+
+### Thread Acceptance
+The explicit human-in-the-loop lifecycle transition triggered by the top bar "Accept" action. Closes the active thread, merges the session's active Sync PR into `main`, spawns a fresh thread on the same session branch, and opens a new Sync PR to `main`.
+
 ## Cross-References
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
@@ -86,6 +92,7 @@ The effective prompt received by the language model assembled from two primary l
 - [0009-ui-markdown-renderer.md](../decisions/0009-ui-markdown-renderer.md)
 - [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md)
 - [0011-agent-inspector.md](../decisions/0011-agent-inspector.md)
+- [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md)
 - [architecture.md](./architecture.md)
 - [abstractions.md](./abstractions.md)
 - [backlog.md](./backlog.md)

@@ -122,3 +122,83 @@ def test_client_get_authenticated_clone_url(test_settings: PersistenceSettings) 
     client = GiteaClient(test_settings)
     url = client.get_authenticated_clone_url("agent-123")
     assert url == "http://testuser:testpassword@test-gitea:3000/testuser/agent-123.git"
+
+
+def test_client_create_pull_request(test_settings: PersistenceSettings) -> None:
+    client = GiteaClient(test_settings)
+    mock_post = MagicMock()
+    mock_post.status_code = 201
+    mock_post.json.return_value = {"id": 1, "number": 42, "title": "Sync PR"}
+
+    with patch("httpx.Client.post", return_value=mock_post) as mock_post_call:
+        res = client.create_pull_request(
+            repo_name="agent-123",
+            title="Sync PR",
+            head="session/abc",
+            base="main",
+            body="Automated sync",
+        )
+        assert res["number"] == 42
+        payload = mock_post_call.call_args.kwargs["json"]
+        assert payload["head"] == "session/abc"
+        assert payload["base"] == "main"
+
+
+def test_client_get_pull_request(test_settings: PersistenceSettings) -> None:
+    client = GiteaClient(test_settings)
+    mock_get = MagicMock()
+    mock_get.status_code = 200
+    mock_get.json.return_value = {"number": 42, "mergeable": True}
+
+    with patch("httpx.Client.get", return_value=mock_get):
+        res = client.get_pull_request("agent-123", 42)
+        assert res["number"] == 42
+        assert res["mergeable"] is True
+
+
+def test_client_list_pull_requests(test_settings: PersistenceSettings) -> None:
+    client = GiteaClient(test_settings)
+    mock_get = MagicMock()
+    mock_get.status_code = 200
+    mock_get.json.return_value = [{"number": 1, "head": {"ref": "session/abc"}}]
+
+    with patch("httpx.Client.get", return_value=mock_get):
+        res = client.list_pull_requests("agent-123", state="open")
+        assert len(res) == 1
+        assert res[0]["number"] == 1
+
+
+def test_client_approve_pull_request_success(test_settings: PersistenceSettings) -> None:
+    client = GiteaClient(test_settings)
+    mock_post = MagicMock()
+    mock_post.status_code = 200
+    mock_post.json.return_value = {"state": "APPROVED"}
+
+    with patch("httpx.Client.post", return_value=mock_post):
+        res = client.approve_pull_request("agent-123", 1)
+        assert res is not None
+        assert res["state"] == "APPROVED"
+
+
+def test_client_approve_pull_request_self_rejected(test_settings: PersistenceSettings) -> None:
+    client = GiteaClient(test_settings)
+    mock_post = MagicMock()
+    mock_post.status_code = 422
+    mock_post.text = "approve your own pull is not allowed"
+
+    with patch("httpx.Client.post", return_value=mock_post):
+        res = client.approve_pull_request("agent-123", 1)
+        assert res is None
+
+
+def test_client_merge_pull_request(test_settings: PersistenceSettings) -> None:
+    client = GiteaClient(test_settings)
+    mock_post = MagicMock()
+    mock_post.status_code = 200
+
+    with patch("httpx.Client.post", return_value=mock_post) as mock_post_call:
+        res = client.merge_pull_request("agent-123", 1, do="merge", delete_branch=False)
+        assert res is True
+        payload = mock_post_call.call_args.kwargs["json"]
+        assert payload["Do"] == "merge"
+        assert payload["delete_branch_after_merge"] is False

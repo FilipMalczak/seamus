@@ -156,3 +156,32 @@ async def update_thread(
         is_open=thread.is_open,
         status=thread.status,
     )
+
+
+@router.post("/{thread_identifier}/accept", response_model=ThreadResponse)
+async def accept_thread(
+    agent_identifier: str,
+    session_identifier: str,
+    thread_identifier: str,
+) -> ThreadResponse:
+    """Accept the active thread, merge its Sync PR, and spawn a new thread with a new Sync PR."""
+    store = get_harness_store()
+    try:
+        new_thread = store.accept_thread(
+            agent_identifier=agent_identifier,
+            session_identifier=session_identifier,
+            thread_identifier=thread_identifier,
+        )
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return ThreadResponse(
+        id=new_thread.id,
+        name=new_thread.name,
+        created_at=new_thread.created_at,
+        last_touched_at=new_thread.last_touched_at,
+        is_open=new_thread.is_open,
+        status=new_thread.status,
+    )

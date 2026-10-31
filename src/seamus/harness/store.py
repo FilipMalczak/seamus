@@ -98,6 +98,7 @@ class HarnessStore:
                 ws_mgr = get_workspace_manager()
                 ws_mgr.initialize_agent_repo(agent)
                 ws_mgr.create_session_workspace(initial_session, agent)
+                ws_mgr.open_sync_pr(initial_session, agent)
             except Exception:
                 logger.exception("Failed to initialize git repository for agent %s", agent.id)
 
@@ -163,7 +164,9 @@ class HarnessStore:
                 session.config.validate_complete()
 
                 try:
-                    get_workspace_manager().create_session_workspace(session, agent)
+                    ws_mgr = get_workspace_manager()
+                    ws_mgr.create_session_workspace(session, agent)
+                    ws_mgr.open_sync_pr(session, agent)
                 except Exception:
                     logger.exception("Failed to initialize session workspace for %s", session.id)
 
@@ -284,6 +287,77 @@ class HarnessStore:
                 logger.exception("Failed to commit session thread update for %s", session.id)
 
             return thread
+
+    def accept_thread(
+        self,
+        agent_identifier: str,
+        session_identifier: str,
+        thread_identifier: str,
+    ) -> Thread:
+        """Accept the active thread, merge its Sync PR, and spawn a new thread with a new PR."""
+        agent = self.resolve_agent(agent_identifier)
+        session = resolve_session(agent, session_identifier)
+        thread = resolve_thread(session, thread_identifier)
+
+        if not thread.is_open:
+            raise ValueError(f"Thread '{thread_identifier}' is already closed.")
+
+        agent_ident = agent.name or str(agent.id)
+        session_ident = session.name or str(session.id)
+        thread_ident = thread.name or str(thread.id)
+
+        with logfire.span(
+            f"thread {thread_ident}",
+            thread_id=str(thread.id),
+            thread_name=thread.name,
+            thread_identifier=thread_ident,
+            session_id=str(session.id),
+            session_identifier=session_ident,
+            agent_id=str(agent.id),
+            agent_identifier=agent_ident,
+            operation="accept",
+        ):
+            # 1. Close current thread
+            thread.is_open = False
+            thread.touch()
+            session.touch()
+            agent.touch()
+
+            ws_mgr = get_workspace_manager()
+
+            # 2. Commit closed thread state to session branch
+            try:
+                ws_mgr.commit_session_config(session)
+            except Exception:
+                logger.exception(
+                    "Failed to commit session config upon thread close for %s", session.id
+                )
+
+            # 3. Approve and merge active Sync PR into main
+            try:
+                ws_mgr.merge_sync_pr(session, agent)
+            except Exception:
+                logger.exception("Failed to merge Sync PR for session %s", session.id)
+
+            # 4. Open a new thread on the same session branch
+            new_thread = session.create_thread()
+            session.touch()
+            agent.touch()
+
+            # 5. Commit session config with the new thread and open a renewed Sync PR
+            try:
+                ws_mgr.commit_session_config(session)
+            except Exception:
+                logger.exception(
+                    "Failed to commit session config for new thread in %s", session.id
+                )
+
+            try:
+                ws_mgr.open_sync_pr(session, agent)
+            except Exception:
+                logger.exception("Failed to open renewed Sync PR for session %s", session.id)
+
+            return new_thread
 
     def hydrate_from_gitea(self) -> None:
         """Discover existing agent repositories from Gitea and reconstruct domain entities."""

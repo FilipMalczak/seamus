@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  acceptThread,
   createAgent,
   createSession,
   createThread,
@@ -149,6 +150,18 @@ export function useAgentsTree() {
     [refreshTree]
   );
 
+  const handleAcceptThread = useCallback(
+    async (agentId: string, sessionId: string, threadId: string) => {
+      const newThread = await acceptThread(agentId, sessionId, threadId);
+      await refreshTree();
+      setSelectedAgentId(agentId);
+      setSelectedSessionId(sessionId);
+      setSelectedThreadId(newThread.id);
+      return newThread;
+    },
+    [refreshTree]
+  );
+
   const handleUpdateAgentName = useCallback(
     async (agentId: string, newName: string | null) => {
       const agent = agents.find((a) => a.id === agentId);
@@ -224,6 +237,7 @@ export function useAgentsTree() {
     createAgent: handleCreateAgent,
     createSession: handleCreateSession,
     createThread: handleCreateThread,
+    acceptThread: handleAcceptThread,
     updateAgentName: handleUpdateAgentName,
     updateSessionName: handleUpdateSessionName,
     updateThreadName: handleUpdateThreadName,

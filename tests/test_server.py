@@ -211,6 +211,51 @@ def test_session_and_thread_endpoints(client: TestClient) -> None:
     assert redirect_res2.headers["location"].endswith("thread-two")
 
 
+def test_accept_thread_endpoint(client: TestClient) -> None:
+    # 1. Setup agent and session
+    agent_res = client.post("/api/v-alpha/agents", json={"name": "accept-agent"})
+    agent_id = agent_res.json()["id"]
+
+    session_res = client.post(
+        f"/api/v-alpha/agent/{agent_id}/session",
+        json={"name": "accept-session"},
+    )
+    session_data = session_res.json()
+    t1 = session_data["threads"][0]
+    assert t1["is_open"] is True
+
+    # 2. Accept thread T1
+    accept_res = client.post(
+        f"/api/v-alpha/agent/{agent_id}/session/{session_data['id']}/thread/{t1['id']}/accept"
+    )
+    assert accept_res.status_code == 200
+    t2 = accept_res.json()
+    assert t2["id"] != t1["id"]
+    assert t2["is_open"] is True
+
+    # 3. Verify session threads list shows T1 closed and T2 open
+    get_session_res = client.get(f"/api/v-alpha/agent/{agent_id}/session/{session_data['id']}")
+    threads = get_session_res.json()["threads"]
+    assert len(threads) == 2
+    t1_check = next(t for t in threads if t["id"] == t1["id"])
+    t2_check = next(t for t in threads if t["id"] == t2["id"])
+    assert t1_check["is_open"] is False
+    assert t2_check["is_open"] is True
+
+    # 4. Attempting to accept already closed thread returns 400
+    closed_accept_res = client.post(
+        f"/api/v-alpha/agent/{agent_id}/session/{session_data['id']}/thread/{t1['id']}/accept"
+    )
+    assert closed_accept_res.status_code == 400
+    assert "already closed" in closed_accept_res.json()["detail"]
+
+    # 5. Non-existent thread returns 404
+    non_existent_res = client.post(
+        f"/api/v-alpha/agent/{agent_id}/session/{session_data['id']}/thread/unknown-thread/accept"
+    )
+    assert non_existent_res.status_code == 404
+
+
 @pytest.mark.asyncio
 async def test_user_input_and_streaming() -> None:
     app = create_app()

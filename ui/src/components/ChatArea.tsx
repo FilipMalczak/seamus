@@ -3,10 +3,10 @@ import {
   AlertCircle,
   ArrowUp,
   Bot,
+  Check,
   CheckCircle2,
   Clock,
   Loader2,
-  Plus,
   Sparkles,
   Wrench,
 } from "lucide-react";
@@ -20,7 +20,7 @@ interface ChatAreaProps {
   sessionId: string | null;
   sessionName: string | null;
   thread: ThreadInfo | null;
-  onNewThread: () => void;
+  onAcceptThread?: () => Promise<void>;
   onStatusChange?: (status: AgentStatus) => void;
 }
 
@@ -30,10 +30,11 @@ export function ChatArea({
   sessionId,
   sessionName,
   thread,
-  onNewThread,
+  onAcceptThread,
   onStatusChange,
 }: ChatAreaProps) {
   const [inputText, setInputText] = useState<string>("");
+  const [accepting, setAccepting] = useState<boolean>(false);
   const viewportEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -122,7 +123,7 @@ export function ChatArea({
       <main className="chat-main chat-empty-main">
         <div className="empty-state">
           <Bot className="size-12 text-sky-400" />
-          <h2>Select or Create a Thread</h2>
+          <h2>Select a Session or Thread</h2>
           <p>Choose an agent, session, and thread from the sidebar tree to start chatting.</p>
         </div>
       </main>
@@ -147,15 +148,40 @@ export function ChatArea({
 
         <div className="chat-top-actions">
           {renderStatusBadge(status)}
-          <button
-            type="button"
-            className="btn-secondary btn-sm"
-            onClick={onNewThread}
-            title="Create a new thread in this session"
-          >
-            <Plus className="size-3.5" />
-            <span>New Thread</span>
-          </button>
+          {onAcceptThread && (
+            <button
+              type="button"
+              className={`btn-accept ${
+                isOpen && !isBusy && !accepting
+                  ? "btn-accept-active"
+                  : "btn-accept-disabled"
+              }`}
+              onClick={async () => {
+                if (!isOpen || isBusy || accepting) return;
+                setAccepting(true);
+                try {
+                  await onAcceptThread();
+                } finally {
+                  setAccepting(false);
+                }
+              }}
+              disabled={!isOpen || isBusy || accepting}
+              title={
+                !isOpen
+                  ? "Thread is closed"
+                  : isBusy
+                  ? "Agent is currently busy"
+                  : "Accept thread and sync to main"
+              }
+              aria-label="Accept thread"
+            >
+              {accepting ? (
+                <Loader2 className="size-4 animate-spin text-emerald-400" />
+              ) : (
+                <Check className="size-4 text-emerald-400" />
+              )}
+            </button>
+          )}
         </div>
       </div>
 
@@ -210,11 +236,7 @@ export function ChatArea({
       {!isOpen && (
         <div className="closed-thread-notice">
           <Clock className="size-4" />
-          <span>This thread is closed. New messages cannot be sent to closed threads.</span>
-          <button type="button" className="btn-primary btn-sm" onClick={onNewThread}>
-            <Plus className="size-3.5" />
-            <span>Start Next Thread</span>
-          </button>
+          <span>This thread is closed. New messages cannot be sent to closed threads. Select the active open thread to continue.</span>
         </div>
       )}
 
@@ -225,7 +247,7 @@ export function ChatArea({
             className="composer-textarea"
             placeholder={
               !isOpen
-                ? "This thread is closed. Click 'Start Next Thread' above."
+                ? "This thread is closed. Select the active open thread to continue."
                 : isBusy
                   ? "Agent is busy processing... please wait."
                   : "Send a message to Seamus... (Enter to send, Shift+Enter for newline)"

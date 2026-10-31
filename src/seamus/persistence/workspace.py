@@ -3,6 +3,7 @@
 import json
 import logging
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -275,6 +276,97 @@ class GitWorkspaceManager:
                 ["commit", "-m", f"config: update session config [session={session.id}]"],
             )
             self._run_git(session_dir, ["push", "-u", "origin", branch_name])
+
+    def get_active_sync_pr(self, session: Session, agent: Agent) -> dict[str, Any] | None:
+        """Find the active open Sync PR from session branch to main."""
+        if not self.settings.enabled:
+            return None
+
+        repo_name = self.get_agent_repo_name(session.agent_id)
+        head_branch = f"session/{session.id}"
+        try:
+            open_prs = self.client.list_pull_requests(repo_name, state="open")
+            for pr in open_prs:
+                head_ref = pr.get("head", {}).get("ref")
+                if head_ref == head_branch:
+                    return pr
+            return None
+        except Exception:
+            logger.exception("Failed to query active Sync PR for session %s", session.id)
+            return None
+
+    def open_sync_pr(self, session: Session, agent: Agent) -> dict[str, Any] | None:
+        """Open an automated Sync PR from session branch to main if not already present."""
+        if not self.settings.enabled:
+            return None
+
+        active_pr = self.get_active_sync_pr(session, agent)
+        if active_pr is not None:
+            return active_pr
+
+        repo_name = self.get_agent_repo_name(session.agent_id)
+        head_branch = f"session/{session.id}"
+        base_branch = "main"
+        title = f"Sync PR: session/{session.name or session.id}"
+        body = f"Automated Sync PR for session `{session.id}` (agent `{agent.name or agent.id}`)."
+        try:
+            pr = self.client.create_pull_request(
+                repo_name=repo_name,
+                title=title,
+                head=head_branch,
+                base=base_branch,
+                body=body,
+            )
+            logger.info("Opened Sync PR #%s for session %s", pr.get("number"), session.id)
+            return pr
+        except Exception:
+            logger.exception("Failed to open Sync PR for session %s", session.id)
+            return None
+
+    def merge_sync_pr(self, session: Session, agent: Agent) -> bool:
+        """Approve and merge the active Sync PR from session branch into main."""
+        if not self.settings.enabled:
+            return True
+
+        active_pr = self.get_active_sync_pr(session, agent)
+        if active_pr is None:
+            logger.warning("No active Sync PR found for session %s to merge", session.id)
+            return False
+
+        pr_number = active_pr["number"]
+        repo_name = self.get_agent_repo_name(session.agent_id)
+
+        # 1. Attempt approval review (log and continue if self-approval rejected)
+        try:
+            self.client.approve_pull_request(
+                repo_name=repo_name,
+                index=pr_number,
+                body="Accepted by user",
+            )
+        except Exception:
+            logger.warning("Approval review failed on PR #%d (proceeding with merge)", pr_number)
+
+        # 2. Wait briefly for Gitea to evaluate mergeability
+        for _ in range(10):
+            time.sleep(0.3)
+            try:
+                pr_data = self.client.get_pull_request(repo_name, pr_number)
+                if pr_data.get("mergeable") is True:
+                    break
+            except Exception:
+                break
+
+        # 3. Merge pull request (delete_branch=False retains the session branch)
+        try:
+            return self.client.merge_pull_request(
+                repo_name=repo_name,
+                index=pr_number,
+                do="merge",
+                delete_branch=False,
+            )
+        except Exception:
+            logger.exception("Failed to merge Sync PR #%d for session %s", pr_number, session.id)
+            return False
 
     def save_thread_events(
         self,
