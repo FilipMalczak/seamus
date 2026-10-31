@@ -61,6 +61,18 @@ services:
     volumes:
       - gitea-data:/data
 
+  opensandbox:
+    build:
+      context: ./opensandbox
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - opensandbox-data:/data
+      - opensandbox-auth:/var/run/seamus-opensandbox
+
   backend:
     build:
       context: .
@@ -73,11 +85,18 @@ services:
       - GITEA_ADMIN_USER=${GITEA_ADMIN_USER:-seamus}
       - GITEA_ADMIN_PASSWORD=${GITEA_ADMIN_PASSWORD:-seamus-password-123}
       - SEAMUS_WORKSPACE_DIR=/app/workspaces
+      - OPENSANDBOX_DOMAIN=${OPENSANDBOX_DOMAIN:-opensandbox:8080}
+      - OPENSANDBOX_PROTOCOL=${OPENSANDBOX_PROTOCOL:-http}
+      - OPENSANDBOX_IMAGE=${OPENSANDBOX_IMAGE:-python:3.12-slim}
+      - OPENSANDBOX_WORKDIR=${OPENSANDBOX_WORKDIR:-/workspace}
+      - OPENSANDBOX_WORKSPACE_VOLUME=seamus-workspaces
+      - SEAMUS_OPENSANDBOX_KEY_FILE=/var/run/seamus-opensandbox/api_key
     env_file:
       - path: .env
         required: false
     volumes:
       - backend-workspaces:/app/workspaces
+      - opensandbox-auth:/var/run/seamus-opensandbox:ro
     ports:
       - "8000:8000"
     depends_on:
@@ -85,6 +104,8 @@ services:
         condition: service_healthy
       gitea-init:
         condition: service_completed_successfully
+      opensandbox:
+        condition: service_healthy
 
   frontend:
     build:
@@ -100,3 +121,6 @@ volumes:
   postgres-data:
   gitea-data:
   backend-workspaces:
+    name: seamus-workspaces
+  opensandbox-data:
+  opensandbox-auth:

@@ -62,6 +62,12 @@ An automated Git commit generated whenever a LangGraph checkpointer saves state,
 ### Store Hydration
 The startup process wherein `HarnessStore` discovers repositories and branches on Gitea to reconstruct in-memory domain entities (`Agent`, `Session`, `Thread`) without needing a direct SQL database in the harness backend.
 
+### Execution Sandbox (`OpenSandbox`)
+An isolated container environment managed by a locally hosted `opensandbox-server` and bridged to DeepAgent via `langchain-sandbox-opensandbox` (`SeamusOpenSandboxBackend`). All agent file operations and shell commands execute inside the sandbox container.
+
+### Operational Directory (`/workspace`)
+The mount path inside an agent's execution sandbox container where the session's Git-tracked `data/` directory is mounted. Files inside `/workspace` are version-controlled and persisted across checkpoints; all paths outside `/workspace` in the sandbox container are transient.
+
 ## Cross-References
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
@@ -71,6 +77,7 @@ The startup process wherein `HarnessStore` discovers repositories and branches o
 - [0006-external-system-links.md](../decisions/0006-external-system-links.md)
 - [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md)
 - [0008-git-persistence.md](../decisions/0008-git-persistence.md)
+- [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md)
 - [architecture.md](./architecture.md)
 - [abstractions.md](./abstractions.md)
 - [backlog.md](./backlog.md)

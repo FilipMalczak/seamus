@@ -12,10 +12,10 @@ usage() {
   cat <<EOF
 Usage: $0 [OPTIONS]
 
-Ensure Seamus services (FastAPI backend, React UI, Gitea, and PostgreSQL) are running and open in the default browser.
+Ensure Seamus services (FastAPI backend, React UI, OpenSandbox, Gitea, and PostgreSQL) are running and open in the default browser.
 
 Options:
-  -r, --restart    Restart application containers for which we own the image (backend, frontend)
+  -r, --restart    Restart application containers for which we own the image (backend, frontend, opensandbox)
                    and rebuild to update code while preserving data and infrastructure containers
   -c, --clean      Kill all containers, remove all persistent volumes and data storages, and start fresh
   -h, --help       Show this help message and exit
@@ -74,13 +74,13 @@ echo "Checking Seamus service status..."
 if [ "$CLEAN" = true ]; then
   echo "Clean start requested. Tearing down all containers and removing persistent volumes..."
   docker compose down -v --remove-orphans
-  rm -rf "${SEAMUS_WORKSPACE_DIR:-.seamus/workspaces}"
+  rm -rf "${SEAMUS_WORKSPACE_DIR:-.seamus/workspaces}" .seamus/opensandbox
 
   echo "Starting all services from clean state..."
   docker compose up -d --build
 elif [ "$RESTART" = true ]; then
-  echo "Restart requested. Rebuilding application containers (backend, frontend) while preserving persistent data..."
-  docker compose up -d --build backend frontend
+  echo "Restart requested. Rebuilding application containers (backend, frontend, opensandbox) while preserving persistent data..."
+  docker compose up -d --build opensandbox backend frontend
 elif check_service_up "$UI_URL" && check_service_up "$BACKEND_HEALTH_URL" && check_service_up "$GITEA_HEALTH_URL"; then
   echo "Seamus services are already running at $UI_URL."
   echo "Opening Seamus UI in default web browser ($UI_URL)..."

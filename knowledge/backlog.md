@@ -4,12 +4,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## Deferred
 
-### Sandboxed Shell Execution and Execution Boundaries
-- **Description**: Agent tool execution is currently confined to filesystem operations within `<session_workspace>/data/` via `FilesystemBackend(virtual_mode=True)`. General shell execution (e.g. arbitrary command execution) and dedicated sandboxed container boundaries for agent actions were deliberately postponed.
-- **Why Deferred**: Scoped filesystem access provided a simple and sufficient boundary for early Gitea-backed persistence without introducing container-in-container or heavy execution sandbox complexity.
-- **Revisit Trigger**: When extending agent tool capabilities to include shell commands, build tools, or untrusted code execution.
-- **Provenance**: [0008-git-persistence.md](../decisions/0008-git-persistence.md#8-deferred-tasks), [INV-017](./invariants.md#inv-017-git-tracked-agent-workspace--config-boundary).
-
 ### Granular Gitea Commit Authors, Organizations, and Team Ownership
 - **Description**: All Git repositories created in Gitea are owned by the system service user `seamus`, and automated commits use the single author identity `Seamus Agent <agent@seamus.local>`. Per-agent, per-session, or per-user commit authors, organizations, and team permissions were postponed.
 - **Why Deferred**: Kept persistence initialization and API interaction simple and single-tenant for early development.
@@ -52,6 +46,21 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Provenance**: [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md), [0008-git-persistence.md](../decisions/0008-git-persistence.md), [architecture.md](./architecture.md#system-overview).
 
 ## TODO
+
+### [VERY HIGH PRIORITY] Comprehensive Agent System Prompt Design and Enhancement
+- **Description**: The agent system prompt currently provides only baseline operational directory instructions (`build_sandbox_system_prompt` in `src/seamus/harness/sandbox.py`). Design and implement a comprehensive, structured system prompt architecture covering agent persona, planning and verification discipline, tool usage guidelines, workspace and Git persistence awareness (`/workspace` vs. transient paths), error recovery, and configurable per-agent/per-session prompt extensions.
+- **Rationale**: A well-engineered system prompt is foundational to agent reliability, autonomy, and adherence to workspace boundaries.
+- **Provenance**: [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md#6-backlog-additions), [abstractions.md](./abstractions.md#seamusharness-srcseamusharness).
+
+### Thorough Security Review of Containerized OpenSandbox Server & Docker Socket Configuration
+- **Description**: Perform an in-depth security review and hardening pass on the containerized `opensandbox-server` deployment (`opensandbox/Dockerfile`, `opensandbox/sandbox.toml`, and `docker-compose.yml`). Review the security implications of mounting `/var/run/docker.sock`, tighten `allowed_host_paths` in `[storage]`, evaluate Docker socket proxies or rootless/gVisor (`runsc`)/Kata isolation runtimes (`[secure_runtime]`), review container capability drops/seccomp/AppArmor profiles, and audit sandbox network egress policies and port range exposure.
+- **Rationale**: Mounting `/var/run/docker.sock` and provisioning sibling containers grants privileged daemon control to the sandbox server; hardening these boundaries is critical before untrusted or multi-tenant workloads run in sandboxes.
+- **Provenance**: [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md#5-containerized-local-opensandbox-server-opensandbox-docker-composeyml-runsh), [architecture.md](./architecture.md#component-boundaries).
+
+### Fix Tool Call Rendering in Web UI
+- **Description**: The Web UI rendering for agent tool calls (`TOOL_CALL_START`, `TOOL_CALL_ARGS`, `TOOL_CALL_CHUNK`, `TOOL_CALL_RESULT`, `TOOL_CALL_END` in `ui/src/hooks/useThreadStream.ts` and `ui/src/components/MessageItem.tsx`) appears broken. Investigate event parsing, state accumulation across streaming and replayed AG-UI tool events, and component rendering to ensure tool calls, arguments, and outputs display reliably.
+- **Rationale**: Clear visibility into agent tool invocations (such as sandbox file operations and `execute` commands) and their results is essential for inspecting and debugging agent runs in the UI.
+- **Provenance**: [0003-react-web-ui.md](../decisions/0003-react-web-ui.md), [abstractions.md](./abstractions.md#web-ui-presentation-subsystem-uisrc).
 
 ### Dynamic Model Catalog and Dropdowns in UI Configuration Modals
 - **Description**: The in-browser `ConfigModal` currently requires raw JSON editing for all configuration fields. Add structured input fields or dropdowns for supported model names and inference formats while preserving the raw JSON editing tab.

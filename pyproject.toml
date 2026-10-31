@@ -9,6 +9,7 @@ dependencies = [
     "deepagents>=0.7.32",
     "fastapi>=0.115.0",
     "langchain-openai>=0.3.0",
+    "langchain-sandbox-opensandbox>=0.1.2",
     "logfire[fastapi]>=5.4.0",
     "python-dotenv>=1.0.0",
     "uvicorn>=0.34.0",
@@ -41,6 +42,9 @@ select = [
 ]
 ignore = []
 
+[tool.ruff.lint.isort]
+known-third-party = ["opensandbox"]
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
@@ -55,6 +59,7 @@ warn_unused_configs = true
 module = [
     "ag_ui_langgraph",
     "ag_ui_langgraph.*",
+    "langchain_opensandbox",
 ]
 ignore_missing_imports = true
 

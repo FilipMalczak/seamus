@@ -18,12 +18,16 @@ from ag_ui.core.types import RunAgentInput, TextInputContent, UserMessage
 from ag_ui.encoder import EventEncoder
 from ag_ui_langgraph import LangGraphAgent
 from deepagents import create_deep_agent
-from deepagents.backends.filesystem import FilesystemBackend
 from langchain_core.outputs import ChatGenerationChunk, ChatResult
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
 from seamus.domain.entities import Agent, AgentStatus, Session, Thread
+from seamus.harness.sandbox import (
+    SeamusOpenSandboxBackend,
+    build_sandbox_system_prompt,
+    get_sandbox_settings,
+)
 from seamus.persistence import GitCheckpointSaver, get_workspace_manager
 
 logger = logging.getLogger(__name__)
@@ -167,6 +171,7 @@ class SessionAgentRunner:
         self._lock = asyncio.Lock()
         self._active_task: asyncio.Task[None] | None = None
         self._agent_entity = agent_entity
+        self._sandbox_backend: SeamusOpenSandboxBackend | None = None
 
         if agent is not None:
             self._agent = agent
@@ -206,7 +211,15 @@ class SessionAgentRunner:
 
         data_dir = ws_mgr.get_session_data_dir(self.session.agent_id, self.session.id)
         data_dir.mkdir(parents=True, exist_ok=True)
-        filesystem_backend = FilesystemBackend(root_dir=data_dir, virtual_mode=True)
+        sandbox_settings = get_sandbox_settings()
+        sandbox_backend = SeamusOpenSandboxBackend(
+            agent_id=self.session.agent_id,
+            session_id=self.session.id,
+            data_dir=data_dir,
+            settings=sandbox_settings,
+        )
+        self._sandbox_backend = sandbox_backend
+        system_prompt = build_sandbox_system_prompt(sandbox_settings.workdir)
 
         checkpointer = GitCheckpointSaver(
             agent_id=self.session.agent_id,
@@ -216,7 +229,8 @@ class SessionAgentRunner:
 
         graph = create_deep_agent(
             model=llm,
-            backend=filesystem_backend,
+            backend=sandbox_backend,
+            system_prompt=system_prompt,
             checkpointer=checkpointer,
         )
 

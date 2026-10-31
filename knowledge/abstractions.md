@@ -32,10 +32,14 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `Resolution`: Identifier resolution functions mapping UUID or slug strings to entities within their scope.
 
 ### `seamus.harness` (`src/seamus/harness`)
-- Execution engine and state storage.
+- Execution engine, sandbox integration, and state storage.
 - `ReasoningChatOpenAI`: `ChatOpenAI` subclass extracting OpenAI-compatible and OpenRouter reasoning fields (`reasoning`, `reasoning_content`, `reasoning_details`) into `additional_kwargs["reasoning_content"]`.
 - `SeamusLangGraphAgent`: `LangGraphAgent` subclass preserving full checkpoint message history in `langgraph_default_merge_state` so `gen_ai.prompt.messages` remains a prefix of `gen_ai.completion.messages`.
-- `SessionAgentRunner`: Encapsulates DeepAgent graph instantiation, checkpointer management (`MemorySaver`), input handling, and event lifecycle mapping (including `REASONING_*` events).
+- `SandboxSettings`: Runtime configuration for connecting to `opensandbox-server` and configuring sandbox container image, timeouts, operational directory (`/workspace`), and shared workspace volume.
+- `get_or_create_sandbox_api_key`: Autogenerates and retrieves the internal runtime-managed API key for `opensandbox-server` authentication without exposing secrets to users.
+- `build_sandbox_system_prompt`: Generates system prompt instructions informing the agent that `/workspace` is its Git-tracked operational directory and all paths outside it are transient.
+- `SeamusOpenSandboxBackend`: `OpenSandboxBackend` (`langchain_opensandbox`) subclass providing lazy per-session `SandboxSync` container provisioning and mounting only `<session_workspace>/data` at `/workspace` inside the sandbox container.
+- `SessionAgentRunner`: Encapsulates DeepAgent graph instantiation (with `SeamusOpenSandboxBackend`, `build_sandbox_system_prompt`, and `GitCheckpointSaver`), input handling, and event lifecycle mapping (including `REASONING_*` events).
 - `EventBroadcaster`: Fan-out pub-sub queue mechanism for multiplexing real-time AG-UI SSE events to multiple active thread consumers.
 - `HarnessStore`: In-memory repository managing agents, sessions, and threads with scope-bound slug uniqueness.
 
@@ -79,6 +83,7 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md)
 - [0008-git-persistence.md](../decisions/0008-git-persistence.md)
 - [0009-ui-markdown-renderer.md](../decisions/0009-ui-markdown-renderer.md)
+- [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md)
 - [architecture.md](./architecture.md)
 - [backlog.md](./backlog.md)
 - [conventions.md](./conventions.md)
