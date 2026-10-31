@@ -97,6 +97,12 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0008-git-persistence.md](../decisions/0008-git-persistence.md).
 - **Linked Invariants**: [INV-017](./invariants.md#inv-017-git-tracked-agent-workspace--config-boundary), [INV-018](./invariants.md#inv-018-atomic-checkpoint-data-persistence).
 
+### REQ-016: UI Markdown Rendering
+- **Description**: All conversation messages (both user and assistant) must be assumed to be Markdown and rendered in the browser using a unified Markdown rendering pipeline. The renderer must support GitHub Flavored Markdown (tables, task lists, strikethrough, autolinks), ensure external links open in a new tab safely (`target="_blank"` with `rel="noopener noreferrer"`), provide copy-to-clipboard functionality on fenced code blocks with language badges, protect chat bubble layouts from table overflows via horizontal scrolling, and adapt typography contrasts cleanly between user and assistant message bubble themes.
+- **Rationale**: Agents and human developers exchange formatted text, code snippets, lists, and tables. Rendering messages as Markdown provides a clear, rich, developer-friendly interface while preventing code block and layout breakage.
+- **Provenance**: [0009-ui-markdown-renderer.md](../decisions/0009-ui-markdown-renderer.md).
+- **Linked Invariants**: [INV-019](./invariants.md#inv-019-client-side-markdown-rendering--content-safety).
+
 ## Cross-References
 - [invariants.md](./invariants.md)
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
@@ -107,3 +113,4 @@ Requirements, rationale, provenance, and stable IDs.
 - [0006-external-system-links.md](../decisions/0006-external-system-links.md)
 - [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md)
 - [0008-git-persistence.md](../decisions/0008-git-persistence.md)
+- [0009-ui-markdown-renderer.md](../decisions/0009-ui-markdown-renderer.md)

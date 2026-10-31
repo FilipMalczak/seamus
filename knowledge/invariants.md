@@ -94,6 +94,11 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-015](./requirements.md#req-015-gitea-backed-versioned-agent-persistence--workspace-isolation), [0008-git-persistence.md](../decisions/0008-git-persistence.md).
 - **Enforcement**: `GitCheckpointSaver.put()`, `aput()`, and writes hooks in `seamus.persistence`, and `HarnessStore` mutation calls to `GitWorkspaceManager`.
 
+### INV-019: Client-Side Markdown Rendering & Content Safety
+- **Statement**: All conversation messages (user and assistant) displayed in the Web UI must be parsed and rendered as Markdown through `MarkdownRenderer` with `remark-gfm`. External links must strictly enforce `target="_blank"` and `rel="noopener noreferrer"`. Code blocks and tables must be contained with overflow guards (`overflow-x: auto`) to guarantee message bubble structural integrity.
+- **Justification**: [REQ-016](./requirements.md#req-016-ui-markdown-rendering), [0009-ui-markdown-renderer.md](../decisions/0009-ui-markdown-renderer.md).
+- **Enforcement**: `MarkdownRenderer.tsx`, `MessageItem.tsx`, and CSS constraints in `ui/src/App.css`.
+
 ## Cross-References
 - [requirements.md](./requirements.md)
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
@@ -104,3 +109,4 @@ Properties and rules that must always hold across the repository.
 - [0006-external-system-links.md](../decisions/0006-external-system-links.md)
 - [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md)
 - [0008-git-persistence.md](../decisions/0008-git-persistence.md)
+- [0009-ui-markdown-renderer.md](../decisions/0009-ui-markdown-renderer.md)
