@@ -58,6 +58,12 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `GitCheckpointSaver`: Subclass of `MemorySaver` (and wrapping LangGraph `BaseCheckpointSaver`) intercepting `put`, `aput`, and writes to persist graph checkpoint state, human-readable messages, and automatically commit all modified files in `data/` and `agent/state/` to Gitea.
 - `PersistenceSettings`: Runtime configuration specifying Gitea URL, credentials, and local workspace directory.
 
+### Web UI Presentation Subsystem (`ui/src/`)
+- `MarkdownRenderer`: Reusable Markdown rendering component wrapping `react-markdown` with `remark-gfm`. Provides custom renderers for fenced code blocks (with language label bar and copy-to-clipboard action), tables (with horizontal overflow wrapper), and anchor links (`target="_blank"` with `rel="noopener noreferrer"`). Supports `variant="user" | "assistant"` for bubble contrast.
+- `MessageItem`: Renders individual conversational message bubbles, reasoning/thought process expandable drawers, tool call traces, and embeds `MarkdownRenderer` for message text.
+- `Sidebar`: Navigation sidebar managing hierarchical tree nodes (Agents, Sessions, Threads) with inline renaming, operational status pills, and external system links footer.
+- `ChatArea`: Conversation viewport orchestrating SSE stream binding, message listing, auto-scroll, thread status banners, and composer textarea with auto-focus.
+
 ## Design Principles
 - **Explicit over Implicit**: Prefer concrete, simple classes and protocols rather than speculative abstraction layers.
 - **Separation of Concerns**: Keep framework/harness mechanics separate from application and agent domain code.
@@ -72,5 +78,6 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - [0006-external-system-links.md](../decisions/0006-external-system-links.md)
 - [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md)
 - [0008-git-persistence.md](../decisions/0008-git-persistence.md)
+- [0009-ui-markdown-renderer.md](../decisions/0009-ui-markdown-renderer.md)
 - [architecture.md](./architecture.md)
 - [conventions.md](./conventions.md)

@@ -1,7 +1,7 @@
 import { useState } from "react";
-import ReactMarkdown from "react-markdown";
 import { Bot, Brain, ChevronDown, ChevronRight, User } from "lucide-react";
 import type { ChatMessage } from "../api/types";
+import { MarkdownRenderer } from "./MarkdownRenderer";
 import { ToolCallItem } from "./ToolCallItem";
 
 export function MessageItem({ message }: { message: ChatMessage }) {
@@ -59,13 +59,10 @@ export function MessageItem({ message }: { message: ChatMessage }) {
 
         {message.text && (
           <div className={`message-bubble ${isUser ? "user-bubble" : "assistant-bubble"}`}>
-            {isUser ? (
-              <p className="whitespace-pre-wrap">{message.text}</p>
-            ) : (
-              <div className="markdown-content">
-                <ReactMarkdown>{message.text}</ReactMarkdown>
-              </div>
-            )}
+            <MarkdownRenderer
+              content={message.text}
+              variant={isUser ? "user" : "assistant"}
+            />
           </div>
         )}
 

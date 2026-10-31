@@ -45,7 +45,7 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 
 1. **Web User Interface (`ui`)**:
    - Location: `ui/`
-   - Responsibility: React 19 single-page application built with Vite and TypeScript. Houses navigation sidebar tree with external system integration footer, conversational message pane, SSE streaming client, and in-browser JSON config editor.
+   - Responsibility: React 19 single-page application built with Vite and TypeScript. Houses navigation sidebar tree with external system integration footer, conversational message pane with client-side Markdown rendering (GFM, code blocks with copy-to-clipboard, safe external links, and table overflow protection), SSE streaming client, and in-browser JSON config editor.
 2. **Configuration (`seamus.config`)**:
    - Location: `src/seamus/config/`
    - Responsibility: `InferenceConfig`, `AgentConfig`, and singleton `ConfigTemplate` management with copy-on-derive semantics and completeness validation.
@@ -80,5 +80,6 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 - [0006-external-system-links.md](../decisions/0006-external-system-links.md)
 - [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md)
 - [0008-git-persistence.md](../decisions/0008-git-persistence.md)
+- [0009-ui-markdown-renderer.md](../decisions/0009-ui-markdown-renderer.md)
 - [abstractions.md](./abstractions.md)
 - [vocabulary.md](./vocabulary.md)
