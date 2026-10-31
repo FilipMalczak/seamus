@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Eye, MessageSquare } from "lucide-react";
 import { getConfigTemplate, getSystemInfo, updateConfigTemplate } from "./api/client";
 import type { AgentConfig, AgentStatus, SystemInfoResponse } from "./api/types";
@@ -30,6 +30,62 @@ export function App() {
   const [modalSaveFn, setModalSaveFn] = useState<(cfg: AgentConfig) => Promise<void>>(
     () => async () => {}
   );
+
+  // Split pane state (default 50/50 split)
+  const [sidebarRatio, setSidebarRatio] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem("seamus_sidebar_ratio");
+      if (saved) {
+        const parsed = parseFloat(saved);
+        if (!isNaN(parsed) && parsed >= 0.15 && parsed <= 0.85) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return 0.5; // Default 50/50 split
+  });
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const appBodyRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("seamus_sidebar_ratio", sidebarRatio.toString());
+    } catch {}
+  }, [sidebarRatio]);
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!appBodyRef.current) return;
+      const rect = appBodyRef.current.getBoundingClientRect();
+      const minSidebarPx = 280;
+      const minMainPx = 300;
+
+      const rawRatio = (e.clientX - rect.left) / rect.width;
+      const minRatio = minSidebarPx / rect.width;
+      const maxRatio = (rect.width - minMainPx) / rect.width;
+
+      const clampedRatio = Math.max(minRatio, Math.min(maxRatio, rawRatio));
+      setSidebarRatio(clampedRatio);
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+  }, [isDragging]);
 
   const {
     agents,
@@ -115,8 +171,9 @@ export function App() {
         onOpenConfigTemplate={handleOpenGlobalConfig}
       />
 
-      <div className="app-body">
+      <div className="app-body" ref={appBodyRef}>
         <Sidebar
+          style={{ width: `${sidebarRatio * 100}%` }}
           agents={agents}
           selectedAgentId={selectedAgentId}
           selectedSessionId={selectedSessionId}
@@ -132,6 +189,19 @@ export function App() {
           onUpdateAgentConfig={updateAgentConfig}
           onUpdateSessionConfig={updateSessionConfig}
           onEditConfig={handleEditEntityConfig}
+        />
+
+        <div
+          className={`split-resizer ${isDragging ? "dragging" : ""}`}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            setIsDragging(true);
+          }}
+          onDoubleClick={() => setSidebarRatio(0.5)}
+          role="separator"
+          aria-orientation="vertical"
+          aria-valuenow={Math.round(sidebarRatio * 100)}
+          title="Drag to resize (Double-click to reset 50/50)"
         />
 
         <div className="main-panel">

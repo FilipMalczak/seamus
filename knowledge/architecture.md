@@ -46,7 +46,7 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 
 1. **Web User Interface (`ui`)**:
    - Location: `ui/`
-   - Responsibility: React 19 single-page application built with Vite and TypeScript. Houses navigation sidebar tree with external system integration footer, top-level workspace tabs (`[Chat] | [Inspector]`), conversational message pane with client-side Markdown rendering (GFM, code blocks with copy-to-clipboard, safe external links, and table overflow protection), top bar "Accept" action button with tick icon initiating thread acceptance and Sync PR lifecycle, DeepAgent Inspector (displaying composite/scaffold system prompts, tool schemas, inference runtime parameters, and message trajectory), SSE streaming client, and in-browser JSON config editor.
+   - Responsibility: React 19 single-page application built with Vite and TypeScript. Arranged with a draggable split resizer defaulting to a 50/50 balanced proportion between the navigation sidebar tree (with external system integration footer) and the main panel, with boundary clamping and local storage preference persistence. Houses top-level workspace tabs (`[Chat] | [Inspector]`), multiline wrapping breadcrumb top bar with "Accept" action button initiating thread acceptance and Sync PR lifecycle, conversational message pane with client-side Markdown rendering (GFM, code blocks with copy-to-clipboard, safe external links, and table overflow protection), DeepAgent Inspector (displaying composite/scaffold system prompts, tool schemas, inference runtime parameters, and message trajectory), SSE streaming client, and in-browser JSON config editor.
 2. **Configuration (`seamus.config`)**:
    - Location: `src/seamus/config/`
    - Responsibility: `InferenceConfig`, `AgentConfig`, and singleton `ConfigTemplate` management with copy-on-derive semantics, optional system prompt extension, and completeness validation.
@@ -86,6 +86,7 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 - [0011-agent-inspector.md](../decisions/0011-agent-inspector.md)
 - [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md)
 - [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md)
+- [0014-ui-layout-proportions-breadcrumbs.md](../decisions/0014-ui-layout-proportions-breadcrumbs.md)
 - [abstractions.md](./abstractions.md)
 - [backlog.md](./backlog.md)
 - [vocabulary.md](./vocabulary.md)

@@ -134,15 +134,21 @@ export function ChatArea({
     <main className="chat-main">
       <div className="chat-top-bar">
         <div className="chat-breadcrumbs">
-          <span className="crumb-agent">{agentName || agentId || "Agent"}</span>
-          <span className="crumb-sep">/</span>
-          <span className="crumb-session">{sessionName || sessionId || "Session"}</span>
-          <span className="crumb-sep">/</span>
-          <span className="crumb-thread">
-            {thread.name || thread.id}
+          <span className="crumb-item">
+            <span className="crumb-agent">{agentName || agentId || "Agent"}</span>
+            <span className="crumb-sep">/</span>
           </span>
-          <span className={`thread-state-badge ${isOpen ? "state-open" : "state-closed"}`}>
-            {isOpen ? "Active Open Thread" : "Closed Thread"}
+          <span className="crumb-item">
+            <span className="crumb-session">{sessionName || sessionId || "Session"}</span>
+            <span className="crumb-sep">/</span>
+          </span>
+          <span className="crumb-item crumb-item-thread">
+            <span className="crumb-thread">
+              {thread.name || thread.id}
+            </span>
+            <span className={`thread-state-badge ${isOpen ? "state-open" : "state-closed"}`}>
+              {isOpen ? "Active Open Thread" : "Closed Thread"}
+            </span>
           </span>
         </div>
 

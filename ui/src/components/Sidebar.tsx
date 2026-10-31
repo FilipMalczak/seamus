@@ -20,6 +20,7 @@ import type { AgentConfig, AgentStatus, SystemInfoResponse } from "../api/types"
 import type { FullAgentNode } from "../hooks/useAgentsTree";
 
 interface SidebarProps {
+  style?: React.CSSProperties;
   agents: FullAgentNode[];
   selectedAgentId: string | null;
   selectedSessionId: string | null;
@@ -38,6 +39,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({
+  style,
   agents,
   selectedAgentId,
   selectedSessionId,
@@ -179,7 +181,7 @@ export function Sidebar({
       : null;
 
   return (
-    <aside className="sidebar-container">
+    <aside className="sidebar-container" style={style}>
       <div className="sidebar-header">
         <div className="sidebar-title">
           <span>Agent Tree</span>
