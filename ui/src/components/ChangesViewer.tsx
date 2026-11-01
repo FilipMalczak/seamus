@@ -17,8 +17,10 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
+  Search,
   Split,
   Square,
+  X,
 } from "lucide-react";
 import { parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
@@ -74,7 +76,12 @@ function getChangeStatus(type: string): { label: string; text: string; className
   }
 }
 
-function buildFileTree(files: FileDiffMetadata[]): FileTreeNode {
+interface IndexedFileDiff {
+  fileDiff: FileDiffMetadata;
+  originalIndex: number;
+}
+
+function buildFileTree(files: IndexedFileDiff[]): FileTreeNode {
   const root: FileTreeNode = {
     name: "root",
     path: "",
@@ -82,8 +89,8 @@ function buildFileTree(files: FileDiffMetadata[]): FileTreeNode {
     children: [],
   };
 
-  files.forEach((fileDiff, fileIdx) => {
-    const rawPath = fileDiff.name || `file-${fileIdx}`;
+  files.forEach(({ fileDiff, originalIndex }) => {
+    const rawPath = fileDiff.name || `file-${originalIndex}`;
     const parts = rawPath.split("/").filter(Boolean);
     let current = root;
 
@@ -98,7 +105,7 @@ function buildFileTree(files: FileDiffMetadata[]): FileTreeNode {
           name: part,
           path: currentPath,
           isDirectory: !isFile,
-          fileDiffIndex: isFile ? fileIdx : undefined,
+          fileDiffIndex: isFile ? originalIndex : undefined,
           fileDiff: isFile ? fileDiff : undefined,
           children: [],
         };
@@ -137,6 +144,7 @@ export function ChangesViewer({
   const [diffStyle, setDiffStyle] = useState<"unified" | "split">("unified");
   const [viewMode, setViewMode] = useState<"tree" | "list">("tree");
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
+  const [filterQuery, setFilterQuery] = useState<string>("");
   const [activeFileIndex, setActiveFileIndex] = useState<number | null>(null);
   const [expandedFiles, setExpandedFiles] = useState<Record<string, boolean>>({});
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
@@ -192,7 +200,25 @@ export function ChangesViewer({
     }
   }, [diffData?.diff]);
 
-  const fileTree = useMemo(() => buildFileTree(fileDiffs), [fileDiffs]);
+  const indexedFileDiffs = useMemo<IndexedFileDiff[]>(() => {
+    return fileDiffs.map((fileDiff, originalIndex) => ({
+      fileDiff,
+      originalIndex,
+    }));
+  }, [fileDiffs]);
+
+  const filteredIndexedDiffs = useMemo(() => {
+    if (!filterQuery.trim()) return indexedFileDiffs;
+    const q = filterQuery.trim().toLowerCase();
+    return indexedFileDiffs.filter((item) =>
+      (item.fileDiff.name || "").toLowerCase().includes(q)
+    );
+  }, [indexedFileDiffs, filterQuery]);
+
+  const fileTree = useMemo(
+    () => buildFileTree(filteredIndexedDiffs),
+    [filteredIndexedDiffs]
+  );
 
   const totalStats = useMemo(() => {
     let additions = 0;
@@ -487,7 +513,9 @@ export function ChangesViewer({
                   <div className="changes-sidebar-title-group">
                     <span className="changes-sidebar-title">Files Changed</span>
                     <span className="changes-sidebar-count-badge">
-                      {fileDiffs.length}
+                      {filterQuery.trim()
+                        ? `${filteredIndexedDiffs.length} / ${fileDiffs.length}`
+                        : fileDiffs.length}
                     </span>
                   </div>
                   <div className="changes-sidebar-view-toggle">
@@ -512,27 +540,55 @@ export function ChangesViewer({
                   </div>
                 </div>
 
+                <div className="changes-sidebar-search-container">
+                  <div className="changes-search-box">
+                    <Search className="size-3.5 text-neutral-400" />
+                    <input
+                      type="text"
+                      className="changes-search-input"
+                      placeholder="Filter by file path..."
+                      value={filterQuery}
+                      onChange={(e) => setFilterQuery(e.target.value)}
+                    />
+                    {filterQuery && (
+                      <button
+                        type="button"
+                        className="changes-search-clear-btn"
+                        onClick={() => setFilterQuery("")}
+                        title="Clear filter"
+                        aria-label="Clear filter"
+                      >
+                        <X className="size-3 text-neutral-400" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
                 <div className="changes-sidebar-content">
-                  {viewMode === "tree" ? (
+                  {filteredIndexedDiffs.length === 0 ? (
+                    <div className="changes-no-filter-match">
+                      <p>No files match "{filterQuery}"</p>
+                    </div>
+                  ) : viewMode === "tree" ? (
                     <div className="changes-tree-view">
                       {renderTreeNode(fileTree)}
                     </div>
                   ) : (
                     <div className="changes-list-view">
-                      {fileDiffs.map((fileDiff, idx) => {
-                        const rawName = fileDiff.name || `file-${idx}`;
+                      {filteredIndexedDiffs.map(({ fileDiff, originalIndex }) => {
+                        const rawName = fileDiff.name || `file-${originalIndex}`;
                         const status = getChangeStatus(fileDiff.type || "change");
                         const stats = getFileStats(fileDiff);
                         const parts = rawName.split("/");
                         const baseName = parts[parts.length - 1];
                         const dirPath = parts.slice(0, parts.length - 1).join("/");
-                        const isActive = activeFileIndex === idx;
+                        const isActive = activeFileIndex === originalIndex;
 
                         return (
                           <div
-                            key={`${rawName}-${idx}`}
+                            key={`${rawName}-${originalIndex}`}
                             className={`changes-list-file-row ${isActive ? "active" : ""}`}
-                            onClick={() => handleSelectFile(idx, rawName)}
+                            onClick={() => handleSelectFile(originalIndex, rawName)}
                             role="button"
                             tabIndex={0}
                           >
@@ -606,19 +662,31 @@ export function ChangesViewer({
               </div>
 
               <div className="changes-diff-cards">
-                {fileDiffs.map((fileDiff, idx) => {
-                  const fileName = fileDiff.name || `file-${idx}`;
-                  const isExpanded = expandedFiles[fileName] ?? true;
-                  const status = getChangeStatus(fileDiff.type || "change");
-                  const stats = getFileStats(fileDiff);
-                  const isCopied = copiedPath === fileName;
-
-                  return (
-                    <article
-                      key={`${fileName}-${idx}`}
-                      id={`diff-file-${idx}`}
-                      className={`changes-file-diff-item ${isExpanded ? "expanded" : "collapsed"}`}
+                {filteredIndexedDiffs.length === 0 ? (
+                  <div className="changes-empty-state">
+                    <p>No changed files match "{filterQuery}".</p>
+                    <button
+                      type="button"
+                      className="changes-retry-btn"
+                      onClick={() => setFilterQuery("")}
                     >
+                      Clear filter
+                    </button>
+                  </div>
+                ) : (
+                  filteredIndexedDiffs.map(({ fileDiff, originalIndex }) => {
+                    const fileName = fileDiff.name || `file-${originalIndex}`;
+                    const isExpanded = expandedFiles[fileName] ?? true;
+                    const status = getChangeStatus(fileDiff.type || "change");
+                    const stats = getFileStats(fileDiff);
+                    const isCopied = copiedPath === fileName;
+
+                    return (
+                      <article
+                        key={`${fileName}-${originalIndex}`}
+                        id={`diff-file-${originalIndex}`}
+                        className={`changes-file-diff-item ${isExpanded ? "expanded" : "collapsed"}`}
+                      >
                       {/* Clickable Collapsible Header */}
                       <header
                         className="changes-file-card-header"
@@ -707,7 +775,7 @@ export function ChangesViewer({
                       )}
                     </article>
                   );
-                })}
+                }))}
               </div>
             </main>
           </div>

@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import {
   AlertCircle,
+  ArrowDown,
   ArrowUp,
   Bot,
   CheckCircle2,
@@ -31,8 +32,10 @@ export function ChatArea({
   onStatusChange,
 }: ChatAreaProps) {
   const [inputText, setInputText] = useState<string>("");
+  const viewportRef = useRef<HTMLDivElement>(null);
   const viewportEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [isAtBottom, setIsAtBottom] = useState<boolean>(true);
 
   const { messages, status, streamError, sending, sendMessage } =
     useThreadStream(agentId, sessionId, thread?.id ?? null);
@@ -45,10 +48,30 @@ export function ChatArea({
     onStatusChange?.(status);
   }, [status, onStatusChange]);
 
-  // Auto-scroll to bottom as new messages/tokens arrive
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    viewportEndRef.current?.scrollIntoView({ behavior });
+  }, []);
+
+  const handleScroll = useCallback(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    // Consider pinned to bottom if within 60px of the bottom edge
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 60;
+    setIsAtBottom(atBottom);
+  }, []);
+
+  // Auto-scroll to bottom as new messages/tokens arrive ONLY if user was already at bottom
   useEffect(() => {
-    viewportEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    if (isAtBottom) {
+      scrollToBottom("smooth");
+    }
+  }, [messages, isAtBottom, scrollToBottom]);
+
+  // When active thread changes, reset scroll pin to bottom
+  useEffect(() => {
+    setIsAtBottom(true);
+    scrollToBottom("auto");
+  }, [thread?.id, scrollToBottom]);
 
   // Auto-focus the message composer whenever active thread changes, opens, or finishes processing
   useEffect(() => {
@@ -64,6 +87,8 @@ export function ChatArea({
     if (!inputText.trim() || isBusy || !isOpen || sending) return;
     const textToSend = inputText;
     setInputText("");
+    setIsAtBottom(true);
+    scrollToBottom("smooth");
     try {
       await sendMessage(textToSend);
     } catch {
@@ -153,7 +178,11 @@ export function ChatArea({
         </div>
       </div>
 
-      <div className="chat-viewport">
+      <div
+        className="chat-viewport"
+        ref={viewportRef}
+        onScroll={handleScroll}
+      >
         {messages.length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">
@@ -180,10 +209,10 @@ export function ChatArea({
                   type="button"
                   className="suggestion-pill"
                   onClick={() =>
-                    setInputText("Explain how DeepAgent checkpointers work in memory.")
+                    setInputText("Put the iris dataset in your workspace. Dont use external libraries - either curl for it, or write it from memory.")
                   }
                 >
-                  DeepAgent in-memory checkpointers &rarr;
+                  Fetch iris dataset &rarr;
                 </button>
               </div>
             </div>
@@ -193,6 +222,22 @@ export function ChatArea({
         )}
         <div ref={viewportEndRef} />
       </div>
+
+      {!isAtBottom && messages.length > 0 && (
+        <button
+          type="button"
+          className="scroll-to-bottom-btn"
+          onClick={() => {
+            setIsAtBottom(true);
+            scrollToBottom("smooth");
+          }}
+          title="Scroll to bottom"
+          aria-label="Scroll to bottom"
+        >
+          <ArrowDown className="size-3.5" />
+          <span>Scroll to bottom</span>
+        </button>
+      )}
 
       {streamError && (
         <div className="chat-error-banner">
