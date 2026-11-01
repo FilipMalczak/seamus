@@ -123,20 +123,9 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Ensures the automated Sync PR merge, thread closure, and branch synchronization are robust under realistic usage before full operational release.
 - **Provenance**: [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md), [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md).
 
-### Visual Diff File Path Filtering in Changes Viewer
-- **Description**: Add text-based path/glob search filtering in the Changes viewer sidebar to quickly filter down files in very large pull requests.
-- **Rationale**: While hierarchical file tree/list navigation and per-file collapsible folding are implemented, large pull requests with dozens of files benefit from instant path filtering.
-- **Provenance**: [0015-session-changes-diff-tab.md](../decisions/0015-session-changes-diff-tab.md).
-
-
 ### URL should reflect what's opened in SPA
 - **Description**: No matter which chat we open, the URL stays unchanged.
 - **Expectation**: As we navigate the system, each agent, session, thread and tab should have separate URLs that mutate as we click around the page.
 - **Rationale**: One should be able to share the link to specific place in the UI, without requiring the receipient of the link to traverse the UI manually
-- **Provenance**: Manual
-
-### Scrolling the chat section is broken (bug)
-- **Description**: If the last bubble in the chat is active (running tool, unfinished thinking, etc) and the thread is long enough to scroll, when we try to scroll, we get auto-scrolled to  the active bubble
-- **Expectation**: User actions should take precedence over automated scrolls; TBD whether we wanna scroll down on new bubble. Consider adding "follow thread" checkbox and "scroll to bottom" button.
 - **Provenance**: Manual
 
