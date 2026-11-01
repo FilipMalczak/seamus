@@ -130,3 +130,20 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: One should be able to share the link to specific place in the UI, without requiring the receipient of the link to traverse the UI manually
 - **Provenance**: Manual
 
+### [CORE] Branching out and error handling
+- **Description**: ChatGPT-like behaviour, we branch off of agent message to get a new parallel session that seems to be waiting for user as we did on original branch/session.
+- **Error handling**: OTOH, whenever anything goes wrong (eg connection timeout, even accounting for retries), we need to be able to kill the session so it cannot be continued.
+- **Rationale**: Two legged: first, its a valuable feature on its own, as it allows for experimentation and might be invaluable with personas like researcher; second: it provides for native "manual retry" protocol while keeping abstraction clean.
+- **Provenance**: Manual, but constitutes one of the basic tenets of Seamus (introduces late, because it was hard to explain without establishing a baseline)
+
+## Not formalized
+
+- auto-refresh on UI side; eg when following state of thread and looking at changes
+- opening a session in the UI, as opposed to currently opening threads (loading all the past threads; input box being a proxy to open thread input); session view being the default when creating or selecting an agent
+- auto-naming agents, sessions and threads (agent - randomized multi-word slug; session and thread - using a small "namer" agent, needs to be configured on agent level)
+- chore: set default UI proportions to 1:2 (tree:chat ratio)
+- user input variations:
+  - user-accepted tool calls
+  - artifact-based forms that the user can open and fill
+  - in-message UI pieces?
+  - specialized messages?
