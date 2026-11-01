@@ -811,53 +811,64 @@ body {
   color: #fca5a5;
 }
 
-.provenance-banner {
+.branch-provenance-separator {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.5rem 1rem;
-  background: rgba(14, 165, 233, 0.08);
-  border-bottom: 1px solid rgba(14, 165, 233, 0.2);
-  font-size: 0.75rem;
-  color: var(--text-secondary);
+  margin: 0.75rem 0;
+  width: 100%;
 }
 
-.provenance-info {
-  display: flex;
+.branch-provenance-separator .separator-line {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(56, 189, 248, 0.3) 25%,
+    rgba(56, 189, 248, 0.3) 75%,
+    transparent
+  );
+}
+
+.branch-provenance-separator .separator-content {
+  display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.provenance-info code {
-  background: rgba(15, 23, 42, 0.6);
-  padding: 1px 4px;
-  border-radius: 4px;
-  font-size: 0.75rem;
-  color: #38bdf8;
-}
-
-.provenance-nav-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 2px 7px;
-  background: rgba(56, 189, 248, 0.12);
+  padding: 0.25rem 0.75rem;
+  background: rgba(14, 165, 233, 0.08);
   border: 1px solid rgba(56, 189, 248, 0.25);
-  border-radius: 4px;
-  color: #38bdf8;
+  border-radius: 9999px;
   font-size: 0.75rem;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.15s ease-in-out;
+  color: var(--text-muted);
 }
 
-.provenance-nav-btn:hover {
-  background: rgba(56, 189, 248, 0.22);
+.branch-provenance-separator .separator-text {
+  color: var(--text-muted);
+}
+
+.branch-provenance-separator .separator-link-btn {
+  display: inline-flex;
+  align-items: center;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: #38bdf8;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-size: 0.75rem;
+  transition: color 0.15s ease-in-out;
+}
+
+.branch-provenance-separator .separator-link-btn:hover {
   color: #7dd3fc;
+}
+
+.branch-provenance-separator .separator-name {
+  color: #38bdf8;
+  font-weight: 500;
 }
 
 .terminal-session-notice {
@@ -881,24 +892,30 @@ body {
   border-color: rgba(239, 68, 68, 0.2);
 }
 
+.message-footer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin-top: 0.35rem;
+}
+
 .branch-msg-btn {
-  margin-left: auto;
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 1px 6px;
+  gap: 0.3rem;
+  padding: 2px 7px;
   border-radius: 4px;
-  background: transparent;
-  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--text-muted);
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   cursor: pointer;
   transition: all 0.15s ease-in-out;
 }
 
 .branch-msg-btn:hover {
-  background: rgba(56, 189, 248, 0.1);
-  border-color: rgba(56, 189, 248, 0.25);
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.3);
   color: #38bdf8;
 }
 

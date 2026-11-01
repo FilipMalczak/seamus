@@ -280,6 +280,7 @@ class GitWorkspaceManager:
             "provenance": (
                 session.provenance.model_dump(mode="json") if session.provenance else None
             ),
+            "lineage": [entry.model_dump(mode="json") for entry in session.lineage],
             "threads": [
                 {
                     "id": str(t.id),

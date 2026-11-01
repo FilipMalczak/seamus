@@ -83,42 +83,6 @@ export function MessageItem({
               minute: "2-digit",
             })}
           </span>
-          {!isUser && onBranch && (
-            <button
-              type="button"
-              className="message-action-btn branch-msg-btn"
-              onClick={() => {
-                let targetId = message.id;
-                if (message.parts && message.parts.length > 0) {
-                  const textPart = message.parts.find(
-                    (p) =>
-                      p.type === "text" &&
-                      p.id &&
-                      !p.id.startsWith("asst-") &&
-                      !p.id.startsWith("text-asst-")
-                  );
-                  if (textPart && textPart.id) {
-                    targetId = textPart.id;
-                  } else {
-                    const toolPart = message.parts.find(
-                      (p) =>
-                        p.type === "tool_call" &&
-                        p.toolCall.id &&
-                        !p.toolCall.id.startsWith("asst-")
-                    );
-                    if (toolPart && toolPart.type === "tool_call" && toolPart.toolCall.id) {
-                      targetId = toolPart.toolCall.id;
-                    }
-                  }
-                }
-                onBranch(targetId);
-              }}
-              title="Branch off this message into a new parallel session"
-            >
-              <GitFork className="size-3" />
-              <span>Branch</span>
-            </button>
-          )}
         </div>
 
         {hasParts ? (
@@ -175,6 +139,45 @@ export function MessageItem({
               </div>
             )}
           </>
+        )}
+
+        {!isUser && onBranch && (
+          <div className="message-footer-actions">
+            <button
+              type="button"
+              className="message-action-btn branch-msg-btn"
+              onClick={() => {
+                let targetId = message.id;
+                if (message.parts && message.parts.length > 0) {
+                  const textPart = message.parts.find(
+                    (p) =>
+                      p.type === "text" &&
+                      p.id &&
+                      !p.id.startsWith("asst-") &&
+                      !p.id.startsWith("text-asst-")
+                  );
+                  if (textPart && textPart.id) {
+                    targetId = textPart.id;
+                  } else {
+                    const toolPart = message.parts.find(
+                      (p) =>
+                        p.type === "tool_call" &&
+                        p.toolCall.id &&
+                        !p.toolCall.id.startsWith("asst-")
+                    );
+                    if (toolPart && toolPart.type === "tool_call" && toolPart.toolCall.id) {
+                      targetId = toolPart.toolCall.id;
+                    }
+                  }
+                }
+                onBranch(targetId);
+              }}
+              title="Branch off this message into a new parallel session"
+            >
+              <GitFork className="size-3" />
+              <span>Branch</span>
+            </button>
+          </div>
         )}
       </div>
     </div>

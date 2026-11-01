@@ -44,6 +44,7 @@ export type SessionSummary = {
   config: AgentConfig;
   status: SessionStatus;
   provenance?: SessionBranchProvenance | null;
+  lineage?: SessionBranchProvenance[];
 };
 
 export type SessionDetail = {
@@ -55,6 +56,7 @@ export type SessionDetail = {
   config: AgentConfig;
   status: SessionStatus;
   provenance?: SessionBranchProvenance | null;
+  lineage?: SessionBranchProvenance[];
   threads: ThreadInfo[];
 };
 

@@ -264,6 +264,7 @@ export function App() {
                 sessionName={activeSession?.name || null}
                 sessionStatus={activeSession?.status || "ACTIVE"}
                 sessionProvenance={activeSession?.provenance || null}
+                sessionLineage={activeSession?.lineage}
                 thread={activeThread || null}
                 onStatusChange={setActiveStatus}
                 onKillSession={async () => {

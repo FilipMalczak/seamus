@@ -26,6 +26,9 @@ def _to_agent_detail(agent: Agent) -> AgentDetailResponse:
             created_at=s.created_at,
             last_touched_at=s.last_touched_at,
             config=s.config,
+            status=s.status,
+            provenance=s.provenance,
+            lineage=s.lineage,
         )
         for s in sorted(agent.sessions.values(), key=lambda s: s.created_at)
     ]

@@ -45,6 +45,7 @@ def _to_session_detail(session: Any) -> SessionDetailResponse:
         config=session.config,
         status=session.status,
         provenance=session.provenance,
+        lineage=session.lineage,
         threads=threads,
     )
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
   AlertCircle,
   AlertTriangle,
@@ -8,7 +8,6 @@ import {
   Bot,
   CheckCircle2,
   Clock,
-  CornerUpLeft,
   GitFork,
   Loader2,
   Sparkles,
@@ -26,6 +25,7 @@ interface ChatAreaProps {
   sessionName: string | null;
   sessionStatus?: SessionStatus;
   sessionProvenance?: SessionBranchProvenance | null;
+  sessionLineage?: SessionBranchProvenance[];
   thread: ThreadInfo | null;
   onStatusChange?: (status: AgentStatus) => void;
   onKillSession?: () => void;
@@ -40,6 +40,7 @@ export function ChatArea({
   sessionName,
   sessionStatus = "ACTIVE",
   sessionProvenance,
+  sessionLineage,
   thread,
   onStatusChange,
   onKillSession,
@@ -58,6 +59,72 @@ export function ChatArea({
   const isSessionTerminal = sessionStatus !== "ACTIVE";
   const isOpen = (thread?.is_open ?? false) && !isSessionTerminal;
   const isBusy = status !== "AWAITING_USER";
+
+  const branchPoints = useMemo(() => {
+    const list =
+      sessionLineage && sessionLineage.length > 0
+        ? sessionLineage
+        : sessionProvenance
+          ? [sessionProvenance]
+          : [];
+
+    const map = new Map<number, SessionBranchProvenance[]>();
+    if (list.length === 0 || messages.length === 0) return map;
+
+    for (let i = 0; i < list.length; i++) {
+      const prov = list[i];
+      const targetId = prov.parent_message_id;
+
+      // 1. Direct match on message.id
+      let idx = messages.findIndex((m) => m.id === targetId);
+
+      // 2. Match within parts or toolCalls
+      if (idx === -1) {
+        idx = messages.findIndex((m) =>
+          Boolean(
+            m.parts?.some(
+              (p) =>
+                p.id === targetId ||
+                (p.type === "tool_call" && p.toolCall.id === targetId)
+            ) ||
+            m.toolCalls?.some((tc) => tc.id === targetId)
+          )
+        );
+      }
+
+      // 3. Fallback: match by turn index if targetId is asst-N
+      if (idx === -1 && targetId.startsWith("asst-")) {
+        const suffix = targetId.slice(5);
+        if (/^\d+$/.test(suffix)) {
+          const turnIdx = parseInt(suffix, 10);
+          const asstIndices = messages
+            .map((m, j) => (m.role === "assistant" ? j : -1))
+            .filter((j) => j >= 0);
+          if (turnIdx < asstIndices.length) {
+            idx = asstIndices[turnIdx];
+          }
+        }
+      }
+
+      // 4. Fallback if single entry: pick last assistant message
+      if (idx === -1 && list.length === 1) {
+        for (let j = messages.length - 1; j >= 0; j--) {
+          if (messages[j].role === "assistant") {
+            idx = j;
+            break;
+          }
+        }
+        if (idx === -1) idx = 0;
+      }
+
+      if (idx >= 0) {
+        const existing = map.get(idx) || [];
+        existing.push(prov);
+        map.set(idx, existing);
+      }
+    }
+    return map;
+  }, [sessionLineage, sessionProvenance, messages]);
 
   // Notify parent of active thread status changes
   useEffect(() => {
@@ -205,33 +272,6 @@ export function ChatArea({
         </div>
       </div>
 
-      {sessionProvenance && (
-        <div className="provenance-banner">
-          <div className="provenance-info">
-            <GitFork className="size-3.5 text-sky-400" />
-            <span>
-              Branched from{" "}
-              <strong>
-                {sessionProvenance.parent_session_name ||
-                  sessionProvenance.parent_session_id.slice(0, 8)}
-              </strong>{" "}
-              at message <code>{sessionProvenance.parent_message_id.slice(0, 8)}</code>
-            </span>
-          </div>
-          {onNavigateToSession && (
-            <button
-              type="button"
-              className="provenance-nav-btn"
-              onClick={() => onNavigateToSession(sessionProvenance.parent_session_id)}
-              title="Navigate to original parent session"
-            >
-              <CornerUpLeft className="size-3.5" />
-              <span>Go to original</span>
-            </button>
-          )}
-        </div>
-      )}
-
       {sessionStatus === "KILLED" && (
         <div className="terminal-session-notice notice-killed">
           <Ban className="size-4 text-zinc-400" />
@@ -290,12 +330,44 @@ export function ChatArea({
             </div>
           </div>
         ) : (
-          messages.map((msg) => (
-            <MessageItem
-              key={msg.id}
-              message={msg}
-              onBranch={onBranchMessage}
-            />
+          messages.map((msg, idx) => (
+            <React.Fragment key={msg.id}>
+              <MessageItem
+                message={msg}
+                onBranch={onBranchMessage}
+              />
+              {branchPoints.get(idx)?.map((prov, pIdx) => (
+                <div
+                  key={`${prov.parent_session_id}-${prov.parent_message_id}-${pIdx}`}
+                  className="branch-provenance-separator"
+                >
+                  <div className="separator-line" />
+                  <div className="separator-content">
+                    <GitFork className="size-3 text-sky-400" />
+                    <span className="separator-text">branched from</span>
+                    {onNavigateToSession ? (
+                      <button
+                        type="button"
+                        className="separator-link-btn"
+                        onClick={() =>
+                          onNavigateToSession(prov.parent_session_id)
+                        }
+                        title={`Navigate to parent session: ${prov.parent_session_name || prov.parent_session_id}`}
+                      >
+                        {prov.parent_session_name ||
+                          prov.parent_session_id.slice(0, 8)}
+                      </button>
+                    ) : (
+                      <span className="separator-name">
+                        {prov.parent_session_name ||
+                          prov.parent_session_id.slice(0, 8)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="separator-line" />
+                </div>
+              ))}
+            </React.Fragment>
           ))
         )}
         <div ref={viewportEndRef} />

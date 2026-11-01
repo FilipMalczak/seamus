@@ -92,6 +92,7 @@ class Session(BaseModel):
     config: AgentConfig
     status: SessionStatus = Field(default=SessionStatus.ACTIVE)
     provenance: SessionBranchProvenance | None = None
+    lineage: list[SessionBranchProvenance] = Field(default_factory=list)
     threads: dict[UUID, Thread] = Field(default_factory=dict)
 
     @field_validator("name", mode="before")
@@ -173,6 +174,7 @@ class Agent(BaseModel):
         config: AgentConfig | None = None,
         name: str | None = None,
         provenance: SessionBranchProvenance | None = None,
+        lineage: list[SessionBranchProvenance] | None = None,
     ) -> Session:
         """Create and register a new session under this agent with an initial open thread."""
         session_config = (
@@ -180,11 +182,13 @@ class Agent(BaseModel):
             if config is not None
             else self.config.model_copy(deep=True)
         )
+        resolved_lineage = lineage if lineage is not None else ([provenance] if provenance else [])
         session = Session(
             agent_id=self.id,
             name=name,
             config=session_config,
             provenance=provenance,
+            lineage=resolved_lineage,
         )
         # Ensure session starts with an initial open thread
         session.create_thread()

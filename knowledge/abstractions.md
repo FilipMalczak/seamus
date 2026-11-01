@@ -29,7 +29,7 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `SessionStatus`: Enumeration of session lifecycle states (`ACTIVE`, `KILLED`, `FAILED`).
 - `SessionBranchProvenance`: Data model recording branching lineage (`parent_session_id`, `parent_message_id`, `parent_session_name`, `branched_at`).
 - `Thread`: Models conversation thread state, open/closed flag, creation and touched timestamps, and past AG-UI event records.
-- `Session`: Models an ongoing conversation with an agent, holding an isolated `AgentConfig`, lifecycle `status`, optional `provenance`, a dedicated runner, and child threads.
+- `Session`: Models an ongoing conversation with an agent, holding an isolated `AgentConfig`, lifecycle `status`, optional `provenance` (immediate parent), cumulative `lineage` (multi-level branch provenance chain), a dedicated runner, and child threads.
 - `Agent`: Models an agent entity holding a complete `AgentConfig` and child sessions.
 - `Resolution`: Identifier resolution functions mapping UUID or slug strings to entities within their scope.
 

@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from seamus.config.models import AgentConfig
 from seamus.domain.entities import (
@@ -151,6 +151,7 @@ class SessionSummaryResponse(BaseModel):
     config: AgentConfig
     status: SessionStatus = SessionStatus.ACTIVE
     provenance: SessionBranchProvenance | None = None
+    lineage: list[SessionBranchProvenance] = Field(default_factory=list)
 
 
 class SessionDetailResponse(BaseModel):
@@ -164,6 +165,7 @@ class SessionDetailResponse(BaseModel):
     config: AgentConfig
     status: SessionStatus = SessionStatus.ACTIVE
     provenance: SessionBranchProvenance | None = None
+    lineage: list[SessionBranchProvenance] = Field(default_factory=list)
     threads: list[ThreadResponse]
 
 

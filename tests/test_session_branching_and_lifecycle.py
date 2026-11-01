@@ -309,3 +309,66 @@ def test_branch_with_synthetic_and_tool_call_ids() -> None:
     assert s_by_synthetic.provenance is not None
     assert s_by_synthetic.provenance.parent_message_id in ("call-abc-123", "asst-text-1")
     assert len(s_by_synthetic.get_open_thread().events) == 10
+
+
+def test_multi_level_branching_lineage_s1_s2_s3() -> None:
+    store = HarnessStore()
+    config = make_complete_config()
+    store.create_agent(config=config, name="chain-agent")
+
+    # 1. S1 with Turn 1
+    s1 = store.create_session(agent_identifier="chain-agent", name="session-s1")
+    t1 = s1.get_open_thread()
+    t1.append_event(TextMessageStartEvent(message_id="user-1", role="user"))
+    t1.append_event(TextMessageContentEvent(message_id="user-1", delta="Msg 1"))
+    t1.append_event(TextMessageEndEvent(message_id="user-1"))
+    t1.append_event({"type": "RUN_STARTED"})
+    t1.append_event(TextMessageStartEvent(message_id="asst-1", role="assistant"))
+    t1.append_event(TextMessageContentEvent(message_id="asst-1", delta="Reply 1"))
+    t1.append_event(TextMessageEndEvent(message_id="asst-1"))
+    t1.append_event({"type": "RUN_FINISHED"})
+
+    # 2. S2 branched from S1 at asst-1
+    s2 = store.branch_session(
+        agent_identifier="chain-agent",
+        session_identifier="session-s1",
+        message_id="asst-1",
+        name="session-s2",
+    )
+    assert s2.provenance is not None
+    assert s2.provenance.parent_session_id == s1.id
+    assert s2.provenance.parent_message_id == "asst-1"
+    assert len(s2.lineage) == 1
+    assert s2.lineage[0].parent_session_id == s1.id
+    assert s2.lineage[0].parent_message_id == "asst-1"
+
+    # 3. In S2, user writes a message and assistant responds (Turn 2)
+    t2 = s2.get_open_thread()
+    t2.append_event(TextMessageStartEvent(message_id="user-2", role="user"))
+    t2.append_event(TextMessageContentEvent(message_id="user-2", delta="Msg 2"))
+    t2.append_event(TextMessageEndEvent(message_id="user-2"))
+    t2.append_event({"type": "RUN_STARTED"})
+    t2.append_event(TextMessageStartEvent(message_id="asst-2", role="assistant"))
+    t2.append_event(TextMessageContentEvent(message_id="asst-2", delta="Reply 2"))
+    t2.append_event(TextMessageEndEvent(message_id="asst-2"))
+    t2.append_event({"type": "RUN_FINISHED"})
+
+    # 4. S3 branched from S2 at asst-2
+    s3 = store.branch_session(
+        agent_identifier="chain-agent",
+        session_identifier="session-s2",
+        message_id="asst-2",
+        name="session-s3",
+    )
+    assert s3.provenance is not None
+    assert s3.provenance.parent_session_id == s2.id
+    assert s3.provenance.parent_message_id == "asst-2"
+
+    # Lineage on S3 must contain both S1 (before Turn 2) and S2 (after Turn 2)
+    assert len(s3.lineage) == 2
+    assert s3.lineage[0].parent_session_id == s1.id
+    assert s3.lineage[0].parent_message_id == "asst-1"
+    assert s3.lineage[0].parent_session_name == "session-s1"
+    assert s3.lineage[1].parent_session_id == s2.id
+    assert s3.lineage[1].parent_message_id == "asst-2"
+    assert s3.lineage[1].parent_session_name == "session-s2"

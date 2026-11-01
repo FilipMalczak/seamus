@@ -475,6 +475,27 @@ class HarnessStore:
             parent_session_name=parent_session.name,
         )
 
+        # Sliced events for new session
+        sliced_events = list(target_thread.events[:target_event_index])
+        sliced_event_ids: set[str] = set()
+        for ev in sliced_events:
+            for attr in ("message_id", "tool_call_id", "parent_message_id", "id"):
+                val = getattr(ev, attr, None) or (ev.get(attr) if isinstance(ev, dict) else None)
+                if val:
+                    sliced_event_ids.add(str(val))
+
+        inherited_lineage: list[SessionBranchProvenance] = []
+        candidates = (
+            parent_session.lineage
+            if parent_session.lineage
+            else ([parent_session.provenance] if parent_session.provenance else [])
+        )
+        for entry in candidates:
+            if entry.parent_message_id in sliced_event_ids:
+                inherited_lineage.append(entry)
+
+        inherited_lineage.append(provenance)
+
         agent_ident = agent.name or str(agent.id)
         with logfire.span(
             f"agent {agent_ident}",
@@ -488,9 +509,8 @@ class HarnessStore:
                 config=parent_session.config.model_copy(deep=True),
                 status=SessionStatus.ACTIVE,
                 provenance=provenance,
+                lineage=inherited_lineage,
             )
-            # Create open thread in new session with sliced events
-            sliced_events = list(target_thread.events[:target_event_index])
             new_thread = Thread(
                 name=None,
                 is_open=True,
@@ -763,6 +783,15 @@ class HarnessStore:
                             if provenance_data
                             else None
                         )
+                        lineage_data = session_payload.get("lineage")
+                        lineage = (
+                            [
+                                SessionBranchProvenance.model_validate(entry)
+                                for entry in lineage_data
+                            ]
+                            if isinstance(lineage_data, list)
+                            else ([provenance] if provenance else [])
+                        )
                         session = Session(
                             id=session_id,
                             agent_id=agent.id,
@@ -770,6 +799,7 @@ class HarnessStore:
                             config=session_config,
                             status=session_status,
                             provenance=provenance,
+                            lineage=lineage,
                             created_at=session_created_at,
                         )
 
