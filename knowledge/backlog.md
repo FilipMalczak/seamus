@@ -57,13 +57,12 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Improvement**: Introduce cross-worker synchronization or transition `HarnessStore` to a read-through/write-through cache against Gitea/a persistent backing store for multi-worker deployments.
 - **Provenance**: [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md), [0008-git-persistence.md](../decisions/0008-git-persistence.md), [architecture.md](./architecture.md#system-overview).
 
-### Test suite leaves the Gitea polluted
-- **Description**: After the test suite runs, Gitea is full of test leftover data.
-- **Rationale**:  Running the test suite should be transparent.
-- **Improvement**: Use dedicated Gitea instance for each suite run; make sure that test leftovers arent exposed on real environment and that test suites might get run uin parallel.
-- **Provenance**: Manual
-
 ## TODO
+
+### Dual CI/CD Test Pipeline Runners (Docker-Enabled and In-Memory)
+- **Description**: When configuring GitHub Actions / CI/CD pipelines, configure two distinct runner jobs: a Docker-enabled runner executing the full test suite with the ephemeral Gitea container fixture, and a fast in-memory runner executing pure unit tests.
+- **Rationale**: Guarantees fast feedback for in-memory unit tests while preserving comprehensive Gitea persistence verification on Docker-capable runners.
+- **Provenance**: [0017-dedicated-test-gitea.md](../decisions/0017-dedicated-test-gitea.md), [conventions.md](./conventions.md#testing-conventions).
 
 ### [VERY HIGH PRIORITY] Comprehensive Agent System Prompt Design and Enhancement
 - **Description**: The agent system prompt currently provides only baseline operational directory instructions (`build_sandbox_system_prompt` in `src/seamus/harness/sandbox.py`). Design and implement a comprehensive, structured system prompt architecture covering agent persona, planning and verification discipline, tool usage guidelines, workspace and Git persistence awareness (`/workspace` vs. transient paths), error recovery, and configurable per-agent/per-session prompt extensions.

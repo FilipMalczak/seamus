@@ -129,6 +129,11 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-022](./requirements.md#req-022-restrict-sync-prs-and-thread-acceptance-to-data-deliverables), [0016-sync-pr-data-scope.md](../decisions/0016-sync-pr-data-scope.md).
 - **Enforcement**: `filter_sync_pr_diff()`, `GitWorkspaceManager.merge_sync_pr()`, and unit tests in `tests/test_workspace.py`.
 
+### INV-026: Test Suite Persistence and Host Workspace Isolation
+- **Statement**: Automated test suite execution must never mutate, create repositories in, or communicate with the live development Gitea instance (`http://localhost:3001`) or write to the live host workspace root (`.seamus/workspaces`). When Docker is available, persistence operations during tests must strictly target an ephemeral, SQLite-backed Gitea container allocated to an isolated dynamic port with a temporary workspace root, completely cleaned up upon test session teardown.
+- **Justification**: [REQ-002](./requirements.md#req-002-rigorous-code-quality--static-verification), [0017-dedicated-test-gitea.md](../decisions/0017-dedicated-test-gitea.md).
+- **Enforcement**: Pytest session fixture in `tests/conftest.py` orchestrating ephemeral container lifecycle, dynamic port binding, temporary directory management, and workspace manager singleton resetting.
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [requirements.md](./requirements.md)
@@ -148,3 +153,4 @@ Properties and rules that must always hold across the repository.
 - [0014-ui-layout-proportions-breadcrumbs.md](../decisions/0014-ui-layout-proportions-breadcrumbs.md)
 - [0015-session-changes-diff-tab.md](../decisions/0015-session-changes-diff-tab.md)
 - [0016-sync-pr-data-scope.md](../decisions/0016-sync-pr-data-scope.md)
+- [0017-dedicated-test-gitea.md](../decisions/0017-dedicated-test-gitea.md)
