@@ -3,7 +3,6 @@ import {
   AlertCircle,
   ArrowUp,
   Bot,
-  Check,
   CheckCircle2,
   Clock,
   Loader2,
@@ -20,7 +19,6 @@ interface ChatAreaProps {
   sessionId: string | null;
   sessionName: string | null;
   thread: ThreadInfo | null;
-  onAcceptThread?: () => Promise<void>;
   onStatusChange?: (status: AgentStatus) => void;
 }
 
@@ -30,11 +28,9 @@ export function ChatArea({
   sessionId,
   sessionName,
   thread,
-  onAcceptThread,
   onStatusChange,
 }: ChatAreaProps) {
   const [inputText, setInputText] = useState<string>("");
-  const [accepting, setAccepting] = useState<boolean>(false);
   const viewportEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -154,40 +150,6 @@ export function ChatArea({
 
         <div className="chat-top-actions">
           {renderStatusBadge(status)}
-          {onAcceptThread && (
-            <button
-              type="button"
-              className={`btn-accept ${
-                isOpen && !isBusy && !accepting
-                  ? "btn-accept-active"
-                  : "btn-accept-disabled"
-              }`}
-              onClick={async () => {
-                if (!isOpen || isBusy || accepting) return;
-                setAccepting(true);
-                try {
-                  await onAcceptThread();
-                } finally {
-                  setAccepting(false);
-                }
-              }}
-              disabled={!isOpen || isBusy || accepting}
-              title={
-                !isOpen
-                  ? "Thread is closed"
-                  : isBusy
-                  ? "Agent is currently busy"
-                  : "Accept thread and sync to main"
-              }
-              aria-label="Accept thread"
-            >
-              {accepting ? (
-                <Loader2 className="size-4 animate-spin text-emerald-400" />
-              ) : (
-                <Check className="size-4 text-emerald-400" />
-              )}
-            </button>
-          )}
         </div>
       </div>
 

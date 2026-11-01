@@ -298,6 +298,21 @@ class GiteaClient:
             )
             raise GiteaAPIError(msg)
 
+    def get_pull_request_diff(self, repo_name: str, index: int) -> str:
+        """Retrieve raw unified diff for a pull request by index."""
+        owner = self.settings.gitea_admin_user
+        with httpx.Client(timeout=10.0, auth=self.auth) as client:
+            res = client.get(f"{self.base_url}/api/v1/repos/{owner}/{repo_name}/pulls/{index}.diff")
+            if res.status_code == 200:
+                return res.text
+            if res.status_code == 404:
+                return ""
+            msg = (
+                f"Failed to get pull request diff #{index} for '{repo_name}': "
+                f"status={res.status_code} body={res.text}"
+            )
+            raise GiteaAPIError(msg)
+
     def get_authenticated_clone_url(self, repo_name: str) -> str:
         """Construct authenticated git clone URL with credentials embedded."""
         parsed = urlparse(self.base_url)

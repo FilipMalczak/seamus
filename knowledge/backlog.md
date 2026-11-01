@@ -57,12 +57,22 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Improvement**: Introduce cross-worker synchronization or transition `HarnessStore` to a read-through/write-through cache against Gitea/a persistent backing store for multi-worker deployments.
 - **Provenance**: [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md), [0008-git-persistence.md](../decisions/0008-git-persistence.md), [architecture.md](./architecture.md#system-overview).
 
+### Test suite leaves the Gitea polluted
+- **Description**: After the test suite runs, Gitea is full of test leftover data.
+- **Rationale**:  Running the test suite should be transparent.
+- **Improvement**: Use dedicated Gitea instance for each suite run; make sure that test leftovers arent exposed on real environment and that test suites might get run uin parallel.
+- **Provenance**: Manual
+
 ## TODO
 
 ### [VERY HIGH PRIORITY] Comprehensive Agent System Prompt Design and Enhancement
 - **Description**: The agent system prompt currently provides only baseline operational directory instructions (`build_sandbox_system_prompt` in `src/seamus/harness/sandbox.py`). Design and implement a comprehensive, structured system prompt architecture covering agent persona, planning and verification discipline, tool usage guidelines, workspace and Git persistence awareness (`/workspace` vs. transient paths), error recovery, and configurable per-agent/per-session prompt extensions.
 - **Rationale**: A well-engineered system prompt is foundational to agent reliability, autonomy, and adherence to workspace boundaries.
 - **Provenance**: [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md#6-backlog-additions), [abstractions.md](./abstractions.md#seamusharness-srcseamusharness).
+
+### [HIGH PRIO] Stop button
+- **Description**: When the agent is running (is in any other state than waiting for user), we need to be able to stop its run. In such case the conversation should not be possible to continue; we'll need to branch from the past point.
+- **Requires**: Conversation branching (not tracked here yet, needs to be thought through properly)
 
 ### Thorough Security Review of Containerized OpenSandbox Server & Docker Socket Configuration
 - **Description**: Perform an in-depth security review and hardening pass on the containerized `opensandbox-server` deployment (`opensandbox/Dockerfile`, `opensandbox/sandbox.toml`, and `docker-compose.yml`). Review the security implications of mounting `/var/run/docker.sock`, tighten `allowed_host_paths` in `[storage]`, evaluate Docker socket proxies or rootless/gVisor (`runsc`)/Kata isolation runtimes (`[secure_runtime]`), review container capability drops/seccomp/AppArmor profiles, and audit sandbox network egress policies and port range exposure.
@@ -89,3 +99,19 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: The repository's base branch (`main`) should represent clean, merged project deliverables without session-specific thread checkpoints, events, or session configuration blobs polluting base history.
 - **Provenance**: [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md), [0008-git-persistence.md](../decisions/0008-git-persistence.md).
 
+### Visual Diff File Path Filtering in Changes Viewer
+- **Description**: Add text-based path/glob search filtering in the Changes viewer sidebar to quickly filter down files in very large pull requests.
+- **Rationale**: While hierarchical file tree/list navigation and per-file collapsible folding are implemented, large pull requests with dozens of files benefit from instant path filtering.
+- **Provenance**: [0015-session-changes-diff-tab.md](../decisions/0015-session-changes-diff-tab.md).
+
+
+### URL should reflect what's opened in SPA
+- **Description**: No matter which chat we open, the URL stays unchanged.
+- **Expectation**: As we navigate the system, each agent, session, thread and tab should have separate URLs that mutate as we click around the page.
+- **Rationale**: One should be able to share the link to specific place in the UI, without requiring the receipient of the link to traverse the UI manually
+- **Provenance**: Manual
+
+### Scrolling the chat section is broken (bug)
+- **Description**: If the last bubble in the chat is active (running tool, unfinished thinking, etc) and the thread is long enough to scroll, when we try to scroll, we get auto-scrolled to  the active bubble
+- **Expectation**: User actions should take precedence over automated scrolls; TBD whether we wanna scroll down on new bubble. Consider adding "follow thread" checkbox and "scroll to bottom" button.
+- **Provenance**: Manual

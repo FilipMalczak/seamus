@@ -61,7 +61,7 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
    - Responsibility: Gitea REST API client (`GiteaClient`), workspace clone/branch management (`GitWorkspaceManager`), and checkpoint-driven Git commits (`GitCheckpointSaver`). Maintains strict separation between `agent/config/`, `agent/state/`, and agent-accessible `data/` (mounted into the OpenSandbox container at `/workspace`). Orchestrates Gitea Sync PR lifecycle (`open_sync_pr`, `merge_sync_pr`) linking session branches to `main`. Persists thread events (`events.json`), checkpoints/HITL state (`checkpoints.json`), and human-readable messages (`messages.json`), with git commit provenance extraction.
 6. **Server & REST API (`seamus.server`)**:
    - Location: `src/seamus/server/`
-   - Responsibility: FastAPI application factory mounted at `/api/v-alpha/`, Pydantic request/response schemas, routes for config template, agents, sessions, agent inspection (`/api/v-alpha/agent/{agent}/session/{session}/inspect`), thread acceptance (`/api/v-alpha/agent/{agent}/session/{session}/thread/{thread}/accept`), input dispatch, thread redirection, system integration metadata (`/api/v-alpha/system/info`), and SSE streaming. Optionally serves built `ui/dist` bundle in production.
+   - Responsibility: FastAPI application factory mounted at `/api/v-alpha/`, Pydantic request/response schemas, routes for config template, agents, sessions, agent inspection (`/api/v-alpha/agent/{agent}/session/{session}/inspect`), session diff inspection (`/api/v-alpha/agent/{agent}/session/{session}/diff`), thread acceptance (`/api/v-alpha/agent/{agent}/session/{session}/thread/{thread}/accept`), input dispatch, thread redirection, system integration metadata (`/api/v-alpha/system/info`), and SSE streaming. Optionally serves built `ui/dist` bundle in production.
 7. **Telemetry & Observability (`seamus.telemetry`)**:
    - Location: `src/seamus/telemetry.py`
    - Responsibility: Logfire initialization, evaluation of `LOGFIRE_SEND_TO_LOGFIRE`, custom domain scrubbing (preserving `session`), FastAPI request instrumentation with `/health` exclusions, and OpenTelemetry environment setup for LangChain/LangGraph tracing.
@@ -87,6 +87,7 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 - [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md)
 - [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md)
 - [0014-ui-layout-proportions-breadcrumbs.md](../decisions/0014-ui-layout-proportions-breadcrumbs.md)
+- [0015-session-changes-diff-tab.md](../decisions/0015-session-changes-diff-tab.md)
 - [abstractions.md](./abstractions.md)
 - [backlog.md](./backlog.md)
 - [vocabulary.md](./vocabulary.md)

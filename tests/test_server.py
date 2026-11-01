@@ -1,5 +1,7 @@
 """Integration tests for FastAPI endpoints under /api/v-alpha/."""
 
+from unittest.mock import patch
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
@@ -396,3 +398,38 @@ async def test_thread_switching_replays_user_messages() -> None:
         assert t1_stream_back.status_code == 200
         assert "First message in T1" in t1_stream_back.text
         assert "user-msg-t1" in t1_stream_back.text
+
+
+def test_session_diff_endpoint(client: TestClient) -> None:
+    # 1. Create agent and session
+    agent_res = client.post("/api/v-alpha/agents", json={"name": "diff-agent"})
+    assert agent_res.status_code == 201
+    agent_id = agent_res.json()["id"]
+
+    session_res = client.post(
+        f"/api/v-alpha/agent/{agent_id}/session", json={"name": "diff-session"}
+    )
+    assert session_res.status_code == 201
+    session_id = session_res.json()["id"]
+
+    # 2. Query diff with mocked WorkspaceManager
+    mock_pr = {"id": 1, "number": 7, "head": {"ref": f"session/{session_id}"}}
+    mock_diff = "diff --git a/a.txt b/a.txt\n+hello"
+
+    with patch(
+        "seamus.persistence.workspace.GitWorkspaceManager.get_sync_pr_diff",
+        return_value=(mock_pr, mock_diff),
+    ):
+        diff_res = client.get(f"/api/v-alpha/agent/{agent_id}/session/{session_id}/diff")
+        assert diff_res.status_code == 200
+        data = diff_res.json()
+        assert data["agent_id"] == agent_id
+        assert data["session_id"] == session_id
+        assert data["pr_number"] == 7
+        assert data["diff"] == mock_diff
+        assert data["pr_url"] is not None
+        assert "pulls/7" in data["pr_url"]
+
+    # 3. Non-existent session returns 404
+    missing_res = client.get(f"/api/v-alpha/agent/{agent_id}/session/unknown-session/diff")
+    assert missing_res.status_code == 404

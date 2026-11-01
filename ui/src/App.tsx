@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Eye, MessageSquare } from "lucide-react";
+import { Eye, GitPullRequest, MessageSquare } from "lucide-react";
 import { getConfigTemplate, getSystemInfo, updateConfigTemplate } from "./api/client";
 import type { AgentConfig, AgentStatus, SystemInfoResponse } from "./api/types";
 import { AgentInspector } from "./components/AgentInspector";
+import { ChangesViewer } from "./components/ChangesViewer";
 import { ChatArea } from "./components/ChatArea";
 import { ConfigModal } from "./components/ConfigModal";
 import { Header } from "./components/Header";
@@ -14,7 +15,7 @@ export function App() {
   const [configTemplate, setConfigTemplate] = useState<AgentConfig | null>(null);
   const [activeStatus, setActiveStatus] = useState<AgentStatus>("AWAITING_USER");
   const [systemInfo, setSystemInfo] = useState<SystemInfoResponse | null>(null);
-  const [activeMainTab, setActiveMainTab] = useState<"chat" | "inspector">("chat");
+  const [activeMainTab, setActiveMainTab] = useState<"chat" | "inspector" | "changes">("chat");
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -223,6 +224,14 @@ export function App() {
               <span>Inspector</span>
               {selectedSessionId && <span className="main-tab-badge">Semi-Live</span>}
             </button>
+            <button
+              type="button"
+              className={`main-tab ${activeMainTab === "changes" ? "active" : ""}`}
+              onClick={() => setActiveMainTab("changes")}
+            >
+              <GitPullRequest className="size-4" />
+              <span>Changes</span>
+            </button>
           </div>
 
           <div className="main-panel-content">
@@ -241,11 +250,6 @@ export function App() {
                 sessionName={activeSession?.name || null}
                 thread={activeThread || null}
                 onStatusChange={setActiveStatus}
-                onAcceptThread={async () => {
-                  if (selectedAgentId && selectedSessionId && activeThread) {
-                    await acceptThread(selectedAgentId, selectedSessionId, activeThread.id);
-                  }
-                }}
               />
             </div>
 
@@ -256,6 +260,22 @@ export function App() {
                 threadId={selectedThreadId}
                 agentName={activeAgent?.name || null}
                 sessionName={activeSession?.name || null}
+              />
+            )}
+
+            {activeMainTab === "changes" && (
+              <ChangesViewer
+                agentId={selectedAgentId}
+                agentName={activeAgent?.name || null}
+                sessionId={selectedSessionId}
+                sessionName={activeSession?.name || null}
+                thread={activeThread || null}
+                agentStatus={activeStatus}
+                onAcceptThread={async () => {
+                  if (selectedAgentId && selectedSessionId && activeThread) {
+                    await acceptThread(selectedAgentId, selectedSessionId, activeThread.id);
+                  }
+                }}
               />
             )}
           </div>

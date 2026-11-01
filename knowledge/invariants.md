@@ -111,13 +111,18 @@ Properties and rules that must always hold across the repository.
 
 ### INV-022: Thread Acceptance and Sync PR Lifecycle
 - **Statement**: When Gitea persistence is enabled, every active session with an open thread must maintain an open Sync PR from `session/{session_id}` to `main`. Thread acceptance must be atomic: closing the active thread, merging the active Sync PR into `main`, creating a new thread on the same session branch, and opening a renewed Sync PR to `main`. The UI must not provide manual controls to create or open arbitrary threads.
-- **Justification**: [REQ-019](./requirements.md#req-019-gitea-sync-prs-and-thread-acceptance-lifecycle), [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md).
+- **Justification**: [REQ-019](./requirements.md#req-019-gitea-sync-prs-and-thread-acceptance-lifecycle), [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md), [0015-session-changes-diff-tab.md](../decisions/0015-session-changes-diff-tab.md).
 - **Enforcement**: `HarnessStore.accept_thread()`, `GitWorkspaceManager.open_sync_pr()`, `GitWorkspaceManager.merge_sync_pr()`, `POST .../thread/{thread_identifier}/accept`, and UI component removal of manual thread creation in `Sidebar.tsx` and `ChatArea.tsx`.
 
 ### INV-023: Tool Call Lifecycle and State Representation
 - **Statement**: Tool calls must strictly progress through deterministic lifecycle states (`Pending` -> `WIP` -> `Done` or `Failed`). During argument streaming (`TOOL_CALL_START`, `TOOL_CALL_ARGS`), tool calls remain in `pending`; upon completion of argument streaming (`TOOL_CALL_END`), tool calls transition to `wip` and thread status remains in `EXECUTING_TOOL`; upon receipt of execution output (`TOOL_CALL_RESULT`), output is extracted from `content` and the call transitions to `done` (or `error` on failure). Replayed event streams and snapshots (`MESSAGES_SNAPSHOT`) must reconcile all tool calls with their final execution state without leaving calls in `Running` or resetting tool names. Within the conversation UI, thought processes, tool calls, and text responses must be interweaved in their actual chronological sequence. Completed tools and reasoning blocks whose streaming has finished (or been succeeded by another block) must automatically collapse, while preserving user manual toggle controls.
 - **Justification**: [REQ-020](./requirements.md#req-020-tool-call-lifecycle-visibility--accurate-ui-stream-rendering), [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md).
 - **Enforcement**: `seamus.harness.runner.SessionAgentRunner._update_status_from_event()`, `useThreadStream.ts`, `ToolCallItem.tsx`, `MessageItem.tsx`, and tests in `tests/test_runner.py`.
+
+### INV-024: Session Changes Diff and Acceptance Placement
+- **Statement**: The thread acceptance action button must be located in the dedicated "Changes" view alongside the visual diff of the active session's Sync PR rather than the conversation header, allowing visual review of codebase and state modifications before accepting. The diff must be served by `GET /api/v-alpha/agent/{agent}/session/{session}/diff` and rendered via `@pierre/diffs`.
+- **Justification**: [REQ-021](./requirements.md#req-021-sync-pr-diff-inspection-and-changes-tab), [0015-session-changes-diff-tab.md](../decisions/0015-session-changes-diff-tab.md).
+- **Enforcement**: `ChangesViewer.tsx`, `App.tsx`, and backend routes in `src/seamus/server/routes/sessions.py`.
 
 ## Cross-References
 - [backlog.md](./backlog.md)
@@ -135,3 +140,5 @@ Properties and rules that must always hold across the repository.
 - [0011-agent-inspector.md](../decisions/0011-agent-inspector.md)
 - [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md)
 - [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md)
+- [0014-ui-layout-proportions-breadcrumbs.md](../decisions/0014-ui-layout-proportions-breadcrumbs.md)
+- [0015-session-changes-diff-tab.md](../decisions/0015-session-changes-diff-tab.md)

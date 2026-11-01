@@ -116,16 +116,22 @@ Requirements, rationale, provenance, and stable IDs.
 - **Linked Invariants**: [INV-021](./invariants.md#inv-021-agent-inspection-and-credential-redaction).
 
 ### REQ-019: Gitea Sync PRs and Thread Acceptance Lifecycle
-- **Description**: The UI must not provide explicit manual controls to open or spawn threads. When a session starts, the harness must open an automated Sync PR in Gitea from `session/{session_id}` to `main`. The top bar must provide an "Accept" action button with only a tick icon (green and inviting) in place of "New Thread". Accepting a thread closes the active thread, approves and merges the session's active Sync PR into `main`, spawns a new open thread on the same session branch, and opens a new Sync PR to `main`.
+- **Description**: The UI must not provide explicit manual controls to open or spawn threads. When a session starts, the harness must open an automated Sync PR in Gitea from `session/{session_id}` to `main`. The thread acceptance action button is hosted in the dedicated "Changes" view alongside the visual diff of the Sync PR. Accepting a thread closes the active thread, approves and merges the session's active Sync PR into `main`, spawns a new open thread on the same session branch, and opens a new Sync PR to `main`.
 - **Rationale**: Replaces ad-hoc manual thread opening with a rigorous human-in-the-loop acceptance workflow that automatically merges validated thread outputs into the base repository branch while keeping subsequent work in clean isolated Sync PR cycles.
-- **Provenance**: [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md).
-- **Linked Invariants**: [INV-022](./invariants.md#inv-022-thread-acceptance-and-sync-pr-lifecycle).
+- **Provenance**: [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md), [0015-session-changes-diff-tab.md](../decisions/0015-session-changes-diff-tab.md).
+- **Linked Invariants**: [INV-022](./invariants.md#inv-022-thread-acceptance-and-sync-pr-lifecycle), [INV-024](./invariants.md#inv-024-session-changes-diff-and-acceptance-placement).
 
 ### REQ-020: Tool Call Lifecycle Visibility & Accurate UI Stream Rendering
 - **Description**: The Web UI must track and render the full lifecycle of agent tool calls across distinct states (`Pending`, `WIP`, `Done`, and `Failed`), displaying the actual tool name, parsed arguments, and execution result. Tool results transmitted in `TOOL_CALL_RESULT.content` and `MESSAGES_SNAPSHOT` must be accurately extracted and rendered without being lost or remaining stuck in the `Running` state.
 - **Rationale**: Eliminates developer blind spots during tool execution by providing unambiguous visual progression and output inspection for sandbox operations.
 - **Provenance**: [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md).
 - **Linked Invariants**: [INV-023](./invariants.md#inv-023-tool-call-lifecycle-and-state-representation).
+
+### REQ-021: Sync PR Diff Inspection and Changes Tab
+- **Description**: The harness must provide an endpoint `GET /api/v-alpha/agent/{agent}/session/{session}/diff` returning the active Sync PR metadata and raw unified diff. The Web UI main panel must provide a "Changes" tab next to "Inspector" rendering the diff with `@pierre/diffs`, offering a unified/split toggle and hosting the relocated thread "Accept" button.
+- **Rationale**: Empowers users to inspect cumulative workspace changes in the Sync PR prior to merging them into `main`.
+- **Provenance**: [0015-session-changes-diff-tab.md](../decisions/0015-session-changes-diff-tab.md).
+- **Linked Invariants**: [INV-022](./invariants.md#inv-022-thread-acceptance-and-sync-pr-lifecycle), [INV-024](./invariants.md#inv-024-session-changes-diff-and-acceptance-placement).
 
 ## Cross-References
 - [backlog.md](./backlog.md)
@@ -143,3 +149,5 @@ Requirements, rationale, provenance, and stable IDs.
 - [0011-agent-inspector.md](../decisions/0011-agent-inspector.md)
 - [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md)
 - [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md)
+- [0014-ui-layout-proportions-breadcrumbs.md](../decisions/0014-ui-layout-proportions-breadcrumbs.md)
+- [0015-session-changes-diff-tab.md](../decisions/0015-session-changes-diff-tab.md)

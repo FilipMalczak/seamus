@@ -239,6 +239,34 @@ def test_sync_pr_workspace_operations(
     assert active is not None
     assert active["number"] == 10
 
+    # 2.5. Get Sync PR Diff
+    raw_mock_diff = (
+        "diff --git a/agent/config/config.json b/agent/config/config.json\n"
+        "--- a/agent/config/config.json\n"
+        "+++ b/agent/config/config.json\n"
+        "@@ -1 +1 @@\n"
+        "-old\n"
+        "+new\n"
+        "diff --git a/agent/state/threads/123/events.json b/agent/state/threads/123/events.json\n"
+        "--- a/agent/state/threads/123/events.json\n"
+        "+++ b/agent/state/threads/123/events.json\n"
+        "@@ -1 +1 @@\n"
+        "-event_old\n"
+        "+event_new\n"
+        "diff --git a/data/script.py b/data/script.py\n"
+        "--- a/data/script.py\n"
+        "+++ b/data/script.py\n"
+        "@@ -1 +1 @@\n"
+        "+print('hello')\n"
+    )
+    manager.client.get_pull_request_diff = MagicMock(return_value=raw_mock_diff)  # type: ignore[method-assign]
+    pr_data, diff_content = manager.get_sync_pr_diff(session, agent)
+    assert pr_data is not None
+    assert pr_data["number"] == 10
+    assert "agent/config/config.json" in diff_content
+    assert "data/script.py" in diff_content
+    assert "agent/state/threads/123/events.json" not in diff_content
+
     # 3. Merge Sync PR
     merged = manager.merge_sync_pr(session, agent)
     assert merged is True
