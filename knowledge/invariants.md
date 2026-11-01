@@ -124,6 +124,11 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-021](./requirements.md#req-021-sync-pr-diff-inspection-and-changes-tab), [0015-session-changes-diff-tab.md](../decisions/0015-session-changes-diff-tab.md).
 - **Enforcement**: `ChangesViewer.tsx`, `App.tsx`, and backend routes in `src/seamus/server/routes/sessions.py`.
 
+### INV-025: Scope Sync PRs and Thread Acceptance Merges to data/ Deliverables
+- **Statement**: Reviewable Sync PR diffs served by `GET /api/v-alpha/agent/{agent}/session/{session}/diff` and rendered in the Changes tab must strictly contain file modifications within `data/` (`a/data/` or `b/data/`), filtering out `agent/config/**` and `agent/state/**`. Furthermore, `GitWorkspaceManager.merge_sync_pr` must perform a data-scoped merge into `main` that preserves the base agent configuration and clean state on `main` without pollution or collision from session configuration or thread checkpoints.
+- **Justification**: [REQ-022](./requirements.md#req-022-restrict-sync-prs-and-thread-acceptance-to-data-deliverables), [0016-sync-pr-data-scope.md](../decisions/0016-sync-pr-data-scope.md).
+- **Enforcement**: `filter_sync_pr_diff()`, `GitWorkspaceManager.merge_sync_pr()`, and unit tests in `tests/test_workspace.py`.
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [requirements.md](./requirements.md)
@@ -142,3 +147,4 @@ Properties and rules that must always hold across the repository.
 - [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md)
 - [0014-ui-layout-proportions-breadcrumbs.md](../decisions/0014-ui-layout-proportions-breadcrumbs.md)
 - [0015-session-changes-diff-tab.md](../decisions/0015-session-changes-diff-tab.md)
+- [0016-sync-pr-data-scope.md](../decisions/0016-sync-pr-data-scope.md)

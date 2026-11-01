@@ -94,11 +94,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Ensures the automated Sync PR merge, thread closure, and branch synchronization are robust under realistic usage before full operational release.
 - **Provenance**: [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md), [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md).
 
-### Restrict Sync PRs to Only Cover data/ Working Directory
-- **Description**: Scope Sync PRs from `session/{session_id}` to `main` so that they only propagate agent workspace deliverables under `data/`, rather than merging the full session branch tree which includes `agent/config/` and `agent/state/`.
-- **Rationale**: The repository's base branch (`main`) should represent clean, merged project deliverables without session-specific thread checkpoints, events, or session configuration blobs polluting base history.
-- **Provenance**: [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md), [0008-git-persistence.md](../decisions/0008-git-persistence.md).
-
 ### Visual Diff File Path Filtering in Changes Viewer
 - **Description**: Add text-based path/glob search filtering in the Changes viewer sidebar to quickly filter down files in very large pull requests.
 - **Rationale**: While hierarchical file tree/list navigation and per-file collapsible folding are implemented, large pull requests with dozens of files benefit from instant path filtering.

@@ -62,19 +62,28 @@ class GiteaClient:
             if get_res.status_code == 200:
                 data = get_res.json()
                 if isinstance(data, dict):
-                    # Ensure public visibility if private is False but existing repo was private
+                    # Ensure public visibility and manual merge capability
+                    patch_payload: dict[str, Any] = {}
                     if not private and data.get("private") is True:
+                        patch_payload["private"] = False
+                    if not data.get("allow_manual_merge") or not data.get(
+                        "autodetect_manual_merge"
+                    ):
+                        patch_payload["allow_manual_merge"] = True
+                        patch_payload["autodetect_manual_merge"] = True
+
+                    if patch_payload:
                         try:
                             patch_res = client.patch(
                                 f"{self.base_url}/api/v1/repos/{owner}/{repo_name}",
-                                json={"private": False},
+                                json=patch_payload,
                             )
                             if patch_res.status_code == 200:
                                 updated = patch_res.json()
                                 if isinstance(updated, dict):
                                     return updated
                         except Exception:
-                            logger.exception("Failed to update repository %s visibility", repo_name)
+                            logger.exception("Failed to update repository %s settings", repo_name)
                     return data
                 return {}
 
@@ -93,6 +102,19 @@ class GiteaClient:
                 )
                 if create_res.status_code in (200, 201):
                     data = create_res.json()
+                    # Configure manual merge permissions on newly created repository
+                    try:
+                        client.patch(
+                            f"{self.base_url}/api/v1/repos/{owner}/{repo_name}",
+                            json={
+                                "allow_manual_merge": True,
+                                "autodetect_manual_merge": True,
+                            },
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Failed to configure merge policy for repository %s", repo_name
+                        )
                     if isinstance(data, dict):
                         return data
                     return {}
@@ -278,13 +300,16 @@ class GiteaClient:
         index: int,
         do: str = "merge",
         delete_branch: bool = False,
+        merge_commit_id: str | None = None,
     ) -> bool:
         """Merge a pull request."""
         owner = self.settings.gitea_admin_user
-        payload = {
+        payload: dict[str, Any] = {
             "Do": do,
             "delete_branch_after_merge": delete_branch,
         }
+        if merge_commit_id is not None:
+            payload["merge_commit_id"] = merge_commit_id
         with httpx.Client(timeout=10.0, auth=self.auth) as client:
             res = client.post(
                 f"{self.base_url}/api/v1/repos/{owner}/{repo_name}/pulls/{index}/merge",
