@@ -146,16 +146,15 @@ Requirements, rationale, provenance, and stable IDs.
 - **Linked Invariants**: [INV-027](./invariants.md#inv-027-lm-xml-dynamic-system-prompt-assembly).
 
 ### REQ-024: Agent Personas and Baseline Archetypes
-- **Description**: The harness must support configurable agent personas (`Coder`, `Office Worker`, `Designer`, `Data Scientist`, etc.) defined at Agent creation. Personas establish baseline `<identity>`, domain background, and tool catalog, and are inherited immutably by all sessions of that agent.
-- **Rationale**: Prepares Seamus for multi-domain autonomous workflows beyond coding.
+- **Description**: The harness must support an extensible architecture for agent personas, with immediate near-term focus on the `Coder` persona to support self-hosting / dogfooding development, while supporting custom persona registration in the long term. Personas establish baseline `<identity>`, domain background, and tool catalog (exact rules for persona switching/inheritance across sessions remain TBD).
+- **Rationale**: Prepares Seamus for multi-domain autonomous workflows while prioritizing autonomous coding for Seamus self-development.
 - **Provenance**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [threads_modes_personas.md](./threads_modes_personas.md).
-- **Linked Invariants**: [INV-028](./invariants.md#inv-028-persona-immutability-and-inheritance).
 
 ### REQ-025: Operational Modes and Thread Transition Triggers
-- **Description**: The harness must support operational execution modes (`plan`, `chat`, `act`, `analyse`) that dictate interaction posture, prompt framing, and workspace mutability. Switching operational modes within a session must deterministically close the active thread and open a fresh thread. Modes must also define internal thread-opening triggers (e.g. transitioning from plan formulation to execution in `plan` mode).
+- **Description**: The harness must support an open, extensible set of operational execution modes (such as `plan`, `chat`, `act`, `analyse`, and a planned classifier-based `routing` mode) that dictate interaction posture, prompt framing, and workspace mutability. Switching operational modes within a session must deterministically close the active thread and open a fresh thread. Modes must also define internal thread-opening triggers (e.g. transitioning from plan formulation to execution in `plan` mode).
 - **Rationale**: Cleanly isolates exploratory planning and conversational scratchpads from execution trajectories and Git Sync PR diffs.
 - **Provenance**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [threads_modes_personas.md](./threads_modes_personas.md).
-- **Linked Invariants**: [INV-029](./invariants.md#inv-029-mode-transition-thread-spawning-boundary).
+- **Linked Invariants**: [INV-028](./invariants.md#inv-028-mode-transition-thread-spawning-boundary).
 
 ## Cross-References
 - [backlog.md](./backlog.md)

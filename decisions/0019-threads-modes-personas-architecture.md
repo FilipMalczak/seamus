@@ -29,18 +29,22 @@ Agent (configured with Persona)
 ```
 
 ### 1. Personas (Agent-Level Archetypes)
-- **Definition**: A **Persona** defines what an agent *is*. It is configured during Agent creation and persists across all sessions spawned under that agent.
-- **Responsibilities**:
-  - Sets the canonical `<identity>` and domain framing (e.g., `Coder`, `Office Worker`, `Designer`, `Data Scientist`, `Researcher`).
+- **Definition**: A **Persona** defines what an agent *is*. It sets the baseline identity, domain specialization, and tool palette.
+- **Extensible System**: Personas are not a closed or hardcoded enumeration. The harness architecture will allow defining and registering custom personas (a long-term capability beyond the MVP).
+- **Near-Term Focus on Coder**: While example archetypes (`Coder`, `Office Worker`, `Designer`, `Data Scientist`, `Researcher`) illustrate multi-domain specialization, near-term implementation will focus squarely on the `Coder` persona. The immediate strategic milestone is dogfooding—using Seamus to develop Seamus itself.
+- **Responsibilities & Scope**:
+  - Sets canonical `<identity>` and domain framing.
   - Determines available tool palettes and backend environments provisioned for the agent.
-  - Establishes baseline behavioral invariants and domain-specific rules.
+  - Exact rules regarding runtime persona switching and inheritance across sessions are intentionally left TBD for future iteration.
 
 ### 2. Operational Modes (Thread/Session-Level Posture)
-- **Definition**: A **Mode** defines what the agent *does right now*. It governs interaction style, prompt framing, tool permissions, and the operational role of the `/workspace`:
+- **Definition**: A **Mode** defines what the agent *does right now*. It governs interaction style, prompt framing, tool permissions, and the operational role of `/workspace`.
+- **Open and Creatable Set**: Modes are not a rigid or fixed set. New modes can be created and registered, and the core set is non-exhaustive:
   - `plan`: Formulates a thorough, structured plan first. Read-only inspection tools are encouraged; writes are restricted to planning scratchpads until approved. Transitioning to execution triggers a mode switch.
   - `chat`: Conversational orientation. Dialogue is primary; the workspace is not the primary deliverable, serving merely as an agent scratchpad for calculations or temporary files.
   - `act`: Direct execution mode. Follows user commands immediately, authoring focused diffs and executing tasks without upfront planning overhead.
   - `analyse`: Read-only workspace investigation. Answers questions, analyzes architecture, and verifies behaviors without modifying persistent codebase files.
+- **Planned Routing Mode**: In addition to interactive modes, a `routing` mode (name TBD) is planned. This mode utilizes a fast classifier model (such as Jev or an LLM wrapped in classification tools) to inspect incoming user messages and automatically route the conversation to an appropriate operational mode.
 
 ### 3. Threads as Execution Boundaries and Mode-Switching Triggers
 - **Core Principle**: A **Thread** is the atomic conversational and checkpoint boundary for an agent executing in a specific Mode.

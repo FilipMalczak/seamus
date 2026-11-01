@@ -59,20 +59,21 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Guarantees fast feedback for in-memory unit tests while preserving comprehensive Gitea persistence verification on Docker-capable runners.
 - **Provenance**: [0017-dedicated-test-gitea.md](../decisions/0017-dedicated-test-gitea.md), [conventions.md](./conventions.md#testing-conventions).
 
-### Operational Execution Modes and Thread Transition Triggers (plan, chat, act, analyse)
-- **Description**: Support configurable execution modes that govern agent interaction style, prompt framing, workspace usage, and thread-spawning triggers:
+### Operational Execution Modes and Thread Transition Triggers (plan, chat, act, analyse, routing)
+- **Description**: Support an open set of configurable execution modes that govern agent interaction style, prompt framing, workspace usage, and thread-spawning triggers:
   1. `plan`: Generates a structured execution plan before implementing changes. Spawns a new thread when formulating a plan, and automatically opens another new thread when transitioning from plan alignment to execution.
   2. `chat`: Conversational orientation; the workspace serves primarily as an agent scratchpad rather than the focus of production file changes.
   3. `act`: Direct task execution; executes user commands and edits promptly without upfront planning cycles.
   4. `analyse`: Read-only workspace investigation; answers questions and analyzes code without modifying persistent files.
+  5. `routing` (planned): Uses a classifier model (such as Jev or an LLM wrapped in dedicated tools) to triage user input and dispatch to an appropriate operational mode.
   Switching between operational modes always closes the current thread and opens a fresh thread.
 - **Rationale**: Aligns agent behavior with specific user intents while using threads as deterministic boundaries between planning, discussion, analysis, and execution.
-- **Provenance**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [threads_modes_personas.md](./threads_modes_personas.md), [REQ-025](./requirements.md#req-025-operational-modes-and-thread-transition-triggers), [INV-029](./invariants.md#inv-029-mode-transition-thread-spawning-boundary).
+- **Provenance**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [threads_modes_personas.md](./threads_modes_personas.md), [REQ-025](./requirements.md#req-025-operational-modes-and-thread-transition-triggers), [INV-028](./invariants.md#inv-028-mode-transition-thread-spawning-boundary).
 
 ### Pluggable Agent Personas (Coder, Office Worker, Designer, etc.)
-- **Description**: Support configurable agent personas (e.g., `Coder`, `Office Worker`, `Designer`, `Data Scientist`) during agent creation. Each persona configures baseline `<identity>`, domain instructions, and specialized tool suites/backends.
-- **Rationale**: Expands Seamus from a purely code-focused assistant into a versatile multi-domain autonomous harness.
-- **Provenance**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [threads_modes_personas.md](./threads_modes_personas.md), [REQ-024](./requirements.md#req-024-agent-personas-and-baseline-archetypes), [INV-028](./invariants.md#inv-028-persona-immutability-and-inheritance).
+- **Description**: Support an extensible architecture for agent personas, with immediate near-term focus on the `Coder` persona to support self-hosting / dogfooding development (developing Seamus with Seamus), while supporting custom persona registration in the long term. Personas establish baseline `<identity>`, domain instructions, and specialized tool suites/backends (exact rules for persona switching/inheritance across sessions remain TBD).
+- **Rationale**: Expands Seamus from a purely code-focused assistant into a versatile multi-domain autonomous harness while prioritizing autonomous coding for Seamus self-development.
+- **Provenance**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [threads_modes_personas.md](./threads_modes_personas.md), [REQ-024](./requirements.md#req-024-agent-personas-and-baseline-archetypes).
 
 ### Subagent Architecture: Prompts, Sandbox Isolation, and UI Representation
 - **Description**: Investigate and define Seamus subagent integration using DeepAgents subagents (`SubAgentMiddleware` / `AsyncSubAgent`). Specifically determine:
