@@ -20,17 +20,18 @@ An execution instance of an agent or harness session executing a task, consistin
 A singleton, service-wide configuration baseline specifying inference details (provider format, base URL, API key) and default model. A template may be partially complete (e.g. missing an API key).
 
 ### Persona
-An archetype configuring an agent's baseline identity, domain specialization, expertise, demeanor, and available tool palette (e.g. `Coder`, `Office Worker`, `Designer`, `Data Scientist`). Configured at Agent creation and immutable across child sessions.
+An extensible archetype configuring an agent's baseline identity, domain specialization, expertise, demeanor, and available tool palette (with immediate near-term focus on `Coder`, and long-term support for custom personas). Switching and inheritance rules across sessions remain TBD.
 
 ### Session (Conversation)
 A distinct conversational interaction context with an agent. Each session maintains an isolated copy of configuration derived from its parent agent, holds a dedicated DeepAgent instance, and consists of one or more sequential threads.
 
 ### Operational Mode
-The active execution posture and behavioral style governing an agent during a thread turn:
+The active execution posture and behavioral style governing an agent during a thread turn within an open, extensible set of modes:
 - `plan`: Formulates a structured execution plan before implementing changes; transitions from planning to execution open a new thread.
 - `chat`: Conversational orientation; dialogue is primary, and the workspace serves strictly as an internal agent scratchpad rather than a production codebase.
 - `act`: Direct task execution; follows commands and performs edits immediately without upfront planning cycles.
 - `analyse`: Read-only workspace investigation; inspects code, runs queries, and answers questions without mutating persistent files.
+- `routing` (planned): Uses a classifier model or tool-wrapped LLM to triage user input and dispatch to an appropriate operational mode.
 
 ### Thread
 A sub-conversation segment within a session representing a discrete execution phase and mode boundary. Only the most recently created thread in a session is open; earlier threads are closed. A thread records AG-UI streaming events, tracks execution status, and executes within a specific operational mode. Switching operational modes closes the active thread and spawns a fresh thread.

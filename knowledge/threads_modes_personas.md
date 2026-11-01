@@ -29,7 +29,7 @@ To balance autonomous execution, safety, and multi-domain versatility, Seamus se
 
 | Layer | Concept | Cardinality | Primary Question | Persistence Scope |
 | :--- | :--- | :--- | :--- | :--- |
-| **Agent** | **Persona** | 1 per Agent | *What is the agent?* | Immutable baseline in `agent/config/config.json` |
+| **Agent** | **Persona** | 1 per Agent | *What is the agent?* | Baseline identity in `agent/config/config.json` (switching rules TBD) |
 | **Session** | **Workspace** | 1..* per Agent | *Where does it operate?* | Dedicated sandbox container & Git branch (`session/{id}`) |
 | **Thread** | **Mode** | 1..* per Session | *How does it behave right now?* | Checkpoints in `agent/state/threads/{id}/` & event stream |
 
@@ -37,26 +37,32 @@ To balance autonomous execution, safety, and multi-domain versatility, Seamus se
 
 ## 2. Personas (Agent Level)
 
-A **Persona** is an archetype defining the agent's enduring identity, domain background, and available capabilities. Configured when an agent is created, it remains durable across all sessions.
+A **Persona** defines an agent's enduring identity, domain background, and available capabilities. 
 
-### Persona Archetypes
+### Extensibility and Near-Term Focus
 
-1. **Coder** (Default):
+- **Open and Extensible**: Personas are not a hardcoded or closed enumeration. While custom persona creation by users is a post-MVP capability, the harness architecture is designed to support arbitrary custom personas.
+- **Near-Term Coder Focus**: While example archetypes illustrate the versatility of the harness, near-term development is focused squarely on the **Coder** persona. The primary upcoming milestone is using Seamus to develop Seamus itself (dogfooding).
+- **Switching Rules TBD**: Exact lifecycle constraints regarding runtime persona switching across sessions or threads remain intentionally TBD.
+
+### Example Persona Archetypes
+
+1. **Coder** (Primary Focus):
    - **Identity**: Autonomous AI software engineering agent with rigorous engineering discipline, surgical diffs, and verification testing.
    - **Default Tools**: Sandbox filesystem tools (`read_file`, `write_file`, `edit_file`, `ls`, `glob`, `grep`) and shell execution (`execute`).
    - **System Prompt**: Embeds `<engineering_discipline>` and testing invariants.
 
-2. **Office Worker**:
+2. **Office Worker** (Example):
    - **Identity**: Executive coordinator and administrative assistant specializing in organization, synthesis, task dispatching, and communication.
    - **Default Tools**: Document parsers, task tracking tools (`write_todos`), and integration endpoints.
    - **System Prompt**: Emphasizes clarity, structured bulleted summaries, and actionable next steps.
 
-3. **Designer**:
+3. **Designer** (Example):
    - **Identity**: Product and user-experience designer focused on design systems, visual hierarchy, user ergonomics, and frontend aesthetics.
    - **Default Tools**: Filesystem access for CSS/component styling, SVG/canvas generation, and artifact viewers.
    - **System Prompt**: Emphasizes layout proportions, contrast, typography, and interactive usability.
 
-4. **Data Scientist**:
+4. **Data Scientist** (Example):
    - **Identity**: Quantitative researcher and data analyst focused on data exploration, statistical modeling, and experimental reproducibility.
    - **Default Tools**: Python sandbox execution, data file inspection, and visualization artifact generation.
    - **System Prompt**: Emphasizes validation, baseline comparisons, and reproducible data workflows.
@@ -66,6 +72,8 @@ A **Persona** is an archetype defining the agent's enduring identity, domain bac
 ## 3. Operational Modes (Thread / Turn Level)
 
 An **Operational Mode** dictates the agent's immediate interaction posture, prompt framing, and the role of the operational workspace (`/workspace`).
+
+Modes are **open and creatable**—the core list below is an illustrative set, not a closed enumeration. New modes can be registered as the harness evolves.
 
 ```
 +--------------------------------------------------------------------------------+
@@ -77,6 +85,7 @@ An **Operational Mode** dictates the agent's immediate interaction posture, prom
 | `chat`    | Conversational dialogue  | Scratchpad only      | Transient/Temp   |
 | `act`     | Immediate task execution | Production codebase  | Full modify/exec |
 | `analyse` | Workspace investigation  | Immutable reference  | Strict read-only |
+| `routing` | Triage and mode dispatch | None                 | Classifier only  |
 +--------------------------------------------------------------------------------+
 ```
 
@@ -104,6 +113,11 @@ An **Operational Mode** dictates the agent's immediate interaction posture, prom
 - **Objective**: Answer questions, trace call graphs, review diffs, or audit security and architecture without changing files.
 - **Workflow**: The agent has full access to search and inspection tools (`read_file`, `grep`, `glob`, `ls`), but file modification tools (`write_file`, `edit_file`, `delete`) are disabled or rejected by middleware.
 - **Workspace Role**: Immutable reference directory.
+
+#### `routing` (Planned)
+- **Objective**: Automatically analyze the user's incoming message and determine the optimal operational mode (`plan`, `chat`, `act`, `analyse`, etc.).
+- **Mechanism**: Powered by a dedicated classifier model (such as Jev or an LLM wrapped in a specialized classification toolset) rather than running full conversational reasoning.
+- **Outcome**: Triggers a mode switch and spawns a new thread in the selected mode to handle the request.
 
 ---
 
