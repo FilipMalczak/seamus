@@ -95,9 +95,9 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: The repository's base branch (`main`) should represent clean, merged project deliverables without session-specific thread checkpoints, events, or session configuration blobs polluting base history.
 - **Provenance**: [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md), [0008-git-persistence.md](../decisions/0008-git-persistence.md).
 
-### Visual Diff Filtering and Per-File Folding in Changes Viewer
-- **Description**: Add per-file accordion folding, file tree navigation, and path filtering in the Changes viewer to make reviewing large, multi-file Sync PRs easier.
-- **Rationale**: While `@pierre/diffs` provides rich unified/split views, large pull requests benefit from high-level file navigation and selective file inspection.
+### Visual Diff File Path Filtering in Changes Viewer
+- **Description**: Add text-based path/glob search filtering in the Changes viewer sidebar to quickly filter down files in very large pull requests.
+- **Rationale**: While hierarchical file tree/list navigation and per-file collapsible folding are implemented, large pull requests with dozens of files benefit from instant path filtering.
 - **Provenance**: [0015-session-changes-diff-tab.md](../decisions/0015-session-changes-diff-tab.md).
 
 

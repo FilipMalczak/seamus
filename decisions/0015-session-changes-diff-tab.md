@@ -27,8 +27,11 @@ While functional, having the "Accept" action in the conversation header lacked t
    - Added `get_sync_pr_diff` to `WorkspaceManager` (`src/seamus/persistence/workspace.py`) to query the active Sync PR and retrieve its diff.
    - Exposed endpoint `GET /api/v-alpha/agent/{agent_id}/session/{session_id}/diff` (`src/seamus/server/routes/sessions.py`) returning `SessionDiffResponse` with `pr_number`, `pr_url`, and the unified `diff`.
 
-4. **Diff Rendering via `@pierre/diffs`**:
+4. **Diff Rendering via `@pierre/diffs`, File Tree Navigation, and Collapsible Cards**:
    - Integrated `@pierre/diffs` into the frontend to render the unified patch with full syntax highlighting.
+   - Filtered out internal runtime persistence blobs (`agent/state/**`) from the API diff payload to ensure responsive rendering.
+   - Added a collapsible file navigation sidebar supporting both hierarchical directory Tree view and flat List view, with status badges (`[A]`, `[M]`, `[D]`, `[R]`), diff stats, and click-to-scroll navigation.
+   - Implemented per-file collapsible diff cards with header status badges, path copying, line change counts, and global Expand/Collapse All controls.
    - Provided unified/split layout toggle and external link to the active Gitea PR when available.
    - Provided a manual refresh control to reload changes on demand.
 
