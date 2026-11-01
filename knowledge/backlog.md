@@ -64,10 +64,15 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Guarantees fast feedback for in-memory unit tests while preserving comprehensive Gitea persistence verification on Docker-capable runners.
 - **Provenance**: [0017-dedicated-test-gitea.md](../decisions/0017-dedicated-test-gitea.md), [conventions.md](./conventions.md#testing-conventions).
 
-### [VERY HIGH PRIORITY] Comprehensive Agent System Prompt Design and Enhancement
-- **Description**: The agent system prompt currently provides only baseline operational directory instructions (`build_sandbox_system_prompt` in `src/seamus/harness/sandbox.py`). Design and implement a comprehensive, structured system prompt architecture covering agent persona, planning and verification discipline, tool usage guidelines, workspace and Git persistence awareness (`/workspace` vs. transient paths), error recovery, and configurable per-agent/per-session prompt extensions.
-- **Rationale**: A well-engineered system prompt is foundational to agent reliability, autonomy, and adherence to workspace boundaries.
-- **Provenance**: [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md#6-backlog-additions), [abstractions.md](./abstractions.md#seamusharness-srcseamusharness).
+### Pluggable Agent Modes and Personas in System Prompt
+- **Description**: Extend `seamus.harness.prompt` to support configurable agent modes (e.g. `CODING`, `ARCHITECT`, `REVIEWER`, `RESEARCH`, `GENERAL`) and custom persona profiles. The dynamic system prompt generator will adapt `<identity>` and `<engineering_discipline>` to align with the active mode.
+- **Rationale**: Prepares Seamus to transition from a purely coding-oriented agent into a flexible, multi-mode autonomous agent harness.
+- **Provenance**: [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md).
+
+### Dynamic Project Rules Discovery from Workspace (.seamus/rules and AGENTS.md)
+- **Description**: Enhance `DynamicSystemPromptMiddleware` to inspect the agent workspace (`/workspace/.seamus/rules` or `/workspace/AGENTS.md`) prior to model turns, injecting project-specific guidelines into a dedicated `<project_rules>` XML tag.
+- **Rationale**: Keeps the agent automatically synchronized with repository-level conventions and memory files without requiring session re-initialization.
+- **Provenance**: [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md).
 
 ### [HIGH PRIO] Stop button
 - **Description**: When the agent is running (is in any other state than waiting for user), we need to be able to stop its run. In such case the conversation should not be possible to continue; we'll need to branch from the past point.
@@ -109,3 +114,12 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Description**: If the last bubble in the chat is active (running tool, unfinished thinking, etc) and the thread is long enough to scroll, when we try to scroll, we get auto-scrolled to  the active bubble
 - **Expectation**: User actions should take precedence over automated scrolls; TBD whether we wanna scroll down on new bubble. Consider adding "follow thread" checkbox and "scroll to bottom" button.
 - **Provenance**: Manual
+
+## Unorganized; hand-written
+
+- logfire scrubs system prompt with `[Scrubbed due to 'auth']`
+- explore subagents, their system prompt, what exacly they spin up and how do we represent that in UI
+- check where is the todo tool
+- add artifacts 
+- add modes
+- add profiles (coder, office worker, designer, ...)

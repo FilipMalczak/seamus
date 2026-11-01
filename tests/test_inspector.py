@@ -110,7 +110,10 @@ def test_build_agent_inspect_report(tmp_path: pytest.MonkeyPatch) -> None:
     # Verify prompt decomposition
     assert "Always write tests before code." in report.prompts.custom
     assert "/workspace" in report.prompts.scaffold
-    assert report.prompts.composite == f"{report.prompts.scaffold}\n\n{report.prompts.custom}"
+    assert "<identity>" in report.prompts.scaffold
+    assert "<custom_instructions>" in report.prompts.composite
+    assert "Always write tests before code." in report.prompts.composite
+    assert "<operating_environment>" in report.prompts.composite
 
     # Verify tools
     assert len(report.tools) >= 8

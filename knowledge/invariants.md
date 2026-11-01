@@ -134,6 +134,11 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-002](./requirements.md#req-002-rigorous-code-quality--static-verification), [0017-dedicated-test-gitea.md](../decisions/0017-dedicated-test-gitea.md).
 - **Enforcement**: Pytest session fixture in `tests/conftest.py` orchestrating ephemeral container lifecycle, dynamic port binding, temporary directory management, and workspace manager singleton resetting.
 
+### INV-027: LM-XML Dynamic System Prompt Assembly
+- **Statement**: System prompts provided to language models must be formatted in deterministic XML serialized via `lmxml` from structured schema models (`SystemPromptDocument`). The prompt must be evaluated per-inference turn through `DynamicSystemPromptMiddleware`, incorporating dynamic turn context (timestamp, operational directory, session/agent ids) and user custom instructions (`<custom_instructions>`) when configured.
+- **Justification**: [REQ-023](./requirements.md#req-023-dynamic-lm-xml-structured-system-prompt-architecture), [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md).
+- **Enforcement**: `seamus.harness.prompt.build_effective_system_prompt()`, `DynamicSystemPromptMiddleware`, `SessionAgentRunner._build_deep_agent()`, and unit tests in `tests/test_prompt.py`.
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [requirements.md](./requirements.md)
@@ -154,3 +159,4 @@ Properties and rules that must always hold across the repository.
 - [0015-session-changes-diff-tab.md](../decisions/0015-session-changes-diff-tab.md)
 - [0016-sync-pr-data-scope.md](../decisions/0016-sync-pr-data-scope.md)
 - [0017-dedicated-test-gitea.md](../decisions/0017-dedicated-test-gitea.md)
+- [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md)

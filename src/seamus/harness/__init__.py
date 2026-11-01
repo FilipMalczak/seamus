@@ -12,6 +12,14 @@ from seamus.harness.inspector import (
     WorkspaceInspectInfo,
     build_agent_inspect_report,
 )
+from seamus.harness.prompt import (
+    DynamicContext,
+    DynamicSystemPromptMiddleware,
+    OperatingEnvironment,
+    SystemPromptDocument,
+    build_effective_system_prompt,
+    build_scaffold_prompt,
+)
 from seamus.harness.runner import (
     EventBroadcaster,
     RunnerRegistry,
@@ -36,12 +44,15 @@ from seamus.harness.store import (
 
 __all__ = [
     "AgentInspectReport",
+    "DynamicContext",
+    "DynamicSystemPromptMiddleware",
     "EventBroadcaster",
     "GitInspectInfo",
     "HarnessStore",
     "HistoryInspectInfo",
     "InferenceInspectInfo",
     "MessageHistoryItem",
+    "OperatingEnvironment",
     "PromptInspectInfo",
     "RunnerRegistry",
     "SandboxSettings",
@@ -50,10 +61,13 @@ __all__ = [
     "SessionBusyError",
     "SlugConflictError",
     "SubAgentInspectInfo",
+    "SystemPromptDocument",
     "ToolInspectInfo",
     "WorkspaceInspectInfo",
     "build_agent_inspect_report",
+    "build_effective_system_prompt",
     "build_sandbox_system_prompt",
+    "build_scaffold_prompt",
     "get_harness_store",
     "get_or_create_sandbox_api_key",
     "get_runner_registry",

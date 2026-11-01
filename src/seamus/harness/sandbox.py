@@ -16,6 +16,8 @@ from opensandbox.config.connection_sync import ConnectionConfigSync
 from opensandbox.models.sandboxes import PVC, Host, Volume
 from pydantic import BaseModel, Field
 
+from seamus.harness.prompt import build_scaffold_prompt
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_OPERATIONAL_DIR = "/workspace"
@@ -82,17 +84,8 @@ def get_or_create_sandbox_api_key(settings: SandboxSettings | None = None) -> st
 
 
 def build_sandbox_system_prompt(operational_dir: str = DEFAULT_OPERATIONAL_DIR) -> str:
-    """Construct the sandbox system prompt instructing the agent on its operational directory."""
-    return (
-        "You operate inside an isolated sandbox container.\n"
-        f"Your Git-tracked operational directory is mounted at `{operational_dir}`.\n"
-        f"Perform all persistent file operations and project work inside `{operational_dir}` "
-        f"(for example, reading and writing files under `{operational_dir}/...`).\n"
-        f"Everything inside `{operational_dir}` is version-controlled and persisted across "
-        "checkpoints and turns.\n"
-        f"Anything outside of `{operational_dir}` in the sandbox filesystem (such as `/tmp`, "
-        "`/root`, or system paths) is transient and will be discarded when the sandbox terminates."
-    )
+    """Construct the XML-formatted sandbox scaffolding prompt via seamus.harness.prompt."""
+    return build_scaffold_prompt(operational_dir)
 
 
 class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]

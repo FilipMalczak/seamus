@@ -139,6 +139,12 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0016-sync-pr-data-scope.md](../decisions/0016-sync-pr-data-scope.md).
 - **Linked Invariants**: [INV-025](./invariants.md#inv-025-scope-sync-prs-and-thread-acceptance-merges-to-data-deliverables).
 
+### REQ-023: Dynamic LM-XML Structured System Prompt Architecture
+- **Description**: The harness must format all agent system prompts in deterministic, structured XML using `lmxml`, assembling identity, sandbox workspace boundaries (`/workspace` persistence vs. transient paths), coding discipline, tool usage rules, communication style, and user custom instructions. System prompt generation must evaluate dynamically per inference turn via `DynamicSystemPromptMiddleware` to incorporate live turn context without requiring graph re-compilation.
+- **Rationale**: Structured XML prompting dramatically increases model adherence to operating boundaries, tool discipline, and minimal change policies across all model families, while per-inference evaluation enables runtime context adaptation.
+- **Provenance**: [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md).
+- **Linked Invariants**: [INV-027](./invariants.md#inv-027-lm-xml-dynamic-system-prompt-assembly).
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [invariants.md](./invariants.md)
@@ -158,3 +164,4 @@ Requirements, rationale, provenance, and stable IDs.
 - [0014-ui-layout-proportions-breadcrumbs.md](../decisions/0014-ui-layout-proportions-breadcrumbs.md)
 - [0015-session-changes-diff-tab.md](../decisions/0015-session-changes-diff-tab.md)
 - [0016-sync-pr-data-scope.md](../decisions/0016-sync-pr-data-scope.md)
+- [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md)

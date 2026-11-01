@@ -10,6 +10,7 @@ dependencies = [
     "fastapi>=0.115.0",
     "langchain-openai>=0.3.0",
     "langchain-sandbox-opensandbox>=0.1.2",
+    "lmxml>=0.1.0",
     "logfire[fastapi]>=5.4.0",
     "python-dotenv>=1.0.0",
     "uvicorn>=0.34.0",
@@ -30,6 +31,7 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+extend-exclude = ["system_prompts_leaks"]
 
 [tool.ruff.lint]
 select = [

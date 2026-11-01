@@ -8,12 +8,13 @@ from pydantic import BaseModel, Field
 
 from seamus.domain.entities import AgentStatus, Thread
 from seamus.domain.resolution import resolve_session, resolve_thread
+from seamus.harness.prompt import build_effective_system_prompt, build_scaffold_prompt
 from seamus.harness.runner import (
     ReasoningChatOpenAI,
     SessionAgentRunner,
     get_runner_registry,
 )
-from seamus.harness.sandbox import build_sandbox_system_prompt, get_sandbox_settings
+from seamus.harness.sandbox import get_sandbox_settings
 from seamus.harness.store import get_harness_store
 from seamus.persistence import (
     extract_readable_messages,
@@ -390,15 +391,8 @@ def build_agent_inspect_report(
 
     # System Prompts
     sandbox_settings = get_sandbox_settings()
-    scaffold_prompt = build_sandbox_system_prompt(sandbox_settings.workdir)
+    scaffold_prompt = build_scaffold_prompt(sandbox_settings.workdir)
     custom_prompt = (session.config.system_prompt or "").strip()
-    composite_prompt = f"{scaffold_prompt}\n\n{custom_prompt}" if custom_prompt else scaffold_prompt
-
-    prompt_info = PromptInspectInfo(
-        composite=composite_prompt,
-        scaffold=scaffold_prompt,
-        custom=custom_prompt,
-    )
 
     # Runner & Tools
     registry = get_runner_registry()
@@ -412,6 +406,23 @@ def build_agent_inspect_report(
             logger.debug(
                 "Could not instantiate runner for session %s during inspection", session.id
             )
+
+    composite_prompt = (
+        runner.effective_system_prompt
+        if runner is not None
+        else build_effective_system_prompt(
+            workdir=sandbox_settings.workdir,
+            custom_prompt=custom_prompt or None,
+            session_id=str(session.id),
+            agent_id=str(agent.id),
+        )
+    )
+
+    prompt_info = PromptInspectInfo(
+        composite=composite_prompt,
+        scaffold=scaffold_prompt,
+        custom=custom_prompt,
+    )
 
     if runner is not None and hasattr(runner, "agent") and hasattr(runner.agent, "graph"):
         tools = extract_tools_from_graph(runner.agent.graph)

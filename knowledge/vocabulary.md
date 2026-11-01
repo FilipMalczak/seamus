@@ -72,7 +72,10 @@ The mount path inside an agent's execution sandbox container where the session's
 An introspection subsystem (accessible via the `GET .../inspect` endpoint and the UI `[Inspector]` tab) surfacing the full runtime manifest of an agent as of its latest inference run: decomposed system prompt layers, registered tool parameter schemas, execution backend bindings, inference configuration with credential masking, Gitea branch/commit provenance, and message trajectory.
 
 ### Composite System Prompt
-The effective prompt received by the language model assembled from two primary layers: base sandbox operational scaffolding (`build_sandbox_system_prompt`) and user-configured custom instructions.
+The effective prompt received by the language model assembled dynamically per-inference in structured LM-XML from base scaffolding (`build_scaffold_prompt`), dynamic runtime context (timestamps, workspace path, session/agent identifiers), and user-configured custom instructions.
+
+### LM-XML
+Language Model XML; an opinionated, predictable serialization format mapping Python data structures and Pydantic models to human- and model-readable XML tags without attributes (except list item indexing), ensuring deterministic structural parsing by language models.
 
 ### Sync PR
 An automated Gitea pull request opened from a session branch (`session/{session_id}`) targeting the repository's base branch (`main`). Created upon session workspace initialization and renewed after each thread acceptance.

@@ -372,9 +372,7 @@ export function AgentInspector({
               </div>
             </div>
 
-            <div className="prompt-content-box">
-              <MarkdownRenderer content={currentPromptText} variant="assistant" />
-            </div>
+            <pre className="prompt-content-box">{currentPromptText}</pre>
           </div>
         )}
 

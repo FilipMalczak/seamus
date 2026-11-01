@@ -23,9 +23,13 @@ from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
 from seamus.domain.entities import Agent, AgentStatus, Session, Thread
+from seamus.harness.prompt import (
+    DynamicSystemPromptMiddleware,
+    build_effective_system_prompt,
+    build_scaffold_prompt,
+)
 from seamus.harness.sandbox import (
     SeamusOpenSandboxBackend,
-    build_sandbox_system_prompt,
     get_sandbox_settings,
 )
 from seamus.persistence import GitCheckpointSaver, get_workspace_manager
@@ -219,15 +223,15 @@ class SessionAgentRunner:
             settings=sandbox_settings,
         )
         self._sandbox_backend = sandbox_backend
-        sandbox_prompt = build_sandbox_system_prompt(sandbox_settings.workdir)
-        custom_prompt = (self.session.config.system_prompt or "").strip()
-        if custom_prompt:
-            effective_prompt = f"{sandbox_prompt}\n\n{custom_prompt}"
-        else:
-            effective_prompt = sandbox_prompt
+        sandbox_prompt = build_scaffold_prompt(sandbox_settings.workdir)
+        effective_prompt = self.build_effective_system_prompt()
 
         self._sandbox_system_prompt = sandbox_prompt
         self._effective_system_prompt = effective_prompt
+
+        dynamic_prompt_middleware = DynamicSystemPromptMiddleware(
+            prompt_provider=lambda _req: self.build_effective_system_prompt()
+        )
 
         checkpointer = GitCheckpointSaver(
             agent_id=self.session.agent_id,
@@ -239,6 +243,7 @@ class SessionAgentRunner:
             model=llm,
             backend=sandbox_backend,
             system_prompt=effective_prompt,
+            middleware=[dynamic_prompt_middleware],
             checkpointer=checkpointer,
         )
 
@@ -248,24 +253,31 @@ class SessionAgentRunner:
             description=f"DeepAgent for session {self.session.id}",
         )
 
+    def build_effective_system_prompt(self, include_dynamic_context: bool = True) -> str:
+        """Dynamically assemble the effective LM-XML system prompt for the session."""
+        sandbox_settings = get_sandbox_settings()
+        custom_prompt = (self.session.config.system_prompt or "").strip()
+        return build_effective_system_prompt(
+            workdir=sandbox_settings.workdir,
+            custom_prompt=custom_prompt or None,
+            session_id=str(self.session.id),
+            agent_id=str(self.session.agent_id),
+            include_dynamic_context=include_dynamic_context,
+        )
+
     @property
     def sandbox_system_prompt(self) -> str:
         """Return the base OpenSandbox scaffolding system prompt."""
         if not hasattr(self, "_sandbox_system_prompt"):
             sandbox_settings = get_sandbox_settings()
-            self._sandbox_system_prompt = build_sandbox_system_prompt(sandbox_settings.workdir)
+            self._sandbox_system_prompt = build_scaffold_prompt(sandbox_settings.workdir)
         return self._sandbox_system_prompt
 
     @property
     def effective_system_prompt(self) -> str:
         """Return the composite effective system prompt passed to the agent."""
         if not hasattr(self, "_effective_system_prompt"):
-            sandbox_prompt = self.sandbox_system_prompt
-            custom_prompt = (self.session.config.system_prompt or "").strip()
-            if custom_prompt:
-                self._effective_system_prompt = f"{sandbox_prompt}\n\n{custom_prompt}"
-            else:
-                self._effective_system_prompt = sandbox_prompt
+            self._effective_system_prompt = self.build_effective_system_prompt()
         return self._effective_system_prompt
 
     @property
