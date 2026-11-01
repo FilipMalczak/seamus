@@ -70,6 +70,10 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: A well-engineered system prompt is foundational to agent reliability, autonomy, and adherence to workspace boundaries.
 - **Provenance**: [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md#6-backlog-additions), [abstractions.md](./abstractions.md#seamusharness-srcseamusharness).
 
+### [HIGH PRIO] Stop button
+- **Description**: When the agent is running (is in any other state than waiting for user), we need to be able to stop its run. In such case the conversation should not be possible to continue; we'll need to branch from the past point.
+- **Requires**: Conversation branching (not tracked here yet, needs to be thought through properly)
+
 ### Thorough Security Review of Containerized OpenSandbox Server & Docker Socket Configuration
 - **Description**: Perform an in-depth security review and hardening pass on the containerized `opensandbox-server` deployment (`opensandbox/Dockerfile`, `opensandbox/sandbox.toml`, and `docker-compose.yml`). Review the security implications of mounting `/var/run/docker.sock`, tighten `allowed_host_paths` in `[storage]`, evaluate Docker socket proxies or rootless/gVisor (`runsc`)/Kata isolation runtimes (`[secure_runtime]`), review container capability drops/seccomp/AppArmor profiles, and audit sandbox network egress policies and port range exposure.
 - **Rationale**: Mounting `/var/run/docker.sock` and provisioning sibling containers grants privileged daemon control to the sandbox server; hardening these boundaries is critical before untrusted or multi-tenant workloads run in sandboxes.
