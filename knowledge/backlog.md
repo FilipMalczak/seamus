@@ -57,6 +57,13 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Improvement**: Introduce cross-worker synchronization or transition `HarnessStore` to a read-through/write-through cache against Gitea/a persistent backing store for multi-worker deployments.
 - **Provenance**: [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md), [0008-git-persistence.md](../decisions/0008-git-persistence.md), [architecture.md](./architecture.md#system-overview).
 
+### Prevent Logfire Scrubbing System Prompts Due to False-Positive 'auth' Match
+- **Current Problem**: In Logfire telemetry spans, system prompt attributes are completely redacted with `[Scrubbed due to 'auth']`. Logfire's built-in credential regex `auth(?!ors?\b)` matches occurrences of `"authoring"` in `build_engineering_discipline()` and redacts the entire prompt.
+- **Improvement**: 
+  1. Update `_scrub_callback` in `src/seamus/telemetry.py` to preserve system prompt attributes and exempt false-positive substrings (such as `"authoring"`).
+  2. Adjust phrasing in `build_engineering_discipline()` from `"before authoring code"` to `"before writing code"` as defensive double protection.
+- **Provenance**: `src/seamus/telemetry.py`, `src/seamus/harness/prompt.py`, [0006-external-system-links.md](../decisions/0006-external-system-links.md).
+
 ## TODO
 
 ### Dual CI/CD Test Pipeline Runners (Docker-Enabled and In-Memory)
@@ -64,10 +71,40 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Guarantees fast feedback for in-memory unit tests while preserving comprehensive Gitea persistence verification on Docker-capable runners.
 - **Provenance**: [0017-dedicated-test-gitea.md](../decisions/0017-dedicated-test-gitea.md), [conventions.md](./conventions.md#testing-conventions).
 
-### Pluggable Agent Modes and Personas in System Prompt
-- **Description**: Extend `seamus.harness.prompt` to support configurable agent modes (e.g. `CODING`, `ARCHITECT`, `REVIEWER`, `RESEARCH`, `GENERAL`) and custom persona profiles. The dynamic system prompt generator will adapt `<identity>` and `<engineering_discipline>` to align with the active mode.
-- **Rationale**: Prepares Seamus to transition from a purely coding-oriented agent into a flexible, multi-mode autonomous agent harness.
-- **Provenance**: [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md).
+### Operational Execution Modes and Thread Transition Triggers (plan, chat, act, analyse)
+- **Description**: Support configurable execution modes that govern agent interaction style, prompt framing, workspace usage, and thread-spawning triggers:
+  1. `plan`: Generates a structured execution plan before implementing changes. Spawns a new thread when formulating a plan, and automatically opens another new thread when transitioning from plan alignment to execution.
+  2. `chat`: Conversational orientation; the workspace serves primarily as an agent scratchpad rather than the focus of production file changes.
+  3. `act`: Direct task execution; executes user commands and edits promptly without upfront planning cycles.
+  4. `analyse`: Read-only workspace investigation; answers questions and analyzes code without modifying persistent files.
+  Switching between operational modes always closes the current thread and opens a fresh thread.
+- **Rationale**: Aligns agent behavior with specific user intents while using threads as deterministic boundaries between planning, discussion, analysis, and execution.
+- **Provenance**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [threads_modes_personas.md](./threads_modes_personas.md), [REQ-025](./requirements.md#req-025-operational-modes-and-thread-transition-triggers), [INV-029](./invariants.md#inv-029-mode-transition-thread-spawning-boundary).
+
+### Pluggable Agent Personas (Coder, Office Worker, Designer, etc.)
+- **Description**: Support configurable agent personas (e.g., `Coder`, `Office Worker`, `Designer`, `Data Scientist`) during agent creation. Each persona configures baseline `<identity>`, domain instructions, and specialized tool suites/backends.
+- **Rationale**: Expands Seamus from a purely code-focused assistant into a versatile multi-domain autonomous harness.
+- **Provenance**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [threads_modes_personas.md](./threads_modes_personas.md), [REQ-024](./requirements.md#req-024-agent-personas-and-baseline-archetypes), [INV-028](./invariants.md#inv-028-persona-immutability-and-inheritance).
+
+### Subagent Architecture: Prompts, Sandbox Isolation, and UI Representation
+- **Description**: Investigate and define Seamus subagent integration using DeepAgents subagents (`SubAgentMiddleware` / `AsyncSubAgent`). Specifically determine:
+  1. System prompt composition: whether subagents inherit parent workspace rules and engineering discipline or use specialized task prompts.
+  2. Execution isolation: whether subagents operate in the parent session's container workspace or spin up isolated workspace subtrees/ephemeral containers.
+  3. UI visualization: design how delegated subagent runs, parallel executions, and returns are rendered in the SPA (e.g., collapsible child execution cards within the chat bubble or dedicated sub-threads).
+- **Rationale**: Delegation to specialized subagents is central to autonomous harness scaling; clear execution boundaries and user visibility must be established before enabling subagents.
+- **Provenance**: `src/seamus/harness/runner.py`, `deepagents.middleware.subagents`, [abstractions.md](./abstractions.md).
+
+### Integrate Task Planning and Todo List Tool (TodoListMiddleware / write_todos)
+- **Description**: Integrate `TodoListMiddleware` from `langchain.agents.middleware` into `create_deep_agent` in `seamus.harness.runner`. Expose the `write_todos` tool to Seamus agents, verify `PlanningState` compatibility with `GitCheckpointSaver`, and expose the active todo checklist to the frontend.
+- **Rationale**: Equips agents with structured multi-step planning and tracking tools (`write_todos`), and provides users with explicit progress visibility during lengthy tasks.
+- **Provenance**: `langchain.agents.middleware.TodoListMiddleware`, `deepagents.profiles.harness._openai_codex`, `src/seamus/harness/runner.py`.
+
+### Agent Artifacts Protocol and Dedicated UI Viewer Panel
+- **Description**: Introduce an Artifacts abstraction for persistent, high-density outputs (plans, reports, architecture diagrams, code diffs, standalone scripts). Establish:
+  1. Persistence: storage under `/workspace/.seamus/artifacts/` or extraction from structured tool calls / checkpoints.
+  2. UI Experience: a dedicated Artifacts tab or split-pane viewer alongside Chat, Changes, and Inspector, supporting Markdown rendering, syntax highlighting, and export.
+- **Rationale**: Keeps chat conversations clean and scannable while giving persistent, dedicated visibility to substantial engineering deliverables.
+- **Provenance**: `ui/src/components/`, [abstractions.md](./abstractions.md), [architecture.md](./architecture.md).
 
 ### Dynamic Project Rules Discovery from Workspace (.seamus/rules and AGENTS.md)
 - **Description**: Enhance `DynamicSystemPromptMiddleware` to inspect the agent workspace (`/workspace/.seamus/rules` or `/workspace/AGENTS.md`) prior to model turns, injecting project-specific guidelines into a dedicated `<project_rules>` XML tag.
@@ -115,11 +152,3 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Expectation**: User actions should take precedence over automated scrolls; TBD whether we wanna scroll down on new bubble. Consider adding "follow thread" checkbox and "scroll to bottom" button.
 - **Provenance**: Manual
 
-## Unorganized; hand-written
-
-- logfire scrubs system prompt with `[Scrubbed due to 'auth']`
-- explore subagents, their system prompt, what exacly they spin up and how do we represent that in UI
-- check where is the todo tool
-- add artifacts 
-- add modes
-- add profiles (coder, office worker, designer, ...)

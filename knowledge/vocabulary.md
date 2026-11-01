@@ -19,11 +19,21 @@ An execution instance of an agent or harness session executing a task, consistin
 ### Config Template
 A singleton, service-wide configuration baseline specifying inference details (provider format, base URL, API key) and default model. A template may be partially complete (e.g. missing an API key).
 
+### Persona
+An archetype configuring an agent's baseline identity, domain specialization, expertise, demeanor, and available tool palette (e.g. `Coder`, `Office Worker`, `Designer`, `Data Scientist`). Configured at Agent creation and immutable across child sessions.
+
 ### Session (Conversation)
 A distinct conversational interaction context with an agent. Each session maintains an isolated copy of configuration derived from its parent agent, holds a dedicated DeepAgent instance, and consists of one or more sequential threads.
 
+### Operational Mode
+The active execution posture and behavioral style governing an agent during a thread turn:
+- `plan`: Formulates a structured execution plan before implementing changes; transitions from planning to execution open a new thread.
+- `chat`: Conversational orientation; dialogue is primary, and the workspace serves strictly as an internal agent scratchpad rather than a production codebase.
+- `act`: Direct task execution; follows commands and performs edits immediately without upfront planning cycles.
+- `analyse`: Read-only workspace investigation; inspects code, runs queries, and answers questions without mutating persistent files.
+
 ### Thread
-A sub-conversation segment within a session. Only the most recently created thread in a session is open; earlier threads are closed. A thread records AG-UI streaming events and tracks execution status.
+A sub-conversation segment within a session representing a discrete execution phase and mode boundary. Only the most recently created thread in a session is open; earlier threads are closed. A thread records AG-UI streaming events, tracks execution status, and executes within a specific operational mode. Switching operational modes closes the active thread and spawns a fresh thread.
 
 ### Slug (Name)
 A human-readable, URL-safe identifier formatted as lowercase words separated by hyphens (e.g. `foo-bar-baz`, regex: `^[a-z0-9]+(?:-[a-z0-9]+)*$`). Slugs can be assigned to agents, sessions, and threads as alternative identifiers to UUIDs.
@@ -100,6 +110,8 @@ The deterministic execution phases of an invoked agent tool: `Pending` (argument
 - [0011-agent-inspector.md](../decisions/0011-agent-inspector.md)
 - [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md)
 - [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md)
+- [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md)
+- [threads_modes_personas.md](./threads_modes_personas.md)
 - [architecture.md](./architecture.md)
 - [abstractions.md](./abstractions.md)
 - [backlog.md](./backlog.md)
