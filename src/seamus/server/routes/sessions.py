@@ -9,9 +9,11 @@ from seamus.domain.resolution import EntityNotFoundError, resolve_session
 from seamus.harness.inspector import AgentInspectReport, build_agent_inspect_report
 from seamus.harness.runner import SessionBusyError, get_runner_registry
 from seamus.harness.store import SlugConflictError, get_harness_store
+from seamus.persistence.workspace import get_workspace_manager
 from seamus.server.schemas import (
     SessionCreateRequest,
     SessionDetailResponse,
+    SessionDiffResponse,
     SessionUpdateRequest,
     ThreadResponse,
     UserInputRequest,
@@ -174,3 +176,48 @@ async def inspect_session_agent(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate inspect report: {exc}",
         ) from exc
+
+
+@router.get(
+    "/{session_identifier}/diff",
+    response_model=SessionDiffResponse,
+)
+async def get_session_diff(
+    agent_identifier: str,
+    session_identifier: str,
+) -> SessionDiffResponse:
+    """Return the active Sync PR diff for the session."""
+    store = get_harness_store()
+    try:
+        agent = store.resolve_agent(agent_identifier)
+        session = resolve_session(agent, session_identifier)
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    ws_mgr = get_workspace_manager()
+    active_pr, diff_text = ws_mgr.get_sync_pr_diff(session, agent)
+
+    pr_number: int | None = None
+    pr_url: str | None = None
+    if active_pr is not None:
+        raw_number = active_pr.get("number")
+        if raw_number is not None:
+            pr_number = int(raw_number)
+        persist_settings = ws_mgr.settings
+        if (
+            pr_number is not None
+            and persist_settings.enabled
+            and persist_settings.gitea_external_url
+        ):
+            pr_url = (
+                f"{persist_settings.gitea_external_url.rstrip('/')}/"
+                f"{persist_settings.gitea_admin_user}/agent-{agent.id}/pulls/{pr_number}"
+            )
+
+    return SessionDiffResponse(
+        agent_id=session.agent_id,
+        session_id=session.id,
+        pr_number=pr_number,
+        pr_url=pr_url,
+        diff=diff_text,
+    )

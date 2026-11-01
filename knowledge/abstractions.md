@@ -59,8 +59,8 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `instrument_fastapi`: Hooks Logfire request tracing into FastAPI applications with configurable route exclusion (`excluded_urls`, filtering `/health`).
 
 ### Persistence Subsystem (`src/seamus/persistence/`)
-- `GiteaClient`: REST API client wrapping `httpx` to manage Gitea repositories, branches, raw file access, and Pull Request lifecycle (`create_pull_request`, `get_pull_request`, `list_pull_requests`, `approve_pull_request`, `merge_pull_request`).
-- `GitWorkspaceManager`: Local Git repository orchestrator handling repository initialization on `main`, session working tree cloning on `session/{session_id}`, whole-directory configuration commits (`config:` prefix on `agent/config/**`), thread state updates (`state:` prefix on `agent/state/**`), checkpoint commits (`checkpoint:` prefix staging `data/` and `agent/state/**`), and Sync PR lifecycle management (`open_sync_pr`, `get_active_sync_pr`, `merge_sync_pr`).
+- `GiteaClient`: REST API client wrapping `httpx` to manage Gitea repositories, branches, raw file access, and Pull Request lifecycle (`create_pull_request`, `get_pull_request`, `get_pull_request_diff`, `list_pull_requests`, `approve_pull_request`, `merge_pull_request`).
+- `GitWorkspaceManager`: Local Git repository orchestrator handling repository initialization on `main`, session working tree cloning on `session/{session_id}`, whole-directory configuration commits (`config:` prefix on `agent/config/**`), thread state updates (`state:` prefix on `agent/state/**`), checkpoint commits (`checkpoint:` prefix staging `data/` and `agent/state/**`), and Sync PR lifecycle management (`open_sync_pr`, `get_active_sync_pr`, `get_sync_pr_diff`, `merge_sync_pr`).
 - `GitCheckpointSaver`: Subclass of `MemorySaver` (and wrapping LangGraph `BaseCheckpointSaver`) intercepting `put`, `aput`, and writes to persist graph checkpoint state, human-readable messages, and automatically commit all modified files in `data/` and `agent/state/` to Gitea.
 - `PersistenceSettings`: Runtime configuration specifying Gitea URL, credentials, and local workspace directory.
 
@@ -70,8 +70,9 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `ToolCallItem`: Renders collapsible tool call execution cards with visual lifecycle status badges (`Pending`, `WIP`, `Done`, `Failed`), formatted input arguments (parsed JSON or raw string), and execution result outputs.
 - `useThreadStream`: Custom React hook orchestrating SSE stream consumption, real-time message accumulation, and AG-UI event reduction (`TOOL_CALL_START`, `TOOL_CALL_ARGS`, `TOOL_CALL_END`, `TOOL_CALL_RESULT`, `REASONING_*`, `TEXT_MESSAGE_*`, `MESSAGES_SNAPSHOT`) into structured `ChatMessage` and `ToolCallRecord` models.
 - `Sidebar`: Navigation sidebar managing hierarchical tree nodes (Agents, Sessions, Threads) with inline renaming, operational status pills, and external system links footer without manual thread creation triggers.
-- `ChatArea`: Conversation viewport orchestrating SSE stream binding, message listing, auto-scroll, thread status banners, top bar "Accept" action button with tick icon, and composer textarea with auto-focus.
+- `ChatArea`: Conversation viewport orchestrating SSE stream binding, message listing, auto-scroll, thread status banners, and composer textarea with auto-focus.
 - `AgentInspector`: Tabbed agent inspection console surfacing decomposed system prompts (composite, scaffold, custom) with Markdown rendering and copy action, tool inventory with expandable JSON parameter schemas, inference runtime parameters, message trajectory, and workspace file listing.
+- `ChangesViewer`: Tabbed session changes view rendering the active Sync PR unified diff using `@pierre/diffs` (`PatchDiff`) with unified/split mode toggle, external Gitea PR link, refresh action, and the relocated "Accept" button.
 
 ## Design Principles
 - **Explicit over Implicit**: Prefer concrete, simple classes and protocols rather than speculative abstraction layers.
@@ -92,6 +93,8 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - [0011-agent-inspector.md](../decisions/0011-agent-inspector.md)
 - [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md)
 - [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md)
+- [0014-ui-layout-proportions-breadcrumbs.md](../decisions/0014-ui-layout-proportions-breadcrumbs.md)
+- [0015-session-changes-diff-tab.md](../decisions/0015-session-changes-diff-tab.md)
 - [architecture.md](./architecture.md)
 - [backlog.md](./backlog.md)
 - [conventions.md](./conventions.md)

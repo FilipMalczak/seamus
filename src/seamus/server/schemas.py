@@ -193,3 +193,13 @@ class SystemInfoResponse(BaseModel):
 
     logfire: SystemLogfireInfo
     gitea: SystemGiteaInfo
+
+
+class SessionDiffResponse(BaseModel):
+    """Response model containing active Sync PR diff for a session."""
+
+    agent_id: UUID
+    session_id: UUID
+    pr_number: int | None = None
+    pr_url: str | None = None
+    diff: str = ""

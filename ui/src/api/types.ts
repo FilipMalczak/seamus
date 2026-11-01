@@ -106,6 +106,14 @@ export interface SystemInfoResponse {
   gitea: SystemGiteaInfo;
 }
 
+export type SessionDiffResponse = {
+  agent_id: string;
+  session_id: string;
+  pr_number: number | null;
+  pr_url: string | null;
+  diff: string;
+};
+
 export interface ToolInspectInfo {
   name: string;
   description: string;

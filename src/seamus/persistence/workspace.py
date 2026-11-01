@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -40,6 +41,24 @@ def parse_stored_event(data: Any) -> Any:
 
 class GitWorkspaceError(RuntimeError):
     """Raised when a Git command or workspace operation fails."""
+
+
+def filter_sync_pr_diff(raw_diff: str) -> str:
+    """Filter out internal harness state files (e.g. agent/state/**) from reviewable PR diff."""
+    if not raw_diff:
+        return ""
+    pattern = re.compile(r"(?=^diff --git )", re.MULTILINE)
+    chunks = pattern.split(raw_diff)
+    kept: list[str] = []
+    for chunk in chunks:
+        if not chunk.strip():
+            continue
+        first_line = chunk.split("\n", 1)[0]
+        # Skip internal state persistence files (events.json, checkpoints.json, messages.json)
+        if " a/agent/state/" in first_line or " b/agent/state/" in first_line:
+            continue
+        kept.append(chunk)
+    return "".join(kept)
 
 
 class GitWorkspaceManager:
@@ -294,6 +313,28 @@ class GitWorkspaceManager:
         except Exception:
             logger.exception("Failed to query active Sync PR for session %s", session.id)
             return None
+
+    def get_sync_pr_diff(self, session: Session, agent: Agent) -> tuple[dict[str, Any] | None, str]:
+        """Find the active open Sync PR and retrieve its unified diff."""
+        if not self.settings.enabled:
+            return None, ""
+
+        active_pr = self.get_active_sync_pr(session, agent)
+        if active_pr is None:
+            return None, ""
+
+        repo_name = self.get_agent_repo_name(session.agent_id)
+        pr_number = active_pr.get("number")
+        if not pr_number:
+            return active_pr, ""
+
+        try:
+            diff_text = self.client.get_pull_request_diff(repo_name, int(pr_number))
+            filtered_diff = filter_sync_pr_diff(diff_text)
+            return active_pr, filtered_diff
+        except Exception:
+            logger.exception("Failed to query diff for Sync PR #%s in %s", pr_number, repo_name)
+            return active_pr, ""
 
     def open_sync_pr(self, session: Session, agent: Agent) -> dict[str, Any] | None:
         """Open an automated Sync PR from session branch to main if not already present."""

@@ -6,6 +6,7 @@ import type {
   AgentStatus,
   ConfigTemplateResponse,
   SessionDetail,
+  SessionDiffResponse,
   SystemInfoResponse,
   ThreadInfo,
 } from "./types";
@@ -274,4 +275,15 @@ export async function getAgentInspection(
   const res = await fetch(url.toString());
   return handleResponse<AgentInspectReport>(res);
 }
+
+export async function getSessionDiff(
+  agentId: string,
+  sessionId: string
+): Promise<SessionDiffResponse> {
+  const res = await fetch(
+    `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/diff`
+  );
+  return handleResponse<SessionDiffResponse>(res);
+}
+
 

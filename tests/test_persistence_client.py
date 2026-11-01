@@ -202,3 +202,24 @@ def test_client_merge_pull_request(test_settings: PersistenceSettings) -> None:
         payload = mock_post_call.call_args.kwargs["json"]
         assert payload["Do"] == "merge"
         assert payload["delete_branch_after_merge"] is False
+
+
+def test_client_get_pull_request_diff(test_settings: PersistenceSettings) -> None:
+    client = GiteaClient(test_settings)
+    mock_get = MagicMock()
+    mock_get.status_code = 200
+    mock_get.text = "diff --git a/test b/test\n+line"
+
+    with patch("httpx.Client.get", return_value=mock_get):
+        diff = client.get_pull_request_diff("agent-123", 1)
+        assert diff == "diff --git a/test b/test\n+line"
+
+
+def test_client_get_pull_request_diff_404(test_settings: PersistenceSettings) -> None:
+    client = GiteaClient(test_settings)
+    mock_get = MagicMock()
+    mock_get.status_code = 404
+
+    with patch("httpx.Client.get", return_value=mock_get):
+        diff = client.get_pull_request_diff("agent-123", 1)
+        assert diff == ""
