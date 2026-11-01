@@ -19,6 +19,9 @@ from seamus.harness.store import HarnessStore
 from seamus.server.app import create_app
 from seamus.telemetry import (
     _scrub_callback,
+    get_logfire_base_url,
+    get_logfire_dashboard_url,
+    get_logfire_org,
     get_logfire_service_name,
     is_logfire_enabled,
     setup_telemetry,
@@ -292,3 +295,44 @@ async def test_langgraph_multi_turn_no_duplicate_user_message(
     assert [m["role"] for m in all_msgs] == ["user", "assistant", "user", "assistant"]
     assert all_msgs[0]["content"] == [{"type": "text", "text": "hey there"}]
     assert all_msgs[2]["content"] == [{"type": "text", "text": "what can you help me with>"}]
+
+
+def test_logfire_org_and_dashboard_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify get_logfire_org, base_url, and get_logfire_dashboard_url construction."""
+    monkeypatch.delenv("LOGFIRE_ORG", raising=False)
+    monkeypatch.delenv("LOGFIRE_BASE_URL", raising=False)
+    assert get_logfire_org() is None
+    assert get_logfire_base_url() == "https://logfire-eu.pydantic.dev"
+    assert get_logfire_dashboard_url() is None
+
+    monkeypatch.setenv("LOGFIRE_SEND_TO_LOGFIRE", "true")
+    setup_telemetry(send_to_logfire=True, force_reconfigure=True)
+    monkeypatch.setenv("LOGFIRE_ORG", "acme-corp")
+    monkeypatch.setenv("LOGFIRE_BASE_URL", "https://logfire.pydantic.dev/")
+    monkeypatch.setenv("LOGFIRE_SERVICE_NAME", "my-agent")
+
+    assert get_logfire_org() == "acme-corp"
+    assert get_logfire_base_url() == "https://logfire.pydantic.dev"
+    assert get_logfire_dashboard_url() == "https://logfire.pydantic.dev/acme-corp/my-agent"
+
+
+def test_logfire_prompt_scrubbing_author_exemption(logfire_test_exporter: TestExporter) -> None:
+    """Verify that words derived from 'author' are not false-positively scrubbed by 'auth' regex."""
+    logfire_test_exporter.clear()
+    with logfire.span(
+        "prompt_span",
+        prompt="Always investigate before authoring code",
+        session_id="session-1234",
+        auth_secret="top-secret-token",
+    ):
+        pass
+
+    spans = logfire_test_exporter.exported_spans_as_dict()
+    assert len(spans) == 1
+    attrs = spans[0]["attributes"]
+    # 'authoring' in prompt must be preserved
+    assert attrs.get("prompt") == "Always investigate before authoring code"
+    # 'session_id' domain attribute must be preserved
+    assert attrs.get("session_id") == "session-1234"
+    # Actual secrets matching auth must be scrubbed
+    assert attrs.get("auth_secret") == "[Scrubbed due to 'auth']"

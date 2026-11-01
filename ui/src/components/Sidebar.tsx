@@ -570,7 +570,12 @@ export function Sidebar({
           <div className="system-links-row">
             {systemInfo?.logfire?.enabled && (
               <a
-                href={`https://logfire-eu.pydantic.dev/filip-malczak/${systemInfo.logfire.service_name || "seamus"}`}
+                href={
+                  systemInfo.logfire.url ||
+                  (systemInfo.logfire.service_name
+                    ? `https://logfire.pydantic.dev`
+                    : "#")
+                }
                 target="_blank"
                 rel="noopener noreferrer"
                 className="system-link-icon system-link-logfire"
