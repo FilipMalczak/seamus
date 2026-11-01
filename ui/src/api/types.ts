@@ -17,6 +17,15 @@ export type ConfigTemplateResponse = {
 
 export type AgentStatus = "AWAITING_USER" | "AWAITING_LLM" | "EXECUTING_TOOL" | "ERROR";
 
+export type SessionStatus = "ACTIVE" | "KILLED" | "FAILED";
+
+export type SessionBranchProvenance = {
+  parent_session_id: string;
+  parent_message_id: string;
+  parent_session_name: string | null;
+  branched_at: string;
+};
+
 export type ThreadInfo = {
   id: string;
   name: string | null;
@@ -33,6 +42,8 @@ export type SessionSummary = {
   created_at: string;
   last_touched_at: string;
   config: AgentConfig;
+  status: SessionStatus;
+  provenance?: SessionBranchProvenance | null;
 };
 
 export type SessionDetail = {
@@ -42,6 +53,8 @@ export type SessionDetail = {
   created_at: string;
   last_touched_at: string;
   config: AgentConfig;
+  status: SessionStatus;
+  provenance?: SessionBranchProvenance | null;
   threads: ThreadInfo[];
 };
 

@@ -99,6 +99,8 @@ export function App() {
     selectThread,
     createAgent,
     createSession,
+    killSession,
+    branchSession,
     acceptThread,
     updateAgentName,
     updateSessionName,
@@ -163,6 +165,18 @@ export function App() {
       await refreshTree();
     });
     setIsModalOpen(true);
+  };
+
+  const handleNavigateToSession = (targetSessionId: string) => {
+    if (!selectedAgentId || !activeAgent) return;
+    const targetSession = activeAgent.sessionsMap?.[targetSessionId];
+    if (targetSession) {
+      const openThread =
+        targetSession.threads.find((t) => t.is_open) || targetSession.threads[0];
+      if (openThread) {
+        selectThread(selectedAgentId, targetSessionId, openThread.id);
+      }
+    }
   };
 
   return (
@@ -248,8 +262,21 @@ export function App() {
                 agentName={activeAgent?.name || null}
                 sessionId={selectedSessionId}
                 sessionName={activeSession?.name || null}
+                sessionStatus={activeSession?.status || "ACTIVE"}
+                sessionProvenance={activeSession?.provenance || null}
                 thread={activeThread || null}
                 onStatusChange={setActiveStatus}
+                onKillSession={async () => {
+                  if (selectedAgentId && selectedSessionId) {
+                    await killSession(selectedAgentId, selectedSessionId);
+                  }
+                }}
+                onBranchMessage={async (messageId: string) => {
+                  if (selectedAgentId && selectedSessionId) {
+                    await branchSession(selectedAgentId, selectedSessionId, messageId);
+                  }
+                }}
+                onNavigateToSession={handleNavigateToSession}
               />
             </div>
 

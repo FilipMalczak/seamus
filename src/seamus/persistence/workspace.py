@@ -215,7 +215,12 @@ class GitWorkspaceManager:
             )
             self._run_git(agent_dir, ["push", "origin", "main"])
 
-    def create_session_workspace(self, session: Session, agent: Agent) -> Path:
+    def create_session_workspace(
+        self,
+        session: Session,
+        agent: Agent,
+        branch_from: str | None = None,
+    ) -> Path:
         """Create or checkout session working tree on dedicated branch."""
         if not self.settings.enabled:
             session_dir = self.get_session_workspace_path(session.agent_id, session.id)
@@ -242,7 +247,8 @@ class GitWorkspaceManager:
             if branch_name in remote_branches:
                 self._run_git(session_dir, ["checkout", branch_name])
             else:
-                self._run_git(session_dir, ["checkout", "-b", branch_name, "origin/main"])
+                start_point = branch_from if branch_from else "origin/main"
+                self._run_git(session_dir, ["checkout", "-b", branch_name, start_point])
         else:
             self._configure_git_identity(session_dir)
 
@@ -270,6 +276,10 @@ class GitWorkspaceManager:
             "name": session.name,
             "created_at": session.created_at.isoformat(),
             "config": session.config.model_dump(),
+            "status": session.status.value,
+            "provenance": (
+                session.provenance.model_dump(mode="json") if session.provenance else None
+            ),
             "threads": [
                 {
                     "id": str(t.id),
@@ -463,6 +473,55 @@ class GitWorkspaceManager:
                 pass
             logger.exception("Failed to finalize Sync PR #%d for session %s", pr_number, session.id)
             return False
+
+    def close_sync_pr(self, session: Session, agent: Agent) -> bool:
+        """Close any active open Sync PR for the session without merging."""
+        if not self.settings.enabled:
+            return True
+
+        active_pr = self.get_active_sync_pr(session, agent)
+        if active_pr is None:
+            return False
+
+        pr_number = active_pr.get("number")
+        if not pr_number:
+            return False
+
+        repo_name = self.get_agent_repo_name(session.agent_id)
+        try:
+            res = self.client.close_pull_request(repo_name, int(pr_number))
+            logger.info("Closed Sync PR #%d for session %s", pr_number, session.id)
+            return res
+        except Exception:
+            logger.exception("Failed to close Sync PR #%d for session %s", pr_number, session.id)
+            return False
+
+    def find_commit_for_event(
+        self,
+        agent_id: UUID,
+        session_id: UUID,
+        search_string: str,
+    ) -> str | None:
+        """Find the git commit SHA on the session branch that introduced the search string."""
+        if not self.settings.enabled:
+            return None
+
+        session_dir = self.get_session_workspace_path(agent_id, session_id)
+        if not (session_dir / ".git").exists():
+            return None
+
+        try:
+            res = self._run_git(
+                session_dir,
+                ["log", f"-S{search_string}", "-n", "1", "--format=%H"],
+            )
+            sha = res.stdout.strip()
+            return sha if sha else None
+        except Exception:
+            logger.debug(
+                "No commit found for search string %s in session %s", search_string, session_id
+            )
+            return None
 
     def save_thread_events(
         self,

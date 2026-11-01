@@ -287,10 +287,20 @@ class SessionAgentRunner:
 
     def is_awaiting_user(self) -> bool:
         """Check if the session's active thread is currently awaiting user input."""
+        if not self.session.is_active:
+            return False
         thread = self.session.get_open_thread()
         return thread.status == AgentStatus.AWAITING_USER and (
             self._active_task is None or self._active_task.done()
         )
+
+    def kill(self) -> None:
+        """Manually terminate the runner task and transition session to KILLED."""
+        if self._active_task is not None and not self._active_task.done():
+            self._active_task.cancel()
+        if self._sandbox_backend is not None:
+            self._sandbox_backend.destroy()
+        self.session.kill()
 
     async def dispatch_user_input(
         self,
@@ -299,6 +309,13 @@ class SessionAgentRunner:
     ) -> str:
         """Dispatch a user message to the active thread and start execution."""
         async with self._lock:
+            if not self.session.is_active:
+                msg = (
+                    f"Session '{self.session.id}' is not active "
+                    f"(current status: {self.session.status.value})."
+                )
+                raise SessionBusyError(msg)
+
             thread = self.session.get_open_thread()
             if not self.is_awaiting_user():
                 msg = (
@@ -410,11 +427,19 @@ class SessionAgentRunner:
                             thread=thread_identifier,
                             error=str(exc),
                         )
-                        thread.status = AgentStatus.ERROR
-                        thread.touch()
+                        self.session.fail()
+                        if self._sandbox_backend is not None:
+                            self._sandbox_backend.destroy()
                         await self.broadcaster.broadcast({"type": "RUN_ERROR", "message": str(exc)})
+                        try:
+                            ws_mgr = get_workspace_manager()
+                            agent_entity = self._resolve_agent_entity()
+                            if agent_entity is not None:
+                                ws_mgr.close_sync_pr(self.session, agent_entity)
+                        except Exception:
+                            logger.exception("Failed to close Sync PR on session failure")
                     finally:
-                        if thread.status != AgentStatus.ERROR:
+                        if thread.status != AgentStatus.ERROR and self.session.is_active:
                             thread.status = AgentStatus.AWAITING_USER
                         thread.touch()
                         self.session.touch()
@@ -426,6 +451,7 @@ class SessionAgentRunner:
                             ws_mgr.commit_state_changes(
                                 self.session.agent_id, self.session.id, thread.id
                             )
+                            ws_mgr.commit_session_config(self.session)
                         except Exception:
                             logger.exception(
                                 "Failed to commit state changes on turn completion "

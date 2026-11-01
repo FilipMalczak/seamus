@@ -25,6 +25,15 @@ An extensible archetype configuring an agent's baseline identity, domain special
 ### Session (Conversation)
 A distinct conversational interaction context with an agent. Each session maintains an isolated copy of configuration derived from its parent agent, holds a dedicated DeepAgent instance, and consists of one or more sequential threads.
 
+### Session Status
+The lifecycle posture of a session entity:
+- `ACTIVE`: Normal operational state; accepts user turns and runs tools.
+- `KILLED`: Permanently terminated via manual user action; rejects new inputs and tears down container/PR resources.
+- `FAILED`: Permanently terminated via unhandled runner exception or timeout; rejects new inputs and tears down container/PR resources.
+
+### Session Branching & Provenance
+The mechanism and lineage metadata tracking the creation of a child session from a completed assistant message in a parent session. The child session inherits conversational history and Git repository state up to the exact commit of that turn, while recording `parent_session_id`, `parent_message_id`, and `branched_at` for one-click navigation.
+
 ### Operational Mode
 The active execution posture and behavioral style governing an agent during a thread turn within an open, extensible set of modes:
 - `plan`: Formulates a structured execution plan before implementing changes; transitions from planning to execution open a new thread.

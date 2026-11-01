@@ -38,6 +38,23 @@ class AgentStatus(StrEnum):
     ERROR = "ERROR"
 
 
+class SessionStatus(StrEnum):
+    """Operational lifecycle status of a session."""
+
+    ACTIVE = "ACTIVE"
+    KILLED = "KILLED"
+    FAILED = "FAILED"
+
+
+class SessionBranchProvenance(BaseModel):
+    """Lineage provenance recording where a session branched from."""
+
+    parent_session_id: UUID
+    parent_message_id: str
+    parent_session_name: str | None = None
+    branched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class Thread(BaseModel):
     """A sub-conversation execution thread within a session."""
 
@@ -73,6 +90,8 @@ class Session(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     last_touched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     config: AgentConfig
+    status: SessionStatus = Field(default=SessionStatus.ACTIVE)
+    provenance: SessionBranchProvenance | None = None
     threads: dict[UUID, Thread] = Field(default_factory=dict)
 
     @field_validator("name", mode="before")
@@ -80,12 +99,37 @@ class Session(BaseModel):
     def _validate_name(cls, v: str | None) -> str | None:
         return validate_slug(v)
 
+    @property
+    def is_active(self) -> bool:
+        """Check if the session is active (not KILLED or FAILED)."""
+        return self.status == SessionStatus.ACTIVE
+
     def touch(self) -> None:
         """Update last_touched_at timestamp to current UTC time."""
         self.last_touched_at = datetime.now(UTC)
 
+    def kill(self) -> None:
+        """Permanently terminate the session by manual user action."""
+        self.status = SessionStatus.KILLED
+        for thread in self.threads.values():
+            thread.is_open = False
+        self.touch()
+
+    def fail(self) -> None:
+        """Permanently terminate the session due to an unrecoverable failure."""
+        self.status = SessionStatus.FAILED
+        for thread in self.threads.values():
+            if thread.is_open:
+                thread.status = AgentStatus.ERROR
+            thread.is_open = False
+        self.touch()
+
     def create_thread(self, name: str | None = None) -> Thread:
         """Create a new open thread, closing all previous threads in the session."""
+        if not self.is_active:
+            msg = f"Cannot create thread in session '{self.id}' with status '{self.status.value}'."
+            raise ValueError(msg)
+
         for thread in self.threads.values():
             thread.is_open = False
 
@@ -95,10 +139,12 @@ class Session(BaseModel):
         return new_thread
 
     def get_open_thread(self) -> Thread:
-        """Return the currently open thread in the session, or create one if none exist."""
+        """Return the currently open thread in the session, or the latest thread if closed."""
         for thread in reversed(list(self.threads.values())):
             if thread.is_open:
                 return thread
+        if not self.is_active and self.threads:
+            return list(self.threads.values())[-1]
         # Invariant fallback: if no threads exist or all are closed, open a new thread
         return self.create_thread()
 
@@ -126,6 +172,7 @@ class Agent(BaseModel):
         self,
         config: AgentConfig | None = None,
         name: str | None = None,
+        provenance: SessionBranchProvenance | None = None,
     ) -> Session:
         """Create and register a new session under this agent with an initial open thread."""
         session_config = (
@@ -137,6 +184,7 @@ class Agent(BaseModel):
             agent_id=self.id,
             name=name,
             config=session_config,
+            provenance=provenance,
         )
         # Ensure session starts with an initial open thread
         session.create_thread()

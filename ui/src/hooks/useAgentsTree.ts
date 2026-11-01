@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   acceptThread,
+  branchSession,
   createAgent,
   createSession,
   createThread,
   getAgent,
   getSession,
+  killSession,
   listAgents,
   updateAgent,
   updateSession,
@@ -218,6 +220,29 @@ export function useAgentsTree() {
     [agents, refreshTree]
   );
 
+  const handleKillSession = useCallback(
+    async (agentId: string, sessionId: string) => {
+      await killSession(agentId, sessionId);
+      await refreshTree();
+    },
+    [refreshTree]
+  );
+
+  const handleBranchSession = useCallback(
+    async (agentId: string, sessionId: string, messageId: string, name?: string | null) => {
+      const newSession = await branchSession(agentId, sessionId, messageId, name);
+      await refreshTree();
+      setSelectedAgentId(agentId);
+      setSelectedSessionId(newSession.id);
+      const openThread = newSession.threads.find((t) => t.is_open) || newSession.threads[0];
+      if (openThread) {
+        setSelectedThreadId(openThread.id);
+      }
+      return newSession;
+    },
+    [refreshTree]
+  );
+
   // Helper getters
   const activeAgent = agents.find((a) => a.id === selectedAgentId);
   const activeSession = activeAgent?.sessionsMap?.[selectedSessionId ?? ""];
@@ -237,6 +262,8 @@ export function useAgentsTree() {
     createAgent: handleCreateAgent,
     createSession: handleCreateSession,
     createThread: handleCreateThread,
+    killSession: handleKillSession,
+    branchSession: handleBranchSession,
     acceptThread: handleAcceptThread,
     updateAgentName: handleUpdateAgentName,
     updateSessionName: handleUpdateSessionName,

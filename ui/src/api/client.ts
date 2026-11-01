@@ -117,6 +117,33 @@ export async function updateSession(
   return handleResponse<SessionDetail>(res);
 }
 
+export async function killSession(agentId: string, sessionId: string): Promise<SessionDetail> {
+  const res = await fetch(
+    `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/kill`,
+    {
+      method: "POST",
+    }
+  );
+  return handleResponse<SessionDetail>(res);
+}
+
+export async function branchSession(
+  agentId: string,
+  sessionId: string,
+  messageId: string,
+  name?: string | null
+): Promise<SessionDetail> {
+  const res = await fetch(
+    `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/branch`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message_id: messageId, name: name ?? null }),
+    }
+  );
+  return handleResponse<SessionDetail>(res);
+}
+
 export async function createThread(
   agentId: string,
   sessionId: string,

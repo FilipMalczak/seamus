@@ -1,0 +1,311 @@
+"""Tests for session branching, provenance tracking, and lifecycle states."""
+
+from uuid import uuid4
+
+import pytest
+from ag_ui.core.events import (
+    TextMessageContentEvent,
+    TextMessageEndEvent,
+    TextMessageStartEvent,
+)
+from fastapi.testclient import TestClient
+
+from seamus.config.models import AgentConfig, InferenceConfig
+from seamus.domain.entities import AgentStatus, Session, SessionStatus
+from seamus.harness.runner import (
+    RunnerRegistry,
+    SessionAgentRunner,
+    SessionBusyError,
+    reset_runner_registry,
+)
+from seamus.harness.store import HarnessStore, reset_harness_store
+from seamus.server.app import create_app
+
+
+def make_complete_config() -> AgentConfig:
+    return AgentConfig(
+        inference=InferenceConfig(api_key="valid-key"),
+        model_name="test-model",
+    )
+
+
+def test_session_lifecycle_entity_transitions() -> None:
+    config = make_complete_config()
+    session = Session(
+        agent_id=uuid4(),
+        config=config,
+    )
+    assert session.status == SessionStatus.ACTIVE
+    assert session.is_active is True
+
+    # Initial open thread
+    thread = session.create_thread()
+    assert thread.is_open is True
+    assert thread.status == AgentStatus.AWAITING_USER
+
+    # Fail session
+    session.fail()
+    assert session.status.value == SessionStatus.FAILED.value
+    assert session.is_active is False
+    assert thread.is_open is False
+    assert thread.status == AgentStatus.ERROR
+
+    # Cannot create new thread in non-active session
+    with pytest.raises(ValueError, match="Cannot create thread"):
+        session.create_thread()
+
+    # get_open_thread returns latest thread if terminal
+    assert session.get_open_thread().id == thread.id
+
+    # Test kill transition
+    session2 = Session(agent_id=uuid4(), config=config)
+    t2 = session2.create_thread()
+    session2.kill()
+    assert session2.status == SessionStatus.KILLED
+    assert session2.is_active is False
+    assert t2.is_open is False
+
+
+def test_harness_store_kill_session() -> None:
+    store = HarnessStore()
+    config = make_complete_config()
+    store.create_agent(config=config, name="agent-kill-test")
+    session = store.create_session(agent_identifier="agent-kill-test", name="session-to-kill")
+
+    assert session.status == SessionStatus.ACTIVE
+    killed_session = store.kill_session("agent-kill-test", "session-to-kill")
+    assert killed_session.status == SessionStatus.KILLED
+    assert killed_session.is_active is False
+
+
+def test_harness_store_branch_session_and_provenance() -> None:
+    store = HarnessStore()
+    config = make_complete_config()
+    store.create_agent(config=config, name="branch-agent")
+    s1 = store.create_session(agent_identifier="branch-agent", name="parent-session")
+
+    # Add 2 turns to open thread:
+    # Turn 1: user msg 1 -> assistant msg 1
+    # Turn 2: user msg 2 -> assistant msg 2
+    t1 = s1.get_open_thread()
+    u1_id = "user-msg-1"
+    a1_id = "asst-msg-1"
+    u2_id = "user-msg-2"
+    a2_id = "asst-msg-2"
+
+    t1.append_event(TextMessageStartEvent(message_id=u1_id, role="user"))
+    t1.append_event(TextMessageContentEvent(message_id=u1_id, delta="Hello"))
+    t1.append_event(TextMessageEndEvent(message_id=u1_id))
+    t1.append_event({"type": "RUN_STARTED"})
+    t1.append_event(TextMessageStartEvent(message_id=a1_id, role="assistant"))
+    t1.append_event(TextMessageContentEvent(message_id=a1_id, delta="Hi there!"))
+    t1.append_event(TextMessageEndEvent(message_id=a1_id))
+    t1.append_event({"type": "RUN_FINISHED"})
+
+    t1.append_event(TextMessageStartEvent(message_id=u2_id, role="user"))
+    t1.append_event(TextMessageContentEvent(message_id=u2_id, delta="How are you?"))
+    t1.append_event(TextMessageEndEvent(message_id=u2_id))
+    t1.append_event({"type": "RUN_STARTED"})
+    t1.append_event(TextMessageStartEvent(message_id=a2_id, role="assistant"))
+    t1.append_event(TextMessageContentEvent(message_id=a2_id, delta="Doing great!"))
+    t1.append_event(TextMessageEndEvent(message_id=a2_id))
+    t1.append_event({"type": "RUN_FINISHED"})
+
+    assert len(t1.events) == 16
+
+    # Branch off turn 1 (asst-msg-1)
+    s2 = store.branch_session(
+        agent_identifier="branch-agent",
+        session_identifier="parent-session",
+        message_id=a1_id,
+        name="branched-s2",
+    )
+
+    assert s2.name == "branched-s2"
+    assert s2.status == SessionStatus.ACTIVE
+    assert s2.provenance is not None
+    assert s2.provenance.parent_session_id == s1.id
+    assert s2.provenance.parent_message_id == a1_id
+    assert s2.provenance.parent_session_name == "parent-session"
+
+    # S1 remains ACTIVE and unchanged
+    assert s1.status == SessionStatus.ACTIVE
+    assert len(s1.get_open_thread().events) == 16
+
+    # S2 has only events from Turn 1 (8 events)
+    t2 = s2.get_open_thread()
+    assert t2.is_open is True
+    assert t2.status == AgentStatus.AWAITING_USER
+    assert len(t2.events) == 8
+    event_message_ids = [
+        getattr(ev, "message_id", None) or (ev.get("message_id") if isinstance(ev, dict) else None)
+        for ev in t2.events
+    ]
+    assert u1_id in event_message_ids
+    assert a1_id in event_message_ids
+    assert u2_id not in event_message_ids
+    assert a2_id not in event_message_ids
+
+    # S1 can now be KILLED or FAILED, and we can still branch off it!
+    s1.kill()
+    assert s1.status.value == SessionStatus.KILLED.value
+
+    s3 = store.branch_session(
+        agent_identifier="branch-agent",
+        session_identifier="parent-session",
+        message_id=a1_id,
+        name="branched-from-killed",
+    )
+    assert s3.status == SessionStatus.ACTIVE
+    assert s3.provenance is not None
+    assert s3.provenance.parent_session_id == s1.id
+
+    # Reject branching from user message
+    with pytest.raises(ValueError, match="Assistant message 'user-msg-1' not found"):
+        store.branch_session(
+            agent_identifier="branch-agent",
+            session_identifier="parent-session",
+            message_id=u1_id,
+        )
+
+    # Reject branching from non-existent message
+    with pytest.raises(ValueError, match="not found"):
+        store.branch_session(
+            agent_identifier="branch-agent",
+            session_identifier="parent-session",
+            message_id="non-existent-msg",
+        )
+
+
+@pytest.mark.asyncio
+async def test_runner_blocks_input_to_terminal_session() -> None:
+    config = make_complete_config()
+    session = Session(agent_id=uuid4(), config=config)
+    session.kill()
+
+    runner = SessionAgentRunner(session=session)
+    assert runner.is_awaiting_user() is False
+
+    with pytest.raises(SessionBusyError, match="not active"):
+        await runner.dispatch_user_input("test input")
+
+
+def test_api_kill_and_branch_endpoints() -> None:
+    store = HarnessStore()
+    reset_harness_store(store)
+    reset_runner_registry(RunnerRegistry())
+
+    config = make_complete_config()
+    store.create_agent(config=config, name="api-agent")
+    session = store.create_session(agent_identifier="api-agent", name="api-session")
+
+    # Add assistant message to open thread
+    t = session.get_open_thread()
+    asst_id = "api-asst-msg"
+    t.append_event(TextMessageStartEvent(message_id=asst_id, role="assistant"))
+    t.append_event(TextMessageContentEvent(message_id=asst_id, delta="Answer"))
+    t.append_event(TextMessageEndEvent(message_id=asst_id))
+    t.append_event({"type": "RUN_FINISHED"})
+
+    app = create_app()
+    client = TestClient(app)
+
+    # Branch session via API
+    branch_res = client.post(
+        "/api/v-alpha/agent/api-agent/session/api-session/branch",
+        json={"message_id": asst_id, "name": "api-branched"},
+    )
+    assert branch_res.status_code == 201
+    branch_data = branch_res.json()
+    assert branch_data["name"] == "api-branched"
+    assert branch_data["status"] == "ACTIVE"
+    assert branch_data["provenance"]["parent_message_id"] == asst_id
+    assert branch_data["provenance"]["parent_session_name"] == "api-session"
+
+    # Kill session via API
+    kill_res = client.post("/api/v-alpha/agent/api-agent/session/api-session/kill")
+    assert kill_res.status_code == 200
+    kill_data = kill_res.json()
+    assert kill_data["status"] == "KILLED"
+
+    # Attempting to post user input to killed session returns 409 Conflict
+    input_res = client.post(
+        "/api/v-alpha/agent/api-agent/session/api-session/input",
+        json={"text": "Hello"},
+    )
+    assert input_res.status_code == 409
+    assert "not active" in input_res.json()["detail"]
+
+
+def test_branch_with_synthetic_and_tool_call_ids() -> None:
+    store = HarnessStore()
+    config = make_complete_config()
+    store.create_agent(config=config, name="robust-branch-agent")
+    s = store.create_session(agent_identifier="robust-branch-agent", name="parent-session")
+    t = s.get_open_thread()
+
+    # User message
+    t.append_event(TextMessageStartEvent(message_id="user-1", role="user"))
+    t.append_event(TextMessageContentEvent(message_id="user-1", delta="Please run tool"))
+    t.append_event(TextMessageEndEvent(message_id="user-1"))
+    t.append_event({"type": "RUN_STARTED", "timestamp": "2026-11-01T20:00:00Z"})
+    # Assistant turn with tool call and text response
+    t.append_event(
+        {
+            "type": "TOOL_CALL_START",
+            "tool_call_id": "call-abc-123",
+            "tool_call_name": "execute",
+            "parent_message_id": "parent-turn-msg",
+            "timestamp": "2026-11-01T20:00:01Z",
+        }
+    )
+    t.append_event(
+        {
+            "type": "TOOL_CALL_RESULT",
+            "tool_call_id": "call-abc-123",
+            "content": "output",
+            "timestamp": 1793565450000,
+        }
+    )
+    t.append_event(
+        TextMessageStartEvent(
+            message_id="asst-text-1",
+            role="assistant",
+            timestamp=1793565451000,
+        )
+    )
+    t.append_event(TextMessageContentEvent(message_id="asst-text-1", delta="Done!"))
+    t.append_event(TextMessageEndEvent(message_id="asst-text-1"))
+    t.append_event({"type": "RUN_FINISHED", "timestamp": "2026-11-01T20:00:04Z"})
+
+    # 1. Branch by tool call id
+    s_by_tool = store.branch_session(
+        agent_identifier="robust-branch-agent",
+        session_identifier="parent-session",
+        message_id="call-abc-123",
+        name="branch-by-tool",
+    )
+    assert s_by_tool.provenance is not None
+    assert s_by_tool.provenance.parent_message_id == "call-abc-123"
+    assert len(s_by_tool.get_open_thread().events) == 10
+
+    # 2. Branch by turn index "asst-0"
+    s_by_index = store.branch_session(
+        agent_identifier="robust-branch-agent",
+        session_identifier="parent-session",
+        message_id="asst-0",
+        name="branch-by-index",
+    )
+    assert s_by_index.provenance is not None
+    assert len(s_by_index.get_open_thread().events) == 10
+
+    # 3. Branch by synthetic client timestamp ID e.g. "asst-1793565453328"
+    s_by_synthetic = store.branch_session(
+        agent_identifier="robust-branch-agent",
+        session_identifier="parent-session",
+        message_id="asst-1793565453328",
+        name="branch-by-synthetic",
+    )
+    assert s_by_synthetic.provenance is not None
+    assert s_by_synthetic.provenance.parent_message_id in ("call-abc-123", "asst-text-1")
+    assert len(s_by_synthetic.get_open_thread().events) == 10

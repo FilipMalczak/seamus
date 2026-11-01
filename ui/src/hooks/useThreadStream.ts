@@ -145,10 +145,16 @@ export function useThreadStream(
                 },
               ];
             } else {
+              const asstId =
+                event.parent_message_id ||
+                event.parentMessageId ||
+                event.message_id ||
+                event.messageId ||
+                `asst-${Date.now()}`;
               return [
                 ...prev,
                 {
-                  id: `asst-${Date.now()}`,
+                  id: asstId,
                   role: "assistant",
                   text: "",
                   toolCalls: [newCall],
@@ -395,10 +401,14 @@ export function useThreadStream(
                 },
               ];
             } else {
+              const asstId =
+                event.message_id ||
+                event.messageId ||
+                `asst-${Date.now()}`;
               return [
                 ...prev,
                 {
-                  id: `asst-${Date.now()}`,
+                  id: asstId,
                   role: "assistant",
                   text: "",
                   reasoning: "",
@@ -454,10 +464,14 @@ export function useThreadStream(
               ];
             } else {
               const newMsgId = msgId || `reasoning-${Date.now()}`;
+              const asstId =
+                event.message_id ||
+                event.messageId ||
+                `asst-${Date.now()}`;
               return [
                 ...prev,
                 {
-                  id: `asst-${Date.now()}`,
+                  id: asstId,
                   role: "assistant",
                   text: "",
                   reasoning: delta,
@@ -509,10 +523,13 @@ export function useThreadStream(
                 id: msgId,
                 content: "",
               };
+              const updatedId =
+                !last.id || last.id.startsWith("asst-") ? msgId : last.id;
               return [
                 ...prev.slice(0, -1),
                 {
                   ...last,
+                  id: updatedId,
                   isReasoning: false,
                   parts: [...stoppedParts, textPart],
                 },

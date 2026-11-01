@@ -156,6 +156,18 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [threads_modes_personas.md](./threads_modes_personas.md).
 - **Linked Invariants**: [INV-028](./invariants.md#inv-028-mode-transition-thread-spawning-boundary).
 
+### REQ-026: Exact Turn-Level Session Branching and Lineage Provenance
+- **Description**: Users must be able to branch off any completed assistant message in a session ($S_1$) to create a new parallel session ($S_2$) under the same parent agent. $S_2$ must inherit the conversation history up to the end of that specific turn, create Git branch `session/{new_id}` originating from that exact turn's commit, and open a new Gitea Sync PR to `main`. $S_2$ must record its origin in `provenance` and surface a one-click navigation link to $S_1$ in the UI, while $S_1$ remains unaffected. Branching is also permitted from `KILLED` and `FAILED` sessions to provide a clean manual retry protocol.
+- **Rationale**: Enables unconstrained experimentation and native manual retry from known good states without modifying earlier session trajectories.
+- **Provenance**: [0022-branching-out-and-session-lifecycle.md](../decisions/0022-branching-out-and-session-lifecycle.md).
+- **Linked Invariants**: [INV-030](./invariants.md#inv-030-session-branching-turn-isolation--provenance-tracking).
+
+### REQ-027: Terminal Session Lifecycle States and Teardown Guard
+- **Description**: Sessions must be governed by an explicit `SessionStatus` lifecycle state (`ACTIVE`, `KILLED`, `FAILED`). Transitioning to `KILLED` (manual user action) or `FAILED` (unhandled execution exception or timeout) must permanently lock the session against further message inputs or thread creation, tear down running background tasks and OpenSandbox container backends, and close any active Gitea Sync PR. Terminal sessions remain readable and branchable for retry.
+- **Rationale**: Prevents corruption from continuation on broken state and ensures immediate container and PR resource reclamation.
+- **Provenance**: [0022-branching-out-and-session-lifecycle.md](../decisions/0022-branching-out-and-session-lifecycle.md).
+- **Linked Invariants**: [INV-029](./invariants.md#inv-029-session-terminal-immutability--resource-teardown).
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [invariants.md](./invariants.md)
@@ -178,3 +190,4 @@ Requirements, rationale, provenance, and stable IDs.
 - [0016-sync-pr-data-scope.md](../decisions/0016-sync-pr-data-scope.md)
 - [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md)
 - [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md)
+- [0022-branching-out-and-session-lifecycle.md](../decisions/0022-branching-out-and-session-lifecycle.md)

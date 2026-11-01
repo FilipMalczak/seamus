@@ -130,12 +130,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: One should be able to share the link to specific place in the UI, without requiring the receipient of the link to traverse the UI manually
 - **Provenance**: Manual
 
-### [CORE] Branching out and error handling
-- **Description**: ChatGPT-like behaviour, we branch off of agent message to get a new parallel session that seems to be waiting for user as we did on original branch/session.
-- **Error handling**: OTOH, whenever anything goes wrong (eg connection timeout, even accounting for retries), we need to be able to kill the session so it cannot be continued.
-- **Rationale**: Two legged: first, its a valuable feature on its own, as it allows for experimentation and might be invaluable with personas like researcher; second: it provides for native "manual retry" protocol while keeping abstraction clean.
-- **Provenance**: Manual, but constitutes one of the basic tenets of Seamus (introduces late, because it was hard to explain without establishing a baseline)
-
 ## Not formalized
 
 - auto-refresh on UI side; eg when following state of thread and looking at changes

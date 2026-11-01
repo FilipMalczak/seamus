@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 
 from seamus.config.models import AgentConfig, InferenceConfig, InferenceFormat
+from seamus.domain.entities import SessionStatus
 from seamus.harness.store import HarnessStore
 
 
@@ -68,6 +69,12 @@ def test_harness_store_hydrate_from_gitea(test_config: AgentConfig) -> None:
         "agent_id": str(agent_id),
         "name": "hydrated-session",
         "created_at": "2026-10-31T10:05:00Z",
+        "status": "KILLED",
+        "provenance": {
+            "parent_session_id": str(uuid4()),
+            "parent_message_id": "msg-origin-1",
+            "parent_session_name": "origin-session",
+        },
         "config": test_config.model_dump(),
         "threads": [
             {
@@ -111,6 +118,10 @@ def test_harness_store_hydrate_from_gitea(test_config: AgentConfig) -> None:
         assert session_id in agent.sessions
         session = agent.sessions[session_id]
         assert session.name == "hydrated-session"
+        assert session.status == SessionStatus.KILLED
+        assert session.provenance is not None
+        assert session.provenance.parent_message_id == "msg-origin-1"
+        assert session.provenance.parent_session_name == "origin-session"
         assert thread_id in session.threads
         thread = session.threads[thread_id]
         assert thread.name == "hydrated-thread"

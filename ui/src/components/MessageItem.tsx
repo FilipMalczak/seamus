@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bot, Brain, ChevronDown, ChevronRight, User } from "lucide-react";
+import { Bot, Brain, ChevronDown, ChevronRight, GitFork, User } from "lucide-react";
 import type { ChatMessage } from "../api/types";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { ToolCallItem } from "./ToolCallItem";
@@ -58,7 +58,13 @@ export function ReasoningBlock({
   );
 }
 
-export function MessageItem({ message }: { message: ChatMessage }) {
+export function MessageItem({
+  message,
+  onBranch,
+}: {
+  message: ChatMessage;
+  onBranch?: (messageId: string) => void;
+}) {
   const isUser = message.role === "user";
   const hasParts = !isUser && Boolean(message.parts && message.parts.length > 0);
 
@@ -77,6 +83,42 @@ export function MessageItem({ message }: { message: ChatMessage }) {
               minute: "2-digit",
             })}
           </span>
+          {!isUser && onBranch && (
+            <button
+              type="button"
+              className="message-action-btn branch-msg-btn"
+              onClick={() => {
+                let targetId = message.id;
+                if (message.parts && message.parts.length > 0) {
+                  const textPart = message.parts.find(
+                    (p) =>
+                      p.type === "text" &&
+                      p.id &&
+                      !p.id.startsWith("asst-") &&
+                      !p.id.startsWith("text-asst-")
+                  );
+                  if (textPart && textPart.id) {
+                    targetId = textPart.id;
+                  } else {
+                    const toolPart = message.parts.find(
+                      (p) =>
+                        p.type === "tool_call" &&
+                        p.toolCall.id &&
+                        !p.toolCall.id.startsWith("asst-")
+                    );
+                    if (toolPart && toolPart.type === "tool_call" && toolPart.toolCall.id) {
+                      targetId = toolPart.toolCall.id;
+                    }
+                  }
+                }
+                onBranch(targetId);
+              }}
+              title="Branch off this message into a new parallel session"
+            >
+              <GitFork className="size-3" />
+              <span>Branch</span>
+            </button>
+          )}
         </div>
 
         {hasParts ? (

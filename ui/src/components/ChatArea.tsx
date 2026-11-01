@@ -1,16 +1,21 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import {
   AlertCircle,
+  AlertTriangle,
   ArrowDown,
   ArrowUp,
+  Ban,
   Bot,
   CheckCircle2,
   Clock,
+  CornerUpLeft,
+  GitFork,
   Loader2,
   Sparkles,
+  Square,
   Wrench,
 } from "lucide-react";
-import type { AgentStatus, ThreadInfo } from "../api/types";
+import type { AgentStatus, SessionBranchProvenance, SessionStatus, ThreadInfo } from "../api/types";
 import { useThreadStream } from "../hooks/useThreadStream";
 import { MessageItem } from "./MessageItem";
 
@@ -19,8 +24,13 @@ interface ChatAreaProps {
   agentName: string | null;
   sessionId: string | null;
   sessionName: string | null;
+  sessionStatus?: SessionStatus;
+  sessionProvenance?: SessionBranchProvenance | null;
   thread: ThreadInfo | null;
   onStatusChange?: (status: AgentStatus) => void;
+  onKillSession?: () => void;
+  onBranchMessage?: (messageId: string) => void;
+  onNavigateToSession?: (sessionId: string) => void;
 }
 
 export function ChatArea({
@@ -28,8 +38,13 @@ export function ChatArea({
   agentName,
   sessionId,
   sessionName,
+  sessionStatus = "ACTIVE",
+  sessionProvenance,
   thread,
   onStatusChange,
+  onKillSession,
+  onBranchMessage,
+  onNavigateToSession,
 }: ChatAreaProps) {
   const [inputText, setInputText] = useState<string>("");
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -40,7 +55,8 @@ export function ChatArea({
   const { messages, status, streamError, sending, sendMessage } =
     useThreadStream(agentId, sessionId, thread?.id ?? null);
 
-  const isOpen = thread?.is_open ?? false;
+  const isSessionTerminal = sessionStatus !== "ACTIVE";
+  const isOpen = (thread?.is_open ?? false) && !isSessionTerminal;
   const isBusy = status !== "AWAITING_USER";
 
   // Notify parent of active thread status changes
@@ -174,9 +190,65 @@ export function ChatArea({
         </div>
 
         <div className="chat-top-actions">
+          {sessionStatus === "ACTIVE" && onKillSession && (
+            <button
+              type="button"
+              className="btn-kill-session"
+              onClick={onKillSession}
+              title="Kill active session permanently"
+            >
+              <Square className="size-3 text-rose-400" />
+              <span>Kill Session</span>
+            </button>
+          )}
           {renderStatusBadge(status)}
         </div>
       </div>
+
+      {sessionProvenance && (
+        <div className="provenance-banner">
+          <div className="provenance-info">
+            <GitFork className="size-3.5 text-sky-400" />
+            <span>
+              Branched from{" "}
+              <strong>
+                {sessionProvenance.parent_session_name ||
+                  sessionProvenance.parent_session_id.slice(0, 8)}
+              </strong>{" "}
+              at message <code>{sessionProvenance.parent_message_id.slice(0, 8)}</code>
+            </span>
+          </div>
+          {onNavigateToSession && (
+            <button
+              type="button"
+              className="provenance-nav-btn"
+              onClick={() => onNavigateToSession(sessionProvenance.parent_session_id)}
+              title="Navigate to original parent session"
+            >
+              <CornerUpLeft className="size-3.5" />
+              <span>Go to original</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {sessionStatus === "KILLED" && (
+        <div className="terminal-session-notice notice-killed">
+          <Ban className="size-4 text-zinc-400" />
+          <span>
+            This session was manually killed and cannot be continued. You can branch off any completed assistant message above to retry or continue.
+          </span>
+        </div>
+      )}
+
+      {sessionStatus === "FAILED" && (
+        <div className="terminal-session-notice notice-failed">
+          <AlertTriangle className="size-4 text-rose-400" />
+          <span>
+            This session terminated due to an unrecoverable failure and cannot be continued. You can branch off any completed assistant message above to retry.
+          </span>
+        </div>
+      )}
 
       <div
         className="chat-viewport"
@@ -218,7 +290,13 @@ export function ChatArea({
             </div>
           </div>
         ) : (
-          messages.map((msg) => <MessageItem key={msg.id} message={msg} />)
+          messages.map((msg) => (
+            <MessageItem
+              key={msg.id}
+              message={msg}
+              onBranch={onBranchMessage}
+            />
+          ))
         )}
         <div ref={viewportEndRef} />
       </div>
@@ -246,7 +324,7 @@ export function ChatArea({
         </div>
       )}
 
-      {!isOpen && (
+      {!isOpen && !isSessionTerminal && (
         <div className="closed-thread-notice">
           <Clock className="size-4" />
           <span>This thread is closed. New messages cannot be sent to closed threads. Select the active open thread to continue.</span>
@@ -259,11 +337,15 @@ export function ChatArea({
             ref={textareaRef}
             className="composer-textarea"
             placeholder={
-              !isOpen
-                ? "This thread is closed. Select the active open thread to continue."
-                : isBusy
-                  ? "Agent is busy processing... please wait."
-                  : "Send a message to Seamus... (Enter to send, Shift+Enter for newline)"
+              sessionStatus === "KILLED"
+                ? "This session was killed. Branch off any message above to continue."
+                : sessionStatus === "FAILED"
+                  ? "This session failed. Branch off any message above to retry."
+                  : !isOpen
+                    ? "This thread is closed. Select the active open thread to continue."
+                    : isBusy
+                      ? "Agent is busy processing... please wait."
+                      : "Send a message to Seamus... (Enter to send, Shift+Enter for newline)"
             }
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}

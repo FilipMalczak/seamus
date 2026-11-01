@@ -144,6 +144,16 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [threads_modes_personas.md](./threads_modes_personas.md).
 - **Enforcement**: Session runner orchestration and domain lifecycle in `src/seamus/harness/runner.py`.
 
+### INV-029: Session Terminal Immutability & Resource Teardown
+- **Statement**: When a session enters a terminal state (`KILLED` or `FAILED`), it must permanently reject any further user message submissions (`POST .../input` returning 409 Conflict) and block thread creation. Transition to a terminal state must cancel active execution tasks, immediately destroy the session's OpenSandbox container (`sandbox_backend.destroy()`), and close the active Gitea Sync PR without merging.
+- **Justification**: [REQ-027](./requirements.md#req-027-terminal-session-lifecycle-states-and-teardown-guard), [0022-branching-out-and-session-lifecycle.md](../decisions/0022-branching-out-and-session-lifecycle.md).
+- **Enforcement**: Domain validations in `Session.kill()`, `Session.fail()`, `SessionAgentRunner.dispatch_user_input()`, and router HTTP exception guards in `sessions.py`.
+
+### INV-030: Session Branching Turn Isolation & Provenance Tracking
+- **Statement**: Branching a session ($S_1$) from an assistant message must create a new session ($S_2$) whose initial thread events are strictly bounded to the end of that assistant message turn (`RUN_FINISHED`), with status initialized to `AWAITING_USER`. $S_2$'s Git branch (`session/{id}`) must originate from the exact commit SHA of that turn, and a fresh Gitea Sync PR targeting `main` must be opened. $S_2$ must record its origin in `provenance`, and $S_1$ must remain completely unmodified. Branching must be supported from `ACTIVE`, `KILLED`, and `FAILED` sessions alike.
+- **Justification**: [REQ-026](./requirements.md#req-026-exact-turn-level-session-branching-and-lineage-provenance), [0022-branching-out-and-session-lifecycle.md](../decisions/0022-branching-out-and-session-lifecycle.md).
+- **Enforcement**: `HarnessStore.branch_session()`, `GitWorkspaceManager.create_session_workspace()`, and unit tests in `tests/test_session_branching_and_lifecycle.py`.
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [requirements.md](./requirements.md)
@@ -167,3 +177,4 @@ Properties and rules that must always hold across the repository.
 - [0017-dedicated-test-gitea.md](../decisions/0017-dedicated-test-gitea.md)
 - [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md)
 - [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md)
+- [0022-branching-out-and-session-lifecycle.md](../decisions/0022-branching-out-and-session-lifecycle.md)

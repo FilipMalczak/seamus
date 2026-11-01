@@ -6,7 +6,11 @@ from uuid import UUID
 from pydantic import BaseModel
 
 from seamus.config.models import AgentConfig
-from seamus.domain.entities import AgentStatus
+from seamus.domain.entities import (
+    AgentStatus,
+    SessionBranchProvenance,
+    SessionStatus,
+)
 from seamus.harness.inspector import (
     AgentInspectReport,
     GitInspectInfo,
@@ -25,6 +29,7 @@ __all__ = [
     "AgentInspectReport",
     "AgentSummaryResponse",
     "AgentUpdateRequest",
+    "BranchSessionRequest",
     "ConfigTemplateResponse",
     "GitInspectInfo",
     "HistoryInspectInfo",
@@ -83,6 +88,13 @@ class SessionUpdateRequest(BaseModel):
     config: AgentConfig
 
 
+class BranchSessionRequest(BaseModel):
+    """Request payload for branching a session from a completed assistant message."""
+
+    message_id: str
+    name: str | None = None
+
+
 class ThreadCreateRequest(BaseModel):
     """Request payload for creating a new thread in a session."""
 
@@ -137,6 +149,8 @@ class SessionSummaryResponse(BaseModel):
     created_at: datetime
     last_touched_at: datetime
     config: AgentConfig
+    status: SessionStatus = SessionStatus.ACTIVE
+    provenance: SessionBranchProvenance | None = None
 
 
 class SessionDetailResponse(BaseModel):
@@ -148,6 +162,8 @@ class SessionDetailResponse(BaseModel):
     created_at: datetime
     last_touched_at: datetime
     config: AgentConfig
+    status: SessionStatus = SessionStatus.ACTIVE
+    provenance: SessionBranchProvenance | None = None
     threads: list[ThreadResponse]
 
 

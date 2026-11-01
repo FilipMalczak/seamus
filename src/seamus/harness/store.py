@@ -2,13 +2,22 @@
 
 import json
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 import logfire
 
 from seamus.config.models import AgentConfig
-from seamus.domain.entities import Agent, AgentStatus, Session, Thread
+from seamus.domain.entities import (
+    Agent,
+    AgentStatus,
+    Session,
+    SessionBranchProvenance,
+    SessionStatus,
+    Thread,
+)
 from seamus.domain.resolution import (
     EntityNotFoundError,
     parse_uuid,
@@ -18,6 +27,16 @@ from seamus.domain.resolution import (
 from seamus.persistence import get_workspace_manager, parse_stored_event
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _AssistantTurn:
+    turn_index: int
+    slice_index: int
+    associated_ids: set[str]
+    rep_id: str
+    event_indices: list[int]
+    timestamp_ms: float | None = None
 
 
 class SlugConflictError(ValueError):
@@ -205,6 +224,314 @@ class HarnessStore:
                 logger.exception("Failed to commit updated session config for %s", session.id)
 
             return session
+
+    def kill_session(
+        self,
+        agent_identifier: str,
+        session_identifier: str,
+    ) -> Session:
+        """Manually terminate a session, preventing future turns and closing Sync PR."""
+        agent = self.resolve_agent(agent_identifier)
+        session = resolve_session(agent, session_identifier)
+
+        from seamus.harness.runner import get_runner_registry
+
+        registry = get_runner_registry()
+        runner = registry._runners.get(str(session.id))
+        if runner is not None:
+            runner.kill()
+        else:
+            session.kill()
+
+        try:
+            ws_mgr = get_workspace_manager()
+            ws_mgr.commit_session_config(session)
+            ws_mgr.close_sync_pr(session, agent)
+        except Exception:
+            logger.exception("Failed to update workspace on killing session %s", session.id)
+
+        return session
+
+    @staticmethod
+    def _find_assistant_turn(thread: Thread, message_id: str) -> tuple[int, str] | None:
+        """Locate the target assistant turn and its slice index in a thread's events.
+
+        Matches by exact event/tool/message ID, turn index (e.g. 'asst-0'), or client-generated
+        timestamp identifier (e.g. 'asst-1793565453328').
+        Returns (slice_index, representative_id) or None if not found.
+        """
+        turns: list[_AssistantTurn] = []
+        current_turn_events: list[tuple[int, Any]] = []
+        user_ids: set[str] = set()
+        in_assistant_turn = False
+
+        def finish_current_turn() -> None:
+            nonlocal in_assistant_turn, current_turn_events
+            if not current_turn_events:
+                in_assistant_turn = False
+                return
+
+            last_idx = current_turn_events[-1][0]
+            slice_idx = last_idx + 1
+
+            turn_ids: set[str] = set()
+            turn_indices: list[int] = []
+            rep_id: str | None = None
+            turn_ts: float | None = None
+
+            for ev_idx, ev in current_turn_events:
+                turn_indices.append(ev_idx)
+                mid = getattr(ev, "message_id", None) or (
+                    ev.get("message_id") if isinstance(ev, dict) else None
+                )
+                if mid:
+                    turn_ids.add(str(mid))
+                    if rep_id is None:
+                        rep_id = str(mid)
+
+                tcid = getattr(ev, "tool_call_id", None) or (
+                    ev.get("tool_call_id") if isinstance(ev, dict) else None
+                )
+                if tcid:
+                    turn_ids.add(str(tcid))
+                    if rep_id is None:
+                        rep_id = str(tcid)
+
+                pmid = getattr(ev, "parent_message_id", None) or (
+                    ev.get("parent_message_id") if isinstance(ev, dict) else None
+                )
+                if pmid:
+                    turn_ids.add(str(pmid))
+
+                eid = getattr(ev, "id", None) or (ev.get("id") if isinstance(ev, dict) else None)
+                if eid:
+                    turn_ids.add(str(eid))
+
+                ts = getattr(ev, "timestamp", None) or (
+                    ev.get("timestamp") if isinstance(ev, dict) else None
+                )
+                if ts and turn_ts is None:
+                    try:
+                        if isinstance(ts, (int, float)):
+                            turn_ts = float(ts) * (1000 if ts < 1e11 else 1)
+                        elif isinstance(ts, str):
+                            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                            turn_ts = dt.timestamp() * 1000
+                    except Exception:
+                        pass
+
+            if rep_id is None:
+                rep_id = f"asst-turn-{len(turns)}"
+
+            turns.append(
+                _AssistantTurn(
+                    turn_index=len(turns),
+                    slice_index=slice_idx,
+                    associated_ids=turn_ids,
+                    rep_id=rep_id,
+                    event_indices=turn_indices,
+                    timestamp_ms=turn_ts,
+                )
+            )
+            current_turn_events = []
+            in_assistant_turn = False
+
+        current_role: str | None = None
+        for idx, ev in enumerate(thread.events):
+            role = getattr(ev, "role", None) or (ev.get("role") if isinstance(ev, dict) else None)
+            ev_type = getattr(ev, "type", None) or (
+                ev.get("type") if isinstance(ev, dict) else None
+            )
+
+            if ev_type in ("RUN_STARTED", "run_started"):
+                if in_assistant_turn:
+                    finish_current_turn()
+                current_role = "assistant"
+                in_assistant_turn = True
+                current_turn_events.append((idx, ev))
+                continue
+
+            if ev_type in ("RUN_FINISHED", "run_finished"):
+                if in_assistant_turn:
+                    current_turn_events.append((idx, ev))
+                    finish_current_turn()
+                current_role = None
+                continue
+
+            if role:
+                current_role = role
+
+            if ev_type in ("USER_INPUT", "user_input"):
+                current_role = "user"
+
+            if current_role == "user":
+                u_mid = getattr(ev, "message_id", None) or (
+                    ev.get("message_id") if isinstance(ev, dict) else None
+                )
+                if u_mid:
+                    user_ids.add(str(u_mid))
+                u_id = getattr(ev, "id", None) or (ev.get("id") if isinstance(ev, dict) else None)
+                if u_id:
+                    user_ids.add(str(u_id))
+                if in_assistant_turn:
+                    finish_current_turn()
+                continue
+
+            in_assistant_turn = True
+            current_turn_events.append((idx, ev))
+
+        if in_assistant_turn:
+            finish_current_turn()
+
+        # Reject if message belongs to a user event
+        if message_id in user_ids:
+            return None
+
+        if not turns:
+            return None
+
+        # 1. Exact match in associated_ids
+        for turn in turns:
+            if message_id in turn.associated_ids:
+                return turn.slice_index, turn.rep_id
+
+        # 2. Check asst-<turn_index> e.g. "asst-0", "asst-1"
+        if message_id.startswith("asst-"):
+            suffix = message_id[5:]
+            if suffix.isdigit():
+                idx = int(suffix)
+                if 0 <= idx < len(turns):
+                    return turns[idx].slice_index, turns[idx].rep_id
+
+        # 3. Handle asst-<timestamp_ms> (e.g. from frontend Date.now())
+        if message_id.startswith("asst-"):
+            suffix = message_id[5:]
+            try:
+                ts_val = float(suffix)
+                if len(turns) == 1:
+                    return turns[0].slice_index, turns[0].rep_id
+
+                closest_turn = None
+                min_diff = float("inf")
+                for turn in turns:
+                    if turn.timestamp_ms is not None:
+                        diff = abs(turn.timestamp_ms - ts_val)
+                        if diff < min_diff:
+                            min_diff = diff
+                            closest_turn = turn
+                if closest_turn is not None:
+                    return closest_turn.slice_index, closest_turn.rep_id
+
+                return turns[-1].slice_index, turns[-1].rep_id
+            except ValueError:
+                pass
+
+        # 4. Fallback: check if message_id is a substring in events of that assistant turn
+        for turn in turns:
+            for idx in turn.event_indices:
+                ev = thread.events[idx]
+                if message_id in str(ev):
+                    return turn.slice_index, turn.rep_id
+
+        return None
+
+    def branch_session(
+        self,
+        agent_identifier: str,
+        session_identifier: str,
+        message_id: str,
+        name: str | None = None,
+    ) -> Session:
+        """Branch off an assistant message in a session to create a new session."""
+        agent = self.resolve_agent(agent_identifier)
+        parent_session = resolve_session(agent, session_identifier)
+        self._ensure_session_slug_unique(agent, name, current_session_id=None)
+
+        # Locate target message and thread
+        target_thread: Thread | None = None
+        target_event_index: int = -1
+        target_rep_id: str | None = None
+
+        for thread in parent_session.threads.values():
+            match_res = self._find_assistant_turn(thread, message_id)
+            if match_res is not None:
+                target_thread = thread
+                target_event_index, target_rep_id = match_res
+                break
+
+        if target_thread is None or target_rep_id is None:
+            msg = f"Assistant message '{message_id}' not found in session '{parent_session.id}'."
+            raise ValueError(msg)
+
+        provenance_id = (
+            target_rep_id
+            if (message_id.startswith("asst-") and message_id not in target_rep_id)
+            else message_id
+        )
+
+        provenance = SessionBranchProvenance(
+            parent_session_id=parent_session.id,
+            parent_message_id=provenance_id,
+            parent_session_name=parent_session.name,
+        )
+
+        agent_ident = agent.name or str(agent.id)
+        with logfire.span(
+            f"agent {agent_ident}",
+            agent_id=str(agent.id),
+            agent_name=agent.name,
+            agent_identifier=agent_ident,
+        ):
+            new_session = Session(
+                agent_id=agent.id,
+                name=name,
+                config=parent_session.config.model_copy(deep=True),
+                status=SessionStatus.ACTIVE,
+                provenance=provenance,
+            )
+            # Create open thread in new session with sliced events
+            sliced_events = list(target_thread.events[:target_event_index])
+            new_thread = Thread(
+                name=None,
+                is_open=True,
+                status=AgentStatus.AWAITING_USER,
+                events=sliced_events,
+            )
+            new_session.threads[new_thread.id] = new_thread
+            agent.sessions[new_session.id] = new_session
+            agent.touch()
+
+            session_ident = new_session.name or str(new_session.id)
+            with logfire.span(
+                f"session {session_ident}",
+                session_id=str(new_session.id),
+                session_name=new_session.name,
+                session_identifier=session_ident,
+                parent_session_id=str(parent_session.id),
+                operation="branch",
+            ):
+                try:
+                    ws_mgr = get_workspace_manager()
+                    branch_commit = ws_mgr.find_commit_for_event(
+                        agent.id, parent_session.id, provenance_id
+                    )
+                    if not branch_commit and target_rep_id != provenance_id:
+                        branch_commit = ws_mgr.find_commit_for_event(
+                            agent.id, parent_session.id, target_rep_id
+                        )
+                    branch_from = branch_commit or f"origin/session/{parent_session.id}"
+                    ws_mgr.create_session_workspace(new_session, agent, branch_from=branch_from)
+                    ws_mgr.save_thread_events(
+                        agent.id, new_session.id, new_thread.id, new_thread.events
+                    )
+                    ws_mgr.open_sync_pr(new_session, agent)
+                except Exception:
+                    logger.exception(
+                        "Failed to initialize git workspace for branched session %s",
+                        new_session.id,
+                    )
+
+                return new_session
 
     def create_thread(
         self,
@@ -424,11 +751,25 @@ class HarnessStore:
                             if session_created_at_str
                             else datetime.now(UTC)
                         )
+                        status_val = session_payload.get("status", "ACTIVE")
+                        session_status = (
+                            SessionStatus(status_val)
+                            if status_val in SessionStatus.__members__
+                            else SessionStatus.ACTIVE
+                        )
+                        provenance_data = session_payload.get("provenance")
+                        provenance = (
+                            SessionBranchProvenance.model_validate(provenance_data)
+                            if provenance_data
+                            else None
+                        )
                         session = Session(
                             id=session_id,
                             agent_id=agent.id,
                             name=session_payload.get("name"),
                             config=session_config,
+                            status=session_status,
+                            provenance=provenance,
                             created_at=session_created_at,
                         )
 

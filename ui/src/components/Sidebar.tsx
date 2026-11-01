@@ -1,6 +1,8 @@
 import { useState, type KeyboardEvent } from "react";
 import {
   AlertCircle,
+  AlertTriangle,
+  Ban,
   Bot,
   Check,
   CheckCircle2,
@@ -385,10 +387,16 @@ export function Sidebar({
                               )}
 
                               <span
-                                className={`session-status-badge status-${sessionStatus.toLowerCase().replace(/_/g, "-")}`}
-                                title={`Session Status: ${formatStatusLabel(sessionStatus)}`}
+                                className={`session-status-badge status-${session.status === "KILLED" ? "killed" : session.status === "FAILED" ? "failed" : sessionStatus.toLowerCase().replace(/_/g, "-")}`}
+                                title={`Session Status: ${session.status === "KILLED" ? "Killed" : session.status === "FAILED" ? "Failed" : formatStatusLabel(sessionStatus)}`}
                               >
-                                {renderSessionStatusIcon(sessionStatus)}
+                                {session.status === "KILLED" ? (
+                                  <Ban size={13} className="text-zinc-400" />
+                                ) : session.status === "FAILED" ? (
+                                  <AlertTriangle size={13} className="text-rose-400" />
+                                ) : (
+                                  renderSessionStatusIcon(sessionStatus)
+                                )}
                               </span>
 
                               <div className="node-actions">

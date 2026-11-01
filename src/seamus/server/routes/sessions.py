@@ -11,6 +11,7 @@ from seamus.harness.runner import SessionBusyError, get_runner_registry
 from seamus.harness.store import SlugConflictError, get_harness_store
 from seamus.persistence.workspace import get_workspace_manager
 from seamus.server.schemas import (
+    BranchSessionRequest,
     SessionCreateRequest,
     SessionDetailResponse,
     SessionDiffResponse,
@@ -42,6 +43,8 @@ def _to_session_detail(session: Any) -> SessionDetailResponse:
         created_at=session.created_at,
         last_touched_at=session.last_touched_at,
         config=session.config,
+        status=session.status,
+        provenance=session.provenance,
         threads=threads,
     )
 
@@ -108,6 +111,53 @@ async def update_session(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     return _to_session_detail(session)
+
+
+@router.post("/{session_identifier}/kill", response_model=SessionDetailResponse)
+async def kill_session(
+    agent_identifier: str,
+    session_identifier: str,
+) -> SessionDetailResponse:
+    """Manually terminate a session, preventing future turns and closing Sync PR."""
+    store = get_harness_store()
+    try:
+        session = store.kill_session(
+            agent_identifier=agent_identifier,
+            session_identifier=session_identifier,
+        )
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return _to_session_detail(session)
+
+
+@router.post(
+    "/{session_identifier}/branch",
+    response_model=SessionDetailResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def branch_session(
+    agent_identifier: str,
+    session_identifier: str,
+    payload: BranchSessionRequest,
+) -> SessionDetailResponse:
+    """Branch off a completed assistant message to create a new parallel session."""
+    store = get_harness_store()
+    try:
+        new_session = store.branch_session(
+            agent_identifier=agent_identifier,
+            session_identifier=session_identifier,
+            message_id=payload.message_id,
+            name=payload.name,
+        )
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except SlugConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return _to_session_detail(new_session)
 
 
 @router.post(

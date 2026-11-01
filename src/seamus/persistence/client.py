@@ -323,6 +323,17 @@ class GiteaClient:
             )
             raise GiteaAPIError(msg)
 
+    def close_pull_request(self, repo_name: str, index: int) -> bool:
+        """Close an open pull request without merging."""
+        owner = self.settings.gitea_admin_user
+        payload = {"state": "closed"}
+        with httpx.Client(timeout=10.0, auth=self.auth) as client:
+            res = client.patch(
+                f"{self.base_url}/api/v1/repos/{owner}/{repo_name}/pulls/{index}",
+                json=payload,
+            )
+            return res.status_code == 200
+
     def get_pull_request_diff(self, repo_name: str, index: int) -> str:
         """Retrieve raw unified diff for a pull request by index."""
         owner = self.settings.gitea_admin_user

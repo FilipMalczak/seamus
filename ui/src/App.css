@@ -782,6 +782,126 @@ body {
   color: var(--error-color);
 }
 
+.status-killed {
+  color: var(--text-muted);
+}
+
+.status-failed {
+  color: var(--error-color);
+}
+
+.btn-kill-session {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 3px 8px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: 6px;
+  color: #f87171;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+
+.btn-kill-session:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+
+.provenance-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  background: rgba(14, 165, 233, 0.08);
+  border-bottom: 1px solid rgba(14, 165, 233, 0.2);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.provenance-info {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provenance-info code {
+  background: rgba(15, 23, 42, 0.6);
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  color: #38bdf8;
+}
+
+.provenance-nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 2px 7px;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 4px;
+  color: #38bdf8;
+  font-size: 0.75rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease-in-out;
+}
+
+.provenance-nav-btn:hover {
+  background: rgba(56, 189, 248, 0.22);
+  color: #7dd3fc;
+}
+
+.terminal-session-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  font-size: 0.8rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.notice-killed {
+  background: rgba(113, 113, 122, 0.1);
+  color: #a1a1aa;
+  border-color: rgba(113, 113, 122, 0.2);
+}
+
+.notice-failed {
+  background: rgba(239, 68, 68, 0.1);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.branch-msg-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+
+.branch-msg-btn:hover {
+  background: rgba(56, 189, 248, 0.1);
+  border-color: rgba(56, 189, 248, 0.25);
+  color: #38bdf8;
+}
+
 /* Chat Viewport & Messages */
 .chat-viewport {
   flex: 1;
