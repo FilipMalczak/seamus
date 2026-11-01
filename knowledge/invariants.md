@@ -139,9 +139,20 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-023](./requirements.md#req-023-dynamic-lm-xml-structured-system-prompt-architecture), [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md).
 - **Enforcement**: `seamus.harness.prompt.build_effective_system_prompt()`, `DynamicSystemPromptMiddleware`, `SessionAgentRunner._build_deep_agent()`, and unit tests in `tests/test_prompt.py`.
 
+### INV-028: Persona Immutability and Inheritance
+- **Statement**: An agent's configured Persona is immutable at the Agent level and inherited by all child Sessions. Sessions cannot alter their parent Agent's core Persona archetype.
+- **Justification**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [threads_modes_personas.md](./threads_modes_personas.md).
+- **Enforcement**: Domain models in `src/seamus/domain/entities.py` and configuration validation.
+
+### INV-029: Mode Transition Thread-Spawning Boundary
+- **Statement**: Every transition between operational modes (`plan`, `chat`, `act`, `analyse`) within a session must immediately close the active thread and spawn a new thread. No single thread may span multiple operational modes. Furthermore, mode-specific phase transitions (such as transitioning from plan formulation to plan execution in `plan` mode) must spawn a fresh thread.
+- **Justification**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [threads_modes_personas.md](./threads_modes_personas.md).
+- **Enforcement**: Session runner orchestration and domain lifecycle in `src/seamus/harness/runner.py`.
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [requirements.md](./requirements.md)
+- [threads_modes_personas.md](./threads_modes_personas.md)
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
 - [0003-react-web-ui.md](../decisions/0003-react-web-ui.md)
@@ -160,3 +171,4 @@ Properties and rules that must always hold across the repository.
 - [0016-sync-pr-data-scope.md](../decisions/0016-sync-pr-data-scope.md)
 - [0017-dedicated-test-gitea.md](../decisions/0017-dedicated-test-gitea.md)
 - [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md)
+- [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md)

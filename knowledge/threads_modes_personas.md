@@ -1,0 +1,164 @@
+# Threads, Modes, and Personas
+
+Architectural vision and specification for Seamus's core agent configuration and execution triad, established in [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md).
+
+---
+
+## 1. The Architectural Triad
+
+To balance autonomous execution, safety, and multi-domain versatility, Seamus separates configuration and execution into three distinct layers:
+
+```
++-------------------------------------------------------------+
+| Agent (Persona)                                             |
+| Baseline Identity, Domain Specialization, Available Tools  |
++-------------------------------------------------------------+
+                              |
+                              v
++-------------------------------------------------------------+
+| Session (Workspace & Git Branch)                            |
+| Dedicated Sandbox Container, `session/{id}` Git Branch      |
++-------------------------------------------------------------+
+                              |
+                              v
++-------------------------------------------------------------+
+| Thread (Mode & Execution Phase)                             |
+| Active Operational Posture, Checkpoint State, Event Stream  |
++-------------------------------------------------------------+
+```
+
+| Layer | Concept | Cardinality | Primary Question | Persistence Scope |
+| :--- | :--- | :--- | :--- | :--- |
+| **Agent** | **Persona** | 1 per Agent | *What is the agent?* | Immutable baseline in `agent/config/config.json` |
+| **Session** | **Workspace** | 1..* per Agent | *Where does it operate?* | Dedicated sandbox container & Git branch (`session/{id}`) |
+| **Thread** | **Mode** | 1..* per Session | *How does it behave right now?* | Checkpoints in `agent/state/threads/{id}/` & event stream |
+
+---
+
+## 2. Personas (Agent Level)
+
+A **Persona** is an archetype defining the agent's enduring identity, domain background, and available capabilities. Configured when an agent is created, it remains durable across all sessions.
+
+### Persona Archetypes
+
+1. **Coder** (Default):
+   - **Identity**: Autonomous AI software engineering agent with rigorous engineering discipline, surgical diffs, and verification testing.
+   - **Default Tools**: Sandbox filesystem tools (`read_file`, `write_file`, `edit_file`, `ls`, `glob`, `grep`) and shell execution (`execute`).
+   - **System Prompt**: Embeds `<engineering_discipline>` and testing invariants.
+
+2. **Office Worker**:
+   - **Identity**: Executive coordinator and administrative assistant specializing in organization, synthesis, task dispatching, and communication.
+   - **Default Tools**: Document parsers, task tracking tools (`write_todos`), and integration endpoints.
+   - **System Prompt**: Emphasizes clarity, structured bulleted summaries, and actionable next steps.
+
+3. **Designer**:
+   - **Identity**: Product and user-experience designer focused on design systems, visual hierarchy, user ergonomics, and frontend aesthetics.
+   - **Default Tools**: Filesystem access for CSS/component styling, SVG/canvas generation, and artifact viewers.
+   - **System Prompt**: Emphasizes layout proportions, contrast, typography, and interactive usability.
+
+4. **Data Scientist**:
+   - **Identity**: Quantitative researcher and data analyst focused on data exploration, statistical modeling, and experimental reproducibility.
+   - **Default Tools**: Python sandbox execution, data file inspection, and visualization artifact generation.
+   - **System Prompt**: Emphasizes validation, baseline comparisons, and reproducible data workflows.
+
+---
+
+## 3. Operational Modes (Thread / Turn Level)
+
+An **Operational Mode** dictates the agent's immediate interaction posture, prompt framing, and the role of the operational workspace (`/workspace`).
+
+```
++--------------------------------------------------------------------------------+
+|                             OPERATIONAL MODES                                  |
++--------------------------------------------------------------------------------+
+|  MODE     | PRIMARY OBJECTIVE        | WORKSPACE ROLE       | TOOL CONSTRAINTS |
+|-----------+--------------------------+----------------------+------------------|
+| `plan`    | Plan first, then execute | Scratchpad -> Prod   | Read-only -> Mod |
+| `chat`    | Conversational dialogue  | Scratchpad only      | Transient/Temp   |
+| `act`     | Immediate task execution | Production codebase  | Full modify/exec |
+| `analyse` | Workspace investigation  | Immutable reference  | Strict read-only |
++--------------------------------------------------------------------------------+
+```
+
+### Detailed Mode Semantics
+
+#### `plan`
+- **Objective**: Formulate a structured, verified plan before making any code modifications.
+- **Workflow**:
+  1. *Planning Phase*: The agent explores existing files, analyzes requirements, and drafts a step-by-step plan. Write operations are restricted or confined to scratchpad planning files.
+  2. *Plan Alignment*: The user reviews the plan and approves execution.
+  3. *Execution Phase*: The mode transitions to execution (or `act`), which **spawns a new thread** to carry out the implementation steps.
+- **Workspace Role**: Initially inspected in read-only fashion; during execution, becomes the target of verified changes.
+
+#### `chat`
+- **Objective**: Conversational discussion, brainstorming, high-level guidance, or explaining concepts without modifying project deliverables.
+- **Workspace Role**: The workspace is not the primary deliverable; it serves strictly as an agent scratchpad for scratch scripts or quick calculations.
+- **Git Impact**: Does not generate production code changes intended for the `main` branch.
+
+#### `act`
+- **Objective**: Direct, prompt task execution.
+- **Workflow**: The agent immediately follows instructions, reads relevant files, authors surgical diffs, and runs verification checks. Best suited for well-defined bug fixes, minor additions, or following a pre-established plan.
+- **Workspace Role**: Active production codebase. Changes directly stage for the session's Sync PR.
+
+#### `analyse`
+- **Objective**: Answer questions, trace call graphs, review diffs, or audit security and architecture without changing files.
+- **Workflow**: The agent has full access to search and inspection tools (`read_file`, `grep`, `glob`, `ls`), but file modification tools (`write_file`, `edit_file`, `delete`) are disabled or rejected by middleware.
+- **Workspace Role**: Immutable reference directory.
+
+---
+
+## 4. Threads as Execution and Mode-Switch Boundaries
+
+In Seamus, **Threads are the deterministic execution boundaries** for modes and lifecycle phases.
+
+### Mode Transitions Spawn Threads
+
+Whenever a session switches modes, Seamus closes the active thread and spawns a fresh thread:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Thread1_Chat: User initiates in `chat` mode
+    Thread1_Chat --> Thread2_Plan: User requests architecture plan (Switches to `plan` mode)
+    note right of Thread2_Plan
+        Thread 1 closes.
+        Thread 2 opens in `plan` mode.
+    end note
+    Thread2_Plan --> Thread3_Act: Plan approved (Switches to execution)
+    note right of Thread3_Act
+        Thread 2 closes.
+        Thread 3 opens in `act` mode.
+    end note
+    Thread3_Act --> [*]: Thread Accepted (Sync PR merged to main)
+```
+
+### Mode-Specific Thread Triggers
+
+Modes define distinct triggers that spawn new threads:
+1. **Plan Formulation vs. Plan Execution**: In `plan` mode, formulating a plan occurs in a planning thread. Transitioning to execution automatically opens a new thread, preventing verbose planning tokens from bloating the execution context.
+2. **Analysis Scope Shifts**: In `analyse` mode, starting an analysis on a different component or investigation hypothesis can open a fresh thread to keep inquiry contexts isolated.
+3. **Chat Scratchpad Isolation**: In `chat` mode, discussions and scratchpad testing occur in their own thread, ensuring that exploratory experiments do not pollute the Git history or diff viewer of implementation threads.
+
+---
+
+## 5. Persistence and Git Integration
+
+- **Per-Thread Checkpoints**: In accordance with [0008-git-persistence.md](../decisions/0008-git-persistence.md), all LangGraph checkpoints and AG-UI event logs are versioned under:
+  ```
+  agent/state/threads/{thread_id}/
+  ```
+- **Clean Sync PRs**: When a thread closes, only changes committed under `data/` are reflected in the session's active Sync PR targeting `main`. Threads executed in `analyse` mode or pure `chat` mode leave the production diff untouched.
+- **Thread Acceptance**: When the user clicks "Accept" in the top bar ([0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md)), the active thread closes, the Sync PR is merged into `main`, and a fresh thread is initialized for the next phase of work.
+
+---
+
+## 6. Cross-References
+
+- [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md)
+- [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md)
+- [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md)
+- [0008-git-persistence.md](../decisions/0008-git-persistence.md)
+- [vocabulary.md](./vocabulary.md)
+- [architecture.md](./architecture.md)
+- [invariants.md](./invariants.md)
+- [requirements.md](./requirements.md)
+
