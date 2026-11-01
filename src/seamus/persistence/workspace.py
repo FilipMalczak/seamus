@@ -721,3 +721,9 @@ def get_workspace_manager() -> GitWorkspaceManager:
     if _GLOBAL_WORKSPACE_MANAGER is None:
         _GLOBAL_WORKSPACE_MANAGER = GitWorkspaceManager()
     return _GLOBAL_WORKSPACE_MANAGER
+
+
+def reset_workspace_manager(manager: GitWorkspaceManager | None = None) -> None:
+    """Reset or override the global GitWorkspaceManager singleton instance."""
+    global _GLOBAL_WORKSPACE_MANAGER
+    _GLOBAL_WORKSPACE_MANAGER = manager

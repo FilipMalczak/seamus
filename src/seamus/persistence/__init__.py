@@ -10,6 +10,7 @@ from seamus.persistence.workspace import (
     GitWorkspaceManager,
     get_workspace_manager,
     parse_stored_event,
+    reset_workspace_manager,
 )
 
 __all__ = [
@@ -21,4 +22,5 @@ __all__ = [
     "get_persistence_settings",
     "get_workspace_manager",
     "parse_stored_event",
+    "reset_workspace_manager",
 ]

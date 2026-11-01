@@ -42,6 +42,7 @@ Project-specific implementation, tooling, and development conventions not fully 
 - Pytest test files named `test_*.py` located under `tests/`.
 - Test observable behaviors and edge cases rather than private implementation details.
 - Avoid external network calls during unit and integration test runs by using test doubles or mock run providers.
+- Test suite execution uses an ephemeral, dedicated Gitea container (`tests/conftest.py`) with SQLite and dynamic port assignment (`127.0.0.1::3000`), completely shielding the live development stack (`http://localhost:3001`, `.seamus/workspaces`) from test pollution and permitting parallel test runs.
 - Logfire test assertions use `TestExporter` and `SimpleSpanProcessor` with `send_to_logfire=False`.
 - Frontend builds verified with `npm run build` in `ui/`.
 
@@ -60,6 +61,7 @@ Project-specific implementation, tooling, and development conventions not fully 
 - [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md)
 - [0008-git-persistence.md](../decisions/0008-git-persistence.md)
 - [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md)
+- [0017-dedicated-test-gitea.md](../decisions/0017-dedicated-test-gitea.md)
 - [abstractions.md](./abstractions.md)
 - [backlog.md](./backlog.md)
 - [invariants.md](./invariants.md)

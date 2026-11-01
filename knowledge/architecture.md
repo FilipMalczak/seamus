@@ -71,6 +71,9 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 9. **Knowledge (`knowledge`)**:
    - Location: `knowledge/`
    - Responsibility: Durable conceptual, architectural, and requirement specifications.
+10. **Test Infrastructure & Isolation (`tests`)**:
+   - Location: `tests/`
+   - Responsibility: Test suites verifying unit, component, and persistence logic. `tests/conftest.py` orchestrates an ephemeral, SQLite-backed Gitea container fixture with dynamic port allocation and temporary workspace root, isolating the test suite from live development environments and enabling collision-free parallel execution.
 
 ## Cross-References
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
@@ -83,6 +86,13 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 - [0008-git-persistence.md](../decisions/0008-git-persistence.md)
 - [0009-ui-markdown-renderer.md](../decisions/0009-ui-markdown-renderer.md)
 - [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md)
+- [0011-agent-inspector.md](../decisions/0011-agent-inspector.md)
+- [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md)
+- [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md)
+- [0014-ui-layout-proportions-breadcrumbs.md](../decisions/0014-ui-layout-proportions-breadcrumbs.md)
+- [0015-session-changes-diff-tab.md](../decisions/0015-session-changes-diff-tab.md)
+- [0016-sync-pr-data-scope.md](../decisions/0016-sync-pr-data-scope.md)
+- [0017-dedicated-test-gitea.md](../decisions/0017-dedicated-test-gitea.md)
 - [0011-agent-inspector.md](../decisions/0011-agent-inspector.md)
 - [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md)
 - [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md)
