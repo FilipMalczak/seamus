@@ -78,7 +78,7 @@ def build_engineering_discipline() -> list[str]:
     return [
         (
             "Investigate before modifying: Always read, search, and explore existing files, "
-            "tests, and configuration before authoring code. Never guess API contracts, file "
+            "tests, and configuration before writing code. Never guess API contracts, file "
             "paths, or interfaces."
         ),
         (

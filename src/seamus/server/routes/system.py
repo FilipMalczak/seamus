@@ -4,7 +4,11 @@ from fastapi import APIRouter
 
 from seamus.persistence import get_persistence_settings
 from seamus.server.schemas import SystemGiteaInfo, SystemInfoResponse, SystemLogfireInfo
-from seamus.telemetry import get_logfire_service_name, is_logfire_enabled
+from seamus.telemetry import (
+    get_logfire_dashboard_url,
+    get_logfire_service_name,
+    is_logfire_enabled,
+)
 
 router = APIRouter(prefix="/system", tags=["system"])
 
@@ -14,9 +18,7 @@ async def get_system_info() -> SystemInfoResponse:
     """Return system information including external integrations and telemetry status."""
     logfire_on = is_logfire_enabled()
     service_name = get_logfire_service_name()
-    logfire_url = (
-        f"https://logfire-eu.pydantic.dev/filip-malczak/{service_name}" if logfire_on else None
-    )
+    logfire_url = get_logfire_dashboard_url()
 
     persist_settings = get_persistence_settings()
     gitea_on = persist_settings.enabled

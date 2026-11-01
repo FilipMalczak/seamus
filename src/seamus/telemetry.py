@@ -1,6 +1,7 @@
 """Logfire telemetry configuration, FastAPI instrumentation, and span management."""
 
 import os
+import re
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Literal
@@ -12,10 +13,21 @@ from logfire._internal.scrubbing import ScrubMatch
 
 
 def _scrub_callback(match: ScrubMatch) -> Any:
-    """Preserve 'session' domain attributes while redacting secrets and credentials."""
-    if match.pattern_match.group(0).lower() == "session":
+    """Preserve 'session' attributes and benign 'auth' words while redacting secrets."""
+    matched_word = match.pattern_match.group(0).lower()
+    if matched_word == "session":
         # Retain domain concept of 'session' and session IDs in Seamus
         return match.value
+
+    if matched_word == "auth":
+        # Logfire's built-in regex auth(?!ors?\b) false-positively matches words
+        # starting with 'author' (such as 'authoring', 'authored', 'authorship', 'authority', etc.)
+        raw_string = match.pattern_match.string
+        start_idx = match.pattern_match.start()
+        tail = raw_string[start_idx:]
+        if re.match(r"^author\w*", tail, re.IGNORECASE):
+            return match.value
+
     # Fall back to default redaction
     return None
 
@@ -75,6 +87,32 @@ def is_logfire_enabled() -> bool:
 def get_logfire_service_name() -> str:
     """Return the configured Logfire service name (default 'seamus')."""
     return os.getenv("LOGFIRE_SERVICE_NAME", "seamus")
+
+
+def get_logfire_org() -> str | None:
+    """Return the configured Logfire organization or account name, if set."""
+    val = os.getenv("LOGFIRE_ORG")
+    return val.strip() if val and val.strip() else None
+
+
+def get_logfire_base_url() -> str:
+    """Return the configured Logfire cloud base URL (default 'https://logfire-eu.pydantic.dev')."""
+    val = os.getenv("LOGFIRE_BASE_URL")
+    if val and val.strip():
+        return val.strip().rstrip("/")
+    return "https://logfire-eu.pydantic.dev"
+
+
+def get_logfire_dashboard_url() -> str | None:
+    """Construct the Logfire dashboard URL for the current service if enabled and configured."""
+    if not is_logfire_enabled():
+        return None
+    org = get_logfire_org()
+    if not org:
+        return None
+    service_name = get_logfire_service_name()
+    base_url = get_logfire_base_url()
+    return f"{base_url}/{org}/{service_name}"
 
 
 def setup_telemetry(

@@ -47,8 +47,10 @@ def test_health_check(client: TestClient) -> None:
     assert res.json() == {"status": "ok", "service": "seamus"}
 
 
-def test_system_info_endpoint(client: TestClient) -> None:
+def test_system_info_endpoint(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify that /api/v-alpha/system/info returns system info with Logfire metadata."""
+    monkeypatch.setenv("LOGFIRE_ORG", "test-org")
+    monkeypatch.setenv("LOGFIRE_BASE_URL", "https://logfire-custom.pydantic.dev")
     res = client.get("/api/v-alpha/system/info")
     assert res.status_code == 200
     data = res.json()
@@ -57,7 +59,10 @@ def test_system_info_endpoint(client: TestClient) -> None:
     assert "service_name" in data["logfire"]
     assert "url" in data["logfire"]
     if data["logfire"]["enabled"]:
-        assert data["logfire"]["url"].startswith("https://logfire-eu.pydantic.dev/filip-malczak/")
+        assert (
+            data["logfire"]["url"]
+            == f"https://logfire-custom.pydantic.dev/test-org/{data['logfire']['service_name']}"
+        )
     else:
         assert data["logfire"]["url"] is None
 

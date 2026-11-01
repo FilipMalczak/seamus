@@ -42,11 +42,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## Technical debt
 
-### Hardcoded Logfire Cloud Region and Organization in System Info Route
-- **Current Problem**: In `src/seamus/server/routes/system.py`, the Logfire dashboard link is constructed with a hardcoded URL: `https://logfire-eu.pydantic.dev/filip-malczak/{service_name}`. This couples the service to a single cloud region and specific user account.
-- **Improvement**: Parameterize the Logfire organization and cloud endpoint via environment variables (e.g. `LOGFIRE_ORG` and `LOGFIRE_BASE_URL` in `seamus.telemetry` and `.env.template`) so dashboard links adapt to arbitrary deployments.
-- **Provenance**: [0006-external-system-links.md](../decisions/0006-external-system-links.md), [INV-015](./invariants.md#inv-015-external-system-link-visibility--telemetry-guard).
-
 ### Synchronous Git Subprocess Invocations in Async Server Flows
 - **Current Problem**: `GitWorkspaceManager._run_git` calls `subprocess.run(["git", ...])` synchronously. During HTTP requests (`create_agent`, `commit_agent_config`, `commit_session_config`) and checkpoint serialization (`GitCheckpointSaver`), disk I/O and remote Git pushes to Gitea block the asyncio event loop thread.
 - **Improvement**: Offload Git commands to a thread pool via `asyncio.to_thread` or switch to an asynchronous subprocess runner (`asyncio.create_subprocess_exec`) to avoid blocking the server event loop during Git operations.
@@ -56,13 +51,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Current Problem**: `HarnessStore` maintains an in-memory dictionary of agents and sessions hydrated from Gitea only at startup. Running multiple server worker processes or replicas leads to desynchronized state, as mutations in one worker process are not reflected in the memory of another.
 - **Improvement**: Introduce cross-worker synchronization or transition `HarnessStore` to a read-through/write-through cache against Gitea/a persistent backing store for multi-worker deployments.
 - **Provenance**: [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md), [0008-git-persistence.md](../decisions/0008-git-persistence.md), [architecture.md](./architecture.md#system-overview).
-
-### Prevent Logfire Scrubbing System Prompts Due to False-Positive 'auth' Match
-- **Current Problem**: In Logfire telemetry spans, system prompt attributes are completely redacted with `[Scrubbed due to 'auth']`. Logfire's built-in credential regex `auth(?!ors?\b)` matches occurrences of `"authoring"` in `build_engineering_discipline()` and redacts the entire prompt.
-- **Improvement**: 
-  1. Update `_scrub_callback` in `src/seamus/telemetry.py` to preserve system prompt attributes and exempt false-positive substrings (such as `"authoring"`).
-  2. Adjust phrasing in `build_engineering_discipline()` from `"before authoring code"` to `"before writing code"` as defensive double protection.
-- **Provenance**: `src/seamus/telemetry.py`, `src/seamus/harness/prompt.py`, [0006-external-system-links.md](../decisions/0006-external-system-links.md).
 
 ## TODO
 
