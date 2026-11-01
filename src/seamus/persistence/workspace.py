@@ -44,7 +44,7 @@ class GitWorkspaceError(RuntimeError):
 
 
 def filter_sync_pr_diff(raw_diff: str) -> str:
-    """Filter out internal harness state files (e.g. agent/state/**) from reviewable PR diff."""
+    """Filter reviewable PR diff so that only files under the data/ working directory are kept."""
     if not raw_diff:
         return ""
     pattern = re.compile(r"(?=^diff --git )", re.MULTILINE)
@@ -54,10 +54,9 @@ def filter_sync_pr_diff(raw_diff: str) -> str:
         if not chunk.strip():
             continue
         first_line = chunk.split("\n", 1)[0]
-        # Skip internal state persistence files (events.json, checkpoints.json, messages.json)
-        if " a/agent/state/" in first_line or " b/agent/state/" in first_line:
-            continue
-        kept.append(chunk)
+        # Restrict strictly to agent workspace deliverables under data/
+        if " a/data/" in first_line or " b/data/" in first_line:
+            kept.append(chunk)
     return "".join(kept)
 
 
@@ -243,7 +242,7 @@ class GitWorkspaceManager:
             if branch_name in remote_branches:
                 self._run_git(session_dir, ["checkout", branch_name])
             else:
-                self._run_git(session_dir, ["checkout", "-b", branch_name])
+                self._run_git(session_dir, ["checkout", "-b", branch_name, "origin/main"])
         else:
             self._configure_git_identity(session_dir)
 
@@ -365,7 +364,7 @@ class GitWorkspaceManager:
             return None
 
     def merge_sync_pr(self, session: Session, agent: Agent) -> bool:
-        """Approve and merge the active Sync PR from session branch into main."""
+        """Approve and merge active Sync PR into main, restricted to data/ deliverables."""
         if not self.settings.enabled:
             return True
 
@@ -397,8 +396,57 @@ class GitWorkspaceManager:
             except Exception:
                 break
 
-        # 3. Merge pull request (delete_branch=False retains the session branch)
+        # 3. Execute data-scoped merge into main
+        merge_sha: str | None = None
         try:
+            agent_dir = self.get_agent_workspace_path(agent.id)
+            if not (agent_dir / ".git").exists():
+                self.initialize_agent_repo(agent)
+
+            session_branch = f"session/{session.id}"
+            remote_branches = self.client.list_branches(repo_name)
+            if session_branch in remote_branches:
+                self._run_git(agent_dir, ["checkout", "main"])
+                self._run_git(agent_dir, ["pull", "origin", "main"])
+                self._run_git(agent_dir, ["fetch", "origin"])
+
+                try:
+                    self._run_git(
+                        agent_dir,
+                        ["merge", "--no-commit", "--no-ff", f"origin/{session_branch}"],
+                    )
+                except GitWorkspaceError:
+                    # Discard conflicts arising in harness-internal state/config directories
+                    pass
+
+                # Reset and restore agent/ to HEAD (main)
+                self._run_git(agent_dir, ["reset", "HEAD", "--", "agent"])
+                self._run_git(agent_dir, ["checkout", "HEAD", "--", "agent"])
+                self._run_git(agent_dir, ["clean", "-fd", "agent"])
+
+                # Stage only data/ deliverables
+                if (agent_dir / "data").exists():
+                    self._run_git(agent_dir, ["add", "-A", "data/"])
+
+                commit_msg = f"sync: session/{session.name or session.id} (data/ deliverables)"
+                self._run_git(agent_dir, ["commit", "-m", commit_msg])
+                self._run_git(agent_dir, ["push", "origin", "main"])
+                merge_sha = self._run_git(agent_dir, ["rev-parse", "HEAD"]).stdout.strip()
+        except Exception:
+            logger.exception(
+                "Failed to perform data-scoped git merge on main for session %s", session.id
+            )
+
+        # 4. Finalize Sync PR in Gitea
+        try:
+            if merge_sha:
+                return self.client.merge_pull_request(
+                    repo_name=repo_name,
+                    index=pr_number,
+                    do="manually-merged",
+                    delete_branch=False,
+                    merge_commit_id=merge_sha,
+                )
             return self.client.merge_pull_request(
                 repo_name=repo_name,
                 index=pr_number,
@@ -406,7 +454,14 @@ class GitWorkspaceManager:
                 delete_branch=False,
             )
         except Exception:
-            logger.exception("Failed to merge Sync PR #%d for session %s", pr_number, session.id)
+            # Check if PR was already marked merged by Gitea auto-detection
+            try:
+                pr_info = self.client.get_pull_request(repo_name, pr_number)
+                if pr_info.get("merged") is True:
+                    return True
+            except Exception:
+                pass
+            logger.exception("Failed to finalize Sync PR #%d for session %s", pr_number, session.id)
             return False
 
     def save_thread_events(

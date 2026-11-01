@@ -204,6 +204,26 @@ def test_client_merge_pull_request(test_settings: PersistenceSettings) -> None:
         assert payload["delete_branch_after_merge"] is False
 
 
+def test_client_merge_pull_request_manually_merged(test_settings: PersistenceSettings) -> None:
+    client = GiteaClient(test_settings)
+    mock_post = MagicMock()
+    mock_post.status_code = 200
+
+    with patch("httpx.Client.post", return_value=mock_post) as mock_post_call:
+        res = client.merge_pull_request(
+            "agent-123",
+            1,
+            do="manually-merged",
+            delete_branch=False,
+            merge_commit_id="abcdef123456",
+        )
+        assert res is True
+        payload = mock_post_call.call_args.kwargs["json"]
+        assert payload["Do"] == "manually-merged"
+        assert payload["delete_branch_after_merge"] is False
+        assert payload["merge_commit_id"] == "abcdef123456"
+
+
 def test_client_get_pull_request_diff(test_settings: PersistenceSettings) -> None:
     client = GiteaClient(test_settings)
     mock_get = MagicMock()

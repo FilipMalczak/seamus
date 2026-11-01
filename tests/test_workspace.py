@@ -28,7 +28,11 @@ def test_config() -> AgentConfig:
 @pytest.fixture
 def git_environment(tmp_path: Path) -> tuple[GitWorkspaceManager, Path, Path]:
     bare_remote = tmp_path / "remote.git"
-    subprocess.run(["git", "init", "--bare", str(bare_remote)], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "init", "--bare", "-b", "main", str(bare_remote)],
+        check=True,
+        capture_output=True,
+    )
 
     workspace_dir = tmp_path / "workspaces"
     settings = PersistenceSettings(
@@ -263,11 +267,11 @@ def test_sync_pr_workspace_operations(
     pr_data, diff_content = manager.get_sync_pr_diff(session, agent)
     assert pr_data is not None
     assert pr_data["number"] == 10
-    assert "agent/config/config.json" in diff_content
     assert "data/script.py" in diff_content
+    assert "agent/config/config.json" not in diff_content
     assert "agent/state/threads/123/events.json" not in diff_content
 
-    # 3. Merge Sync PR
+    # 3. Merge Sync PR (mocked fallback when branch not in remote list_branches)
     merged = manager.merge_sync_pr(session, agent)
     assert merged is True
     manager.client.approve_pull_request.assert_called_once_with(
@@ -281,3 +285,123 @@ def test_sync_pr_workspace_operations(
         do="merge",
         delete_branch=False,
     )
+
+
+def test_sync_pr_data_scoped_merge_lifecycle(
+    git_environment: tuple[GitWorkspaceManager, Path, Path],
+    test_config: AgentConfig,
+) -> None:
+    manager, bare_remote, _ = git_environment
+    agent = Agent(name="test-agent", config=test_config)
+    session = Session(agent_id=agent.id, name="test-session", config=test_config)
+    thread = session.create_thread()
+
+    # 1. Initialize agent workspace and repo on main
+    agent_dir = manager.initialize_agent_repo(agent)
+    initial_agent_config = (agent_dir / "agent" / "config" / "config.json").read_text()
+
+    # 2. Initialize session workspace on session branch
+    session_dir = manager.create_session_workspace(session, agent)
+    manager.client.list_branches = MagicMock(  # type: ignore[method-assign]
+        return_value=["main", f"session/{session.id}"]
+    )
+
+    # 3. Commit agent deliverables in data/ and thread state in agent/state/
+    (session_dir / "data" / "result.txt").write_text("agent deliverable content")
+    manager.commit_checkpoint_changes(agent.id, session.id, thread.id, checkpoint_id="cp-1")
+    manager.save_thread_events(agent.id, session.id, thread.id, [{"type": "MESSAGES_SNAPSHOT"}])
+    manager.commit_state_changes(agent.id, session.id, thread.id)
+
+    # 4. Open and merge Sync PR
+    mock_pr = {
+        "id": 1,
+        "number": 42,
+        "head": {"ref": f"session/{session.id}"},
+        "mergeable": True,
+        "merged": False,
+    }
+    manager.client.list_pull_requests = MagicMock(return_value=[mock_pr])  # type: ignore[method-assign]
+    manager.client.get_pull_request = MagicMock(return_value=mock_pr)  # type: ignore[method-assign]
+    manager.client.approve_pull_request = MagicMock(return_value={"state": "APPROVED"})  # type: ignore[method-assign]
+    manager.client.merge_pull_request = MagicMock(return_value=True)  # type: ignore[method-assign]
+
+    merged = manager.merge_sync_pr(session, agent)
+    assert merged is True
+
+    # 5. Verify that GiteaClient.merge_pull_request was called with manually-merged
+    manager.client.merge_pull_request.assert_called_once()
+    call_kwargs = manager.client.merge_pull_request.call_args.kwargs
+    assert call_kwargs["do"] == "manually-merged"
+    assert call_kwargs["index"] == 42
+    assert call_kwargs["merge_commit_id"] is not None
+
+    # 6. Verify repository state on main branch in agent_dir
+    assert (agent_dir / "data" / "result.txt").exists()
+    assert (agent_dir / "data" / "result.txt").read_text() == "agent deliverable content"
+    # Agent config on main must NOT be overwritten by session config
+    assert (agent_dir / "agent" / "config" / "config.json").read_text() == initial_agent_config
+    # Thread state must NOT be merged to main
+    assert not (agent_dir / "agent" / "state" / "threads").exists()
+
+
+def test_sync_pr_multi_session_merge_no_conflict(
+    git_environment: tuple[GitWorkspaceManager, Path, Path],
+    test_config: AgentConfig,
+) -> None:
+    manager, bare_remote, _ = git_environment
+    agent = Agent(name="test-agent", config=test_config)
+    agent_dir = manager.initialize_agent_repo(agent)
+    initial_agent_config = (agent_dir / "agent" / "config" / "config.json").read_text()
+
+    # Session 1
+    session1 = Session(agent_id=agent.id, name="session-1", config=test_config)
+    thread1 = session1.create_thread()
+    s1_dir = manager.create_session_workspace(session1, agent)
+
+    # Session 2
+    session2 = Session(agent_id=agent.id, name="session-2", config=test_config)
+    thread2 = session2.create_thread()
+    s2_dir = manager.create_session_workspace(session2, agent)
+
+    manager.client.list_branches = MagicMock(  # type: ignore[method-assign]
+        return_value=[
+            "main",
+            f"session/{session1.id}",
+            f"session/{session2.id}",
+        ]
+    )
+
+    # Session 1 produces deliverable 1
+    (s1_dir / "data" / "deliverable_1.txt").write_text("s1 output")
+    manager.commit_checkpoint_changes(agent.id, session1.id, thread1.id, checkpoint_id="cp-1")
+
+    # Session 2 produces deliverable 2
+    (s2_dir / "data" / "deliverable_2.txt").write_text("s2 output")
+    manager.commit_checkpoint_changes(agent.id, session2.id, thread2.id, checkpoint_id="cp-2")
+
+    # Mock PRs
+    pr1 = {"id": 1, "number": 1, "head": {"ref": f"session/{session1.id}"}, "mergeable": True}
+    pr2 = {"id": 2, "number": 2, "head": {"ref": f"session/{session2.id}"}, "mergeable": True}
+
+    manager.client.approve_pull_request = MagicMock(return_value={"state": "APPROVED"})  # type: ignore[method-assign]
+    manager.client.merge_pull_request = MagicMock(return_value=True)  # type: ignore[method-assign]
+
+    # Merge Session 1
+    manager.client.list_pull_requests = MagicMock(return_value=[pr1])  # type: ignore[method-assign]
+    manager.client.get_pull_request = MagicMock(return_value=pr1)  # type: ignore[method-assign]
+    assert manager.merge_sync_pr(session1, agent) is True
+
+    # Merge Session 2
+    manager.client.list_pull_requests = MagicMock(return_value=[pr2])  # type: ignore[method-assign]
+    manager.client.get_pull_request = MagicMock(return_value=pr2)  # type: ignore[method-assign]
+    assert manager.merge_sync_pr(session2, agent) is True
+
+    # Main branch contains BOTH deliverables
+    assert (agent_dir / "data" / "deliverable_1.txt").exists()
+    assert (agent_dir / "data" / "deliverable_1.txt").read_text() == "s1 output"
+    assert (agent_dir / "data" / "deliverable_2.txt").exists()
+    assert (agent_dir / "data" / "deliverable_2.txt").read_text() == "s2 output"
+
+    # Main branch configuration remains intact
+    assert (agent_dir / "agent" / "config" / "config.json").read_text() == initial_agent_config
+    assert not (agent_dir / "agent" / "state" / "threads").exists()

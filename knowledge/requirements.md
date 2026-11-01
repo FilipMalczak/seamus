@@ -133,6 +133,12 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0015-session-changes-diff-tab.md](../decisions/0015-session-changes-diff-tab.md).
 - **Linked Invariants**: [INV-022](./invariants.md#inv-022-thread-acceptance-and-sync-pr-lifecycle), [INV-024](./invariants.md#inv-024-session-changes-diff-and-acceptance-placement).
 
+### REQ-022: Restrict Sync PRs and Thread Acceptance to data/ Deliverables
+- **Description**: Reviewable Sync PR diffs must exclusively contain file modifications under `data/`, filtering out `agent/config/**` and `agent/state/**`. Thread acceptance merging must execute a data-scoped Git merge into `main` that preserves the base agent configuration and clean state on `main` without pollution or collision from session configuration or thread checkpoints, recording the PR merge in Gitea via `manually-merged`.
+- **Rationale**: The repository's base branch (`main`) must solely represent verified, clean agent deliverables across sessions, preventing session configuration leaks and concurrent merge conflicts.
+- **Provenance**: [0016-sync-pr-data-scope.md](../decisions/0016-sync-pr-data-scope.md).
+- **Linked Invariants**: [INV-025](./invariants.md#inv-025-scope-sync-prs-and-thread-acceptance-merges-to-data-deliverables).
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [invariants.md](./invariants.md)
@@ -151,3 +157,4 @@ Requirements, rationale, provenance, and stable IDs.
 - [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md)
 - [0014-ui-layout-proportions-breadcrumbs.md](../decisions/0014-ui-layout-proportions-breadcrumbs.md)
 - [0015-session-changes-diff-tab.md](../decisions/0015-session-changes-diff-tab.md)
+- [0016-sync-pr-data-scope.md](../decisions/0016-sync-pr-data-scope.md)
