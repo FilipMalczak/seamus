@@ -20,7 +20,9 @@ logger = logging.getLogger(__name__)
 
 
 def is_docker_available() -> bool:
-    """Return True if docker binary exists and daemon is responsive."""
+    """Return True if docker binary exists, daemon is responsive, and not explicitly disabled."""
+    if os.environ.get("SEAMUS_TEST_IN_MEMORY", "").lower() in ("true", "1", "yes"):
+        return False
     if not shutil.which("docker"):
         return False
     try:
@@ -42,10 +44,13 @@ def ephemeral_gitea_session(
 ) -> Generator[dict[str, str | int] | None, None, None]:
     """Session-scoped fixture starting an ephemeral Gitea container with SQLite and dynamic port."""
     if not is_docker_available():
-        warnings.warn(
-            "Docker is not available; disabling persistence for tests.",
-            stacklevel=2,
-        )
+        if os.environ.get("SEAMUS_TEST_IN_MEMORY", "").lower() in ("true", "1", "yes"):
+            logger.info("SEAMUS_TEST_IN_MEMORY is set; running tests with persistence disabled.")
+        else:
+            warnings.warn(
+                "Docker is not available; disabling persistence for tests.",
+                stacklevel=2,
+            )
         yield None
         return
 
@@ -193,6 +198,7 @@ def configure_test_environment(
 ) -> Generator[None, None, None]:
     """Configure persistence settings and environment variables for the entire test session."""
     original_env = os.environ.copy()
+    os.environ.setdefault("LOGFIRE_TOKEN", "test-logfire-token")
 
     if ephemeral_gitea_session is not None:
         os.environ["GITEA_URL"] = str(ephemeral_gitea_session["url"])

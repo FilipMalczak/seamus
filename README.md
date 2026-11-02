@@ -4,6 +4,7 @@ A deep agent harness that I fully own and can customize.
 
 ## Prerequisites
 
+- **Operating System**: Linux (primary and required; macOS and Windows compatibility is tracked as technical debt).
 - **Python**: 3.12+
 - **uv**: Fast Python package and environment manager
 - **Node.js**: v20+ and npm (for frontend development)

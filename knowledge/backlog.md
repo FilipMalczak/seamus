@@ -52,12 +52,12 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Improvement**: Introduce cross-worker synchronization or transition `HarnessStore` to a read-through/write-through cache against Gitea/a persistent backing store for multi-worker deployments.
 - **Provenance**: [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md), [0008-git-persistence.md](../decisions/0008-git-persistence.md), [architecture.md](./architecture.md#system-overview).
 
-## TODO
+### Cross-Platform macOS and Windows Runner Support in CI
+- **Current Problem**: The CI test suite and host environment assumptions currently only support Linux (`ubuntu-latest`). Running the test suite on macOS and Windows fails due to OS-specific path assumptions, process signal/subprocess differences, and absence of standard container runtimes on hosted runners.
+- **Improvement**: Audit and resolve cross-platform compatibility issues (e.g., path normalization across Windows/macOS, process lifecycle handling, and conditional test skipping or container mocking) and re-enable macOS and Windows runners in `.github/workflows/ci.yml`.
+- **Provenance**: [0023-github-actions-ci-pipeline.md](../decisions/0023-github-actions-ci-pipeline.md), [conventions.md](./conventions.md#continuous-integration-conventions).
 
-### Dual CI/CD Test Pipeline Runners (Docker-Enabled and In-Memory)
-- **Description**: When configuring GitHub Actions / CI/CD pipelines, configure two distinct runner jobs: a Docker-enabled runner executing the full test suite with the ephemeral Gitea container fixture, and a fast in-memory runner executing pure unit tests.
-- **Rationale**: Guarantees fast feedback for in-memory unit tests while preserving comprehensive Gitea persistence verification on Docker-capable runners.
-- **Provenance**: [0017-dedicated-test-gitea.md](../decisions/0017-dedicated-test-gitea.md), [conventions.md](./conventions.md#testing-conventions).
+## TODO
 
 ### Operational Execution Modes and Thread Transition Triggers (plan, chat, act, analyse, routing)
 - **Description**: Support an open set of configurable execution modes that govern agent interaction style, prompt framing, workspace usage, and thread-spawning triggers:
