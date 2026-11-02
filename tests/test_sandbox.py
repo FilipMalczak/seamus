@@ -204,3 +204,107 @@ def test_session_agent_runner_builds_deep_agent_with_opensandbox_and_prompt(
     assert isinstance(captured_kwargs["system_prompt"], str)
     assert "/workspace" in captured_kwargs["system_prompt"]
     assert "transient" in captured_kwargs["system_prompt"].lower()
+    assert "skills" in captured_kwargs
+    assert "/workspace/.skills" in captured_kwargs["skills"]
+
+
+def test_session_agent_runner_includes_resolved_system_skills(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SEAMUS_PERSISTENCE_ENABLED", "false")
+    monkeypatch.setenv("SEAMUS_WORKSPACE_DIR", str(tmp_path / "ws"))
+    from seamus.config.settings import SystemSettings, get_system_settings_store
+    from seamus.persistence.config import get_persistence_settings
+
+    get_persistence_settings.cache_clear()
+
+    host_home = tmp_path / "host_home"
+    existing_sys_skill = host_home / ".seamus" / "skills"
+    existing_sys_skill.mkdir(parents=True)
+    monkeypatch.setenv("SEAMUS_HOST_HOME", str(host_home))
+
+    store = get_system_settings_store()
+    store.set_settings(
+        SystemSettings(skill_directories=["~/.seamus/skills", "~/.nonexistent/skills"])
+    )
+
+    config = AgentConfig(
+        inference=InferenceConfig(api_key="test-key", base_url="https://openrouter.ai/api/v1"),
+        model_name="openai/gpt-oss-120b",
+    )
+    agent = Agent(config=config, name="skills-agent")
+    session = agent.create_session(name="skills-session")
+
+    captured_kwargs: dict[str, Any] = {}
+
+    def fake_create_deep_agent(**kwargs: Any) -> MagicMock:
+        captured_kwargs.update(kwargs)
+        return MagicMock()
+
+    with patch("seamus.harness.runner.create_deep_agent", side_effect=fake_create_deep_agent):
+        _runner = SessionAgentRunner(session=session, agent_entity=agent)
+
+    skills = captured_kwargs.get("skills", [])
+    # Existing resolved system skill directory included first
+    assert str(existing_sys_skill.resolve()) in skills
+    # Nonexistent directory omitted
+    assert not any("nonexistent" in s for s in skills)
+    # Session workspace skills last
+    assert skills[-1] == "/workspace/.skills"
+
+
+def test_sandbox_build_skill_volumes_read_only(tmp_path: Path) -> None:
+    skill_dir_1 = tmp_path / "skill1"
+    skill_dir_1.mkdir()
+    skill_dir_2 = tmp_path / "skill2"
+    skill_dir_2.mkdir()
+    non_existent = tmp_path / "skill_missing"
+
+    backend = SeamusOpenSandboxBackend(
+        agent_id=uuid4(),
+        session_id=uuid4(),
+        data_dir=tmp_path / "data",
+        skill_directories=[str(skill_dir_1), str(skill_dir_2), str(non_existent)],
+    )
+
+    volumes = backend.build_skill_volumes()
+    assert len(volumes) == 2
+
+    # Verify strictly read-only and correct mount path
+    for vol in volumes:
+        assert vol.read_only is True
+        assert vol.host is not None
+
+    paths = [vol.mount_path for vol in volumes]
+    assert str(skill_dir_1.resolve()) in paths
+    assert str(skill_dir_2.resolve()) in paths
+    assert str(non_existent.resolve()) not in paths
+
+
+def test_sandbox_build_skill_volumes_tilde_expansion_and_missing_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_home = tmp_path / "home_user"
+    fake_home.mkdir()
+    monkeypatch.setenv("HOME", str(fake_home))
+
+    # Existing dir under fake home
+    existing_skill = fake_home / ".seamus" / "skills"
+    existing_skill.mkdir(parents=True)
+
+    # Missing dir under fake home
+    missing_skill = fake_home / ".skills"
+    assert not missing_skill.exists()
+
+    backend = SeamusOpenSandboxBackend(
+        agent_id=uuid4(),
+        session_id=uuid4(),
+        data_dir=tmp_path / "data",
+        skill_directories=["~/.seamus/skills", "~/.skills"],
+    )
+
+    volumes = backend.build_skill_volumes()
+    # Missing ~/.skills is cleanly skipped without error; existing ~/.seamus/skills is mounted
+    assert len(volumes) == 1
+    assert volumes[0].mount_path == str(existing_skill.resolve())
+    assert volumes[0].read_only is True

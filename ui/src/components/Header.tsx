@@ -1,12 +1,17 @@
-import { Bot, Settings, Zap } from "lucide-react";
+import { Bot, Settings, Sliders, Zap } from "lucide-react";
 import type { AgentConfig } from "../api/types";
 
 interface HeaderProps {
   configTemplate: AgentConfig | null;
   onOpenConfigTemplate: () => void;
+  onOpenSystemSettings: () => void;
 }
 
-export function Header({ configTemplate, onOpenConfigTemplate }: HeaderProps) {
+export function Header({
+  configTemplate,
+  onOpenConfigTemplate,
+  onOpenSystemSettings,
+}: HeaderProps) {
   const modelName = configTemplate?.model_name || "openai/gpt-oss-120b";
   const baseUrl = configTemplate?.inference.base_url || "OpenRouter";
 
@@ -32,7 +37,16 @@ export function Header({ configTemplate, onOpenConfigTemplate }: HeaderProps) {
         </div>
       </div>
 
-      <div className="header-right">
+      <div className="header-right" style={{ display: "flex", gap: "8px" }}>
+        <button
+          type="button"
+          className="btn-header-action"
+          onClick={onOpenSystemSettings}
+          title="Edit System Settings"
+        >
+          <Sliders className="size-4" />
+          <span>Settings</span>
+        </button>
         <button
           type="button"
           className="btn-header-action"

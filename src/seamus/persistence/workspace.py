@@ -103,6 +103,14 @@ class GitWorkspaceManager:
         """Return standardized repository name for an agent."""
         return f"agent-{agent_id}"
 
+    def get_system_repo_name(self) -> str:
+        """Return standardized repository name for system settings and templates."""
+        return "system"
+
+    def get_system_workspace_path(self) -> Path:
+        """Return path to the local system repository clone."""
+        return self.workspace_root / "_system"
+
     def get_agent_workspace_path(self, agent_id: UUID) -> Path:
         """Return path to the agent's base workspace directory."""
         return self.workspace_root / str(agent_id) / "_agent"
@@ -215,6 +223,157 @@ class GitWorkspaceManager:
             )
             self._run_git(agent_dir, ["push", "origin", "main"])
 
+    def initialize_system_repo(
+        self,
+        default_settings: dict[str, Any] | None = None,
+        default_config_template: dict[str, Any] | None = None,
+    ) -> Path:
+        """Initialize remote system repository and local clone on main branch."""
+        system_dir = self.get_system_workspace_path()
+        if not self.settings.enabled:
+            system_dir.mkdir(parents=True, exist_ok=True)
+            settings_file = system_dir / "settings.json"
+            template_file = system_dir / "config-template.json"
+            if not settings_file.exists():
+                settings_file.write_text(
+                    json.dumps(
+                        default_settings
+                        or {"skill_directories": ["~/.seamus/skills", "~/.skills"]},
+                        indent=2,
+                    ),
+                    encoding="utf-8",
+                )
+            if not template_file.exists() and default_config_template is not None:
+                template_file.write_text(
+                    json.dumps(default_config_template, indent=2),
+                    encoding="utf-8",
+                )
+            return system_dir
+
+        repo_name = self.get_system_repo_name()
+        self.client.get_or_create_repo(
+            repo_name=repo_name,
+            description="Seamus system settings and configuration templates",
+        )
+
+        clone_url = self.client.get_authenticated_clone_url(repo_name)
+
+        if not (system_dir / ".git").exists():
+            remote_branches = self.client.list_branches(repo_name)
+            if "main" in remote_branches:
+                system_dir.parent.mkdir(parents=True, exist_ok=True)
+                self._run_git(system_dir.parent, ["clone", clone_url, system_dir.name])
+                self._configure_git_identity(system_dir)
+            else:
+                system_dir.mkdir(parents=True, exist_ok=True)
+                self._run_git(system_dir, ["init", "-b", "main"])
+                self._configure_git_identity(system_dir)
+                self._run_git(system_dir, ["remote", "add", "origin", clone_url])
+
+            settings_file = system_dir / "settings.json"
+            template_file = system_dir / "config-template.json"
+            needs_commit = False
+            if not settings_file.exists():
+                settings_file.write_text(
+                    json.dumps(
+                        default_settings
+                        or {"skill_directories": ["~/.seamus/skills", "~/.skills"]},
+                        indent=2,
+                    ),
+                    encoding="utf-8",
+                )
+                needs_commit = True
+            if not template_file.exists() and default_config_template is not None:
+                template_file.write_text(
+                    json.dumps(default_config_template, indent=2),
+                    encoding="utf-8",
+                )
+                needs_commit = True
+
+            if needs_commit:
+                self._run_git(system_dir, ["add", "-A"])
+                self._run_git(
+                    system_dir,
+                    ["commit", "-m", "system: initialize settings and configuration template"],
+                )
+                self._run_git(system_dir, ["push", "-u", "origin", "main"])
+        else:
+            self._configure_git_identity(system_dir)
+
+        return system_dir
+
+    def read_system_settings(self) -> dict[str, Any] | None:
+        """Read and deserialize system settings from the system repository."""
+        system_dir = self.get_system_workspace_path()
+        settings_file = system_dir / "settings.json"
+        if not settings_file.exists():
+            if self.settings.enabled:
+                self.initialize_system_repo()
+            else:
+                return None
+        if not settings_file.exists():
+            return None
+        try:
+            data = json.loads(settings_file.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else None
+        except Exception:
+            logger.exception("Failed to parse settings.json from %s", settings_file)
+            return None
+
+    def commit_system_settings(self, settings_dict: dict[str, Any]) -> None:
+        """Persist, commit, and push updated system settings."""
+        system_dir = self.get_system_workspace_path()
+        if not (system_dir / ".git").exists() and self.settings.enabled:
+            self.initialize_system_repo(default_settings=settings_dict)
+        else:
+            system_dir.mkdir(parents=True, exist_ok=True)
+
+        settings_file = system_dir / "settings.json"
+        settings_file.write_text(json.dumps(settings_dict, indent=2), encoding="utf-8")
+
+        if self.settings.enabled and (system_dir / ".git").exists():
+            status = self._run_git(system_dir, ["status", "--porcelain", "settings.json"])
+            if status.stdout.strip():
+                self._run_git(system_dir, ["add", "settings.json"])
+                self._run_git(system_dir, ["commit", "-m", "settings: update system settings"])
+                self._run_git(system_dir, ["push", "origin", "main"])
+
+    def read_system_config_template(self) -> dict[str, Any] | None:
+        """Read and deserialize agent config template from the system repository."""
+        system_dir = self.get_system_workspace_path()
+        template_file = system_dir / "config-template.json"
+        if not template_file.exists():
+            if self.settings.enabled:
+                self.initialize_system_repo()
+            else:
+                return None
+        if not template_file.exists():
+            return None
+        try:
+            data = json.loads(template_file.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else None
+        except Exception:
+            logger.exception("Failed to parse config-template.json from %s", template_file)
+            return None
+
+    def commit_system_config_template(self, template_dict: dict[str, Any]) -> None:
+        """Persist, commit, and push updated configuration template."""
+        system_dir = self.get_system_workspace_path()
+        if not (system_dir / ".git").exists() and self.settings.enabled:
+            self.initialize_system_repo(default_config_template=template_dict)
+        else:
+            system_dir.mkdir(parents=True, exist_ok=True)
+
+        template_file = system_dir / "config-template.json"
+        template_file.write_text(json.dumps(template_dict, indent=2), encoding="utf-8")
+
+        if self.settings.enabled and (system_dir / ".git").exists():
+            status = self._run_git(system_dir, ["status", "--porcelain", "config-template.json"])
+            if status.stdout.strip():
+                self._run_git(system_dir, ["add", "config-template.json"])
+                self._run_git(system_dir, ["commit", "-m", "config: update template"])
+                self._run_git(system_dir, ["push", "origin", "main"])
+
     def create_session_workspace(
         self,
         session: Session,
@@ -225,6 +384,8 @@ class GitWorkspaceManager:
         if not self.settings.enabled:
             session_dir = self.get_session_workspace_path(session.agent_id, session.id)
             (session_dir / "data").mkdir(parents=True, exist_ok=True)
+            (session_dir / "data" / ".skills").mkdir(parents=True, exist_ok=True)
+            return session_dir
             return session_dir
 
         # Ensure base agent repo exists first
@@ -255,6 +416,7 @@ class GitWorkspaceManager:
         # Write session config
         self.commit_session_config(session)
         (session_dir / "data").mkdir(exist_ok=True)
+        (session_dir / "data" / ".skills").mkdir(parents=True, exist_ok=True)
         (session_dir / "agent" / "state").mkdir(parents=True, exist_ok=True)
         return session_dir
 

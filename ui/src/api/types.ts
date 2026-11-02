@@ -15,6 +15,14 @@ export type ConfigTemplateResponse = {
   is_complete: boolean;
 };
 
+export type SystemSettings = {
+  skill_directories: string[];
+};
+
+export type SystemSettingsResponse = {
+  settings: SystemSettings;
+};
+
 export type AgentStatus = "AWAITING_USER" | "AWAITING_LLM" | "EXECUTING_TOOL" | "ERROR";
 
 export type SessionStatus = "ACTIVE" | "KILLED" | "FAILED";

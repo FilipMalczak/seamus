@@ -141,6 +141,30 @@ Navigate to [http://localhost:8000](http://localhost:8000) to view the applicati
 
 ---
 
+## Agent Skills (Anthropic Skills)
+
+Seamus supports modular agent skills following the [Anthropic Agent Skills standard](https://docs.langchain.com/oss/python/deepagents/skills) via LangChain's DeepAgents `SkillsMiddleware`. Skills package instructions, workflows, and tools into directories containing a `SKILL.md` file with YAML frontmatter.
+
+### Agent-Level Skills (Recommended)
+
+Store session-specific skills inside the agent's Git-tracked repository under:
+```
+<workspace>/data/.skills/<skill-name>/SKILL.md
+```
+Inside the isolated sandbox container, this directory is accessible at `/workspace/.skills`. Agent-level skills are automatically versioned, committed to Git branches, pushed to Gitea, and preserved with complete session provenance.
+
+### System-Wide Skills (Disrecommended)
+
+System-wide skill directories can be configured in system settings (`/settings` API) and are mounted live into the agent's sandbox container as read-only volumes (`readOnly=True`).
+
+> [!WARNING]
+> ### System-Level Skills are DISRECOMMENDED and Subject to Removal
+> System-level skills allow mounting external host directories directly into agent sandboxes outside Git versioning and provenance tracking. This directly conflicts with Seamus's core design tenets of **heavy isolation, reproducible state, and Git-backed provenance**.
+>
+> System-level skills are provided strictly as an escape hatch for local development and rapid experimentation, but they are **strongly disrecommended** and subject to future deprecation and removal. Always prefer agent-level skills stored in `<workspace>/data/.skills/`.
+
+---
+
 ## Code Quality & Verification
 
 Run all verification tools through `uv` and `npm`:

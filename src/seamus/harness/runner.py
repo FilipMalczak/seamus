@@ -22,6 +22,7 @@ from langchain_core.outputs import ChatGenerationChunk, ChatResult
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
+from seamus.config.settings import get_system_settings_store, resolve_skill_path
 from seamus.domain.entities import Agent, AgentStatus, Session, Thread
 from seamus.harness.prompt import (
     DynamicSystemPromptMiddleware,
@@ -225,11 +226,13 @@ class SessionAgentRunner:
         data_dir = ws_mgr.get_session_data_dir(self.session.agent_id, self.session.id)
         data_dir.mkdir(parents=True, exist_ok=True)
         sandbox_settings = get_sandbox_settings()
+        system_settings = get_system_settings_store().get_settings()
         sandbox_backend = SeamusOpenSandboxBackend(
             agent_id=self.session.agent_id,
             session_id=self.session.id,
             data_dir=data_dir,
             settings=sandbox_settings,
+            skill_directories=system_settings.skill_directories,
         )
         self._sandbox_backend = sandbox_backend
         sandbox_prompt = build_scaffold_prompt(sandbox_settings.workdir)
@@ -249,12 +252,22 @@ class SessionAgentRunner:
         )
         self.checkpointer = checkpointer
 
+        system_skill_dirs: list[str] = []
+        for p in system_settings.skill_directories:
+            resolved = resolve_skill_path(p)
+            if resolved is not None:
+                system_skill_dirs.append(str(resolved))
+
+        # System-wide skills first; session-level last so session skills override system skills
+        skill_sources = [*system_skill_dirs, "/workspace/.skills"]
+
         graph = create_deep_agent(
             model=llm,
             backend=sandbox_backend,
             system_prompt=effective_prompt,
             middleware=[dynamic_prompt_middleware],
             checkpointer=checkpointer,
+            skills=skill_sources,
         )
 
         return SeamusLangGraphAgent(

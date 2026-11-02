@@ -1,8 +1,15 @@
 """Unit tests for configuration models and template store."""
 
+from pathlib import Path
+
 import pytest
 
 from seamus.config.models import AgentConfig, InferenceConfig, InferenceFormat
+from seamus.config.settings import (
+    SystemSettings,
+    SystemSettingsStore,
+    resolve_skill_path,
+)
 from seamus.config.template import ConfigTemplateStore
 
 
@@ -76,3 +83,52 @@ def test_config_template_store_crud() -> None:
     assert updated.inference.base_url == "https://api.openai.com/v1"
     assert updated.model_name == "gpt-4o"
     assert updated.is_complete() is False
+
+
+def test_system_settings_defaults_and_crud() -> None:
+    settings = SystemSettings()
+    assert settings.skill_directories == ["~/.seamus/skills", "~/.skills"]
+
+    store = SystemSettingsStore(initial_settings=settings)
+    assert store.get_settings().skill_directories == ["~/.seamus/skills", "~/.skills"]
+
+    updated = store.set_settings(
+        SystemSettings(skill_directories=["/opt/skills", "~/custom-skills"])
+    )
+    assert updated.skill_directories == ["/opt/skills", "~/custom-skills"]
+    assert store.get_settings().skill_directories == ["/opt/skills", "~/custom-skills"]
+
+
+def test_resolve_skill_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_home = tmp_path / "user_home"
+    fake_home.mkdir()
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.delenv("SEAMUS_HOST_HOME", raising=False)
+
+    existing_dir = fake_home / ".skills"
+    existing_dir.mkdir()
+    file_path = fake_home / "some_file.txt"
+    file_path.write_text("hello")
+
+    # Valid existing dir with ~
+    resolved = resolve_skill_path("~/.skills")
+    assert resolved == existing_dir.resolve()
+
+    # Missing dir returns None
+    assert resolve_skill_path("~/.nonexistent") is None
+
+    # File rather than directory returns None
+    assert resolve_skill_path("~/some_file.txt") is None
+
+    # Empty or whitespace returns None
+    assert resolve_skill_path("") is None
+    assert resolve_skill_path("   ") is None
+
+    # SEAMUS_HOST_HOME override for container environments
+    container_host_home = tmp_path / "host_home"
+    container_skills = container_host_home / ".seamus" / "skills"
+    container_skills.mkdir(parents=True)
+    monkeypatch.setenv("SEAMUS_HOST_HOME", str(container_host_home))
+
+    assert resolve_skill_path("~/.seamus/skills") == container_skills.resolve()
+    assert resolve_skill_path("~") == container_host_home.resolve()

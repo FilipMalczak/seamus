@@ -8,6 +8,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from seamus.config.models import AgentConfig, InferenceConfig, InferenceFormat
+from seamus.config.settings import (
+    SystemSettings,
+    SystemSettingsStore,
+    reset_system_settings_store,
+)
 from seamus.config.template import ConfigTemplateStore, reset_config_template_store
 from seamus.domain.entities import AgentStatus
 from seamus.harness.runner import (
@@ -32,6 +37,7 @@ def reset_globals() -> None:
         model_name="openai/gpt-oss-120b",
     )
     reset_config_template_store(ConfigTemplateStore(initial_template=template))
+    reset_system_settings_store(SystemSettingsStore(initial_settings=SystemSettings()))
     reset_harness_store(HarnessStore())
     reset_runner_registry()
 
@@ -132,6 +138,33 @@ def test_config_template_endpoints(client: TestClient) -> None:
     assert updated_data["config"]["inference"]["api_key"] is None
     assert updated_data["config"]["model_name"] == "custom/model"
     assert updated_data["is_complete"] is False
+
+
+def test_settings_endpoints(client: TestClient) -> None:
+    # 1. GET settings defaults
+    res = client.get("/api/v-alpha/settings")
+    assert res.status_code == 200
+    data = res.json()
+    assert "settings" in data
+    assert data["settings"]["skill_directories"] == ["~/.seamus/skills", "~/.skills"]
+
+    # 2. POST settings update
+    payload = {"skill_directories": ["/opt/system-skills", "/home/test/.skills"]}
+    res_post = client.post("/api/v-alpha/settings", json=payload)
+    assert res_post.status_code == 200
+    updated_data = res_post.json()
+    assert updated_data["settings"]["skill_directories"] == [
+        "/opt/system-skills",
+        "/home/test/.skills",
+    ]
+
+    # 3. GET reflects update
+    res_get2 = client.get("/api/v-alpha/settings")
+    assert res_get2.status_code == 200
+    assert res_get2.json()["settings"]["skill_directories"] == [
+        "/opt/system-skills",
+        "/home/test/.skills",
+    ]
 
 
 def test_agent_lifecycle_endpoints(client: TestClient) -> None:
