@@ -424,6 +424,31 @@ def test_kill_session_mid_tool_cleans_up_and_errors() -> None:
     assert len(run_errors) == 1
 
 
+def test_kill_session_while_thinking_cleans_up_and_errors() -> None:
+    config = make_complete_config()
+    session = Session(agent_id=uuid4(), config=config)
+    thread = session.get_open_thread()
+    thread.status = AgentStatus.AWAITING_LLM
+    thread.append_event({"type": "RUN_STARTED"})
+    thread.append_event({"type": "REASONING_START", "message_id": "r-1"})
+
+    runner = SessionAgentRunner(session=session, agent=object())
+    runner.kill()
+
+    assert session.status == SessionStatus.KILLED
+    assert session.is_active is False
+    assert thread.status == AgentStatus.ERROR
+
+    # Check that RUN_ERROR was emitted
+    run_errors = [
+        ev
+        for ev in thread.events
+        if (getattr(ev, "type", None) or (ev.get("type") if isinstance(ev, dict) else None))
+        == "RUN_ERROR"
+    ]
+    assert len(run_errors) == 1
+
+
 def test_branch_after_tools_slices_at_tool_result() -> None:
     store = HarnessStore()
     config = make_complete_config()

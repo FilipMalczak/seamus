@@ -306,6 +306,7 @@ class SessionAgentRunner:
 
     def kill(self) -> None:
         """Manually terminate the runner task and transition session to KILLED."""
+        was_running = self._active_task is not None and not self._active_task.done()
         if self._active_task is not None and not self._active_task.done():
             self._active_task.cancel()
         if self._sandbox_backend is not None:
@@ -343,6 +344,11 @@ class SessionAgentRunner:
                     thread.append_event(interrupted_res)
                     self.broadcaster.broadcast_sync(interrupted_res)
 
+            is_active_turn = thread.status in (
+                AgentStatus.AWAITING_LLM,
+                AgentStatus.EXECUTING_TOOL,
+            )
+            if was_running or is_active_turn:
                 err_event = {
                     "type": "RUN_ERROR",
                     "message": "Session was killed mid-execution.",

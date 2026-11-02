@@ -132,6 +132,7 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## Not formalized
 
+- review the session killing and branching details - it was slightly undertested and there might be some bugs lingering
 - auto-refresh on UI side; eg when following state of thread and looking at changes
 - opening a session in the UI, as opposed to currently opening threads (loading all the past threads; input box being a proxy to open thread input); session view being the default when creating or selecting an agent
 - auto-naming agents, sessions and threads (agent - randomized multi-word slug; session and thread - using a small "namer" agent, needs to be configured on agent level)

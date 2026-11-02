@@ -53,6 +53,25 @@ export function useThreadStream(
     };
   }, [agentId, sessionId, threadId]);
 
+  // Synchronize terminal session states
+  useEffect(() => {
+    if (sessionStatus && sessionStatus !== "ACTIVE") {
+      setStatus((prev) =>
+        prev === "AWAITING_LLM" || prev === "EXECUTING_TOOL" ? "ERROR" : prev
+      );
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.role !== "assistant") return m;
+          return {
+            ...m,
+            isReasoning: false,
+            parts: stopStreamingReasoningParts(m.parts),
+          };
+        })
+      );
+    }
+  }, [sessionStatus]);
+
   // Connect to SSE stream
   useEffect(() => {
     if (!agentId || !sessionId || !threadId) {
@@ -79,12 +98,9 @@ export function useThreadStream(
           setStreamError(event.message || "Execution encountered an error.");
           setMessages((prev) =>
             prev.map((m) => {
-              if (m.role !== "assistant" || !m.toolCalls) return m;
-              const hasWip = m.toolCalls.some(
-                (c) => c.status === "wip" || c.status === "pending"
-              );
-              if (!hasWip) return m;
-              const updatedCalls = m.toolCalls.map((c) =>
+              if (m.role !== "assistant") return m;
+              const stoppedParts = stopStreamingReasoningParts(m.parts);
+              const updatedCalls = (m.toolCalls || []).map((c) =>
                 c.status === "wip" || c.status === "pending"
                   ? {
                       ...c,
@@ -93,7 +109,7 @@ export function useThreadStream(
                     }
                   : c
               );
-              const updatedParts = (m.parts || []).map((p) => {
+              const finalParts = (stoppedParts || []).map((p) => {
                 if (p.type !== "tool_call") return p;
                 if (
                   p.toolCall.status === "wip" ||
@@ -111,7 +127,12 @@ export function useThreadStream(
                 }
                 return p;
               });
-              return { ...m, toolCalls: updatedCalls, parts: updatedParts };
+              return {
+                ...m,
+                isReasoning: false,
+                toolCalls: updatedCalls.length > 0 ? updatedCalls : m.toolCalls,
+                parts: finalParts.length > 0 ? finalParts : m.parts,
+              };
             })
           );
         } else if (type === "TOOL_CALL_START") {

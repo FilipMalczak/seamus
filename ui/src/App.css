@@ -783,10 +783,12 @@ body {
 }
 
 .status-killed {
+  background: rgba(113, 113, 122, 0.15);
   color: var(--text-muted);
 }
 
 .status-failed {
+  background: rgba(239, 68, 68, 0.15);
   color: var(--error-color);
 }
 

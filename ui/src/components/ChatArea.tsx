@@ -292,8 +292,24 @@ export function ChatArea({
     }
   };
 
-  const renderStatusBadge = (st: AgentStatus) => {
-    switch (st) {
+  const renderStatusBadge = () => {
+    if (sessionStatus === "KILLED") {
+      return (
+        <span className="status-pill status-killed">
+          <Ban className="size-3.5 text-zinc-400" />
+          <span>Killed</span>
+        </span>
+      );
+    }
+    if (sessionStatus === "FAILED") {
+      return (
+        <span className="status-pill status-failed">
+          <AlertTriangle className="size-3.5 text-rose-400" />
+          <span>Failed</span>
+        </span>
+      );
+    }
+    switch (status) {
       case "AWAITING_USER":
         return (
           <span className="status-pill status-ready">
@@ -373,7 +389,7 @@ export function ChatArea({
               <span>Kill Session</span>
             </button>
           )}
-          {renderStatusBadge(status)}
+          {renderStatusBadge()}
         </div>
       </div>
 
@@ -426,7 +442,7 @@ export function ChatArea({
                   type="button"
                   className="suggestion-pill"
                   onClick={() =>
-                    setInputText("Put the iris dataset in your workspace. Dont use external libraries - either curl for it, or write it from memory.")
+                    setInputText("Put the iris dataset in your workspace. Dont use external libraries - either use python to fetch it or write it from memory.")
                   }
                 >
                   Fetch iris dataset &rarr;
