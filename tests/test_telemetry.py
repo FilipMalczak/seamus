@@ -84,6 +84,7 @@ def test_is_logfire_enabled_and_service_name(monkeypatch: pytest.MonkeyPatch) ->
     assert not is_logfire_enabled()
 
     # Explicit send_to_logfire=True
+    monkeypatch.setenv("LOGFIRE_TOKEN", "mock-token-for-test")
     setup_telemetry(send_to_logfire=True, force_reconfigure=True)
     assert is_logfire_enabled()
 
@@ -305,6 +306,7 @@ def test_logfire_org_and_dashboard_url(monkeypatch: pytest.MonkeyPatch) -> None:
     assert get_logfire_base_url() == "https://logfire-eu.pydantic.dev"
     assert get_logfire_dashboard_url() is None
 
+    monkeypatch.setenv("LOGFIRE_TOKEN", "mock-token-for-test")
     monkeypatch.setenv("LOGFIRE_SEND_TO_LOGFIRE", "true")
     setup_telemetry(send_to_logfire=True, force_reconfigure=True)
     monkeypatch.setenv("LOGFIRE_ORG", "acme-corp")

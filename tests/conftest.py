@@ -193,6 +193,7 @@ def configure_test_environment(
 ) -> Generator[None, None, None]:
     """Configure persistence settings and environment variables for the entire test session."""
     original_env = os.environ.copy()
+    os.environ.setdefault("LOGFIRE_TOKEN", "test-logfire-token")
 
     if ephemeral_gitea_session is not None:
         os.environ["GITEA_URL"] = str(ephemeral_gitea_session["url"])
