@@ -439,3 +439,16 @@ def test_system_repo_persistence(
     template_updated = manager.read_system_config_template()
     assert template_updated is not None
     assert template_updated["model_name"] == "updated-model"
+
+
+def test_system_repo_defaults_without_explicit_args(
+    git_environment: tuple[GitWorkspaceManager, Path, Path],
+) -> None:
+    manager, bare_remote, workspace_dir = git_environment
+
+    system_dir = manager.initialize_system_repo()
+    assert (system_dir / "settings.json").exists()
+
+    settings_read = manager.read_system_settings()
+    assert settings_read is not None
+    assert settings_read["skill_directories"] == ["~/.seamus/skills", "~/.skills"]

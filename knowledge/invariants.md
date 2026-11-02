@@ -156,13 +156,13 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-026](./requirements.md#req-026-exact-turn-level-session-branching-and-lineage-provenance), [0022-branching-out-and-session-lifecycle.md](../decisions/0022-branching-out-and-session-lifecycle.md).
 - **Enforcement**: `HarnessStore.branch_session()`, `GitWorkspaceManager.create_session_workspace()`, `GitCheckpointSaver.copy_thread()`, `SessionAgentRunner.resume_turn()`, `ChatArea.tsx`, and unit tests in `tests/test_session_branching_and_lifecycle.py`.
 
-### INV-031: Read-Only System Skill Sandboxing
-- **Statement**: Any system-wide skill directory mounted into an OpenSandbox container must be mounted strictly read-only (`readOnly=True`). Sandboxed agent executions must not be permitted to mutate or delete files within host-level system skill directories.
+### INV-031: Read-Only System Skill Sandboxing & Clean Missing Directory Handling
+- **Statement**: Any system-wide skill directory mounted into an OpenSandbox container must be mounted strictly read-only (`readOnly=True`). Sandboxed agent executions must not be permitted to mutate or delete files within host-level system skill directories. All paths must expand user tilde (`~`) syntax (supporting containerized hosts via `SEAMUS_HOST_HOME`). If any configured skill directory does not exist on the host, it must be cleanly skipped without errors, warnings, or mounting attempts.
 - **Justification**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md).
-- **Enforcement**: `SeamusOpenSandboxBackend.build_skill_volumes()` forces `readOnly=True` on all skill volume definitions.
+- **Enforcement**: `resolve_skill_path()` resolves tilde syntax (accounting for `SEAMUS_HOST_HOME`), verifies directory existence, and `SeamusOpenSandboxBackend.build_skill_volumes()` and `SessionAgentRunner._build_deep_agent()` cleanly filter missing directories and enforce `readOnly=True`. In Docker Compose, the host home directory is mounted read-only into the backend service so skill directories can be validated and provisioned to sibling sandbox containers.
 
 ### INV-032: System Repository Persistence Lifecycle
-- **Statement**: System settings (`settings.json`) and the service-wide agent configuration template (`config-template.json`) must be persisted to a dedicated `system` Git repository in Gitea, surviving server restarts with first-run defaults without requiring external databases or additional volumes.
+- **Statement**: System settings (`settings.json`, defaulting to `["~/.seamus/skills", "~/.skills"]`) and the service-wide agent configuration template (`config-template.json`) must be persisted to a dedicated `system` Git repository in Gitea, surviving server restarts with first-run defaults without requiring external databases or additional volumes.
 - **Justification**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md).
 - **Enforcement**: `GitWorkspaceManager.initialize_system_repo()`, `commit_system_settings()`, and `commit_system_config_template()`.
 

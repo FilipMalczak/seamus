@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import os
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
@@ -13,10 +15,35 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+DEFAULT_SKILL_DIRECTORIES: list[str] = ["~/.seamus/skills", "~/.skills"]
+
+
+def resolve_skill_path(path_str: str) -> Path | None:
+    """Resolve and expand a skill directory path (supporting ~, $HOME, SEAMUS_HOST_HOME).
+
+    Returns the resolved Path if it exists and is a directory, or None if it should be skipped.
+    """
+    try:
+        trimmed = path_str.strip()
+        if not trimmed:
+            return None
+        host_home = os.environ.get("SEAMUS_HOST_HOME") or os.environ.get("HOST_HOME")
+        if host_home and (trimmed == "~" or trimmed.startswith("~/")):
+            rel = trimmed[2:] if trimmed.startswith("~/") else ""
+            p = (Path(host_home) / rel).resolve()
+        else:
+            p = Path(trimmed).expanduser().resolve()
+        if p.exists() and p.is_dir():
+            return p
+        return None
+    except Exception:
+        return None
+
+
 class SystemSettings(BaseModel):
     """System-wide configuration settings not scoped to any agent or session."""
 
-    skill_directories: list[str] = Field(default_factory=list)
+    skill_directories: list[str] = Field(default_factory=lambda: list(DEFAULT_SKILL_DIRECTORIES))
 
 
 class SystemSettingsStore:

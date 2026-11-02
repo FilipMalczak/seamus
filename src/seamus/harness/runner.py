@@ -4,7 +4,6 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator, Mapping
-from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -23,7 +22,7 @@ from langchain_core.outputs import ChatGenerationChunk, ChatResult
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
-from seamus.config.settings import get_system_settings_store
+from seamus.config.settings import get_system_settings_store, resolve_skill_path
 from seamus.domain.entities import Agent, AgentStatus, Session, Thread
 from seamus.harness.prompt import (
     DynamicSystemPromptMiddleware,
@@ -253,7 +252,12 @@ class SessionAgentRunner:
         )
         self.checkpointer = checkpointer
 
-        system_skill_dirs = [str(Path(p).resolve()) for p in system_settings.skill_directories]
+        system_skill_dirs: list[str] = []
+        for p in system_settings.skill_directories:
+            resolved = resolve_skill_path(p)
+            if resolved is not None:
+                system_skill_dirs.append(str(resolved))
+
         # System-wide skills first; session-level last so session skills override system skills
         skill_sources = [*system_skill_dirs, "/workspace/.skills"]
 

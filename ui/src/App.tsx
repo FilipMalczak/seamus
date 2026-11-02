@@ -41,7 +41,9 @@ export function App() {
   );
 
   // Settings modal state
-  const [systemSettings, setSystemSettings] = useState<SystemSettings>({ skill_directories: [] });
+  const [systemSettings, setSystemSettings] = useState<SystemSettings>({
+    skill_directories: ["~/.seamus/skills", "~/.skills"],
+  });
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
 
   // Split pane state (default 50/50 split)

@@ -2,10 +2,12 @@
 
 from seamus.config.models import AgentConfig, InferenceConfig, InferenceFormat
 from seamus.config.settings import (
+    DEFAULT_SKILL_DIRECTORIES,
     SystemSettings,
     SystemSettingsStore,
     get_system_settings_store,
     reset_system_settings_store,
+    resolve_skill_path,
 )
 from seamus.config.template import (
     ConfigTemplateStore,
@@ -16,6 +18,7 @@ from seamus.config.template import (
 __all__ = [
     "AgentConfig",
     "ConfigTemplateStore",
+    "DEFAULT_SKILL_DIRECTORIES",
     "InferenceConfig",
     "InferenceFormat",
     "SystemSettings",
@@ -24,4 +27,5 @@ __all__ = [
     "get_system_settings_store",
     "reset_config_template_store",
     "reset_system_settings_store",
+    "resolve_skill_path",
 ]

@@ -8,6 +8,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from seamus.config.models import AgentConfig, InferenceConfig, InferenceFormat
+from seamus.config.settings import (
+    SystemSettings,
+    SystemSettingsStore,
+    reset_system_settings_store,
+)
 from seamus.config.template import ConfigTemplateStore, reset_config_template_store
 from seamus.domain.entities import AgentStatus
 from seamus.harness.runner import (
@@ -32,6 +37,7 @@ def reset_globals() -> None:
         model_name="openai/gpt-oss-120b",
     )
     reset_config_template_store(ConfigTemplateStore(initial_template=template))
+    reset_system_settings_store(SystemSettingsStore(initial_settings=SystemSettings()))
     reset_harness_store(HarnessStore())
     reset_runner_registry()
 
@@ -140,7 +146,7 @@ def test_settings_endpoints(client: TestClient) -> None:
     assert res.status_code == 200
     data = res.json()
     assert "settings" in data
-    assert isinstance(data["settings"]["skill_directories"], list)
+    assert data["settings"]["skill_directories"] == ["~/.seamus/skills", "~/.skills"]
 
     # 2. POST settings update
     payload = {"skill_directories": ["/opt/system-skills", "/home/test/.skills"]}

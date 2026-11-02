@@ -16,6 +16,7 @@ from opensandbox.config.connection_sync import ConnectionConfigSync
 from opensandbox.models.sandboxes import PVC, Host, Volume
 from pydantic import BaseModel, Field
 
+from seamus.config.settings import resolve_skill_path
 from seamus.harness.prompt import build_scaffold_prompt
 
 logger = logging.getLogger(__name__)
@@ -144,12 +145,9 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
         """Build read-only OpenSandbox Volumes for system-wide skill directories."""
         volumes: list[Volume] = []
         for idx, skill_dir_str in enumerate(self.skill_directories):
-            skill_path = Path(skill_dir_str).resolve()
-            if not skill_path.exists():
-                logger.warning(
-                    "System skill directory %s does not exist on host; skipping mount",
-                    skill_path,
-                )
+            skill_path = resolve_skill_path(skill_dir_str)
+            if skill_path is None:
+                # Non-existent or invalid directories are cleanly skipped
                 continue
             volumes.append(
                 Volume(

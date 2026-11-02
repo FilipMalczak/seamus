@@ -236,7 +236,11 @@ class GitWorkspaceManager:
             template_file = system_dir / "config-template.json"
             if not settings_file.exists():
                 settings_file.write_text(
-                    json.dumps(default_settings or {"skill_directories": []}, indent=2),
+                    json.dumps(
+                        default_settings
+                        or {"skill_directories": ["~/.seamus/skills", "~/.skills"]},
+                        indent=2,
+                    ),
                     encoding="utf-8",
                 )
             if not template_file.exists() and default_config_template is not None:
@@ -271,7 +275,11 @@ class GitWorkspaceManager:
             needs_commit = False
             if not settings_file.exists():
                 settings_file.write_text(
-                    json.dumps(default_settings or {"skill_directories": []}, indent=2),
+                    json.dumps(
+                        default_settings
+                        or {"skill_directories": ["~/.seamus/skills", "~/.skills"]},
+                        indent=2,
+                    ),
                     encoding="utf-8",
                 )
                 needs_commit = True

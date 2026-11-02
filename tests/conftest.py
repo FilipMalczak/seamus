@@ -13,6 +13,8 @@ from uuid import uuid4
 import httpx
 import pytest
 
+from seamus.config.settings import reset_system_settings_store
+from seamus.config.template import reset_config_template_store
 from seamus.persistence.config import get_persistence_settings
 from seamus.persistence.workspace import reset_workspace_manager
 
@@ -226,9 +228,13 @@ def configure_test_environment(
 
 @pytest.fixture(autouse=True)
 def reset_workspace_manager_per_test() -> Generator[None, None, None]:
-    """Ensure singleton workspace manager is reset cleanly before and after each test."""
+    """Ensure singleton stores and workspace manager are reset cleanly per test."""
     reset_workspace_manager(None)
+    reset_system_settings_store(None)
+    reset_config_template_store(None)
     get_persistence_settings.cache_clear()
     yield
     reset_workspace_manager(None)
+    reset_system_settings_store(None)
+    reset_config_template_store(None)
     get_persistence_settings.cache_clear()

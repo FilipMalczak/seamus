@@ -213,7 +213,7 @@ export function SettingsModal({
               <div style={{ display: "flex", gap: "6px" }}>
                 <input
                   type="text"
-                  placeholder="Host path (e.g. /opt/skills or /home/user/skills)"
+                  placeholder="Host path (e.g. ~/.seamus/skills or ~/.skills)"
                   value={newDirectory}
                   onChange={(e) => setNewDirectory(e.target.value)}
                   onKeyDown={(e) => {
@@ -371,3 +371,4 @@ export function SettingsModal({
     </div>
   );
 }
+

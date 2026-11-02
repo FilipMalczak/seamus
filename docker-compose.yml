@@ -91,12 +91,14 @@ services:
       - OPENSANDBOX_WORKDIR=${OPENSANDBOX_WORKDIR:-/workspace}
       - OPENSANDBOX_WORKSPACE_VOLUME=seamus-workspaces
       - SEAMUS_OPENSANDBOX_KEY_FILE=/var/run/seamus-opensandbox/api_key
+      - SEAMUS_HOST_HOME=${HOME:-}
     env_file:
       - path: .env
         required: false
     volumes:
       - backend-workspaces:/app/workspaces
       - opensandbox-auth:/var/run/seamus-opensandbox:ro
+      - ${HOME:-/root}:${HOME:-/root}:ro
     ports:
       - "8000:8000"
     depends_on:
