@@ -105,10 +105,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Delegation to specialized subagents is central to autonomous harness scaling; clear execution boundaries and user visibility must be established before enabling subagents.
 - **Provenance**: `src/seamus/harness/runner.py`, `deepagents.middleware.subagents`, [abstractions.md](./abstractions.md).
 
-### Integrate Task Planning and Todo List Tool (TodoListMiddleware / write_todos)
-- **Description**: Integrate `TodoListMiddleware` from `langchain.agents.middleware` into `create_deep_agent` in `seamus.harness.runner`. Expose the `write_todos` tool to Seamus agents, verify `PlanningState` compatibility with `GitCheckpointSaver`, and expose the active todo checklist to the frontend.
-- **Rationale**: Equips agents with structured multi-step planning and tracking tools (`write_todos`), and provides users with explicit progress visibility during lengthy tasks.
-- **Provenance**: `langchain.agents.middleware.TodoListMiddleware`, `deepagents.profiles.harness._openai_codex`, `src/seamus/harness/runner.py`.
 
 ### Agent Artifacts Protocol and Dedicated UI Viewer Panel
 - **Description**: Introduce an Artifacts abstraction for persistent, high-density outputs (plans, reports, architecture diagrams, code diffs, standalone scripts). Establish:
@@ -121,10 +117,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Description**: Enhance `DynamicSystemPromptMiddleware` to inspect the agent workspace (`/workspace/.seamus/rules` or `/workspace/AGENTS.md`) prior to model turns, injecting project-specific guidelines into a dedicated `<project_rules>` XML tag.
 - **Rationale**: Keeps the agent automatically synchronized with repository-level conventions and memory files without requiring session re-initialization.
 - **Provenance**: [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md).
-
-### [HIGH PRIO] Stop button
-- **Description**: When the agent is running (is in any other state than waiting for user), we need to be able to stop its run. In such case the conversation should not be possible to continue; we'll need to branch from the past point.
-- **Requires**: Conversation branching (not tracked here yet, needs to be thought through properly)
 
 ### Thorough Security Review of Containerized OpenSandbox Server & Docker Socket Configuration
 - **Description**: Perform an in-depth security review and hardening pass on the containerized `opensandbox-server` deployment (`opensandbox/Dockerfile`, `opensandbox/sandbox.toml`, and `docker-compose.yml`). Review the security implications of mounting `/var/run/docker.sock`, tighten `allowed_host_paths` in `[storage]`, evaluate Docker socket proxies or rootless/gVisor (`runsc`)/Kata isolation runtimes (`[secure_runtime]`), review container capability drops/seccomp/AppArmor profiles, and audit sandbox network egress policies and port range exposure.
@@ -159,6 +151,8 @@ Persistent record of work intentionally left outstanding across the project, mai
 - opening a session in the UI, as opposed to currently opening threads (loading all the past threads; input box being a proxy to open thread input); session view being the default when creating or selecting an agent
 - auto-naming agents, sessions and threads (agent - randomized multi-word slug; session and thread - using a small "namer" agent, needs to be configured on agent level)
 - chore: set default UI proportions to 1:2 (tree:chat ratio)
+- todo tool is BROKEN! tools dont show up in inspector
+- integrate the todo list into inspector
 - user input variations:
   - user-accepted tool calls
   - artifact-based forms that the user can open and fill
