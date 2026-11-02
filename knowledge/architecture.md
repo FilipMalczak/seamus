@@ -95,6 +95,7 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 - [0017-dedicated-test-gitea.md](../decisions/0017-dedicated-test-gitea.md)
 - [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md)
 - [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md)
+- [0023-github-actions-ci-pipeline.md](../decisions/0023-github-actions-ci-pipeline.md)
 - [threads_modes_personas.md](./threads_modes_personas.md)
 - [abstractions.md](./abstractions.md)
 - [backlog.md](./backlog.md)
