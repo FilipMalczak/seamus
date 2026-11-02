@@ -150,6 +150,7 @@ async def branch_session(
             session_identifier=session_identifier,
             message_id=payload.message_id,
             name=payload.name,
+            retry_inference=payload.retry_inference,
         )
     except EntityNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

@@ -14,7 +14,14 @@ import {
   Square,
   Wrench,
 } from "lucide-react";
-import type { AgentStatus, SessionBranchProvenance, SessionStatus, ThreadInfo } from "../api/types";
+import type {
+  AgentStatus,
+  ChatMessage,
+  MessagePart,
+  SessionBranchProvenance,
+  SessionStatus,
+  ThreadInfo,
+} from "../api/types";
 import { useThreadStream } from "../hooks/useThreadStream";
 import { MessageItem } from "./MessageItem";
 
@@ -29,7 +36,10 @@ interface ChatAreaProps {
   thread: ThreadInfo | null;
   onStatusChange?: (status: AgentStatus) => void;
   onKillSession?: () => void;
-  onBranchMessage?: (messageId: string) => void;
+  onBranchMessage?: (
+    messageId: string | null,
+    options?: { retryInference?: boolean; promptToSend?: string }
+  ) => void;
   onNavigateToSession?: (sessionId: string) => void;
 }
 
@@ -54,11 +64,106 @@ export function ChatArea({
   const [isAtBottom, setIsAtBottom] = useState<boolean>(true);
 
   const { messages, status, streamError, sending, sendMessage } =
-    useThreadStream(agentId, sessionId, thread?.id ?? null);
+    useThreadStream(agentId, sessionId, thread?.id ?? null, sessionStatus);
 
   const isSessionTerminal = sessionStatus !== "ACTIVE";
   const isOpen = (thread?.is_open ?? false) && !isSessionTerminal;
-  const isBusy = status !== "AWAITING_USER";
+  const isBusy = isOpen && status !== "AWAITING_USER" && status !== "ERROR";
+
+  const handleBranchItem = useCallback(
+    (message: ChatMessage) => {
+      if (!onBranchMessage) return;
+
+      if (message.role === "user") {
+        const currentIdx = messages.findIndex((m) => m.id === message.id);
+        const priorAssistant =
+          currentIdx > 0
+            ? messages
+                .slice(0, currentIdx)
+                .reverse()
+                .find((m) => m.role === "assistant")
+            : undefined;
+
+        if (priorAssistant) {
+          let targetId = priorAssistant.id;
+          if (priorAssistant.parts && priorAssistant.parts.length > 0) {
+            const textPart = priorAssistant.parts.find(
+              (p) =>
+                p.type === "text" &&
+                p.id &&
+                !p.id.startsWith("asst-") &&
+                !p.id.startsWith("text-asst-")
+            );
+            if (textPart && textPart.id) {
+              targetId = textPart.id;
+            } else {
+              const toolPart = priorAssistant.parts.find(
+                (p) =>
+                  p.type === "tool_call" &&
+                  p.toolCall.id &&
+                  !p.toolCall.id.startsWith("asst-")
+              );
+              if (
+                toolPart &&
+                toolPart.type === "tool_call" &&
+                toolPart.toolCall.id
+              ) {
+                targetId = toolPart.toolCall.id;
+              }
+            }
+          }
+          onBranchMessage(targetId, { promptToSend: message.text });
+        } else {
+          onBranchMessage(null, { promptToSend: message.text });
+        }
+      } else {
+        let targetId = message.id;
+        if (message.parts && message.parts.length > 0) {
+          const textPart = message.parts.find(
+            (p: MessagePart) =>
+              p.type === "text" &&
+              p.id &&
+              !p.id.startsWith("asst-") &&
+              !p.id.startsWith("text-asst-")
+          );
+          if (textPart && textPart.id) {
+            targetId = textPart.id;
+          } else {
+            const toolPart = message.parts.find(
+              (p: MessagePart) =>
+                p.type === "tool_call" &&
+                p.toolCall.id &&
+                !p.toolCall.id.startsWith("asst-")
+            );
+            if (
+              toolPart &&
+              toolPart.type === "tool_call" &&
+              toolPart.toolCall.id
+            ) {
+              targetId = toolPart.toolCall.id;
+            }
+          }
+        }
+        onBranchMessage(targetId);
+      }
+    },
+    [messages, onBranchMessage]
+  );
+
+  const handleBranchToolItem = useCallback(
+    (message: ChatMessage) => {
+      if (!onBranchMessage) return;
+      let targetId = message.id;
+      if (message.toolCalls && message.toolCalls.length > 0) {
+        const lastTool = message.toolCalls[message.toolCalls.length - 1];
+        if (lastTool && lastTool.id) {
+          targetId = lastTool.id;
+        }
+      }
+      onBranchMessage(targetId, { retryInference: true });
+    },
+    [onBranchMessage]
+  );
 
   const branchPoints = useMemo(() => {
     const list =
@@ -257,7 +362,7 @@ export function ChatArea({
         </div>
 
         <div className="chat-top-actions">
-          {sessionStatus === "ACTIVE" && onKillSession && (
+          {sessionStatus === "ACTIVE" && status !== "ERROR" && onKillSession && (
             <button
               type="button"
               className="btn-kill-session"
@@ -334,7 +439,12 @@ export function ChatArea({
             <React.Fragment key={msg.id}>
               <MessageItem
                 message={msg}
-                onBranch={onBranchMessage}
+                onBranch={onBranchMessage ? () => handleBranchItem(msg) : undefined}
+                onBranchTool={
+                  onBranchMessage && msg.role === "assistant" && msg.toolCalls && msg.toolCalls.length > 0
+                    ? () => handleBranchToolItem(msg)
+                    : undefined
+                }
               />
               {branchPoints.get(idx)?.map((prov, pIdx) => (
                 <div
@@ -434,7 +544,7 @@ export function ChatArea({
             disabled={!inputText.trim() || !isOpen || isBusy || sending}
             title={isBusy ? "Agent is busy" : "Send message (Enter)"}
           >
-            {isBusy || sending ? (
+            {isOpen && (isBusy || sending) ? (
               <Loader2 className="size-4 animate-spin" />
             ) : (
               <ArrowUp className="size-4" />

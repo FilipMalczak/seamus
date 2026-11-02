@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bot, Brain, ChevronDown, ChevronRight, GitFork, User } from "lucide-react";
+import { Bot, Brain, ChevronDown, ChevronRight, GitFork, RotateCcw, User } from "lucide-react";
 import type { ChatMessage } from "../api/types";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { ToolCallItem } from "./ToolCallItem";
@@ -61,9 +61,11 @@ export function ReasoningBlock({
 export function MessageItem({
   message,
   onBranch,
+  onBranchTool,
 }: {
   message: ChatMessage;
-  onBranch?: (messageId: string) => void;
+  onBranch?: () => void;
+  onBranchTool?: () => void;
 }) {
   const isUser = message.role === "user";
   const hasParts = !isUser && Boolean(message.parts && message.parts.length > 0);
@@ -141,42 +143,33 @@ export function MessageItem({
           </>
         )}
 
-        {!isUser && onBranch && (
+        {onBranch && (
           <div className="message-footer-actions">
             <button
               type="button"
               className="message-action-btn branch-msg-btn"
-              onClick={() => {
-                let targetId = message.id;
-                if (message.parts && message.parts.length > 0) {
-                  const textPart = message.parts.find(
-                    (p) =>
-                      p.type === "text" &&
-                      p.id &&
-                      !p.id.startsWith("asst-") &&
-                      !p.id.startsWith("text-asst-")
-                  );
-                  if (textPart && textPart.id) {
-                    targetId = textPart.id;
-                  } else {
-                    const toolPart = message.parts.find(
-                      (p) =>
-                        p.type === "tool_call" &&
-                        p.toolCall.id &&
-                        !p.toolCall.id.startsWith("asst-")
-                    );
-                    if (toolPart && toolPart.type === "tool_call" && toolPart.toolCall.id) {
-                      targetId = toolPart.toolCall.id;
-                    }
-                  }
-                }
-                onBranch(targetId);
-              }}
-              title="Branch off this message into a new parallel session"
+              onClick={onBranch}
+              title={
+                isUser
+                  ? "Branch on latest Seamus bubble and retry this prompt"
+                  : "Branch off this message into a new parallel session"
+              }
             >
               <GitFork className="size-3" />
               <span>Branch</span>
             </button>
+
+            {!isUser && onBranchTool && (
+              <button
+                type="button"
+                className="message-action-btn branch-tool-btn"
+                onClick={onBranchTool}
+                title="Branch right after tool execution and retry inference in a new session"
+              >
+                <RotateCcw className="size-3" />
+                <span>Branch after tools (retry inference)</span>
+              </button>
+            )}
           </div>
         )}
       </div>

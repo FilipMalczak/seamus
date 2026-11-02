@@ -2,7 +2,7 @@
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -37,6 +37,8 @@ class _AssistantTurn:
     rep_id: str
     event_indices: list[int]
     timestamp_ms: float | None = None
+    tool_result_slice_index: int | None = None
+    tool_ids: set[str] = field(default_factory=set)
 
 
 class SlugConflictError(ValueError):
@@ -253,7 +255,9 @@ class HarnessStore:
         return session
 
     @staticmethod
-    def _find_assistant_turn(thread: Thread, message_id: str) -> tuple[int, str] | None:
+    def _find_assistant_turn(
+        thread: Thread, message_id: str, retry_inference: bool = False
+    ) -> tuple[int, str] | None:
         """Locate the target assistant turn and its slice index in a thread's events.
 
         Matches by exact event/tool/message ID, turn index (e.g. 'asst-0'), or client-generated
@@ -275,12 +279,20 @@ class HarnessStore:
             slice_idx = last_idx + 1
 
             turn_ids: set[str] = set()
+            turn_tool_ids: set[str] = set()
             turn_indices: list[int] = []
             rep_id: str | None = None
             turn_ts: float | None = None
+            last_tool_res_idx: int | None = None
 
             for ev_idx, ev in current_turn_events:
                 turn_indices.append(ev_idx)
+                ev_type = getattr(ev, "type", None) or (
+                    ev.get("type") if isinstance(ev, dict) else None
+                )
+                if ev_type in ("TOOL_CALL_RESULT", "tool_call_result"):
+                    last_tool_res_idx = ev_idx
+
                 mid = getattr(ev, "message_id", None) or (
                     ev.get("message_id") if isinstance(ev, dict) else None
                 )
@@ -294,6 +306,7 @@ class HarnessStore:
                 )
                 if tcid:
                     turn_ids.add(str(tcid))
+                    turn_tool_ids.add(str(tcid))
                     if rep_id is None:
                         rep_id = str(tcid)
 
@@ -323,6 +336,8 @@ class HarnessStore:
             if rep_id is None:
                 rep_id = f"asst-turn-{len(turns)}"
 
+            tool_slice = (last_tool_res_idx + 1) if last_tool_res_idx is not None else None
+
             turns.append(
                 _AssistantTurn(
                     turn_index=len(turns),
@@ -331,6 +346,8 @@ class HarnessStore:
                     rep_id=rep_id,
                     event_indices=turn_indices,
                     timestamp_ms=turn_ts,
+                    tool_result_slice_index=tool_slice,
+                    tool_ids=turn_tool_ids,
                 )
             )
             current_turn_events = []
@@ -390,10 +407,21 @@ class HarnessStore:
         if not turns:
             return None
 
+        def get_turn_result(turn: _AssistantTurn) -> tuple[int, str]:
+            if retry_inference:
+                if turn.tool_result_slice_index is not None:
+                    return turn.tool_result_slice_index, turn.rep_id
+                msg = (
+                    f"Assistant turn '{message_id}' does not contain completed "
+                    "tool calls to branch after."
+                )
+                raise ValueError(msg)
+            return turn.slice_index, turn.rep_id
+
         # 1. Exact match in associated_ids
         for turn in turns:
             if message_id in turn.associated_ids:
-                return turn.slice_index, turn.rep_id
+                return get_turn_result(turn)
 
         # 2. Check asst-<turn_index> e.g. "asst-0", "asst-1"
         if message_id.startswith("asst-"):
@@ -401,7 +429,7 @@ class HarnessStore:
             if suffix.isdigit():
                 idx = int(suffix)
                 if 0 <= idx < len(turns):
-                    return turns[idx].slice_index, turns[idx].rep_id
+                    return get_turn_result(turns[idx])
 
         # 3. Handle asst-<timestamp_ms> (e.g. from frontend Date.now())
         if message_id.startswith("asst-"):
@@ -409,7 +437,7 @@ class HarnessStore:
             try:
                 ts_val = float(suffix)
                 if len(turns) == 1:
-                    return turns[0].slice_index, turns[0].rep_id
+                    return get_turn_result(turns[0])
 
                 closest_turn = None
                 min_diff = float("inf")
@@ -420,9 +448,9 @@ class HarnessStore:
                             min_diff = diff
                             closest_turn = turn
                 if closest_turn is not None:
-                    return closest_turn.slice_index, closest_turn.rep_id
+                    return get_turn_result(closest_turn)
 
-                return turns[-1].slice_index, turns[-1].rep_id
+                return get_turn_result(turns[-1])
             except ValueError:
                 pass
 
@@ -431,7 +459,7 @@ class HarnessStore:
             for idx in turn.event_indices:
                 ev = thread.events[idx]
                 if message_id in str(ev):
-                    return turn.slice_index, turn.rep_id
+                    return get_turn_result(turn)
 
         return None
 
@@ -441,6 +469,7 @@ class HarnessStore:
         session_identifier: str,
         message_id: str,
         name: str | None = None,
+        retry_inference: bool = False,
     ) -> Session:
         """Branch off an assistant message in a session to create a new session."""
         agent = self.resolve_agent(agent_identifier)
@@ -453,7 +482,9 @@ class HarnessStore:
         target_rep_id: str | None = None
 
         for thread in parent_session.threads.values():
-            match_res = self._find_assistant_turn(thread, message_id)
+            match_res = self._find_assistant_turn(
+                thread, message_id, retry_inference=retry_inference
+            )
             if match_res is not None:
                 target_thread = thread
                 target_event_index, target_rep_id = match_res
@@ -514,7 +545,7 @@ class HarnessStore:
             new_thread = Thread(
                 name=None,
                 is_open=True,
-                status=AgentStatus.AWAITING_USER,
+                status=AgentStatus.AWAITING_LLM if retry_inference else AgentStatus.AWAITING_USER,
                 events=sliced_events,
             )
             new_session.threads[new_thread.id] = new_thread
@@ -550,6 +581,35 @@ class HarnessStore:
                         "Failed to initialize git workspace for branched session %s",
                         new_session.id,
                     )
+
+                if retry_inference:
+                    import asyncio
+
+                    from seamus.harness.runner import get_runner_registry
+
+                    registry = get_runner_registry()
+                    parent_runner = registry._runners.get(str(parent_session.id))
+                    runner = registry.get_runner(new_session, agent=agent)
+
+                    if runner.checkpointer is not None:
+                        if parent_runner and parent_runner.checkpointer is not None:
+                            for k_s, v_s in parent_runner.checkpointer.storage.items():
+                                if k_s not in runner.checkpointer.storage:
+                                    runner.checkpointer.storage[k_s] = v_s
+                            for k_w, v_w in parent_runner.checkpointer.writes.items():
+                                if k_w not in runner.checkpointer.writes:
+                                    runner.checkpointer.writes[k_w] = v_w
+                            for k_b, v_b in parent_runner.checkpointer.blobs.items():
+                                if k_b not in runner.checkpointer.blobs:
+                                    runner.checkpointer.blobs[k_b] = v_b
+
+                        runner.checkpointer.copy_thread(str(target_thread.id), str(new_thread.id))
+
+                    try:
+                        loop = asyncio.get_running_loop()
+                        loop.create_task(runner.resume_turn(new_thread))
+                    except RuntimeError:
+                        pass
 
                 return new_session
 

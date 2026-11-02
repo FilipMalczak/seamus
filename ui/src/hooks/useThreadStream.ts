@@ -25,7 +25,8 @@ function stopStreamingReasoningParts(parts?: MessagePart[]): MessagePart[] {
 export function useThreadStream(
   agentId: string | null,
   sessionId: string | null,
-  threadId: string | null
+  threadId: string | null,
+  sessionStatus?: string
 ) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<AgentStatus>("AWAITING_USER");
@@ -76,6 +77,43 @@ export function useThreadStream(
         } else if (type === "RUN_ERROR") {
           setStatus("ERROR");
           setStreamError(event.message || "Execution encountered an error.");
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (m.role !== "assistant" || !m.toolCalls) return m;
+              const hasWip = m.toolCalls.some(
+                (c) => c.status === "wip" || c.status === "pending"
+              );
+              if (!hasWip) return m;
+              const updatedCalls = m.toolCalls.map((c) =>
+                c.status === "wip" || c.status === "pending"
+                  ? {
+                      ...c,
+                      status: "error" as const,
+                      result: c.result || "Execution interrupted or errored.",
+                    }
+                  : c
+              );
+              const updatedParts = (m.parts || []).map((p) => {
+                if (p.type !== "tool_call") return p;
+                if (
+                  p.toolCall.status === "wip" ||
+                  p.toolCall.status === "pending"
+                ) {
+                  return {
+                    ...p,
+                    toolCall: {
+                      ...p.toolCall,
+                      status: "error" as const,
+                      result:
+                        p.toolCall.result || "Execution interrupted or errored.",
+                    },
+                  };
+                }
+                return p;
+              });
+              return { ...m, toolCalls: updatedCalls, parts: updatedParts };
+            })
+          );
         } else if (type === "TOOL_CALL_START") {
           setStatus("EXECUTING_TOOL");
           const callId = event.tool_call_id || event.toolCallId || "tool-call";
@@ -706,13 +744,20 @@ export function useThreadStream(
                       parsedArgs = rawArgs;
                     }
                     const res = toolResults.get(id);
+                    const isTerminal = Boolean(sessionStatus && sessionStatus !== "ACTIVE");
+                    const toolStatus =
+                      res !== undefined
+                        ? ("done" as const)
+                        : isTerminal
+                          ? ("error" as const)
+                          : ("wip" as const);
                     return {
                       id,
                       name,
-                      status: res !== undefined ? ("done" as const) : ("wip" as const),
+                      status: toolStatus,
                       rawArgs,
                       args: parsedArgs,
-                      result: res,
+                      result: res !== undefined ? res : isTerminal ? "Execution interrupted." : undefined,
                     };
                   });
 
@@ -757,6 +802,7 @@ export function useThreadStream(
               return rebuilt;
             }
 
+            const isTerminal = Boolean(sessionStatus && sessionStatus !== "ACTIVE");
             return prev.map((msg) => {
               if (msg.role !== "assistant") return msg;
               const updatedCalls = (msg.toolCalls || []).map((c) => {
@@ -766,6 +812,13 @@ export function useThreadStream(
                     ...c,
                     result: c.result !== undefined ? c.result : snapRes,
                     status: "done" as const,
+                  };
+                }
+                if (isTerminal && (c.status === "wip" || c.status === "pending")) {
+                  return {
+                    ...c,
+                    result: c.result || "Execution interrupted.",
+                    status: "error" as const,
                   };
                 }
                 return c;
@@ -785,6 +838,16 @@ export function useThreadStream(
                         result:
                           p.toolCall.result !== undefined ? p.toolCall.result : snapRes,
                         status: "done" as const,
+                      },
+                    };
+                  }
+                  if (isTerminal && (p.toolCall.status === "wip" || p.toolCall.status === "pending")) {
+                    return {
+                      ...p,
+                      toolCall: {
+                        ...p.toolCall,
+                        result: p.toolCall.result || "Execution interrupted.",
+                        status: "error" as const,
                       },
                     };
                   }

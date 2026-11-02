@@ -160,6 +160,14 @@ class EventBroadcaster:
             except Exception:
                 logger.exception("Failed to deliver event to subscriber queue")
 
+    def broadcast_sync(self, event: Any) -> None:
+        """Deliver an event synchronously without awaiting queue.put."""
+        for queue in list(self._subscribers):
+            try:
+                queue.put_nowait(event)
+            except Exception:
+                pass
+
 
 class SessionAgentRunner:
     """Manages the DeepAgent instance and execution loop for a single session."""
@@ -176,6 +184,7 @@ class SessionAgentRunner:
         self._active_task: asyncio.Task[None] | None = None
         self._agent_entity = agent_entity
         self._sandbox_backend: SeamusOpenSandboxBackend | None = None
+        self.checkpointer: GitCheckpointSaver | None = getattr(agent, "checkpointer", None)
 
         if agent is not None:
             self._agent = agent
@@ -238,6 +247,7 @@ class SessionAgentRunner:
             session_id=self.session.id,
             workspace_manager=ws_mgr,
         )
+        self.checkpointer = checkpointer
 
         graph = create_deep_agent(
             model=llm,
@@ -300,7 +310,78 @@ class SessionAgentRunner:
             self._active_task.cancel()
         if self._sandbox_backend is not None:
             self._sandbox_backend.destroy()
+
+        try:
+            thread = self.session.get_open_thread()
+            started_tids: set[str] = set()
+            finished_tids: set[str] = set()
+            for ev in thread.events:
+                ev_type = getattr(ev, "type", None) or (
+                    ev.get("type") if isinstance(ev, dict) else None
+                )
+                tid = getattr(ev, "tool_call_id", None) or (
+                    ev.get("tool_call_id") if isinstance(ev, dict) else None
+                )
+                if tid:
+                    if ev_type in ("TOOL_CALL_START", "TOOL_CALL_ARGS", "TOOL_CALL_END"):
+                        started_tids.add(str(tid))
+                    elif ev_type in ("TOOL_CALL_RESULT", "tool_call_result"):
+                        finished_tids.add(str(tid))
+
+            pending_tids = started_tids - finished_tids
+            if pending_tids or thread.status == AgentStatus.EXECUTING_TOOL:
+                if not pending_tids:
+                    pending_tids = {"interrupted"}
+                for tid in sorted(pending_tids):
+                    interrupted_res = {
+                        "type": "TOOL_CALL_RESULT",
+                        "tool_call_id": tid,
+                        "content": "Execution interrupted: session was killed.",
+                        "role": "tool",
+                        "is_error": True,
+                    }
+                    thread.append_event(interrupted_res)
+                    self.broadcaster.broadcast_sync(interrupted_res)
+
+                err_event = {
+                    "type": "RUN_ERROR",
+                    "message": "Session was killed mid-execution.",
+                }
+                thread.append_event(err_event)
+                self.broadcaster.broadcast_sync(err_event)
+
+            thread.status = AgentStatus.ERROR
+            thread.touch()
+            try:
+                ws_mgr = get_workspace_manager()
+                ws_mgr.save_thread_events(
+                    self.session.agent_id, self.session.id, thread.id, thread.events
+                )
+            except Exception:
+                pass
+        except Exception:
+            logger.exception("Error cleaning up interrupted tool calls on kill")
+
         self.session.kill()
+
+    async def resume_turn(self, thread: Thread | None = None) -> None:
+        """Resume execution in an existing thread without adding a new user message.
+
+        Used when branching after tool calls to retry/generate LLM inference from
+        existing tool results in the checkpointer state.
+        """
+        async with self._lock:
+            if not self.session.is_active:
+                msg = f"Session '{self.session.id}' is not active."
+                raise SessionBusyError(msg)
+            target_thread = thread or self.session.get_open_thread()
+            target_thread.status = AgentStatus.AWAITING_LLM
+            target_thread.touch()
+            self.session.touch()
+
+            self._active_task = asyncio.create_task(
+                self._run_loop(target_thread, user_message=None)
+            )
 
     async def dispatch_user_input(
         self,
@@ -369,7 +450,7 @@ class SessionAgentRunner:
 
             return user_msg_id
 
-    async def _run_loop(self, thread: Thread, user_message: UserMessage) -> None:
+    async def _run_loop(self, thread: Thread, user_message: UserMessage | None = None) -> None:
         """Internal execution loop with hierarchical agent, session, and thread spans."""
         agent_entity = self._resolve_agent_entity()
         agent_id_str = str(self.session.agent_id)
@@ -388,7 +469,7 @@ class SessionAgentRunner:
         input_data = RunAgentInput(
             thread_id=thread.id.hex,
             run_id=run_id,
-            messages=[user_message],
+            messages=[user_message] if user_message is not None else [],
         )
 
         request_agent = self._agent.clone()
@@ -545,6 +626,10 @@ class RunnerRegistry:
         elif agent is not None and self._runners[session_key]._agent_entity is None:
             self._runners[session_key]._agent_entity = agent
         return self._runners[session_key]
+
+    def get_or_create(self, session: Session, agent: Agent | None = None) -> SessionAgentRunner:
+        """Alias for get_runner."""
+        return self.get_runner(session, agent)
 
     def set_runner(self, session_id: str, runner: SessionAgentRunner) -> None:
         """Register a specific runner instance (useful for testing with mock agents)."""

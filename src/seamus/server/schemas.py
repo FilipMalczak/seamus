@@ -93,6 +93,7 @@ class BranchSessionRequest(BaseModel):
 
     message_id: str
     name: str | None = None
+    retry_inference: bool = False
 
 
 class ThreadCreateRequest(BaseModel):

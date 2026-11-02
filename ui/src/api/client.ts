@@ -131,14 +131,19 @@ export async function branchSession(
   agentId: string,
   sessionId: string,
   messageId: string,
-  name?: string | null
+  name?: string | null,
+  retryInference?: boolean
 ): Promise<SessionDetail> {
   const res = await fetch(
     `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/branch`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message_id: messageId, name: name ?? null }),
+      body: JSON.stringify({
+        message_id: messageId,
+        name: name ?? null,
+        retry_inference: retryInference ?? false,
+      }),
     }
   );
   return handleResponse<SessionDetail>(res);

@@ -62,6 +62,46 @@ class GitCheckpointSaver(MemorySaver):
         self.inner = inner
         self._load_from_workspace()
 
+    def copy_thread(self, source_thread_id: str, target_thread_id: str) -> None:
+        """Copy all checkpoints, writes, and blobs from one thread to another."""
+        src_keys = [source_thread_id]
+        tgt_keys = [target_thread_id]
+        src_uuid = parse_uuid(source_thread_id)
+        if src_uuid:
+            src_keys.extend([src_uuid.hex, str(src_uuid)])
+        tgt_uuid = parse_uuid(target_thread_id)
+        if tgt_uuid:
+            tgt_keys.extend([tgt_uuid.hex, str(tgt_uuid)])
+
+        found_src = None
+        for k in src_keys:
+            if k in self.storage:
+                found_src = k
+                break
+
+        if found_src:
+            for tgt in tgt_keys:
+                self.storage[tgt] = {ns: dict(cps) for ns, cps in self.storage[found_src].items()}
+
+        for (t_id, ns, cp_id), w_dict in list(self.writes.items()):
+            if t_id in src_keys:
+                for tgt in tgt_keys:
+                    self.writes[(tgt, ns, cp_id)] = dict(w_dict)
+
+        for (t_id, ns, ch, ver), blob in list(self.blobs.items()):
+            if t_id in src_keys:
+                for tgt in tgt_keys:
+                    self.blobs[(tgt, ns, ch, ver)] = blob
+
+        if tgt_uuid:
+            try:
+                dump = self.dump_state(target_uuid=tgt_uuid)
+                self.workspace_manager.save_thread_checkpoints(
+                    self.agent_id, self.session_id, tgt_uuid, dump
+                )
+            except Exception:
+                logger.exception("Failed to save copied checkpoints to disk for %s", tgt_uuid)
+
     def dump_state(self, target_uuid: UUID | None = None) -> dict[str, Any]:
         """Serialize internal storage, writes, and blobs to a JSON-compatible dict."""
         storage_dump: dict[str, Any] = {}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Eye, GitPullRequest, MessageSquare } from "lucide-react";
-import { getConfigTemplate, getSystemInfo, updateConfigTemplate } from "./api/client";
+import { getConfigTemplate, getSystemInfo, postUserInput, updateConfigTemplate } from "./api/client";
 import type { AgentConfig, AgentStatus, SystemInfoResponse } from "./api/types";
 import { AgentInspector } from "./components/AgentInspector";
 import { ChangesViewer } from "./components/ChangesViewer";
@@ -272,9 +272,33 @@ export function App() {
                     await killSession(selectedAgentId, selectedSessionId);
                   }
                 }}
-                onBranchMessage={async (messageId: string) => {
-                  if (selectedAgentId && selectedSessionId) {
-                    await branchSession(selectedAgentId, selectedSessionId, messageId);
+                onBranchMessage={async (
+                  targetId: string | null,
+                  options?: { retryInference?: boolean; promptToSend?: string }
+                ) => {
+                  if (!selectedAgentId) return;
+                  if (targetId && selectedSessionId) {
+                    const newSession = await branchSession(
+                      selectedAgentId,
+                      selectedSessionId,
+                      targetId,
+                      null,
+                      options?.retryInference
+                    );
+                    if (options?.promptToSend) {
+                      await postUserInput(
+                        selectedAgentId,
+                        newSession.id,
+                        options.promptToSend
+                      );
+                    }
+                  } else if (options?.promptToSend) {
+                    const newSession = await createSession(selectedAgentId);
+                    await postUserInput(
+                      selectedAgentId,
+                      newSession.id,
+                      options.promptToSend
+                    );
                   }
                 }}
                 onNavigateToSession={handleNavigateToSession}

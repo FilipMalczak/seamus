@@ -372,3 +372,180 @@ def test_multi_level_branching_lineage_s1_s2_s3() -> None:
     assert s3.lineage[1].parent_session_id == s2.id
     assert s3.lineage[1].parent_message_id == "asst-2"
     assert s3.lineage[1].parent_session_name == "session-s2"
+
+
+def test_kill_session_mid_tool_cleans_up_and_errors() -> None:
+    config = make_complete_config()
+    session = Session(agent_id=uuid4(), config=config)
+    thread = session.get_open_thread()
+    thread.status = AgentStatus.EXECUTING_TOOL
+    thread.append_event({"type": "RUN_STARTED"})
+    thread.append_event(
+        {
+            "type": "TOOL_CALL_START",
+            "tool_call_id": "call-mid-tool-1",
+            "tool_call_name": "bash",
+        }
+    )
+    thread.append_event(
+        {
+            "type": "TOOL_CALL_ARGS",
+            "tool_call_id": "call-mid-tool-1",
+            "args": '{"cmd":"sleep 10"}',
+        }
+    )
+    thread.append_event({"type": "TOOL_CALL_END", "tool_call_id": "call-mid-tool-1"})
+
+    runner = SessionAgentRunner(session=session, agent=object())
+    runner.kill()
+
+    assert session.status == SessionStatus.KILLED
+    assert session.is_active is False
+    assert thread.status == AgentStatus.ERROR
+
+    # Check that tool call result was emitted with is_error=True
+    tool_results = [
+        ev
+        for ev in thread.events
+        if (getattr(ev, "type", None) or (ev.get("type") if isinstance(ev, dict) else None))
+        == "TOOL_CALL_RESULT"
+    ]
+    assert len(tool_results) == 1
+    assert tool_results[0]["tool_call_id"] == "call-mid-tool-1"
+    assert tool_results[0]["is_error"] is True
+
+    # Check that RUN_ERROR was emitted
+    run_errors = [
+        ev
+        for ev in thread.events
+        if (getattr(ev, "type", None) or (ev.get("type") if isinstance(ev, dict) else None))
+        == "RUN_ERROR"
+    ]
+    assert len(run_errors) == 1
+
+
+def test_branch_after_tools_slices_at_tool_result() -> None:
+    store = HarnessStore()
+    config = make_complete_config()
+    store.create_agent(config=config, name="tool-branch-agent")
+    s1 = store.create_session(agent_identifier="tool-branch-agent", name="parent-session")
+    t1 = s1.get_open_thread()
+
+    # User message
+    t1.append_event(TextMessageStartEvent(message_id="user-1", role="user"))
+    t1.append_event(TextMessageContentEvent(message_id="user-1", delta="Run ls"))
+    t1.append_event(TextMessageEndEvent(message_id="user-1"))
+
+    # Assistant turn with tool execution
+    t1.append_event({"type": "RUN_STARTED"})
+    t1.append_event({"type": "TOOL_CALL_START", "tool_call_id": "tc-101", "tool_call_name": "bash"})
+    t1.append_event({"type": "TOOL_CALL_ARGS", "tool_call_id": "tc-101", "args": '{"cmd":"ls"}'})
+    t1.append_event({"type": "TOOL_CALL_END", "tool_call_id": "tc-101"})
+    t1.append_event(
+        {
+            "type": "TOOL_CALL_RESULT",
+            "tool_call_id": "tc-101",
+            "content": "file1.txt\nfile2.txt",
+        }
+    )
+
+    # Post-tool assistant text generation (which should be excluded when retrying inference)
+    t1.append_event(TextMessageStartEvent(message_id="asst-text-1", role="assistant"))
+    t1.append_event(
+        TextMessageContentEvent(
+            message_id="asst-text-1",
+            delta="Here are the files: file1.txt, file2.txt",
+        )
+    )
+    t1.append_event(TextMessageEndEvent(message_id="asst-text-1"))
+    t1.append_event({"type": "RUN_FINISHED"})
+
+    # 1. Normal branch off asst-text-1 preserves all 12 events
+    s_normal = store.branch_session(
+        agent_identifier="tool-branch-agent",
+        session_identifier="parent-session",
+        message_id="asst-text-1",
+        retry_inference=False,
+    )
+    assert len(s_normal.get_open_thread().events) == 12
+    assert s_normal.get_open_thread().status == AgentStatus.AWAITING_USER
+
+    # 2. Branch after tool with retry_inference=True slices right after TOOL_CALL_RESULT (8 events)
+    s_retry = store.branch_session(
+        agent_identifier="tool-branch-agent",
+        session_identifier="parent-session",
+        message_id="asst-text-1",
+        retry_inference=True,
+    )
+    retry_events = s_retry.get_open_thread().events
+    assert len(retry_events) == 8
+    # Last event in sliced history is the TOOL_CALL_RESULT
+    last_ev = retry_events[-1]
+    assert (getattr(last_ev, "type", None) or last_ev.get("type")) == "TOOL_CALL_RESULT"
+    assert s_retry.get_open_thread().status == AgentStatus.AWAITING_LLM
+
+
+def test_branch_after_tools_raises_when_no_tool_calls() -> None:
+    store = HarnessStore()
+    config = make_complete_config()
+    store.create_agent(config=config, name="no-tool-agent")
+    s1 = store.create_session(agent_identifier="no-tool-agent", name="parent-session")
+    t1 = s1.get_open_thread()
+
+    t1.append_event(TextMessageStartEvent(message_id="user-1", role="user"))
+    t1.append_event(TextMessageContentEvent(message_id="user-1", delta="Hi"))
+    t1.append_event(TextMessageEndEvent(message_id="user-1"))
+    t1.append_event({"type": "RUN_STARTED"})
+    t1.append_event(TextMessageStartEvent(message_id="asst-1", role="assistant"))
+    t1.append_event(TextMessageContentEvent(message_id="asst-1", delta="Hello!"))
+    t1.append_event(TextMessageEndEvent(message_id="asst-1"))
+    t1.append_event({"type": "RUN_FINISHED"})
+
+    with pytest.raises(ValueError, match="does not contain completed tool calls"):
+        store.branch_session(
+            agent_identifier="no-tool-agent",
+            session_identifier="parent-session",
+            message_id="asst-1",
+            retry_inference=True,
+        )
+
+
+def test_api_branch_with_retry_inference(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = HarnessStore()
+    reset_harness_store(store)
+    reset_runner_registry()
+    config = make_complete_config()
+    store.create_agent(config=config, name="api-agent")
+    s = store.create_session("api-agent", name="api-parent")
+    t = s.get_open_thread()
+
+    t.append_event(TextMessageStartEvent(message_id="u1", role="user"))
+    t.append_event(TextMessageContentEvent(message_id="u1", delta="Test"))
+    t.append_event(TextMessageEndEvent(message_id="u1"))
+    t.append_event({"type": "RUN_STARTED"})
+    t.append_event({"type": "TOOL_CALL_START", "tool_call_id": "tc-1", "tool_call_name": "tool"})
+    t.append_event({"type": "TOOL_CALL_RESULT", "tool_call_id": "tc-1", "content": "output"})
+    t.append_event(TextMessageStartEvent(message_id="a1", role="assistant"))
+    t.append_event(TextMessageContentEvent(message_id="a1", delta="Done"))
+    t.append_event(TextMessageEndEvent(message_id="a1"))
+    t.append_event({"type": "RUN_FINISHED"})
+
+    app = create_app()
+    client = TestClient(app)
+
+    res = client.post(
+        f"/api/v-alpha/agent/api-agent/session/{s.id}/branch",
+        json={"message_id": "a1", "retry_inference": True},
+    )
+    assert res.status_code == 201
+    data = res.json()
+    assert data["provenance"]["parent_message_id"] == "a1"
+    from seamus.domain.resolution import resolve_session
+
+    agent = store.resolve_agent("api-agent")
+    branch_sess = resolve_session(agent, data["id"])
+    # Sliced initial history had 6 events, and runner immediately resumed inference
+    # adding retried response events
+    events = branch_sess.get_open_thread().events
+    assert len(events) >= 6
+    assert (getattr(events[5], "type", None) or events[5].get("type")) == "TOOL_CALL_RESULT"

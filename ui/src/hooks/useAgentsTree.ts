@@ -229,8 +229,20 @@ export function useAgentsTree() {
   );
 
   const handleBranchSession = useCallback(
-    async (agentId: string, sessionId: string, messageId: string, name?: string | null) => {
-      const newSession = await branchSession(agentId, sessionId, messageId, name);
+    async (
+      agentId: string,
+      sessionId: string,
+      messageId: string,
+      name?: string | null,
+      retryInference?: boolean
+    ) => {
+      const newSession = await branchSession(
+        agentId,
+        sessionId,
+        messageId,
+        name,
+        retryInference
+      );
       await refreshTree();
       setSelectedAgentId(agentId);
       setSelectedSessionId(newSession.id);
