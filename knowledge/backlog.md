@@ -59,11 +59,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## TODO
 
-### Dual CI/CD Test Pipeline Runners (Docker-Enabled and In-Memory)
-- **Description**: When configuring GitHub Actions / CI/CD pipelines, configure two distinct runner jobs: a Docker-enabled runner executing the full test suite with the ephemeral Gitea container fixture, and a fast in-memory runner executing pure unit tests.
-- **Rationale**: Guarantees fast feedback for in-memory unit tests while preserving comprehensive Gitea persistence verification on Docker-capable runners.
-- **Provenance**: [0017-dedicated-test-gitea.md](../decisions/0017-dedicated-test-gitea.md), [conventions.md](./conventions.md#continuous-integration-conventions), [0023-github-actions-ci-pipeline.md](../decisions/0023-github-actions-ci-pipeline.md).
-
 ### Operational Execution Modes and Thread Transition Triggers (plan, chat, act, analyse, routing)
 - **Description**: Support an open set of configurable execution modes that govern agent interaction style, prompt framing, workspace usage, and thread-spawning triggers:
   1. `plan`: Generates a structured execution plan before implementing changes. Spawns a new thread when formulating a plan, and automatically opens another new thread when transitioning from plan alignment to execution.

@@ -28,14 +28,16 @@ An automated CI workflow is needed to execute per commit on pushes and pull requ
      - Runs on `ubuntu-latest`.
      - Configures Node.js 22 with `actions/setup-node@v4` with caching based on `ui/package-lock.json`.
      - Runs `npm ci` followed by `npm run build` (invoking `tsc -b && vite build`) within the `ui/` directory.
-   - **`test-python` (Linux)**:
-     - Runs `pytest` on `ubuntu-latest`.
-     - Leverages existing `tests/conftest.py` container mechanics (ephemeral Gitea container fixture with SQLite on GitHub-hosted `ubuntu-latest`).
-     - Cross-platform macOS and Windows runner support is deferred and tracked as technical debt.
+   - **`test-docker` (Linux, Docker-Enabled)**:
+     - Runs `pytest` on `ubuntu-latest` with Docker daemon active.
+     - Automatically provisions the session-scoped ephemeral Gitea container fixture with SQLite, validating full Git persistence and Sync PR lifecycles.
+   - **`test-in-memory` (Linux, In-Memory)**:
+     - Runs `pytest` on `ubuntu-latest` in parallel with `SEAMUS_TEST_IN_MEMORY=true`.
+     - Explicitly bypasses Docker daemon availability, validating pure unit and in-memory fallback behavior with sub-5-second test execution.
 
 3. **Scope Boundaries**:
    - Publishing and deployment artifacts are omitted.
-   - The deferred backlog entry regarding separate in-memory / docker-enabled test runner suites remains deferred.
+   - Cross-platform macOS and Windows runner support is tracked as technical debt in `backlog.md`.
 
 ## Consequences
 

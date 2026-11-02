@@ -61,8 +61,8 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-  test-python:
-    name: Pytest (Linux)
+  test-docker:
+    name: Pytest (Ubuntu, Docker)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -79,6 +79,29 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
-      - name: Run pytest
+      - name: Run pytest (docker persistence enabled)
+        run: uv run pytest
+
+  test-in-memory:
+    name: Pytest (Ubuntu, In-Memory)
+    runs-on: ubuntu-latest
+    env:
+      SEAMUS_TEST_IN_MEMORY: "true"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run pytest (in-memory mode)
         run: uv run pytest
 
