@@ -71,6 +71,11 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## TODO
 
+### Native LM-XML Skills System with Load/Unload Skill Tools
+- **Description**: Replace the reliance on LangChain DeepAgents' built-in `SkillsMiddleware` with a first-party, native Seamus skills implementation. The native system will be built directly on `lmxml` dynamic prompt structures (integrating seamlessly with `DynamicSystemPromptMiddleware`) and explicit `load_skill` / `unload_skill` agent tools to disclose, activate, and deactivate skill instructions and associated tools on demand rather than relying on automatic middleware inspection and implicit prompt appending.
+- **Rationale**: DeepAgents' `SkillsMiddleware` operates as an external abstraction with rigid prompt formatting and implicit disclosure rules. A native implementation based on `lmxml` dynamisms and explicit `load_skill` / `unload_skill` tools will align directly with Seamus's structured XML system prompt architecture, provide tighter control over context window budgeting and prompt cache breakpoints, and avoid middleware ordering or prompt overriding frictions.
+- **Provenance**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md), [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md).
+
 ### Built-In Bundled Skills for Seamus
 - **Description**: Package a core suite of built-in skills bundled directly with Seamus (e.g., for creating a2ui artifacts, interactive planning surveys, code review workflows) that are always available out-of-the-box across all sessions.
 - **Rationale**: Built-in skills allow offloading complex tool or UI instructions (like A2UI) from the static system prompt to on-demand progressive disclosure.
