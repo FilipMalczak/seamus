@@ -51,7 +51,7 @@ Project-specific implementation, tooling, and development conventions not fully 
 - Triggers on `push` and `pull_request` across all branches with `concurrency` cancellation of prior in-flight runs (`cancel-in-progress: true`).
 - `lint-and-typecheck` job runs on `ubuntu-latest` verifying formatting (`uv run ruff format --check`), linting (`uv run ruff check`), and type checking (`uv run mypy`) against frozen lockfiles (`uv sync --frozen`).
 - `frontend` job runs on `ubuntu-latest` executing `npm ci` and `npm run build` (`tsc -b && vite build`) in `ui/`.
-- `test-python` job executes `uv run pytest` across an OS matrix (`ubuntu-latest`, `macos-latest`, `windows-latest`). Linux is mandatory; macOS and Windows runs are optional companions configured with `continue-on-error: true`.
+- `test-python` job executes `uv run pytest` on `ubuntu-latest`. Cross-platform macOS and Windows runner support is deferred and tracked as technical debt.
 - Package publishing and deployment stages are omitted.
 
 ## Telemetry & Tracing Conventions

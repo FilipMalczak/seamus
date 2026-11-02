@@ -28,11 +28,10 @@ An automated CI workflow is needed to execute per commit on pushes and pull requ
      - Runs on `ubuntu-latest`.
      - Configures Node.js 22 with `actions/setup-node@v4` with caching based on `ui/package-lock.json`.
      - Runs `npm ci` followed by `npm run build` (invoking `tsc -b && vite build`) within the `ui/` directory.
-   - **`test-python` (Cross-Platform Matrix)**:
-     - Runs `pytest` across an OS matrix: `ubuntu-latest`, `macos-latest`, and `windows-latest`.
-     - Linux (`ubuntu-latest`) is mandatory and acts as the gatekeeper.
-     - macOS and Windows matrix entries utilize `continue-on-error: ${{ matrix.os != 'ubuntu-latest' }}` so that unexpected platform-specific quirks or absence of container runtimes do not block the pipeline.
-     - Leverages existing `tests/conftest.py` fallback mechanics: if Docker is available (standard on GitHub-hosted `ubuntu-latest`), ephemeral Gitea container persistence tests run; if Docker is absent, persistence tests gracefully fall back without failures.
+   - **`test-python` (Linux)**:
+     - Runs `pytest` on `ubuntu-latest`.
+     - Leverages existing `tests/conftest.py` container mechanics (ephemeral Gitea container fixture with SQLite on GitHub-hosted `ubuntu-latest`).
+     - Cross-platform macOS and Windows runner support is deferred and tracked as technical debt.
 
 3. **Scope Boundaries**:
    - Publishing and deployment artifacts are omitted.

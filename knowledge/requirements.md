@@ -171,7 +171,7 @@ Requirements, rationale, provenance, and stable IDs.
 - **Linked Invariants**: [INV-029](./invariants.md#inv-029-session-terminal-immutability--resource-teardown).
 
 ### REQ-028: Automated Continuous Integration via GitHub Actions
-- **Description**: The repository must maintain an automated continuous integration pipeline in `.github/workflows/ci.yml` running on every commit (push and pull request). The workflow must enforce Python code formatting (`ruff format --check`), linting (`ruff check`), strict type checking (`mypy`), frontend TypeScript compilation and Vite bundling (`npm run build` in `ui/`), and pytest test execution. Linux (`ubuntu-latest`) is required and acts as the gatekeeper; macOS and Windows are supported as non-blocking companion checks in the test matrix.
+- **Description**: The repository must maintain an automated continuous integration pipeline in `.github/workflows/ci.yml` running on every commit (push and pull request). The workflow must enforce Python code formatting (`ruff format --check`), linting (`ruff check`), strict type checking (`mypy`), frontend TypeScript compilation and Vite bundling (`npm run build` in `ui/`), and pytest test execution on Linux (`ubuntu-latest`). Cross-platform support for macOS and Windows runners is tracked as technical debt.
 - **Rationale**: Eliminates manual verification friction, prevents regressions, and guarantees that formatting, typing, testing, and UI compilation invariants are verified continuously on push and pull requests.
 - **Provenance**: [0023-github-actions-ci-pipeline.md](../decisions/0023-github-actions-ci-pipeline.md).
 - **Linked Invariants**: [INV-002](./invariants.md#inv-002-zero-tooling-check-failures).
