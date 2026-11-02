@@ -3,6 +3,7 @@
 import pytest
 
 from seamus.config.models import AgentConfig, InferenceConfig, InferenceFormat
+from seamus.config.settings import SystemSettings, SystemSettingsStore
 from seamus.config.template import ConfigTemplateStore
 
 
@@ -76,3 +77,17 @@ def test_config_template_store_crud() -> None:
     assert updated.inference.base_url == "https://api.openai.com/v1"
     assert updated.model_name == "gpt-4o"
     assert updated.is_complete() is False
+
+
+def test_system_settings_defaults_and_crud() -> None:
+    settings = SystemSettings()
+    assert settings.skill_directories == []
+
+    store = SystemSettingsStore(initial_settings=settings)
+    assert store.get_settings().skill_directories == []
+
+    updated = store.set_settings(
+        SystemSettings(skill_directories=["/opt/skills", "/home/test/skills"])
+    )
+    assert updated.skill_directories == ["/opt/skills", "/home/test/skills"]
+    assert store.get_settings().skill_directories == ["/opt/skills", "/home/test/skills"]

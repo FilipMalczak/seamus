@@ -1,21 +1,58 @@
 """Singleton service-wide configuration template management."""
 
+from __future__ import annotations
+
+import logging
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
 
 from seamus.config.models import AgentConfig, InferenceConfig, InferenceFormat
 
+if TYPE_CHECKING:
+    from seamus.persistence.workspace import GitWorkspaceManager
+
+logger = logging.getLogger(__name__)
+
 
 class ConfigTemplateStore:
-    """Manages the service-wide singleton AgentConfig template."""
+    """Manages the service-wide singleton AgentConfig template persisted to Git."""
 
-    def __init__(self, initial_template: AgentConfig | None = None) -> None:
+    def __init__(
+        self,
+        initial_template: AgentConfig | None = None,
+        workspace_manager: GitWorkspaceManager | None = None,
+    ) -> None:
+        self._ws_mgr = workspace_manager
         if initial_template is not None:
             self._template = initial_template.model_copy(deep=True)
         else:
-            self._template = self._load_from_environment()
+            self._template = self._load_initial_template()
+
+    def _get_workspace_manager(self) -> GitWorkspaceManager:
+        if self._ws_mgr is not None:
+            return self._ws_mgr
+        from seamus.persistence.workspace import get_workspace_manager
+
+        return get_workspace_manager()
+
+    def _load_initial_template(self) -> AgentConfig:
+        """Attempt to load template from persistence; fall back to environment seed."""
+        try:
+            ws_mgr = self._get_workspace_manager()
+            data = ws_mgr.read_system_config_template()
+            if data is not None:
+                return AgentConfig.model_validate(data)
+            initial = self._load_from_environment()
+            ws_mgr.commit_system_config_template(initial.model_dump())
+            return initial
+        except Exception:
+            logger.debug(
+                "Failed to read config template from workspace; using environment/defaults"
+            )
+            return self._load_from_environment()
 
     @staticmethod
     def _load_from_environment(env_file: Path | str | None = None) -> AgentConfig:
@@ -52,8 +89,13 @@ class ConfigTemplateStore:
         return self._template.model_copy(deep=True)
 
     def set_template(self, template: AgentConfig) -> AgentConfig:
-        """Replace the current configuration template with a new full configuration object."""
+        """Replace the current configuration template and persist to repository."""
         self._template = template.model_copy(deep=True)
+        try:
+            ws_mgr = self._get_workspace_manager()
+            ws_mgr.commit_system_config_template(self._template.model_dump())
+        except Exception:
+            logger.exception("Failed to persist configuration template to repository")
         return self.get_template()
 
     def derive_agent_config(self, overrides: AgentConfig | None = None) -> AgentConfig:
@@ -72,7 +114,9 @@ def get_config_template_store() -> ConfigTemplateStore:
     return _GLOBAL_TEMPLATE_STORE
 
 
-def reset_config_template_store(store: ConfigTemplateStore | None = None) -> ConfigTemplateStore:
+def reset_config_template_store(
+    store: ConfigTemplateStore | None = None,
+) -> ConfigTemplateStore:
     """Reset the global singleton instance, optionally replacing it (useful in tests)."""
     global _GLOBAL_TEMPLATE_STORE
     _GLOBAL_TEMPLATE_STORE = store

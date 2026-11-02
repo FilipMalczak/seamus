@@ -98,12 +98,14 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
         session_id: UUID,
         data_dir: Path,
         settings: SandboxSettings | None = None,
+        skill_directories: list[str] | None = None,
         sandbox: SandboxSync | None = None,
     ) -> None:
         self.agent_id = agent_id
         self.session_id = session_id
         self.data_dir = data_dir
         self.settings = settings or get_sandbox_settings()
+        self.skill_directories = skill_directories if skill_directories is not None else []
         self._active_sandbox: SandboxSync | None = sandbox
         super().__init__(sandbox=sandbox, timeout=self.settings.timeout)
 
@@ -138,6 +140,27 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
             host=Host(path=str(self.data_dir.resolve())),
         )
 
+    def build_skill_volumes(self) -> list[Volume]:
+        """Build read-only OpenSandbox Volumes for system-wide skill directories."""
+        volumes: list[Volume] = []
+        for idx, skill_dir_str in enumerate(self.skill_directories):
+            skill_path = Path(skill_dir_str).resolve()
+            if not skill_path.exists():
+                logger.warning(
+                    "System skill directory %s does not exist on host; skipping mount",
+                    skill_path,
+                )
+                continue
+            volumes.append(
+                Volume(
+                    name=f"skill-{idx}",
+                    mountPath=str(skill_path),
+                    readOnly=True,
+                    host=Host(path=str(skill_path)),
+                )
+            )
+        return volumes
+
     def build_connection_config(self) -> ConnectionConfigSync:
         """Build the OpenSandbox SDK connection configuration with runtime-managed auth."""
         api_key = get_or_create_sandbox_api_key(self.settings)
@@ -152,18 +175,21 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
         """Create the remote OpenSandbox container if not already active."""
         if self._active_sandbox is None:
             connection_config = self.build_connection_config()
-            volume = self.build_workspace_volume()
+            workspace_volume = self.build_workspace_volume()
+            skill_volumes = self.build_skill_volumes()
+            all_volumes = [workspace_volume, *skill_volumes]
             logger.info(
-                "Creating OpenSandbox container (image=%s, domain=%s, mount=%s) for session %s",
+                "Creating OpenSandbox (image=%s, domain=%s, mount=%s, skills=%d) for session %s",
                 self.settings.image,
                 self.settings.domain,
                 self.settings.workdir,
+                len(skill_volumes),
                 self.session_id,
             )
             self._active_sandbox = SandboxSync.create(
                 self.settings.image,
                 connection_config=connection_config,
-                volumes=[volume],
+                volumes=all_volumes,
                 timeout=timedelta(seconds=self.settings.sandbox_timeout),
                 metadata={
                     "seamus.agent_id": str(self.agent_id),

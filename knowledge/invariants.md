@@ -156,6 +156,16 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-026](./requirements.md#req-026-exact-turn-level-session-branching-and-lineage-provenance), [0022-branching-out-and-session-lifecycle.md](../decisions/0022-branching-out-and-session-lifecycle.md).
 - **Enforcement**: `HarnessStore.branch_session()`, `GitWorkspaceManager.create_session_workspace()`, `GitCheckpointSaver.copy_thread()`, `SessionAgentRunner.resume_turn()`, `ChatArea.tsx`, and unit tests in `tests/test_session_branching_and_lifecycle.py`.
 
+### INV-031: Read-Only System Skill Sandboxing
+- **Statement**: Any system-wide skill directory mounted into an OpenSandbox container must be mounted strictly read-only (`readOnly=True`). Sandboxed agent executions must not be permitted to mutate or delete files within host-level system skill directories.
+- **Justification**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md).
+- **Enforcement**: `SeamusOpenSandboxBackend.build_skill_volumes()` forces `readOnly=True` on all skill volume definitions.
+
+### INV-032: System Repository Persistence Lifecycle
+- **Statement**: System settings (`settings.json`) and the service-wide agent configuration template (`config-template.json`) must be persisted to a dedicated `system` Git repository in Gitea, surviving server restarts with first-run defaults without requiring external databases or additional volumes.
+- **Justification**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md).
+- **Enforcement**: `GitWorkspaceManager.initialize_system_repo()`, `commit_system_settings()`, and `commit_system_config_template()`.
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [requirements.md](./requirements.md)
@@ -180,3 +190,4 @@ Properties and rules that must always hold across the repository.
 - [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md)
 - [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md)
 - [0022-branching-out-and-session-lifecycle.md](../decisions/0022-branching-out-and-session-lifecycle.md)
+- [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md)

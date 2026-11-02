@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from seamus.config.models import AgentConfig
+from seamus.config.settings import SystemSettings
 from seamus.domain.entities import (
     AgentStatus,
     SessionBranchProvenance,
@@ -44,6 +45,7 @@ __all__ = [
     "SystemGiteaInfo",
     "SystemInfoResponse",
     "SystemLogfireInfo",
+    "SystemSettingsResponse",
     "ThreadCreateRequest",
     "ThreadResponse",
     "ThreadUpdateRequest",
@@ -58,6 +60,12 @@ class ConfigTemplateResponse(BaseModel):
 
     config: AgentConfig
     is_complete: bool
+
+
+class SystemSettingsResponse(BaseModel):
+    """Response representing the current system-wide settings."""
+
+    settings: SystemSettings
 
 
 class AgentCreateRequest(BaseModel):

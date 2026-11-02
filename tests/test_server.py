@@ -134,6 +134,33 @@ def test_config_template_endpoints(client: TestClient) -> None:
     assert updated_data["is_complete"] is False
 
 
+def test_settings_endpoints(client: TestClient) -> None:
+    # 1. GET settings defaults
+    res = client.get("/api/v-alpha/settings")
+    assert res.status_code == 200
+    data = res.json()
+    assert "settings" in data
+    assert isinstance(data["settings"]["skill_directories"], list)
+
+    # 2. POST settings update
+    payload = {"skill_directories": ["/opt/system-skills", "/home/test/.skills"]}
+    res_post = client.post("/api/v-alpha/settings", json=payload)
+    assert res_post.status_code == 200
+    updated_data = res_post.json()
+    assert updated_data["settings"]["skill_directories"] == [
+        "/opt/system-skills",
+        "/home/test/.skills",
+    ]
+
+    # 3. GET reflects update
+    res_get2 = client.get("/api/v-alpha/settings")
+    assert res_get2.status_code == 200
+    assert res_get2.json()["settings"]["skill_directories"] == [
+        "/opt/system-skills",
+        "/home/test/.skills",
+    ]
+
+
 def test_agent_lifecycle_endpoints(client: TestClient) -> None:
     # 1. List agents initially empty
     res = client.get("/api/v-alpha/agents")

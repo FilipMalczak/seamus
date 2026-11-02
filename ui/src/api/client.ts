@@ -8,6 +8,8 @@ import type {
   SessionDetail,
   SessionDiffResponse,
   SystemInfoResponse,
+  SystemSettings,
+  SystemSettingsResponse,
   ThreadInfo,
 } from "./types";
 
@@ -37,6 +39,20 @@ export async function getConfigTemplate(): Promise<ConfigTemplateResponse> {
 export async function getSystemInfo(): Promise<SystemInfoResponse> {
   const res = await fetch(`${BASE_URL}/system/info`);
   return handleResponse<SystemInfoResponse>(res);
+}
+
+export async function getSystemSettings(): Promise<SystemSettingsResponse> {
+  const res = await fetch(`${BASE_URL}/settings`);
+  return handleResponse<SystemSettingsResponse>(res);
+}
+
+export async function updateSystemSettings(settings: SystemSettings): Promise<SystemSettingsResponse> {
+  const res = await fetch(`${BASE_URL}/settings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+  return handleResponse<SystemSettingsResponse>(res);
 }
 
 export async function updateConfigTemplate(config: AgentConfig): Promise<ConfigTemplateResponse> {

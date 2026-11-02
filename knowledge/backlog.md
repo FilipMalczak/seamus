@@ -2,7 +2,19 @@
 
 Persistent record of work intentionally left outstanding across the project, maintained in accordance with [AGENTS.md](../AGENTS.md).
 
+> Current high-level trajectory is: skills -> artifacts -> modes (plan as the first new mode)
+> The idea is that for plan mode I need to present plan somehow; 
+> to do so I can use a2ui artifacts, which I already planned, as they can  be used for closed questions or any kind of user survey - and then to any other custom use case the agent might find; maybe researcher will have some use here?
+> anyway, a2ui is nontrivial, so we'll need to explain how to build these; no point in sending an explanation longer than the system prompt with every inference, so we'll want to offload a2ui as a skill
+
+
 ## Deferred
+
+### Multi-Mount Repository Support and Dynamic Skill Discovery
+- **Description**: When Seamus introduces support for mounting multiple repositories/projects (e.g., existing user codebases) into the agent's sandbox container, dynamically discover and track every `<mount>/.skills` directory present across all mounted workspaces as agent-level skill sources.
+- **Why Deferred**: Requires establishing multi-mount repository architecture first; single agent repository mounting is the current model.
+- **Revisit Trigger**: When multi-repository mounting is implemented in Seamus.
+- **Provenance**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md).
 
 ### Granular Gitea Commit Authors, Organizations, and Team Ownership
 - **Description**: All Git repositories created in Gitea are owned by the system service user `seamus`, and automated commits use the single author identity `Seamus Agent <agent@seamus.local>`. Per-agent, per-session, or per-user commit authors, organizations, and team permissions were postponed.
@@ -58,6 +70,11 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Provenance**: [0023-github-actions-ci-pipeline.md](../decisions/0023-github-actions-ci-pipeline.md), [conventions.md](./conventions.md#continuous-integration-conventions).
 
 ## TODO
+
+### Built-In Bundled Skills for Seamus
+- **Description**: Package a core suite of built-in skills bundled directly with Seamus (e.g., for creating a2ui artifacts, interactive planning surveys, code review workflows) that are always available out-of-the-box across all sessions.
+- **Rationale**: Built-in skills allow offloading complex tool or UI instructions (like A2UI) from the static system prompt to on-demand progressive disclosure.
+- **Provenance**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md), [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md).
 
 ### Operational Execution Modes and Thread Transition Triggers (plan, chat, act, analyse, routing)
 - **Description**: Support an open set of configurable execution modes that govern agent interaction style, prompt framing, workspace usage, and thread-spawning triggers:

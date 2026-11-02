@@ -405,3 +405,37 @@ def test_sync_pr_multi_session_merge_no_conflict(
     # Main branch configuration remains intact
     assert (agent_dir / "agent" / "config" / "config.json").read_text() == initial_agent_config
     assert not (agent_dir / "agent" / "state" / "threads").exists()
+
+
+def test_system_repo_persistence(
+    git_environment: tuple[GitWorkspaceManager, Path, Path],
+) -> None:
+    manager, bare_remote, workspace_dir = git_environment
+
+    system_dir = manager.initialize_system_repo(
+        default_settings={"skill_directories": ["/tmp/skills"]},
+        default_config_template={"model_name": "initial-model"},
+    )
+    assert (system_dir / ".git").exists()
+    assert (system_dir / "settings.json").exists()
+    assert (system_dir / "config-template.json").exists()
+
+    settings_read = manager.read_system_settings()
+    assert settings_read is not None
+    assert settings_read["skill_directories"] == ["/tmp/skills"]
+
+    template_read = manager.read_system_config_template()
+    assert template_read is not None
+    assert template_read["model_name"] == "initial-model"
+
+    # Commit updated settings
+    manager.commit_system_settings({"skill_directories": ["/tmp/skills", "/opt/new-skills"]})
+    settings_updated = manager.read_system_settings()
+    assert settings_updated is not None
+    assert settings_updated["skill_directories"] == ["/tmp/skills", "/opt/new-skills"]
+
+    # Commit updated template
+    manager.commit_system_config_template({"model_name": "updated-model"})
+    template_updated = manager.read_system_config_template()
+    assert template_updated is not None
+    assert template_updated["model_name"] == "updated-model"

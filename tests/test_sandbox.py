@@ -204,3 +204,33 @@ def test_session_agent_runner_builds_deep_agent_with_opensandbox_and_prompt(
     assert isinstance(captured_kwargs["system_prompt"], str)
     assert "/workspace" in captured_kwargs["system_prompt"]
     assert "transient" in captured_kwargs["system_prompt"].lower()
+    assert "skills" in captured_kwargs
+    assert "/workspace/.skills" in captured_kwargs["skills"]
+
+
+def test_sandbox_build_skill_volumes_read_only(tmp_path: Path) -> None:
+    skill_dir_1 = tmp_path / "skill1"
+    skill_dir_1.mkdir()
+    skill_dir_2 = tmp_path / "skill2"
+    skill_dir_2.mkdir()
+    non_existent = tmp_path / "skill_missing"
+
+    backend = SeamusOpenSandboxBackend(
+        agent_id=uuid4(),
+        session_id=uuid4(),
+        data_dir=tmp_path / "data",
+        skill_directories=[str(skill_dir_1), str(skill_dir_2), str(non_existent)],
+    )
+
+    volumes = backend.build_skill_volumes()
+    assert len(volumes) == 2
+
+    # Verify strictly read-only and correct mount path
+    for vol in volumes:
+        assert vol.read_only is True
+        assert vol.host is not None
+
+    paths = [vol.mount_path for vol in volumes]
+    assert str(skill_dir_1.resolve()) in paths
+    assert str(skill_dir_2.resolve()) in paths
+    assert str(non_existent.resolve()) not in paths

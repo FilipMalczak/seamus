@@ -1,12 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import { Eye, GitPullRequest, MessageSquare } from "lucide-react";
-import { getConfigTemplate, getSystemInfo, postUserInput, updateConfigTemplate } from "./api/client";
-import type { AgentConfig, AgentStatus, SystemInfoResponse } from "./api/types";
+import {
+  getConfigTemplate,
+  getSystemInfo,
+  getSystemSettings,
+  postUserInput,
+  updateConfigTemplate,
+  updateSystemSettings,
+} from "./api/client";
+import type { AgentConfig, AgentStatus, SystemInfoResponse, SystemSettings } from "./api/types";
 import { AgentInspector } from "./components/AgentInspector";
 import { ChangesViewer } from "./components/ChangesViewer";
 import { ChatArea } from "./components/ChatArea";
 import { ConfigModal } from "./components/ConfigModal";
 import { Header } from "./components/Header";
+import { SettingsModal } from "./components/SettingsModal";
 import { Sidebar } from "./components/Sidebar";
 import { useAgentsTree } from "./hooks/useAgentsTree";
 import "./App.css";
@@ -31,6 +39,10 @@ export function App() {
   const [modalSaveFn, setModalSaveFn] = useState<(cfg: AgentConfig) => Promise<void>>(
     () => async () => {}
   );
+
+  // Settings modal state
+  const [systemSettings, setSystemSettings] = useState<SystemSettings>({ skill_directories: [] });
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
 
   // Split pane state (default 50/50 split)
   const [sidebarRatio, setSidebarRatio] = useState<number>(() => {
@@ -128,10 +140,29 @@ export function App() {
     }
   };
 
+  const loadSettings = async () => {
+    try {
+      const res = await getSystemSettings();
+      setSystemSettings(res.settings);
+    } catch (err) {
+      console.warn("Failed to load system settings:", err);
+    }
+  };
+
   useEffect(() => {
     loadTemplate();
     loadSystem();
+    loadSettings();
   }, []);
+
+  const handleOpenSystemSettings = () => {
+    setIsSettingsModalOpen(true);
+  };
+
+  const handleSaveSystemSettings = async (updated: SystemSettings) => {
+    const res = await updateSystemSettings(updated);
+    setSystemSettings(res.settings);
+  };
 
   const handleOpenGlobalConfig = () => {
     setModalTitle("Edit Global Config Template");
@@ -184,6 +215,7 @@ export function App() {
       <Header
         configTemplate={configTemplate}
         onOpenConfigTemplate={handleOpenGlobalConfig}
+        onOpenSystemSettings={handleOpenSystemSettings}
       />
 
       <div className="app-body" ref={appBodyRef}>
@@ -340,6 +372,13 @@ export function App() {
         initialConfig={modalConfig}
         onClose={() => setIsModalOpen(false)}
         onSave={modalSaveFn}
+      />
+
+      <SettingsModal
+        isOpen={isSettingsModalOpen}
+        initialSettings={systemSettings}
+        onClose={() => setIsSettingsModalOpen(false)}
+        onSave={handleSaveSystemSettings}
       />
     </div>
   );
