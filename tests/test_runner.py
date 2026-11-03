@@ -28,6 +28,7 @@ from pydantic import SecretStr
 from seamus.config.models import (
     AgentConfig,
     InferenceConfig,
+    RulesImplementation,
     SkillsImplementation,
     TodoImplementation,
 )
@@ -599,3 +600,43 @@ def test_session_agent_runner_skills_implementation_toggle(
     runner.reload_config()
     assert len(captured_kwargs) == 2
     assert captured_kwargs[1]["skills"] is None
+
+
+def test_session_agent_runner_rules_implementation_toggle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify _build_deep_agent wires SeamusMemoryMiddleware when rules_implementation is set."""
+    from unittest.mock import MagicMock
+
+    from seamus.harness.runner import SeamusMemoryMiddleware
+
+    captured_kwargs: list[dict[str, Any]] = []
+
+    def mock_create_deep_agent(**kwargs: Any) -> Any:
+        captured_kwargs.append(dict(kwargs))
+        mock_graph = MagicMock()
+        mock_graph.nodes = {}
+        return mock_graph
+
+    monkeypatch.setattr("seamus.harness.runner.create_deep_agent", mock_create_deep_agent)
+
+    config = AgentConfig(
+        inference=InferenceConfig(api_key="mock-key"),
+        model_name="mock-model",
+        rules_implementation=RulesImplementation.DEEPAGENTS,
+        rules_globs=["AGENTS.md", "docs/rules/*.md"],
+    )
+    agent = Agent(config=config, name="rules-toggle-agent")
+    session = agent.create_session(name="rules-toggle-session")
+
+    runner = SessionAgentRunner(session=session, agent_entity=agent)
+    assert len(captured_kwargs) == 1
+    assert captured_kwargs[0]["memory"] == ["/workspace/AGENTS.md"]
+    assert any(isinstance(m, SeamusMemoryMiddleware) for m in captured_kwargs[0]["middleware"])
+
+    # Switch to NONE and reload
+    session.config.rules_implementation = RulesImplementation.NONE
+    runner.reload_config()
+    assert len(captured_kwargs) == 2
+    assert captured_kwargs[1]["memory"] is None
+    assert not any(isinstance(m, SeamusMemoryMiddleware) for m in captured_kwargs[1]["middleware"])

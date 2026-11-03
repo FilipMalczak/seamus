@@ -2,25 +2,34 @@
 
 import logging
 import re
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
+from deepagents.middleware.memory import MEMORY_SYSTEM_PROMPT, MemoryMiddleware
+from deepagents.middleware.skills import SKILLS_SYSTEM_PROMPT, SkillMetadata, SkillsMiddleware
 from pydantic import BaseModel, Field
 
-from seamus.config.models import SkillsImplementation, TodoImplementation
+from seamus.config.models import (
+    DEFAULT_RULES_GLOBS,
+    RulesImplementation,
+    SkillsImplementation,
+    TodoImplementation,
+)
 from seamus.config.settings import get_system_settings_store, resolve_skill_path
 from seamus.domain.entities import AgentStatus, Thread
 from seamus.domain.resolution import resolve_session, resolve_thread
 from seamus.harness.prompt import (
     build_effective_system_prompt,
     build_scaffold_prompt,
-    discover_project_rules,
 )
 from seamus.harness.runner import (
+    SEAMUS_WRITE_TODOS_SYSTEM_PROMPT,
     ReasoningChatOpenAI,
     SessionAgentRunner,
     get_runner_registry,
+    resolve_session_rules,
 )
 from seamus.harness.sandbox import get_sandbox_settings
 from seamus.harness.store import get_harness_store
@@ -59,6 +68,7 @@ class SkillInspectInfo(BaseModel):
     description: str = ""
     origin_layer: str
     sandbox_path: str
+    host_path: str | None = None
     content: str = ""
     active: bool = True
 
@@ -97,7 +107,6 @@ class PromptInspectInfo(BaseModel):
 
     composite: str
     scaffold: str
-    project_rules: str = ""
     custom: str
 
 
@@ -145,6 +154,8 @@ class AgentInspectReport(BaseModel):
     todo_implementation: TodoImplementation = TodoImplementation.DEEPAGENTS
     skills: list[SkillInspectInfo] = Field(default_factory=list)
     skills_implementation: SkillsImplementation = SkillsImplementation.DEEPAGENTS
+    rules_implementation: RulesImplementation = RulesImplementation.DEEPAGENTS
+    rules_globs: list[str] = Field(default_factory=lambda: list(DEFAULT_RULES_GLOBS))
     subagents: list[SubAgentInspectInfo] = Field(default_factory=list)
     history: HistoryInspectInfo
     workspace: WorkspaceInspectInfo
@@ -541,9 +552,9 @@ def extract_session_skills(
     # 1. /workspace/skills
     # 2. /workspace/.skills
     # 3. /skills/system/0, /skills/system/1, ...
-    search_roots: list[tuple[Path, str, str]] = [
-        (data_dir / "skills", f"{workdir}/skills", "Session (skills)"),
-        (data_dir / ".skills", f"{workdir}/.skills", "Session (.skills)"),
+    search_roots: list[tuple[Path, str, str, bool]] = [
+        (data_dir / "skills", f"{workdir}/skills", "Session (skills)", False),
+        (data_dir / ".skills", f"{workdir}/.skills", "Session (.skills)", False),
     ]
 
     for idx, skill_dir_str in enumerate(system_settings.skill_directories):
@@ -554,12 +565,12 @@ def extract_session_skills(
                 if len(system_settings.skill_directories) > 1
                 else f"System ({skill_dir_str})"
             )
-            search_roots.append((resolved, f"/skills/system/{idx}", label))
+            search_roots.append((resolved, f"/skills/system/{idx}", label, True))
 
     seen_names: set[str] = set()
     discovered: list[SkillInspectInfo] = []
 
-    for host_root, sandbox_root, origin_label in search_roots:
+    for host_root, sandbox_root, origin_label, is_host_mounted in search_roots:
         if not host_root.exists() or not host_root.is_dir():
             continue
 
@@ -585,12 +596,73 @@ def extract_session_skills(
                     description=description,
                     origin_layer=origin_label,
                     sandbox_path=f"{sandbox_root}/{rel_path}",
+                    host_path=str(skill_file) if is_host_mounted else None,
                     content=body,
                     active=is_active,
                 )
             )
 
     return discovered
+
+
+def build_middleware_prompt_sections(
+    *,
+    todo_implementation: TodoImplementation,
+    skills_implementation: SkillsImplementation,
+    rules_implementation: RulesImplementation,
+    rules_globs: Sequence[str],
+    skills: Sequence[SkillInspectInfo],
+    data_dir: Path | None,
+    workdir: str = "/workspace",
+) -> str:
+    """Assemble the system prompt sections appended at runtime by active DeepAgents middleware."""
+    sections: list[str] = []
+    norm_workdir = workdir.rstrip("/") or "/workspace"
+
+    if todo_implementation == TodoImplementation.DEEPAGENTS:
+        sections.append(SEAMUS_WRITE_TODOS_SYSTEM_PROMPT)
+
+    if skills_implementation == SkillsImplementation.DEEPAGENTS:
+        system_settings = get_system_settings_store().get_settings()
+        valid_sys_dirs = [
+            d for d in system_settings.skill_directories if resolve_skill_path(d) is not None
+        ]
+        skill_sources = [f"/skills/system/{i}" for i in range(len(valid_sys_dirs))] + [
+            f"{norm_workdir}/.skills",
+            f"{norm_workdir}/skills",
+        ]
+        sm = SkillsMiddleware(backend=cast(Any, None), sources=skill_sources)
+        active_meta: list[SkillMetadata] = [
+            SkillMetadata(
+                name=s.name,
+                description=s.description,
+                path=s.sandbox_path,
+                license=None,
+                compatibility=None,
+                metadata={},
+                allowed_tools=[],
+            )
+            for s in skills
+            if s.active
+        ]
+        skills_section = SKILLS_SYSTEM_PROMPT.format(
+            skills_locations=sm._format_skills_locations(),
+            skills_load_warnings="",
+            skills_list=sm._format_skills_list(active_meta),
+        )
+        sections.append(skills_section)
+
+    if rules_implementation == RulesImplementation.DEEPAGENTS:
+        rule_sources, rule_contents = resolve_session_rules(
+            data_dir=data_dir,
+            rules_globs=rules_globs,
+            workdir=norm_workdir,
+        )
+        mm = MemoryMiddleware(backend=cast(Any, None), sources=rule_sources)
+        memory_section = mm._format_agent_memory(rule_contents, MEMORY_SYSTEM_PROMPT)
+        sections.append(memory_section)
+
+    return "\n\n".join(s for s in sections if s)
 
 
 def build_agent_inspect_report(
@@ -642,10 +714,9 @@ def build_agent_inspect_report(
 
     # System Prompts
     sandbox_settings = get_sandbox_settings()
-    scaffold_prompt = build_scaffold_prompt(sandbox_settings.workdir)
+    base_scaffold_prompt = build_scaffold_prompt(sandbox_settings.workdir)
     custom_prompt = (session.config.system_prompt or "").strip()
     data_dir = ws_mgr.get_session_data_dir(agent.id, session.id)
-    project_rules = discover_project_rules(data_dir) or ""
 
     # Runner & Tools
     registry = get_runner_registry()
@@ -660,7 +731,7 @@ def build_agent_inspect_report(
                 "Could not instantiate runner for session %s during inspection", session.id
             )
 
-    composite_prompt = (
+    base_composite_prompt = (
         runner.build_effective_system_prompt()
         if runner is not None
         else build_effective_system_prompt(
@@ -668,14 +739,35 @@ def build_agent_inspect_report(
             custom_prompt=custom_prompt or None,
             session_id=str(session.id),
             agent_id=str(agent.id),
-            project_rules=project_rules or None,
         )
+    )
+
+    skills = extract_session_skills(agent.id, session.id, session.config.skills_implementation)
+
+    middleware_prompt_sections = build_middleware_prompt_sections(
+        todo_implementation=session.config.todo_implementation,
+        skills_implementation=session.config.skills_implementation,
+        rules_implementation=session.config.rules_implementation,
+        rules_globs=session.config.rules_globs,
+        skills=skills,
+        data_dir=data_dir,
+        workdir=sandbox_settings.workdir,
+    )
+
+    scaffold_prompt = (
+        f"{base_scaffold_prompt}\n\n{middleware_prompt_sections}"
+        if middleware_prompt_sections
+        else base_scaffold_prompt
+    )
+    composite_prompt = (
+        f"{base_composite_prompt}\n\n{middleware_prompt_sections}"
+        if middleware_prompt_sections
+        else base_composite_prompt
     )
 
     prompt_info = PromptInspectInfo(
         composite=composite_prompt,
         scaffold=scaffold_prompt,
-        project_rules=project_rules,
         custom=custom_prompt,
     )
 
@@ -689,8 +781,6 @@ def build_agent_inspect_report(
         todos = []
     else:
         todos = extract_thread_todos(agent.id, session.id, thread, runner=runner)
-
-    skills = extract_session_skills(agent.id, session.id, session.config.skills_implementation)
 
     # Message History
     messages, checkpoint_step = extract_thread_messages(agent.id, session.id, thread)
@@ -732,6 +822,8 @@ def build_agent_inspect_report(
         todo_implementation=session.config.todo_implementation,
         skills=skills,
         skills_implementation=session.config.skills_implementation,
+        rules_implementation=session.config.rules_implementation,
+        rules_globs=list(session.config.rules_globs),
         subagents=[],
         history=history_info,
         workspace=workspace_info,

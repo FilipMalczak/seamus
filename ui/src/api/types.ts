@@ -8,12 +8,16 @@ export type TodoImplementation = "none" | "deepagents";
 
 export type SkillsImplementation = "none" | "deepagents";
 
+export type RulesImplementation = "none" | "deepagents";
+
 export type AgentConfig = {
   inference: InferenceConfig;
   model_name: string;
   system_prompt?: string | null;
   todo_implementation?: TodoImplementation;
   skills_implementation?: SkillsImplementation;
+  rules_implementation?: RulesImplementation;
+  rules_globs?: string[];
 };
 
 export type ConfigTemplateResponse = {
@@ -176,7 +180,6 @@ export interface InferenceInspectInfo {
 export interface PromptInspectInfo {
   composite: string;
   scaffold: string;
-  project_rules?: string;
   custom: string;
 }
 
@@ -210,6 +213,7 @@ export interface SkillInspectInfo {
   description: string;
   origin_layer: string;
   sandbox_path: string;
+  host_path?: string | null;
   content: string;
   active: boolean;
 }
@@ -230,6 +234,8 @@ export interface AgentInspectReport {
   todo_implementation?: TodoImplementation;
   skills?: SkillInspectInfo[];
   skills_implementation?: SkillsImplementation;
+  rules_implementation?: RulesImplementation;
+  rules_globs?: string[];
   subagents: SubAgentInspectInfo[];
   history: HistoryInspectInfo;
   workspace: WorkspaceInspectInfo;

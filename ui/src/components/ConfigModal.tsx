@@ -79,6 +79,27 @@ export function ConfigModal({
       return;
     }
 
+    if (
+      "rules_implementation" in parsed &&
+      parsed.rules_implementation !== null &&
+      !["none", "deepagents"].includes(parsed.rules_implementation)
+    ) {
+      setError(
+        `Invalid rules_implementation '${parsed.rules_implementation}'. Allowed values: 'none', 'deepagents'.`
+      );
+      return;
+    }
+
+    if (
+      "rules_globs" in parsed &&
+      parsed.rules_globs !== null &&
+      (!Array.isArray(parsed.rules_globs) ||
+        parsed.rules_globs.some((g: unknown) => typeof g !== "string"))
+    ) {
+      setError("Invalid rules_globs: must be an array of glob strings.");
+      return;
+    }
+
     setSaving(true);
     try {
       await onSave(parsed as AgentConfig);

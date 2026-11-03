@@ -2,7 +2,6 @@
 
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
 import lmxml
@@ -39,7 +38,6 @@ class SystemPromptDocument(BaseModel):
     tool_usage: list[str] = Field(default_factory=list)
     communication_style: list[str] = Field(default_factory=list)
     dynamic_context: DynamicContext | None = None
-    project_rules: str | None = None
     custom_instructions: str | None = None
 
 
@@ -185,44 +183,6 @@ def build_dynamic_context(
     )
 
 
-def discover_project_rules(data_dir: Path | None) -> str | None:
-    """Inspect workspace data_dir for AGENTS.md and .seamus/rules/*.md and assemble rules text."""
-    if data_dir is None or not data_dir.exists() or not data_dir.is_dir():
-        return None
-
-    sections: list[str] = []
-
-    agents_md = data_dir / "AGENTS.md"
-    if agents_md.is_file():
-        try:
-            content = agents_md.read_text(encoding="utf-8").strip()
-            if content:
-                sections.append(f"# AGENTS.md\n\n{content}")
-        except Exception:
-            pass
-
-    rules_dir = data_dir / ".seamus" / "rules"
-    if rules_dir.is_dir():
-        rule_files = sorted(
-            (
-                p
-                for p in rules_dir.rglob("*")
-                if p.is_file() and p.suffix.lower() in (".md", ".txt")
-            ),
-            key=lambda p: str(p.relative_to(rules_dir)),
-        )
-        for rule_file in rule_files:
-            try:
-                content = rule_file.read_text(encoding="utf-8").strip()
-                if content:
-                    rel_path = rule_file.relative_to(data_dir).as_posix()
-                    sections.append(f"# {rel_path}\n\n{content}")
-            except Exception:
-                pass
-
-    return "\n\n---\n\n".join(sections) if sections else None
-
-
 def build_scaffold_prompt(workdir: str = DEFAULT_OPERATIONAL_DIR) -> str:
     """Construct the base XML prompt scaffold without dynamic context or custom additions."""
     doc = SystemPromptDocument(
@@ -243,8 +203,6 @@ def build_effective_system_prompt(
     agent_id: str | None = None,
     include_dynamic_context: bool = True,
     timestamp: datetime | None = None,
-    project_rules: str | None = None,
-    data_dir: Path | None = None,
 ) -> str:
     """Assemble and serialize the complete effective LM-XML system prompt."""
     dynamic_ctx = (
@@ -258,11 +216,6 @@ def build_effective_system_prompt(
         else None
     )
 
-    resolved_rules = (
-        project_rules.strip()
-        if project_rules and project_rules.strip()
-        else discover_project_rules(data_dir)
-    )
     custom_text = custom_prompt.strip() if custom_prompt and custom_prompt.strip() else None
 
     doc = SystemPromptDocument(
@@ -272,7 +225,6 @@ def build_effective_system_prompt(
         tool_usage=build_tool_usage(),
         communication_style=build_communication_style(),
         dynamic_context=dynamic_ctx,
-        project_rules=resolved_rules,
         custom_instructions=custom_text,
     )
     dumped = doc.model_dump(mode="json", exclude_none=True)

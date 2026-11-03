@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator, Mapping, Sequence
+from pathlib import Path
 from typing import Any, Literal, cast
 from uuid import uuid4
 
@@ -18,6 +19,11 @@ from ag_ui.core.types import RunAgentInput, TextInputContent, UserMessage
 from ag_ui.encoder import EventEncoder
 from ag_ui_langgraph import LangGraphAgent
 from deepagents import create_deep_agent
+from deepagents.middleware.memory import (
+    MemoryMiddleware,
+    MemoryState,
+    MemoryStateUpdate,
+)
 from langchain.agents.middleware import TodoListMiddleware
 from langchain.agents.middleware.todo import (
     WRITE_TODOS_SYSTEM_PROMPT,
@@ -28,12 +34,14 @@ from langchain.agents.middleware.types import ContextT, ResponseT
 from langchain.tools import ToolRuntime
 from langchain_core.messages import ToolMessage
 from langchain_core.outputs import ChatGenerationChunk, ChatResult
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import StructuredTool
 from langchain_openai import ChatOpenAI
+from langgraph.runtime import Runtime
 from langgraph.types import Command
 from pydantic import BaseModel, Field, SecretStr, model_validator
 
-from seamus.config.models import SkillsImplementation, TodoImplementation
+from seamus.config.models import RulesImplementation, SkillsImplementation, TodoImplementation
 from seamus.config.settings import get_system_settings_store
 from seamus.domain.entities import Agent, AgentStatus, Session, Thread
 from seamus.harness.prompt import (
@@ -312,6 +320,115 @@ class SeamusTodoListMiddleware(TodoListMiddleware):
         ]
 
 
+def resolve_session_rules(
+    data_dir: Path | None,
+    rules_globs: Sequence[str],
+    workdir: str = "/workspace",
+) -> tuple[list[str], dict[str, str]]:
+    """Expand configured rule globs against session data_dir into sandbox paths and contents."""
+    norm_workdir = workdir.rstrip("/") or "/workspace"
+    sources: list[str] = []
+    contents: dict[str, str] = {}
+    fallback_sources: list[str] = []
+
+    for pattern in rules_globs:
+        raw_pat = pattern.strip()
+        if not raw_pat:
+            continue
+        rel_pat = raw_pat
+        if rel_pat.startswith(f"{norm_workdir}/"):
+            rel_pat = rel_pat[len(norm_workdir) + 1 :]
+        rel_pat = rel_pat.lstrip("/")
+        if rel_pat.startswith("./"):
+            rel_pat = rel_pat[2:]
+        if not rel_pat:
+            continue
+
+        if not any(ch in rel_pat for ch in ("*", "?", "[")):
+            candidate_source = f"{norm_workdir}/{rel_pat}"
+            if candidate_source not in fallback_sources:
+                fallback_sources.append(candidate_source)
+
+        if data_dir is None or not data_dir.exists() or not data_dir.is_dir():
+            continue
+
+        try:
+            root_resolved = data_dir.resolve()
+            matched_files = sorted(
+                (p for p in data_dir.glob(rel_pat) if p.is_file()),
+                key=lambda p: p.relative_to(data_dir).as_posix(),
+            )
+        except Exception:
+            continue
+
+        for matched in matched_files:
+            try:
+                if not matched.resolve().is_relative_to(root_resolved):
+                    continue
+                rel_file = matched.relative_to(data_dir).as_posix()
+                content = matched.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            sandbox_path = f"{norm_workdir}/{rel_file}"
+            if sandbox_path not in contents:
+                sources.append(sandbox_path)
+                contents[sandbox_path] = content
+
+    if not sources:
+        sources = fallback_sources or [f"{norm_workdir}/AGENTS.md"]
+
+    return sources, contents
+
+
+class SeamusMemoryMiddleware(MemoryMiddleware):
+    """DeepAgents MemoryMiddleware resolving configurable rule globs from the workspace."""
+
+    name = "MemoryMiddleware"
+
+    def __init__(
+        self,
+        *,
+        backend: Any,
+        data_dir: Path | None,
+        rules_globs: Sequence[str],
+        workdir: str = "/workspace",
+        add_cache_control: bool = True,
+    ) -> None:
+        sources, _ = resolve_session_rules(data_dir, rules_globs, workdir)
+        super().__init__(
+            backend=backend,
+            sources=sources,
+            add_cache_control=add_cache_control,
+        )
+        self.data_dir = data_dir
+        self.rules_globs = list(rules_globs)
+        self.workdir = workdir
+
+    def before_agent(  # type: ignore[override]
+        self,
+        state: MemoryState,
+        runtime: Runtime,
+        config: RunnableConfig,
+    ) -> MemoryStateUpdate | None:
+        sources, contents = resolve_session_rules(self.data_dir, self.rules_globs, self.workdir)
+        self.sources = sources
+        if contents or (self.data_dir is not None and self.data_dir.exists()):
+            return MemoryStateUpdate(memory_contents=contents)
+        return super().before_agent(state, runtime, config)
+
+    async def abefore_agent(  # type: ignore[override]
+        self,
+        state: MemoryState,
+        runtime: Runtime,
+        config: RunnableConfig,
+    ) -> MemoryStateUpdate | None:
+        sources, contents = resolve_session_rules(self.data_dir, self.rules_globs, self.workdir)
+        self.sources = sources
+        if contents or (self.data_dir is not None and self.data_dir.exists()):
+            return MemoryStateUpdate(memory_contents=contents)
+        return await super().abefore_agent(state, runtime, config)
+
+
 class SessionAgentRunner:
     """Manages the DeepAgent instance and execution loop for a single session."""
 
@@ -400,9 +517,19 @@ class SessionAgentRunner:
             else None
         )
 
+        memory_sources: list[str] | None = None
         runner_middleware: list[Any] = [dynamic_prompt_middleware]
         if self.session.config.todo_implementation == TodoImplementation.DEEPAGENTS:
             runner_middleware.append(SeamusTodoListMiddleware())
+        if self.session.config.rules_implementation == RulesImplementation.DEEPAGENTS:
+            mem_middleware = SeamusMemoryMiddleware(
+                backend=sandbox_backend,
+                data_dir=data_dir,
+                rules_globs=self.session.config.rules_globs,
+                workdir=sandbox_settings.workdir,
+            )
+            memory_sources = list(mem_middleware.sources)
+            runner_middleware.append(mem_middleware)
 
         graph = create_deep_agent(
             model=llm,
@@ -411,6 +538,7 @@ class SessionAgentRunner:
             middleware=runner_middleware,
             checkpointer=checkpointer,
             skills=cast(Any, skill_sources),
+            memory=memory_sources,
         )
 
         return SeamusLangGraphAgent(
@@ -423,20 +551,12 @@ class SessionAgentRunner:
         """Dynamically assemble the effective LM-XML system prompt for the session."""
         sandbox_settings = get_sandbox_settings()
         custom_prompt = (self.session.config.system_prompt or "").strip()
-        data_dir = (
-            self._sandbox_backend.data_dir
-            if self._sandbox_backend is not None
-            else get_workspace_manager().get_session_data_dir(
-                self.session.agent_id, self.session.id
-            )
-        )
         return build_effective_system_prompt(
             workdir=sandbox_settings.workdir,
             custom_prompt=custom_prompt or None,
             session_id=str(self.session.id),
             agent_id=str(self.session.agent_id),
             include_dynamic_context=include_dynamic_context,
-            data_dir=data_dir,
         )
 
     @property

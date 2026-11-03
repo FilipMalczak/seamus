@@ -10,6 +10,7 @@ from seamus.config.models import (
     AgentConfig,
     InferenceConfig,
     InferenceFormat,
+    RulesImplementation,
     SkillsImplementation,
     TodoImplementation,
 )
@@ -403,30 +404,46 @@ def test_inspector_skills_discovery_and_project_rules(
 
     report = build_agent_inspect_report(str(agent.id), str(session.id))
     assert report.skills_implementation == SkillsImplementation.DEEPAGENTS
-    assert "Project rule: use strict typing." in report.prompts.project_rules
-    assert "<project_rules>" in report.prompts.composite
+    assert report.rules_implementation == RulesImplementation.DEEPAGENTS
+    assert "Project rule: use strict typing." in report.prompts.composite
+    assert "Project rule: use strict typing." in report.prompts.scaffold
+    assert "<agent_memory>" in report.prompts.composite
+    assert "<agent_memory>" in report.prompts.scaffold
+    assert "## Skills System" in report.prompts.composite
+    assert "## Skills System" in report.prompts.scaffold
+    assert "write_todos" in report.prompts.composite
+    assert "write_todos" in report.prompts.scaffold
 
     assert len(report.skills) == 3
-    # First skill-a is from /workspace/skills and active
+    # First skill-a is from /workspace/skills and active (mounted skill -> host_path is None)
     assert report.skills[0].name == "skill-a"
     assert report.skills[0].active is True
     assert report.skills[0].sandbox_path == "/workspace/skills/skill-a/SKILL.md"
+    assert report.skills[0].host_path is None
     assert report.skills[0].content == "Workspace A body"
 
-    # System skill-a is shadowed
+    # System skill-a is shadowed and includes host_path
     shadowed_a = [s for s in report.skills if s.name == "skill-a" and not s.active]
     assert len(shadowed_a) == 1
     assert shadowed_a[0].sandbox_path == "/skills/system/0/skill-a/SKILL.md"
+    assert shadowed_a[0].host_path == str(sys_skill_a / "SKILL.md")
     assert "key: value" in shadowed_a[0].description
 
-    # System skill-b is active
+    # System skill-b is active and includes host_path
     active_b = [s for s in report.skills if s.name == "skill-b" and s.active]
     assert len(active_b) == 1
     assert active_b[0].sandbox_path == "/skills/system/0/skill-b/SKILL.md"
+    assert active_b[0].host_path == str(sys_skill_b / "SKILL.md")
 
-    # When skills_implementation is NONE, skills list is empty
+    # When implementations are NONE, skills list is empty and middleware prompt sections are omitted
     session.config.skills_implementation = SkillsImplementation.NONE
+    session.config.rules_implementation = RulesImplementation.NONE
+    session.config.todo_implementation = TodoImplementation.NONE
     reset_runner_registry()
     report_none = build_agent_inspect_report(str(agent.id), str(session.id))
     assert report_none.skills_implementation == SkillsImplementation.NONE
+    assert report_none.rules_implementation == RulesImplementation.NONE
     assert report_none.skills == []
+    assert "## Skills System" not in report_none.prompts.composite
+    assert "<agent_memory>" not in report_none.prompts.composite
+    assert "write_todos" not in report_none.prompts.composite

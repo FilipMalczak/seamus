@@ -5,9 +5,11 @@ from pathlib import Path
 import pytest
 
 from seamus.config.models import (
+    DEFAULT_RULES_GLOBS,
     AgentConfig,
     InferenceConfig,
     InferenceFormat,
+    RulesImplementation,
     SkillsImplementation,
     TodoImplementation,
 )
@@ -53,6 +55,8 @@ def test_agent_config_copy_with_overrides() -> None:
         system_prompt="Base prompt",
         todo_implementation=TodoImplementation.NONE,
         skills_implementation=SkillsImplementation.NONE,
+        rules_implementation=RulesImplementation.NONE,
+        rules_globs=["AGENTS.md"],
     )
     overrides = AgentConfig(
         inference=InferenceConfig(api_key="overridden-key"),
@@ -60,6 +64,8 @@ def test_agent_config_copy_with_overrides() -> None:
         system_prompt="Overridden prompt",
         todo_implementation=TodoImplementation.DEEPAGENTS,
         skills_implementation=SkillsImplementation.DEEPAGENTS,
+        rules_implementation=RulesImplementation.DEEPAGENTS,
+        rules_globs=["CLAUDE.md", "rules/*.md"],
     )
     derived = base.copy_with_overrides(overrides)
 
@@ -68,12 +74,16 @@ def test_agent_config_copy_with_overrides() -> None:
     assert derived.system_prompt == "Overridden prompt"
     assert derived.todo_implementation == TodoImplementation.DEEPAGENTS
     assert derived.skills_implementation == SkillsImplementation.DEEPAGENTS
+    assert derived.rules_implementation == RulesImplementation.DEEPAGENTS
+    assert derived.rules_globs == ["CLAUDE.md", "rules/*.md"]
     # Ensure original base was not mutated
     assert base.inference.api_key == "base-key"
     assert base.model_name == "openai/gpt-oss-120b"
     assert base.system_prompt == "Base prompt"
     assert base.todo_implementation == TodoImplementation.NONE
     assert base.skills_implementation == SkillsImplementation.NONE
+    assert base.rules_implementation == RulesImplementation.NONE
+    assert base.rules_globs == ["AGENTS.md"]
 
 
 def test_agent_config_todo_and_skills_implementation_validation() -> None:
@@ -82,31 +92,52 @@ def test_agent_config_todo_and_skills_implementation_validation() -> None:
     cfg = AgentConfig()
     assert cfg.todo_implementation == TodoImplementation.DEEPAGENTS
     assert cfg.skills_implementation == SkillsImplementation.DEEPAGENTS
+    assert cfg.rules_implementation == RulesImplementation.DEEPAGENTS
+    assert cfg.rules_globs == DEFAULT_RULES_GLOBS
 
     cfg_none = AgentConfig(
         todo_implementation=TodoImplementation.NONE,
         skills_implementation=SkillsImplementation.NONE,
+        rules_implementation=RulesImplementation.NONE,
+        rules_globs=["CUSTOM.md"],
     )
     assert cfg_none.todo_implementation == TodoImplementation.NONE
     assert cfg_none.skills_implementation == SkillsImplementation.NONE
+    assert cfg_none.rules_implementation == RulesImplementation.NONE
+    assert cfg_none.rules_globs == ["CUSTOM.md"]
 
     cfg_from_str = AgentConfig.model_validate(
-        {"todo_implementation": "deepagents", "skills_implementation": "deepagents"}
+        {
+            "todo_implementation": "deepagents",
+            "skills_implementation": "deepagents",
+            "rules_implementation": "deepagents",
+            "rules_globs": ["AGENTS.md"],
+        }
     )
     assert cfg_from_str.todo_implementation == TodoImplementation.DEEPAGENTS
     assert cfg_from_str.skills_implementation == SkillsImplementation.DEEPAGENTS
+    assert cfg_from_str.rules_implementation == RulesImplementation.DEEPAGENTS
+    assert cfg_from_str.rules_globs == ["AGENTS.md"]
 
     cfg_none_str = AgentConfig.model_validate(
-        {"todo_implementation": "none", "skills_implementation": "none"}
+        {
+            "todo_implementation": "none",
+            "skills_implementation": "none",
+            "rules_implementation": "none",
+        }
     )
     assert cfg_none_str.todo_implementation == TodoImplementation.NONE
     assert cfg_none_str.skills_implementation == SkillsImplementation.NONE
+    assert cfg_none_str.rules_implementation == RulesImplementation.NONE
 
     with pytest.raises(ValidationError):
         AgentConfig.model_validate({"todo_implementation": "unsupported_value"})
 
     with pytest.raises(ValidationError):
         AgentConfig.model_validate({"skills_implementation": "unsupported_value"})
+
+    with pytest.raises(ValidationError):
+        AgentConfig.model_validate({"rules_implementation": "unsupported_value"})
 
 
 def test_config_template_store_crud() -> None:

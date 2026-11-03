@@ -42,7 +42,7 @@ interface AgentInspectorProps {
 }
 
 type SubTab = "prompt" | "tools" | "skills" | "todos" | "inference" | "messages" | "workspace";
-type PromptLayer = "composite" | "scaffold" | "project_rules" | "custom";
+type PromptLayer = "composite" | "scaffold" | "custom";
 
 export function AgentInspector({
   agentId,
@@ -204,8 +204,6 @@ export function AgentInspector({
       ? report.prompts.composite
       : promptLayer === "scaffold"
       ? report.prompts.scaffold
-      : promptLayer === "project_rules"
-      ? report.prompts.project_rules || "*(No workspace project rules found in AGENTS.md or .seamus/rules/)*"
       : report.prompts.custom || "*(No custom instructions specified)*";
 
   const isNextTurnTab =
@@ -392,13 +390,6 @@ export function AgentInspector({
                   onClick={() => setPromptLayer("scaffold")}
                 >
                   Scaffold (OpenSandbox)
-                </button>
-                <button
-                  type="button"
-                  className={`layer-pill ${promptLayer === "project_rules" ? "active" : ""}`}
-                  onClick={() => setPromptLayer("project_rules")}
-                >
-                  Project Rules
                 </button>
                 <button
                   type="button"
@@ -612,6 +603,12 @@ export function AgentInspector({
                       <div className="tool-params-preview">
                         <span className="param-label">Sandbox Path:</span>
                         <code className="param-pill">{skill.sandbox_path}</code>
+                        {skill.host_path && (
+                          <>
+                            <span className="param-label">Host Path:</span>
+                            <code className="param-pill">{skill.host_path}</code>
+                          </>
+                        )}
                       </div>
 
                       {isExpanded && (
