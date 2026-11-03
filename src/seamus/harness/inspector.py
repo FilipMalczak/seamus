@@ -181,15 +181,16 @@ def get_default_tools_inspect_info() -> list[ToolInspectInfo]:
 
     try:
         from deepagents import create_deep_agent
-        from langchain.agents.middleware import TodoListMiddleware
         from pydantic import SecretStr
+
+        from seamus.harness.runner import SeamusTodoListMiddleware
 
         dummy_llm = ReasoningChatOpenAI(
             model="dummy",
             api_key=SecretStr("dummy"),
             base_url="https://dummy.local/v1",
         )
-        dummy_graph = create_deep_agent(model=dummy_llm, middleware=[TodoListMiddleware()])
+        dummy_graph = create_deep_agent(model=dummy_llm, middleware=[SeamusTodoListMiddleware()])
         tools_node = dummy_graph.nodes.get("tools")
         bound = getattr(tools_node, "bound", None)
         tools_dict = (
@@ -271,6 +272,26 @@ def get_default_tools_inspect_info() -> list[ToolInspectInfo]:
                     "Use this tool to create and manage a structured task list "
                     "for your current work session."
                 ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "todos": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "content": {"type": "string"},
+                                    "status": {
+                                        "type": "string",
+                                        "enum": ["pending", "in_progress", "completed"],
+                                    },
+                                },
+                                "required": ["content", "status"],
+                            },
+                        }
+                    },
+                    "required": ["todos"],
+                },
                 backend="harness",
             ),
         ]
@@ -323,11 +344,18 @@ def extract_thread_messages(
             try:
                 # cp_entry is (cp_data, meta_data, parent_id)
                 # where cp_data is (val_type, base64_blob)
-                import pickle
                 from base64 import b64decode
 
+                from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+                val_type = latest_cp[0][0]
                 blob = b64decode(latest_cp[0][1])
-                cp_obj = pickle.loads(blob)
+                try:
+                    cp_obj = JsonPlusSerializer().loads_typed((val_type, blob))
+                except Exception:
+                    import pickle
+
+                    cp_obj = pickle.loads(blob)
                 extracted = extract_readable_messages(cp_obj)
                 items = [
                     MessageHistoryItem(
@@ -341,7 +369,7 @@ def extract_thread_messages(
                 ]
                 return items, checkpoint_step
             except Exception:
-                logger.exception("Failed to decode checkpoint pickle")
+                logger.exception("Failed to decode checkpoint")
 
     # 3. Fall back to thread.events if present
     items = []
@@ -409,13 +437,20 @@ def extract_thread_todos(
                     latest_cp = cp_entry
         if latest_cp:
             try:
-                import pickle
                 from base64 import b64decode
+
+                from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
                 from seamus.persistence.checkpointer import extract_readable_todos
 
+                val_type = latest_cp[0][0]
                 blob = b64decode(latest_cp[0][1])
-                cp_obj = pickle.loads(blob)
+                try:
+                    cp_obj = JsonPlusSerializer().loads_typed((val_type, blob))
+                except Exception:
+                    import pickle
+
+                    cp_obj = pickle.loads(blob)
                 extracted = extract_readable_todos(cp_obj)
                 if extracted:
                     return [
@@ -426,7 +461,7 @@ def extract_thread_todos(
                         for t in extracted
                     ]
             except Exception:
-                logger.debug("Could not decode checkpoint pickle for todos")
+                logger.debug("Could not decode checkpoint for todos")
 
     return []
 

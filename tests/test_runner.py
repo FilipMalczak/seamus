@@ -385,5 +385,111 @@ def test_session_agent_runner_includes_todo_middleware(monkeypatch: pytest.Monke
 
     assert any(isinstance(m, DynamicSystemPromptMiddleware) for m in middleware)
     assert any(isinstance(m, TodoListMiddleware) for m in middleware)
-    types = [type(m) for m in middleware]
-    assert types.index(DynamicSystemPromptMiddleware) < types.index(TodoListMiddleware)
+    dynamic_idx = next(
+        i for i, m in enumerate(middleware) if isinstance(m, DynamicSystemPromptMiddleware)
+    )
+    todo_idx = next(i for i, m in enumerate(middleware) if isinstance(m, TodoListMiddleware))
+    assert dynamic_idx < todo_idx
+
+
+def test_seamus_todo_middleware_resilient_inputs() -> None:
+    """Verify that SeamusTodoListMiddleware normalizes varied LLM key names and statuses."""
+    from seamus.harness.runner import ResilientWriteTodosInput, SeamusTodoListMiddleware
+
+    mw = SeamusTodoListMiddleware()
+    assert len(mw.tools) == 1
+    tool = mw.tools[0]
+    assert tool.name == "write_todos"
+
+    # 1. Standard format
+    std = ResilientWriteTodosInput.model_validate(
+        {"todos": [{"content": "Clean codebase", "status": "in_progress"}]}
+    )
+    assert std.todos[0].content == "Clean codebase"
+    assert std.todos[0].status == "in_progress"
+
+    # 2. task + state variations (as observed in gpt-oss-20b runs)
+    variant1 = ResilientWriteTodosInput.model_validate(
+        {"todos": [{"task": "foo", "state": "in_progress"}, {"task": "bar", "state": "pending"}]}
+    )
+    assert variant1.todos[0].content == "foo"
+    assert variant1.todos[0].status == "in_progress"
+    assert variant1.todos[1].content == "bar"
+    assert variant1.todos[1].status == "pending"
+
+    # 3. name + status variations
+    variant2 = ResilientWriteTodosInput.model_validate(
+        {"todos": [{"name": "foo task", "status": "in_progress"}]}
+    )
+    assert variant2.todos[0].content == "foo task"
+    assert variant2.todos[0].status == "in_progress"
+
+    # 4. tasks alias + title + done status
+    variant3 = ResilientWriteTodosInput.model_validate(
+        {"tasks": [{"title": "Deploy system", "progress": "done"}]}
+    )
+    assert variant3.todos[0].content == "Deploy system"
+    assert variant3.todos[0].status == "completed"
+
+    # 5. Tool invocation in LangGraph ToolNode returns Command with matching tool_call_id
+    from langchain_core.messages import AIMessage, HumanMessage
+    from langgraph.graph import MessagesState, StateGraph
+    from langgraph.prebuilt import ToolNode
+
+    builder = StateGraph(MessagesState)
+    builder.add_node("tools", ToolNode([tool]))
+    builder.set_entry_point("tools")
+    graph = builder.compile()
+
+    ai_msg = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "write_todos",
+                "args": {
+                    "todos": [
+                        {"task": "run tests", "state": "active"},
+                        {"name": "commit", "state": "todo"},
+                    ]
+                },
+                "id": "call_TEST_123",
+            }
+        ],
+    )
+    res = graph.invoke({"messages": [HumanMessage(content="hi"), ai_msg]})
+    tool_msg = res["messages"][-1]
+    assert tool_msg.tool_call_id == "call_TEST_123"
+    assert "run tests" in tool_msg.content
+
+
+@pytest.mark.asyncio
+async def test_seamus_todo_middleware_async_invocation() -> None:
+    """Verify that SeamusTodoListMiddleware tool can be invoked asynchronously in LangGraph."""
+    from langchain_core.messages import AIMessage, HumanMessage
+    from langgraph.graph import MessagesState, StateGraph
+    from langgraph.prebuilt import ToolNode
+
+    from seamus.harness.runner import SeamusTodoListMiddleware
+
+    mw = SeamusTodoListMiddleware()
+    tool = mw.tools[0]
+
+    builder = StateGraph(MessagesState)
+    builder.add_node("tools", ToolNode([tool]))
+    builder.set_entry_point("tools")
+    graph = builder.compile()
+
+    ai_msg = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "write_todos",
+                "args": {"todos": [{"task": "async test", "state": "completed"}]},
+                "id": "call_ASYNC_123",
+            }
+        ],
+    )
+    res = await graph.ainvoke({"messages": [HumanMessage(content="hi"), ai_msg]})
+    tool_msg = res["messages"][-1]
+    assert tool_msg.tool_call_id == "call_ASYNC_123"
+    assert "async test" in tool_msg.content

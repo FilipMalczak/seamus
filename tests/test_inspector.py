@@ -227,3 +227,87 @@ def test_inspect_extracts_todos_from_workspace() -> None:
     assert report.todos[1].status == "in_progress"
     assert report.todos[2].content == "Step 3: Document changes"
     assert report.todos[2].status == "pending"
+
+
+def test_extract_thread_todos_from_jsonplus_checkpoints() -> None:
+    """Verify that checkpoint blobs encoded with JsonPlusSerializer (msgpack) decode cleanly."""
+    import base64
+
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+    from seamus.harness.inspector import extract_thread_messages, extract_thread_todos
+
+    store = HarnessStore()
+    reset_harness_store(store)
+    ws_mgr = get_workspace_manager()
+
+    config = AgentConfig(
+        inference=InferenceConfig(
+            format=InferenceFormat.OPENAI,
+            base_url="https://openrouter.ai/api/v1",
+            api_key="sk-secret-key-12345",
+        ),
+        model_name="openai/gpt-oss-120b",
+    )
+    agent = store.create_agent(config=config, name="jsonplus-checkpoint-agent")
+    session = list(agent.sessions.values())[0]
+    thread = session.get_open_thread()
+
+    serializer = JsonPlusSerializer()
+    checkpoint_state = {
+        "channel_values": {
+            "todos": [
+                {"content": "Fix bug", "status": "completed"},
+                {"content": "Write docs", "status": "in_progress"},
+            ],
+            "messages": [
+                {"role": "user", "content": "Start work"},
+                {"role": "assistant", "content": "Working on it"},
+            ],
+        }
+    }
+    val_type, raw_bytes = serializer.dumps_typed(checkpoint_state)
+    b64_blob = base64.b64encode(raw_bytes).decode("ascii")
+
+    cp_dump = {
+        "storage": {
+            str(thread.id): {
+                "root": {
+                    "cp-1": [
+                        [val_type, b64_blob],
+                        ["json", ""],
+                        None,
+                    ]
+                }
+            }
+        }
+    }
+    ws_mgr.save_thread_checkpoints(agent.id, session.id, thread.id, cp_dump)
+
+    # 1. extract_thread_todos must succeed and not raise unpickling error
+    todos = extract_thread_todos(agent.id, session.id, thread)
+    assert len(todos) == 2
+    assert todos[0].content == "Fix bug"
+    assert todos[0].status == "completed"
+    assert todos[1].content == "Write docs"
+    assert todos[1].status == "in_progress"
+
+    # 2. extract_thread_messages must succeed and not raise unpickling error
+    messages, cp_count = extract_thread_messages(agent.id, session.id, thread)
+    assert cp_count == 1
+    assert len(messages) == 2
+    assert messages[0].role == "user"
+    assert messages[0].content == "Start work"
+    assert messages[1].role == "assistant"
+    assert messages[1].content == "Working on it"
+
+
+def test_default_tools_inspect_info_includes_todos_schema() -> None:
+    """Verify that default tools inspect list contains write_todos with schemas."""
+    from seamus.harness.inspector import get_default_tools_inspect_info
+
+    tools = get_default_tools_inspect_info()
+    write_todos_tool = next((t for t in tools if t.name == "write_todos"), None)
+    assert write_todos_tool is not None
+    assert write_todos_tool.backend == "harness"
+    assert "todos" in write_todos_tool.parameters.get("properties", {})

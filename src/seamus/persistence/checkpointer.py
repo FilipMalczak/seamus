@@ -28,17 +28,26 @@ def extract_readable_messages(checkpoint: Checkpoint) -> list[dict[str, Any]]:
     raw_msgs = values.get("messages", []) if isinstance(values, dict) else []
     result: list[dict[str, Any]] = []
     for msg in raw_msgs:
-        role = getattr(msg, "type", None) or "unknown"
-        content = getattr(msg, "content", "")
+        if isinstance(msg, dict):
+            role = msg.get("role") or msg.get("type") or "unknown"
+            content = msg.get("content", "")
+            id_val = msg.get("id")
+            tool_calls = msg.get("tool_calls")
+            tool_call_id = msg.get("tool_call_id")
+        else:
+            role = getattr(msg, "type", None) or getattr(msg, "role", "unknown")
+            content = getattr(msg, "content", "")
+            id_val = getattr(msg, "id", None)
+            tool_calls = getattr(msg, "tool_calls", None)
+            tool_call_id = getattr(msg, "tool_call_id", None)
+
         item: dict[str, Any] = {
-            "id": getattr(msg, "id", None),
+            "id": id_val,
             "role": role,
             "content": content,
         }
-        tool_calls = getattr(msg, "tool_calls", None)
         if tool_calls:
             item["tool_calls"] = tool_calls
-        tool_call_id = getattr(msg, "tool_call_id", None)
         if tool_call_id:
             item["tool_call_id"] = tool_call_id
         result.append(item)
