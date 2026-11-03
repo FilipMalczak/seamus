@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from seamus.config.models import TodoImplementation
 from seamus.domain.entities import AgentStatus, Thread
 from seamus.domain.resolution import resolve_session, resolve_thread
 from seamus.harness.prompt import build_effective_system_prompt, build_scaffold_prompt
@@ -553,8 +554,11 @@ def build_agent_inspect_report(
     else:
         tools = get_default_tools_inspect_info()
 
-    # Todos
-    todos = extract_thread_todos(agent.id, session.id, thread, runner=runner)
+    if session.config.todo_implementation == TodoImplementation.NONE:
+        tools = [t for t in tools if t.name != "write_todos"]
+        todos = []
+    else:
+        todos = extract_thread_todos(agent.id, session.id, thread, runner=runner)
 
     # Message History
     messages, checkpoint_step = extract_thread_messages(agent.id, session.id, thread)

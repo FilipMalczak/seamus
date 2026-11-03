@@ -1,6 +1,6 @@
 """Configuration package for Seamus."""
 
-from seamus.config.models import AgentConfig, InferenceConfig, InferenceFormat
+from seamus.config.models import AgentConfig, InferenceConfig, InferenceFormat, TodoImplementation
 from seamus.config.settings import (
     DEFAULT_SKILL_DIRECTORIES,
     SystemSettings,
@@ -23,6 +23,7 @@ __all__ = [
     "InferenceFormat",
     "SystemSettings",
     "SystemSettingsStore",
+    "TodoImplementation",
     "get_config_template_store",
     "get_system_settings_store",
     "reset_config_template_store",

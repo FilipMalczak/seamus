@@ -166,10 +166,15 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md).
 - **Enforcement**: `GitWorkspaceManager.initialize_system_repo()`, `commit_system_settings()`, and `commit_system_config_template()`.
 
-### INV-033: TodoListMiddleware Integration and Prompt Composition
-- **Statement**: All DeepAgents instances constructed by Seamus must include `TodoListMiddleware` in their middleware stack, positioned immediately following `DynamicSystemPromptMiddleware`. `DynamicSystemPromptMiddleware` must set the base LM-XML system prompt (`build_effective_system_prompt`), and `TodoListMiddleware` must append its `WRITE_TODOS_SYSTEM_PROMPT` block without either layer clobbering the other. The `write_todos` tool must always be available to the agent, discoverable via the Inspector tool inventory, and active todos must be preserved in thread checkpoints and queryable via `AgentInspectReport.todos`.
+### INV-033: Configurable Todo Planning and System Prompt Composition
+- **Statement**: When `session.config.todo_implementation == TodoImplementation.DEEPAGENTS`, DeepAgents instances must include `SeamusTodoListMiddleware` positioned immediately following `DynamicSystemPromptMiddleware`. `DynamicSystemPromptMiddleware` sets the base LM-XML system prompt (`build_effective_system_prompt`), and `SeamusTodoListMiddleware` appends its `WRITE_TODOS_SYSTEM_PROMPT` block without either layer clobbering the other. When `todo_implementation == TodoImplementation.NONE`, no todo middleware is added, no `write_todos` tool is available to the agent or shown in the Inspector tool list, and active todos in the Inspector are empty.
 - **Justification**: [REQ-029](./requirements.md#req-029-task-planning-progress-tracking-and-todolist-middleware-integration), [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md).
-- **Enforcement**: `SessionAgentRunner._build_deep_agent()`, `seamus.harness.inspector.get_default_tools_inspect_info()`, `extract_agent_inspect_info()`, and tests in `tests/test_runner.py`, `tests/test_prompt.py`, and `tests/test_inspector.py`.
+- **Enforcement**: `SessionAgentRunner._build_deep_agent()`, `seamus.harness.inspector.build_agent_inspect_report()`, and automated tests in `tests/test_runner.py`, `tests/test_config.py`, and `tests/test_inspector.py`.
+
+### INV-034: Dynamic Session Runner Recompilation on Save
+- **Statement**: Updating a Session's configuration via `POST /agent/{id}/session/{id}` must immediately recompile the active runner's compiled graph (if cached) via `RunnerRegistry.reload_session_runner()`, ensuring the very next inference turn aligns with the updated configuration without restarting the runner process or dropping SSE listeners.
+- **Justification**: [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md).
+- **Enforcement**: `seamus.server.routes.sessions.update_session()`, `RunnerRegistry.reload_session_runner()`, and tests in `tests/test_server.py` and `tests/test_runner.py`.
 
 ## Cross-References
 - [backlog.md](./backlog.md)

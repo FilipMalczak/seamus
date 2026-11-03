@@ -25,11 +25,12 @@ from ag_ui_langgraph.utils import resolve_reasoning_content
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from pydantic import SecretStr
 
-from seamus.config.models import AgentConfig, InferenceConfig
+from seamus.config.models import AgentConfig, InferenceConfig, TodoImplementation
 from seamus.domain.entities import Agent, AgentStatus
 from seamus.harness.runner import (
     EventBroadcaster,
     ReasoningChatOpenAI,
+    RunnerRegistry,
     SeamusLangGraphAgent,
     SessionAgentRunner,
     SessionBusyError,
@@ -89,6 +90,7 @@ async def test_session_agent_runner_execution_and_status() -> None:
     config = AgentConfig(
         inference=InferenceConfig(api_key="mock-key"),
         model_name="mock-model",
+        todo_implementation=TodoImplementation.DEEPAGENTS,
     )
     agent = Agent(config=config, name="agent")
     session = agent.create_session(name="session")
@@ -251,6 +253,7 @@ async def test_runner_reasoning_events_and_replay() -> None:
     config = AgentConfig(
         inference=InferenceConfig(api_key="mock-key"),
         model_name="mock-model",
+        todo_implementation=TodoImplementation.DEEPAGENTS,
     )
     agent = Agent(config=config, name="agent")
     session = agent.create_session(name="session")
@@ -299,6 +302,7 @@ def test_tool_call_lifecycle_status_transitions() -> None:
     config = AgentConfig(
         inference=InferenceConfig(api_key="mock-key"),
         model_name="mock-model",
+        todo_implementation=TodoImplementation.DEEPAGENTS,
     )
     agent = Agent(config=config, name="agent")
     session = agent.create_session(name="session")
@@ -365,6 +369,7 @@ def test_session_agent_runner_includes_todo_middleware(monkeypatch: pytest.Monke
     config = AgentConfig(
         inference=InferenceConfig(api_key="mock-key"),
         model_name="mock-model",
+        todo_implementation=TodoImplementation.DEEPAGENTS,
     )
     agent = Agent(config=config, name="agent")
     session = agent.create_session(name="session")
@@ -493,3 +498,63 @@ async def test_seamus_todo_middleware_async_invocation() -> None:
     tool_msg = res["messages"][-1]
     assert tool_msg.tool_call_id == "call_ASYNC_123"
     assert "async test" in tool_msg.content
+
+
+def test_session_agent_runner_todo_implementation_toggle() -> None:
+    """Verify that runner graph includes or omits write_todos according to todo_implementation."""
+    config_none = AgentConfig(
+        inference=InferenceConfig(api_key="mock-key"),
+        model_name="mock-model",
+        todo_implementation=TodoImplementation.NONE,
+    )
+    agent = Agent(config=config_none, name="test-agent")
+    session = agent.create_session(name="test-session")
+
+    runner = SessionAgentRunner(session=session)
+    graph = runner.agent.graph
+    tools_node = graph.nodes.get("tools")
+    bound = getattr(tools_node, "bound", None)
+    tools_dict = (
+        getattr(bound, "tools_by_name", None) or getattr(bound, "_tools_by_name", None) or {}
+    )
+    assert "write_todos" not in tools_dict
+
+    # Reload with deepagents
+    session.config.todo_implementation = TodoImplementation.DEEPAGENTS
+    runner.reload_config()
+    graph_reloaded = runner.agent.graph
+    tools_node_reloaded = graph_reloaded.nodes.get("tools")
+    bound_reloaded = getattr(tools_node_reloaded, "bound", None)
+    tools_dict_reloaded = (
+        getattr(bound_reloaded, "tools_by_name", None)
+        or getattr(bound_reloaded, "_tools_by_name", None)
+        or {}
+    )
+    assert "write_todos" in tools_dict_reloaded
+
+
+def test_runner_registry_reload_session_runner() -> None:
+    """Verify RunnerRegistry.reload_session_runner reconfigures active cached runner."""
+    registry = RunnerRegistry()
+    config = AgentConfig(
+        inference=InferenceConfig(api_key="mock-key"),
+        model_name="mock-model",
+        todo_implementation=TodoImplementation.NONE,
+    )
+    agent = Agent(config=config, name="reg-agent")
+    session = agent.create_session(name="reg-session")
+
+    runner = registry.get_runner(session, agent)
+    bound = getattr(runner.agent.graph.nodes.get("tools"), "bound", None)
+    assert bound is not None
+    tools_dict = bound.tools_by_name
+    assert "write_todos" not in tools_dict
+
+    # Update session config and call reload_session_runner
+    session.config.todo_implementation = TodoImplementation.DEEPAGENTS
+    registry.reload_session_runner(session)
+
+    bound_updated = getattr(runner.agent.graph.nodes.get("tools"), "bound", None)
+    assert bound_updated is not None
+    tools_dict_updated = bound_updated.tools_by_name
+    assert "write_todos" in tools_dict_updated

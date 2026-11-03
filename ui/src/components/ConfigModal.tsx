@@ -57,6 +57,17 @@ export function ConfigModal({
       return;
     }
 
+    if (
+      "todo_implementation" in parsed &&
+      parsed.todo_implementation !== null &&
+      !["none", "deepagents"].includes(parsed.todo_implementation)
+    ) {
+      setError(
+        `Invalid todo_implementation '${parsed.todo_implementation}'. Allowed values: 'none', 'deepagents'.`
+      );
+      return;
+    }
+
     setSaving(true);
     try {
       await onSave(parsed as AgentConfig);

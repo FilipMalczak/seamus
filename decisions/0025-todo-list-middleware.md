@@ -18,29 +18,35 @@ However, in Seamus:
 
 ## Decision
 
-1. **Incorporate `TodoListMiddleware` into DeepAgent Construction**:
-   - In `SessionAgentRunner._build_deep_agent()`, import `TodoListMiddleware` from `langchain.agents.middleware`.
-   - Instantiate `todo_list_middleware = TodoListMiddleware()` for each session agent.
-   - Register it in `create_deep_agent(..., middleware=[dynamic_prompt_middleware, todo_list_middleware])`.
+1. **Configurable Planning Layer and `todo_implementation` Enum**:
+   - Introduce `TodoImplementation(StrEnum)` with allowed values `none` and `deepagents`.
+   - Add `todo_implementation: TodoImplementation = TodoImplementation.NONE` to `AgentConfig`, supported across Template, Agent, and Session configuration levels with inheritance via `copy_with_overrides`.
+   - Validate strictly on save; invalid values are rejected with 422 Unprocessable Entity and surfaced cleanly in the UI modal.
+   - Decouple planning architecture to allow future custom planning toolsets alongside DeepAgents middleware.
 
-2. **Middleware Ordering and System Prompt Composition**:
-   - `DynamicSystemPromptMiddleware` is placed first in the user middleware list so that it dynamically establishes Seamus's base LM-XML system prompt (`build_effective_system_prompt(...)`) per inference turn.
+2. **Incorporate `TodoListMiddleware` Conditionally**:
+   - In `SessionAgentRunner._build_deep_agent()`, conditionally register `SeamusTodoListMiddleware()` only when `session.config.todo_implementation == TodoImplementation.DEEPAGENTS`.
+   - When set to `none`, omit todo middleware, preventing any todo tools, prompts, or state overhead from leaking to the agent.
+
+3. **Dynamic Graph Reloading on Session Configuration Save**:
+   - Provide `SessionAgentRunner.reload_config(session)` and `RunnerRegistry.reload_session_runner(session)`.
+   - Upon updating session configuration via `POST /agent/{id}/session/{id}`, immediately reload the cached runner's compiled graph so the very next inference turn aligns with the updated configuration without needing a process restart.
+
+4. **Middleware Ordering and System Prompt Composition**:
+   - When enabled, `DynamicSystemPromptMiddleware` is placed first in the user middleware list so that it dynamically establishes Seamus's base LM-XML system prompt (`build_effective_system_prompt(...)`) per inference turn.
    - `TodoListMiddleware` is placed subsequent to `DynamicSystemPromptMiddleware`. When `TodoListMiddleware.awrap_model_call` executes, it appends its `WRITE_TODOS_SYSTEM_PROMPT` block directly onto the dynamic system prompt established by `DynamicSystemPromptMiddleware`.
    - The provider receives both the structured Seamus XML prompt and the `## write_todos` guidance block in a clean, multi-part system message.
 
-3. **Offline Schema & Inspector Tool Discovery**:
-   - In `seamus.harness.inspector.get_default_tools_inspect_info()`, include `TodoListMiddleware()` when compiling the dummy graph, ensuring `write_todos` is discovered and its arguments schema is cached even when no active runner exists.
-   - Classify `write_todos` with `backend = "harness"`, distinguishing it from containerized `"opensandbox"` filesystem operations.
-
-4. **Inspector Task Tracking & UI Surface**:
-   - Extend `AgentInspectReport` in `seamus.harness.inspector` with `todos: list[TodoInspectItem] = Field(default_factory=list)`, where `TodoInspectItem` captures `content` and `status` (`pending`, `in_progress`, `completed`).
-   - In `extract_agent_inspect_info()`, inspect the latest thread checkpoint tuple or active graph state for `todos`, deserializing and populating `report.todos`.
-   - In the web UI (`AgentInspector.tsx`), introduce a dedicated **Todos** tab displaying active task items, status indicators, and total counts.
+5. **Inspector Alignment & Tool Discovery**:
+   - In `seamus.harness.inspector.get_default_tools_inspect_info()`, include `TodoListMiddleware()` when compiling the dummy graph, ensuring `write_todos` is discovered and its arguments schema is cached offline with `backend = "harness"`.
+   - In `build_agent_inspect_report`, if `session.config.todo_implementation == TodoImplementation.NONE`, filter out `write_todos` from reported tools and return an empty `todos` list.
+   - Extend `AgentInspectReport` with `todos: list[TodoInspectItem] = Field(default_factory=list)` and display active todos in the **Todos** tab of the inspector UI.
 
 ## Consequences
 
-- Agents across all model providers have immediate, out-of-the-box access to `write_todos` for structured task breakdown and real-time state tracking.
-- System prompt sent to providers reliably includes both Seamus LM-XML context and `write_todos` operational guidance.
+- Sessions can selectively enable DeepAgents `TodoListMiddleware` or disable task list tooling entirely (`none`), preparing Seamus for custom planning toolsets.
+- System prompt and available tools immediately align with `todo_implementation` upon saving session configuration.
+- System prompt sent to providers reliably includes both Seamus LM-XML context and `write_todos` operational guidance when enabled.
 - Users gain explicit, real-time visibility into the agent's internal task plan in the inspector UI.
 - `PlanningState` (`todos` list) is saved transparently in `GitCheckpointSaver` during regular turn commits.
 

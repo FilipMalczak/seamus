@@ -104,6 +104,11 @@ async def update_session(
             config=payload.config,
             name=payload.name,
         )
+        if session.config.is_complete():
+            try:
+                get_runner_registry().reload_session_runner(session)
+            except Exception:
+                logger.exception("Failed to reload runner for session %s on update", session.id)
     except EntityNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except SlugConflictError as exc:

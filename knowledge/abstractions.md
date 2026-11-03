@@ -20,7 +20,8 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - Configuration abstractions and stores.
 - `InferenceFormat`: Supported inference protocol shapes (e.g. `openai`).
 - `InferenceConfig`: Provider settings (format, base URL, optional API key).
-- `AgentConfig`: Agent-level settings (inference configuration and model name). Provides `is_complete()` and copy/derive utilities.
+- `TodoImplementation`: Supported planning/todo list implementations (`none`, `deepagents`).
+- `AgentConfig`: Agent and session configuration model (inference settings, model name, optional system prompt, and `todo_implementation`). Provides `is_complete()`, `validate_complete()`, and `copy_with_overrides()` for inheritance.
 - `SystemSettings`: System-wide configuration model (`skill_directories: list[str]`) not scoped to any agent or session.
 - `ConfigTemplateStore`: Persistent container for the service-wide singleton `AgentConfig` template, backed by Gitea repository `system` with first-run defaults.
 - `SystemSettingsStore`: Persistent container for service-wide `SystemSettings`, backed by Gitea repository `system` with first-run defaults.
@@ -44,9 +45,10 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `build_scaffold_prompt` / `build_sandbox_system_prompt`: Generates structured XML system prompt instructions (serialized via `lmxml`) informing the agent of its identity, `/workspace` operational persistence boundaries, engineering discipline, tool rules, and communication style.
 - `build_effective_system_prompt`: Assembles the complete LM-XML system prompt combining the base scaffold, dynamic turn context, and user-configured custom instructions.
 - `DynamicSystemPromptMiddleware`: LangChain/DeepAgents middleware intercepting model requests to dynamically update `system_message` on each inference turn.
-- `TodoListMiddleware` / `SeamusTodoListMiddleware`: Middleware providing the `write_todos` tool, tracking task states (`pending`, `in_progress`, `completed`) in `PlanningState`, appending task management guidance to the dynamic system prompt, and providing resilient schema normalization (`ResilientWriteTodosInput`) for common LLM key/state variations.
+- `TodoListMiddleware` / `SeamusTodoListMiddleware`: Middleware providing the `write_todos` tool, tracking task states (`pending`, `in_progress`, `completed`) in `PlanningState`, appending task management guidance to the dynamic system prompt, and providing resilient schema normalization (`ResilientWriteTodosInput`) for common LLM key/state variations. Instantiated conditionally when `session.config.todo_implementation == TodoImplementation.DEEPAGENTS`.
 - `SeamusOpenSandboxBackend`: `OpenSandboxBackend` (`langchain_opensandbox`) subclass providing lazy per-session `SandboxSync` container provisioning, mounting `<session_workspace>/data` at `/workspace` (read-write), and mounting configured system-wide skill directories as strictly read-only (`readOnly=True`) volumes.
-- `SessionAgentRunner`: Encapsulates DeepAgent graph instantiation (with `SeamusOpenSandboxBackend`, `DynamicSystemPromptMiddleware`, `TodoListMiddleware`, Anthropic skills integration via `SkillsMiddleware`, and `GitCheckpointSaver`), input handling, and event lifecycle mapping (including `REASONING_*` events).
+- `SessionAgentRunner`: Encapsulates DeepAgent graph instantiation (with `SeamusOpenSandboxBackend`, `DynamicSystemPromptMiddleware`, conditional `TodoListMiddleware`, Anthropic skills integration via `SkillsMiddleware`, and `GitCheckpointSaver`), input handling, event lifecycle mapping (including `REASONING_*` events), and dynamic graph recompilation via `reload_config(session)`.
+- `RunnerRegistry`: Maintains active `SessionAgentRunner` instances keyed by session ID with `reload_session_runner(session)` for instant configuration synchronization upon session updates.
 - `AgentInspectReport`: Data model capturing identity, Gitea branch provenance, model & inference settings, decomposed system prompts (scaffold vs. custom), tool argument schemas, active todos (`todos: list[TodoInspectItem]`), execution status, and trajectory history.
 - `build_agent_inspect_report`: Harness inspection service extracting semi-live agent state from active `SessionAgentRunner` instances or persisted Gitea branch state.
 - `EventBroadcaster`: Fan-out pub-sub queue mechanism for multiplexing real-time AG-UI SSE events to multiple active thread consumers.

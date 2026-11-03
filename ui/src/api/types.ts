@@ -4,10 +4,13 @@ export type InferenceConfig = {
   api_key?: string | null;
 };
 
+export type TodoImplementation = "none" | "deepagents";
+
 export type AgentConfig = {
   inference: InferenceConfig;
   model_name: string;
   system_prompt?: string | null;
+  todo_implementation?: TodoImplementation;
 };
 
 export type ConfigTemplateResponse = {

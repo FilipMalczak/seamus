@@ -33,6 +33,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.types import Command
 from pydantic import BaseModel, Field, SecretStr, model_validator
 
+from seamus.config.models import TodoImplementation
 from seamus.config.settings import get_system_settings_store, resolve_skill_path
 from seamus.domain.entities import Agent, AgentStatus, Session, Thread
 from seamus.harness.prompt import (
@@ -402,8 +403,9 @@ class SessionAgentRunner:
         # System-wide skills first; session-level last so session skills override system skills
         skill_sources = [*system_skill_dirs, "/workspace/.skills"]
 
-        todo_list_middleware = SeamusTodoListMiddleware()
-        runner_middleware: list[Any] = [dynamic_prompt_middleware, todo_list_middleware]
+        runner_middleware: list[Any] = [dynamic_prompt_middleware]
+        if self.session.config.todo_implementation == TodoImplementation.DEEPAGENTS:
+            runner_middleware.append(SeamusTodoListMiddleware())
 
         graph = create_deep_agent(
             model=llm,
@@ -451,6 +453,12 @@ class SessionAgentRunner:
     def agent(self) -> LangGraphAgent:
         """Return the underlying LangGraphAgent instance."""
         return self._agent
+
+    def reload_config(self, session: Session | None = None) -> None:
+        """Recompile agent graph with updated session config while preserving SSE and state."""
+        if session is not None:
+            self.session = session
+        self._agent = self._build_deep_agent()
 
     def is_awaiting_user(self) -> bool:
         """Check if the session's active thread is currently awaiting user input."""
@@ -797,6 +805,12 @@ class RunnerRegistry:
     def set_runner(self, session_id: str, runner: SessionAgentRunner) -> None:
         """Register a specific runner instance (useful for testing with mock agents)."""
         self._runners[session_id] = runner
+
+    def reload_session_runner(self, session: Session) -> None:
+        """Reload the SessionAgentRunner for a session if currently cached."""
+        session_key = str(session.id)
+        if session_key in self._runners:
+            self._runners[session_key].reload_config(session)
 
 
 _GLOBAL_RUNNER_REGISTRY: RunnerRegistry | None = None

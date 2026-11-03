@@ -124,9 +124,14 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Provenance**: [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md#5-containerized-local-opensandbox-server-opensandbox-docker-composeyml-runsh), [architecture.md](./architecture.md#component-boundaries).
 
 ### Dynamic Model Catalog and Dropdowns in UI Configuration Modals
-- **Description**: The in-browser `ConfigModal` currently requires raw JSON editing for all configuration fields. Add structured input fields or dropdowns for supported model names and inference formats while preserving the raw JSON editing tab.
+- **Description**: The in-browser `ConfigModal` currently requires raw JSON editing for all configuration fields. Add structured input fields or dropdowns for supported model names, inference formats, and `todo_implementation` (`none`, `deepagents`) while preserving the raw JSON editing tab.
 - **Rationale**: Reduces syntax errors and configuration friction when configuring agents and sessions.
-- **Provenance**: [0003-react-web-ui.md](../decisions/0003-react-web-ui.md), [abstractions.md](./abstractions.md#ui-ui).
+- **Provenance**: [0003-react-web-ui.md](../decisions/0003-react-web-ui.md), [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md), [abstractions.md](./abstractions.md#ui-ui).
+
+### Custom Planning Toolset Integration
+- **Description**: Implement custom planning toolset alternatives alongside `none` and `deepagents` (e.g. customized task decomposition, plan verification, or milestone tracking), introducing corresponding `todo_implementation` enum values.
+- **Rationale**: Enables dedicated, customizable task planning architectures beyond the standard DeepAgents middleware.
+- **Provenance**: [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md), [invariants.md](./invariants.md#inv-033-configurable-todo-planning-and-system-prompt-composition).
 
 ### Automated Integration Tests for Gitea Docker Compose Stack
 - **Description**: Existing test suites verify unit logic and persistence mechanics using mock clients and temporary Git directories. Add automated end-to-end integration tests that run against the live `docker-compose` environment (`backend`, `frontend`, `gitea`, `postgres`).

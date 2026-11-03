@@ -5,7 +5,12 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from seamus.config.models import AgentConfig, InferenceConfig, InferenceFormat
+from seamus.config.models import (
+    AgentConfig,
+    InferenceConfig,
+    InferenceFormat,
+    TodoImplementation,
+)
 from seamus.config.template import ConfigTemplateStore, reset_config_template_store
 from seamus.harness.inspector import (
     build_agent_inspect_report,
@@ -207,6 +212,7 @@ def test_inspect_extracts_todos_from_workspace() -> None:
             api_key="sk-secret-key-12345",
         ),
         model_name="openai/gpt-oss-120b",
+        todo_implementation=TodoImplementation.DEEPAGENTS,
     )
     agent = store.create_agent(config=config, name="todos-inspect-agent")
     session = list(agent.sessions.values())[0]
@@ -248,6 +254,7 @@ def test_extract_thread_todos_from_jsonplus_checkpoints() -> None:
             api_key="sk-secret-key-12345",
         ),
         model_name="openai/gpt-oss-120b",
+        todo_implementation=TodoImplementation.DEEPAGENTS,
     )
     agent = store.create_agent(config=config, name="jsonplus-checkpoint-agent")
     session = list(agent.sessions.values())[0]
@@ -311,3 +318,27 @@ def test_default_tools_inspect_info_includes_todos_schema() -> None:
     assert write_todos_tool is not None
     assert write_todos_tool.backend == "harness"
     assert "todos" in write_todos_tool.parameters.get("properties", {})
+
+
+def test_inspector_todo_implementation_toggle() -> None:
+    """Verify inspector tools and todos reflect session todo_implementation setting."""
+    store = HarnessStore()
+    reset_harness_store(store)
+
+    config_none = AgentConfig(
+        inference=InferenceConfig(api_key="key"),
+        model_name="test-model",
+        todo_implementation=TodoImplementation.NONE,
+    )
+    agent = store.create_agent(config=config_none, name="toggle-agent")
+    session = list(agent.sessions.values())[0]
+
+    report_none = build_agent_inspect_report(str(agent.id), str(session.id))
+    assert not any(t.name == "write_todos" for t in report_none.tools)
+    assert len(report_none.todos) == 0
+
+    # Update session to deepagents and reload runner
+    session.config.todo_implementation = TodoImplementation.DEEPAGENTS
+    reset_runner_registry()
+    report_deep = build_agent_inspect_report(str(agent.id), str(session.id))
+    assert any(t.name == "write_todos" for t in report_deep.tools)

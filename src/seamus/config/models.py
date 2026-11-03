@@ -12,6 +12,13 @@ class InferenceFormat(StrEnum):
     OPENAI = "openai"
 
 
+class TodoImplementation(StrEnum):
+    """Supported task list / planning middleware implementations."""
+
+    NONE = "none"
+    DEEPAGENTS = "deepagents"
+
+
 class InferenceConfig(BaseModel):
     """Inference API connection and credentials configuration."""
 
@@ -36,6 +43,7 @@ class AgentConfig(BaseModel):
     inference: InferenceConfig = Field(default_factory=InferenceConfig)
     model_name: str = "openai/gpt-oss-120b"
     system_prompt: str | None = None
+    todo_implementation: TodoImplementation = TodoImplementation.NONE
 
     def is_complete(self) -> bool:
         """Return True if this configuration is complete enough to initialize an agent."""
@@ -72,9 +80,21 @@ class AgentConfig(BaseModel):
         return self.model_copy(
             update={
                 "inference": merged_inference,
-                "model_name": overrides.model_name
-                if "model_name" in overrides.model_fields_set
-                else self.model_name,
+                "model_name": (
+                    overrides.model_name
+                    if "model_name" in overrides.model_fields_set
+                    else self.model_name
+                ),
+                "system_prompt": (
+                    overrides.system_prompt
+                    if "system_prompt" in overrides.model_fields_set
+                    else self.system_prompt
+                ),
+                "todo_implementation": (
+                    overrides.todo_implementation
+                    if "todo_implementation" in overrides.model_fields_set
+                    else self.todo_implementation
+                ),
             },
             deep=True,
         )
