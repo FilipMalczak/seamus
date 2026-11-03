@@ -154,10 +154,17 @@ Persistent record of work intentionally left outstanding across the project, mai
 - review the session killing and branching details - it was slightly undertested and there might be some bugs lingering
 - auto-refresh on UI side; eg when following state of thread and looking at changes
 - opening a session in the UI, as opposed to currently opening threads (loading all the past threads; input box being a proxy to open thread input); session view being the default when creating or selecting an agent
-- auto-naming agents, sessions and threads (agent - randomized multi-word slug; session and thread - using a small "namer" agent, needs to be configured on agent level)
+- auto-naming agents, sessions and threads (agent - randomized multi-word slug; session and thread - using a small "namer" agent, needs to be configured on agent level) - this is part of bigger "daemons" initiative; daemons being small, heavily-dedicated agents for UX tasks - naming sessions and threads, auto-managing todos, etc
 - chore: set default UI proportions to 1:2 (tree:chat ratio)
 - user input variations:
   - user-accepted tool calls
   - artifact-based forms that the user can open and fill
   - in-message UI pieces?
   - specialized messages?
+- Seamus implementation variants:
+  - todos (at that point decide on the default)
+  - skills (add config toggle)
+- if there's an unhandled error, it needs to be very verbose in the UI
+- inspector is semi-live inconsistently - tools change as soon as we switch config, so they dont present "last inference" but rather "next inference"
+- dashboard view (less detailed, less cluttered, more focused on achieving goals than understanding agent impl details)
+- In the inspector, in tools section - tool desc may include newlines, which get collapsed in the tool cards
