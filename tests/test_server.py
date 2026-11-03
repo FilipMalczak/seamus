@@ -491,3 +491,64 @@ def test_session_diff_endpoint(client: TestClient) -> None:
     # 3. Non-existent session returns 404
     missing_res = client.get(f"/api/v-alpha/agent/{agent_id}/session/unknown-session/diff")
     assert missing_res.status_code == 404
+
+
+def test_session_and_template_todo_implementation_config(client: TestClient) -> None:
+    """Verify todo_implementation config and validation across template and session routes."""
+    # 1. Template validation
+    tmpl_res = client.get("/api/v-alpha/config-template")
+    assert tmpl_res.status_code == 200
+    tmpl_data = tmpl_res.json()["config"]
+    assert tmpl_data["todo_implementation"] == "none"
+
+    # Invalid template value -> 422
+    tmpl_data["todo_implementation"] = "invalid_choice"
+    bad_tmpl_res = client.post("/api/v-alpha/config-template", json=tmpl_data)
+    assert bad_tmpl_res.status_code == 422
+
+    # Valid template value -> 200
+    tmpl_data["todo_implementation"] = "deepagents"
+    ok_tmpl_res = client.post("/api/v-alpha/config-template", json=tmpl_data)
+    assert ok_tmpl_res.status_code == 200
+    assert ok_tmpl_res.json()["config"]["todo_implementation"] == "deepagents"
+
+    # Reset template back to none
+    tmpl_data["todo_implementation"] = "none"
+    client.post("/api/v-alpha/config-template", json=tmpl_data)
+
+    # 2. Session update and validation
+    agent = client.post("/api/v-alpha/agents", json={"name": "todo-agent"}).json()
+    session = client.post(
+        f"/api/v-alpha/agent/{agent['id']}/session", json={"name": "todo-session"}
+    ).json()
+
+    assert session["config"]["todo_implementation"] == "none"
+
+    # Invalid session todo_implementation -> 422
+    bad_session_update = {
+        "name": "todo-session",
+        "config": {
+            **session["config"],
+            "todo_implementation": "invalid_value",
+        },
+    }
+    bad_res = client.post(
+        f"/api/v-alpha/agent/{agent['id']}/session/{session['id']}",
+        json=bad_session_update,
+    )
+    assert bad_res.status_code == 422
+
+    # Valid session update -> 200
+    good_session_update = {
+        "name": "todo-session",
+        "config": {
+            **session["config"],
+            "todo_implementation": "deepagents",
+        },
+    }
+    good_res = client.post(
+        f"/api/v-alpha/agent/{agent['id']}/session/{session['id']}",
+        json=good_session_update,
+    )
+    assert good_res.status_code == 200
+    assert good_res.json()["config"]["todo_implementation"] == "deepagents"

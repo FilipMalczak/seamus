@@ -69,6 +69,11 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Improvement**: Audit and resolve cross-platform compatibility issues (e.g., path normalization across Windows/macOS, process lifecycle handling, and conditional test skipping or container mocking) and re-enable macOS and Windows runners in `.github/workflows/ci.yml`.
 - **Provenance**: [0023-github-actions-ci-pipeline.md](../decisions/0023-github-actions-ci-pipeline.md), [conventions.md](./conventions.md#continuous-integration-conventions).
 
+### Plan State Recovery Across `todo_implementation` Setting Toggles
+- **Current Problem**: If a session uses `todo_implementation: deepagents` and the agent generates a task plan, switching `todo_implementation` to `none` hides the plan and tools. Switching back to `deepagents` recovers the previous plan because `PlanningState` (`todos` in LangGraph checkpoints and `todos.json` in workspace) remains intact on disk. This recovery happens incidentally because we did not put effort into lifecycle state transitions across configuration toggles.
+- **Improvement**: Think through and deliberately define the desired behavior when toggling between planning implementations (or to `none` and back): decide whether prior plan state should be retained, cleared, archived, or version-branched across implementation switches.
+- **Provenance**: [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md), [invariants.md](./invariants.md#inv-033-configurable-todo-planning-and-system-prompt-composition).
+
 ## TODO
 
 ### Native LM-XML Skills System with Load/Unload Skill Tools
@@ -124,9 +129,14 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Provenance**: [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md#5-containerized-local-opensandbox-server-opensandbox-docker-composeyml-runsh), [architecture.md](./architecture.md#component-boundaries).
 
 ### Dynamic Model Catalog and Dropdowns in UI Configuration Modals
-- **Description**: The in-browser `ConfigModal` currently requires raw JSON editing for all configuration fields. Add structured input fields or dropdowns for supported model names and inference formats while preserving the raw JSON editing tab.
+- **Description**: The in-browser `ConfigModal` currently requires raw JSON editing for all configuration fields. Add structured input fields or dropdowns for supported model names, inference formats, and `todo_implementation` (`none`, `deepagents`) while preserving the raw JSON editing tab.
 - **Rationale**: Reduces syntax errors and configuration friction when configuring agents and sessions.
-- **Provenance**: [0003-react-web-ui.md](../decisions/0003-react-web-ui.md), [abstractions.md](./abstractions.md#ui-ui).
+- **Provenance**: [0003-react-web-ui.md](../decisions/0003-react-web-ui.md), [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md), [abstractions.md](./abstractions.md#ui-ui).
+
+### Custom Planning Toolset Integration
+- **Description**: Implement custom planning toolset alternatives alongside `none` and `deepagents` (e.g. customized task decomposition, plan verification, or milestone tracking), introducing corresponding `todo_implementation` enum values.
+- **Rationale**: Enables dedicated, customizable task planning architectures beyond the standard DeepAgents middleware.
+- **Provenance**: [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md), [invariants.md](./invariants.md#inv-033-configurable-todo-planning-and-system-prompt-composition).
 
 ### Automated Integration Tests for Gitea Docker Compose Stack
 - **Description**: Existing test suites verify unit logic and persistence mechanics using mock clients and temporary Git directories. Add automated end-to-end integration tests that run against the live `docker-compose` environment (`backend`, `frontend`, `gitea`, `postgres`).
@@ -146,15 +156,23 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## Not formalized
 
+- [CRITICAL BUG] in deepagents skill impl, when we mount system-wide skills, we provide host paths in sandboxed system prompt; replace with in-sandbox paths
+  - critical, as it will impaxct bundled skills too, and we need a2ui skill for the sake of artifacts
+
 - review the session killing and branching details - it was slightly undertested and there might be some bugs lingering
 - auto-refresh on UI side; eg when following state of thread and looking at changes
 - opening a session in the UI, as opposed to currently opening threads (loading all the past threads; input box being a proxy to open thread input); session view being the default when creating or selecting an agent
-- auto-naming agents, sessions and threads (agent - randomized multi-word slug; session and thread - using a small "namer" agent, needs to be configured on agent level)
+- auto-naming agents, sessions and threads (agent - randomized multi-word slug; session and thread - using a small "namer" agent, needs to be configured on agent level) - this is part of bigger "daemons" initiative; daemons being small, heavily-dedicated agents for UX tasks - naming sessions and threads, auto-managing todos, etc
 - chore: set default UI proportions to 1:2 (tree:chat ratio)
-- todo tool is BROKEN! tools dont show up in inspector
-- integrate the todo list into inspector
 - user input variations:
   - user-accepted tool calls
   - artifact-based forms that the user can open and fill
   - in-message UI pieces?
   - specialized messages?
+- Seamus implementation variants:
+  - todos (at that point decide on the default)
+  - skills (add config toggle)
+- if there's an unhandled error, it needs to be very verbose in the UI
+- inspector is semi-live inconsistently - tools change as soon as we switch config, so they dont present "last inference" but rather "next inference"
+- dashboard view (less detailed, less cluttered, more focused on achieving goals than understanding agent impl details)
+- In the inspector, in tools section - tool desc may include newlines, which get collapsed in the tool cards

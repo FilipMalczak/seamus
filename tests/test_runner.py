@@ -25,11 +25,12 @@ from ag_ui_langgraph.utils import resolve_reasoning_content
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from pydantic import SecretStr
 
-from seamus.config.models import AgentConfig, InferenceConfig
+from seamus.config.models import AgentConfig, InferenceConfig, TodoImplementation
 from seamus.domain.entities import Agent, AgentStatus
 from seamus.harness.runner import (
     EventBroadcaster,
     ReasoningChatOpenAI,
+    RunnerRegistry,
     SeamusLangGraphAgent,
     SessionAgentRunner,
     SessionBusyError,
@@ -89,6 +90,7 @@ async def test_session_agent_runner_execution_and_status() -> None:
     config = AgentConfig(
         inference=InferenceConfig(api_key="mock-key"),
         model_name="mock-model",
+        todo_implementation=TodoImplementation.DEEPAGENTS,
     )
     agent = Agent(config=config, name="agent")
     session = agent.create_session(name="session")
@@ -251,6 +253,7 @@ async def test_runner_reasoning_events_and_replay() -> None:
     config = AgentConfig(
         inference=InferenceConfig(api_key="mock-key"),
         model_name="mock-model",
+        todo_implementation=TodoImplementation.DEEPAGENTS,
     )
     agent = Agent(config=config, name="agent")
     session = agent.create_session(name="session")
@@ -299,6 +302,7 @@ def test_tool_call_lifecycle_status_transitions() -> None:
     config = AgentConfig(
         inference=InferenceConfig(api_key="mock-key"),
         model_name="mock-model",
+        todo_implementation=TodoImplementation.DEEPAGENTS,
     )
     agent = Agent(config=config, name="agent")
     session = agent.create_session(name="session")
@@ -348,3 +352,209 @@ def test_tool_call_lifecycle_status_transitions() -> None:
         RunFinishedEvent(type=EventType.RUN_FINISHED, thread_id="t", run_id="r"),
     )
     assert session.get_open_thread().status == AgentStatus.AWAITING_USER
+
+
+def test_session_agent_runner_includes_todo_middleware(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify that _build_deep_agent passes TodoListMiddleware in correct order."""
+    from unittest.mock import MagicMock
+
+    from langchain.agents.middleware import TodoListMiddleware
+
+    from seamus.harness.prompt import DynamicSystemPromptMiddleware
+    from seamus.persistence import GitWorkspaceManager
+
+    mock_mgr = MagicMock(spec=GitWorkspaceManager)
+    monkeypatch.setattr("seamus.harness.runner.get_workspace_manager", lambda: mock_mgr)
+
+    config = AgentConfig(
+        inference=InferenceConfig(api_key="mock-key"),
+        model_name="mock-model",
+        todo_implementation=TodoImplementation.DEEPAGENTS,
+    )
+    agent = Agent(config=config, name="agent")
+    session = agent.create_session(name="session")
+
+    captured_kwargs: dict[str, Any] = {}
+
+    def mock_create_deep_agent(**kwargs: Any) -> Any:
+        captured_kwargs.update(kwargs)
+        mock_graph = MagicMock()
+        mock_graph.nodes = {}
+        return mock_graph
+
+    monkeypatch.setattr("seamus.harness.runner.create_deep_agent", mock_create_deep_agent)
+
+    runner = SessionAgentRunner(session=session, agent_entity=agent)
+    assert runner is not None
+    middleware = captured_kwargs.get("middleware", [])
+
+    assert any(isinstance(m, DynamicSystemPromptMiddleware) for m in middleware)
+    assert any(isinstance(m, TodoListMiddleware) for m in middleware)
+    dynamic_idx = next(
+        i for i, m in enumerate(middleware) if isinstance(m, DynamicSystemPromptMiddleware)
+    )
+    todo_idx = next(i for i, m in enumerate(middleware) if isinstance(m, TodoListMiddleware))
+    assert dynamic_idx < todo_idx
+
+
+def test_seamus_todo_middleware_resilient_inputs() -> None:
+    """Verify that SeamusTodoListMiddleware normalizes varied LLM key names and statuses."""
+    from seamus.harness.runner import ResilientWriteTodosInput, SeamusTodoListMiddleware
+
+    mw = SeamusTodoListMiddleware()
+    assert len(mw.tools) == 1
+    tool = mw.tools[0]
+    assert tool.name == "write_todos"
+
+    # 1. Standard format
+    std = ResilientWriteTodosInput.model_validate(
+        {"todos": [{"content": "Clean codebase", "status": "in_progress"}]}
+    )
+    assert std.todos[0].content == "Clean codebase"
+    assert std.todos[0].status == "in_progress"
+
+    # 2. task + state variations (as observed in gpt-oss-20b runs)
+    variant1 = ResilientWriteTodosInput.model_validate(
+        {"todos": [{"task": "foo", "state": "in_progress"}, {"task": "bar", "state": "pending"}]}
+    )
+    assert variant1.todos[0].content == "foo"
+    assert variant1.todos[0].status == "in_progress"
+    assert variant1.todos[1].content == "bar"
+    assert variant1.todos[1].status == "pending"
+
+    # 3. name + status variations
+    variant2 = ResilientWriteTodosInput.model_validate(
+        {"todos": [{"name": "foo task", "status": "in_progress"}]}
+    )
+    assert variant2.todos[0].content == "foo task"
+    assert variant2.todos[0].status == "in_progress"
+
+    # 4. tasks alias + title + done status
+    variant3 = ResilientWriteTodosInput.model_validate(
+        {"tasks": [{"title": "Deploy system", "progress": "done"}]}
+    )
+    assert variant3.todos[0].content == "Deploy system"
+    assert variant3.todos[0].status == "completed"
+
+    # 5. Tool invocation in LangGraph ToolNode returns Command with matching tool_call_id
+    from langchain_core.messages import AIMessage, HumanMessage
+    from langgraph.graph import MessagesState, StateGraph
+    from langgraph.prebuilt import ToolNode
+
+    builder = StateGraph(MessagesState)
+    builder.add_node("tools", ToolNode([tool]))
+    builder.set_entry_point("tools")
+    graph = builder.compile()
+
+    ai_msg = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "write_todos",
+                "args": {
+                    "todos": [
+                        {"task": "run tests", "state": "active"},
+                        {"name": "commit", "state": "todo"},
+                    ]
+                },
+                "id": "call_TEST_123",
+            }
+        ],
+    )
+    res = graph.invoke({"messages": [HumanMessage(content="hi"), ai_msg]})
+    tool_msg = res["messages"][-1]
+    assert tool_msg.tool_call_id == "call_TEST_123"
+    assert "run tests" in tool_msg.content
+
+
+@pytest.mark.asyncio
+async def test_seamus_todo_middleware_async_invocation() -> None:
+    """Verify that SeamusTodoListMiddleware tool can be invoked asynchronously in LangGraph."""
+    from langchain_core.messages import AIMessage, HumanMessage
+    from langgraph.graph import MessagesState, StateGraph
+    from langgraph.prebuilt import ToolNode
+
+    from seamus.harness.runner import SeamusTodoListMiddleware
+
+    mw = SeamusTodoListMiddleware()
+    tool = mw.tools[0]
+
+    builder = StateGraph(MessagesState)
+    builder.add_node("tools", ToolNode([tool]))
+    builder.set_entry_point("tools")
+    graph = builder.compile()
+
+    ai_msg = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "write_todos",
+                "args": {"todos": [{"task": "async test", "state": "completed"}]},
+                "id": "call_ASYNC_123",
+            }
+        ],
+    )
+    res = await graph.ainvoke({"messages": [HumanMessage(content="hi"), ai_msg]})
+    tool_msg = res["messages"][-1]
+    assert tool_msg.tool_call_id == "call_ASYNC_123"
+    assert "async test" in tool_msg.content
+
+
+def test_session_agent_runner_todo_implementation_toggle() -> None:
+    """Verify that runner graph includes or omits write_todos according to todo_implementation."""
+    config_none = AgentConfig(
+        inference=InferenceConfig(api_key="mock-key"),
+        model_name="mock-model",
+        todo_implementation=TodoImplementation.NONE,
+    )
+    agent = Agent(config=config_none, name="test-agent")
+    session = agent.create_session(name="test-session")
+
+    runner = SessionAgentRunner(session=session)
+    graph = runner.agent.graph
+    tools_node = graph.nodes.get("tools")
+    bound = getattr(tools_node, "bound", None)
+    tools_dict = (
+        getattr(bound, "tools_by_name", None) or getattr(bound, "_tools_by_name", None) or {}
+    )
+    assert "write_todos" not in tools_dict
+
+    # Reload with deepagents
+    session.config.todo_implementation = TodoImplementation.DEEPAGENTS
+    runner.reload_config()
+    graph_reloaded = runner.agent.graph
+    tools_node_reloaded = graph_reloaded.nodes.get("tools")
+    bound_reloaded = getattr(tools_node_reloaded, "bound", None)
+    tools_dict_reloaded = (
+        getattr(bound_reloaded, "tools_by_name", None)
+        or getattr(bound_reloaded, "_tools_by_name", None)
+        or {}
+    )
+    assert "write_todos" in tools_dict_reloaded
+
+
+def test_runner_registry_reload_session_runner() -> None:
+    """Verify RunnerRegistry.reload_session_runner reconfigures active cached runner."""
+    registry = RunnerRegistry()
+    config = AgentConfig(
+        inference=InferenceConfig(api_key="mock-key"),
+        model_name="mock-model",
+        todo_implementation=TodoImplementation.NONE,
+    )
+    agent = Agent(config=config, name="reg-agent")
+    session = agent.create_session(name="reg-session")
+
+    runner = registry.get_runner(session, agent)
+    bound = getattr(runner.agent.graph.nodes.get("tools"), "bound", None)
+    assert bound is not None
+    tools_dict = bound.tools_by_name
+    assert "write_todos" not in tools_dict
+
+    # Update session config and call reload_session_runner
+    session.config.todo_implementation = TodoImplementation.DEEPAGENTS
+    registry.reload_session_runner(session)
+
+    bound_updated = getattr(runner.agent.graph.nodes.get("tools"), "bound", None)
+    assert bound_updated is not None
+    tools_dict_updated = bound_updated.tools_by_name
+    assert "write_todos" in tools_dict_updated

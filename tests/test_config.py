@@ -4,7 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from seamus.config.models import AgentConfig, InferenceConfig, InferenceFormat
+from seamus.config.models import (
+    AgentConfig,
+    InferenceConfig,
+    InferenceFormat,
+    TodoImplementation,
+)
 from seamus.config.settings import (
     SystemSettings,
     SystemSettingsStore,
@@ -44,18 +49,45 @@ def test_agent_config_copy_with_overrides() -> None:
     base = AgentConfig(
         inference=InferenceConfig(api_key="base-key"),
         model_name="openai/gpt-oss-120b",
+        system_prompt="Base prompt",
+        todo_implementation=TodoImplementation.NONE,
     )
     overrides = AgentConfig(
         inference=InferenceConfig(api_key="overridden-key"),
         model_name="custom/model",
+        system_prompt="Overridden prompt",
+        todo_implementation=TodoImplementation.DEEPAGENTS,
     )
     derived = base.copy_with_overrides(overrides)
 
     assert derived.inference.api_key == "overridden-key"
     assert derived.model_name == "custom/model"
+    assert derived.system_prompt == "Overridden prompt"
+    assert derived.todo_implementation == TodoImplementation.DEEPAGENTS
     # Ensure original base was not mutated
     assert base.inference.api_key == "base-key"
     assert base.model_name == "openai/gpt-oss-120b"
+    assert base.system_prompt == "Base prompt"
+    assert base.todo_implementation == TodoImplementation.NONE
+
+
+def test_agent_config_todo_implementation_validation() -> None:
+    from pydantic import ValidationError
+
+    cfg = AgentConfig()
+    assert cfg.todo_implementation == TodoImplementation.NONE
+
+    cfg_deep = AgentConfig(todo_implementation=TodoImplementation.DEEPAGENTS)
+    assert cfg_deep.todo_implementation == TodoImplementation.DEEPAGENTS
+
+    cfg_from_str = AgentConfig.model_validate({"todo_implementation": "deepagents"})
+    assert cfg_from_str.todo_implementation == TodoImplementation.DEEPAGENTS
+
+    cfg_none_str = AgentConfig.model_validate({"todo_implementation": "none"})
+    assert cfg_none_str.todo_implementation == TodoImplementation.NONE
+
+    with pytest.raises(ValidationError):
+        AgentConfig.model_validate({"todo_implementation": "unsupported_value"})
 
 
 def test_config_template_store_crud() -> None:

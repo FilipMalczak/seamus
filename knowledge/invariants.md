@@ -166,6 +166,16 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md).
 - **Enforcement**: `GitWorkspaceManager.initialize_system_repo()`, `commit_system_settings()`, and `commit_system_config_template()`.
 
+### INV-033: Configurable Todo Planning and System Prompt Composition
+- **Statement**: When `session.config.todo_implementation == TodoImplementation.DEEPAGENTS`, DeepAgents instances must include `SeamusTodoListMiddleware` positioned immediately following `DynamicSystemPromptMiddleware`. `DynamicSystemPromptMiddleware` sets the base LM-XML system prompt (`build_effective_system_prompt`), and `SeamusTodoListMiddleware` appends its `WRITE_TODOS_SYSTEM_PROMPT` block without either layer clobbering the other. When `todo_implementation == TodoImplementation.NONE`, no todo middleware is added, no `write_todos` tool is available to the agent or shown in the Inspector tool list, and active todos in the Inspector are empty.
+- **Justification**: [REQ-029](./requirements.md#req-029-task-planning-progress-tracking-and-todolist-middleware-integration), [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md).
+- **Enforcement**: `SessionAgentRunner._build_deep_agent()`, `seamus.harness.inspector.build_agent_inspect_report()`, and automated tests in `tests/test_runner.py`, `tests/test_config.py`, and `tests/test_inspector.py`.
+
+### INV-034: Dynamic Session Runner Recompilation on Save
+- **Statement**: Updating a Session's configuration via `POST /agent/{id}/session/{id}` must immediately recompile the active runner's compiled graph (if cached) via `RunnerRegistry.reload_session_runner()`, ensuring the very next inference turn aligns with the updated configuration without restarting the runner process or dropping SSE listeners.
+- **Justification**: [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md).
+- **Enforcement**: `seamus.server.routes.sessions.update_session()`, `RunnerRegistry.reload_session_runner()`, and tests in `tests/test_server.py` and `tests/test_runner.py`.
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [requirements.md](./requirements.md)
@@ -191,3 +201,4 @@ Properties and rules that must always hold across the repository.
 - [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md)
 - [0022-branching-out-and-session-lifecycle.md](../decisions/0022-branching-out-and-session-lifecycle.md)
 - [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md)
+- [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md)

@@ -4,10 +4,13 @@ export type InferenceConfig = {
   api_key?: string | null;
 };
 
+export type TodoImplementation = "none" | "deepagents";
+
 export type AgentConfig = {
   inference: InferenceConfig;
   model_name: string;
   system_prompt?: string | null;
+  todo_implementation?: TodoImplementation;
 };
 
 export type ConfigTemplateResponse = {
@@ -193,6 +196,11 @@ export interface WorkspaceInspectInfo {
   files: string[];
 }
 
+export interface TodoInspectItem {
+  content: string;
+  status: string;
+}
+
 export interface AgentInspectReport {
   agent_id: string;
   agent_name: string | null;
@@ -205,6 +213,8 @@ export interface AgentInspectReport {
   inference: InferenceInspectInfo;
   prompts: PromptInspectInfo;
   tools: ToolInspectInfo[];
+  todos?: TodoInspectItem[];
+  todo_implementation?: TodoImplementation;
   subagents: SubAgentInspectInfo[];
   history: HistoryInspectInfo;
   workspace: WorkspaceInspectInfo;

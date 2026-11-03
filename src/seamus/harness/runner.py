@@ -3,8 +3,8 @@
 import asyncio
 import json
 import logging
-from collections.abc import AsyncGenerator, Mapping
-from typing import Any
+from collections.abc import AsyncGenerator, Mapping, Sequence
+from typing import Any, Literal
 from uuid import uuid4
 
 import logfire
@@ -18,10 +18,22 @@ from ag_ui.core.types import RunAgentInput, TextInputContent, UserMessage
 from ag_ui.encoder import EventEncoder
 from ag_ui_langgraph import LangGraphAgent
 from deepagents import create_deep_agent
+from langchain.agents.middleware import TodoListMiddleware
+from langchain.agents.middleware.todo import (
+    WRITE_TODOS_SYSTEM_PROMPT,
+    WRITE_TODOS_TOOL_DESCRIPTION,
+    PlanningState,
+)
+from langchain.agents.middleware.types import ContextT, ResponseT
+from langchain.tools import ToolRuntime
+from langchain_core.messages import ToolMessage
 from langchain_core.outputs import ChatGenerationChunk, ChatResult
+from langchain_core.tools import StructuredTool
 from langchain_openai import ChatOpenAI
-from pydantic import SecretStr
+from langgraph.types import Command
+from pydantic import BaseModel, Field, SecretStr, model_validator
 
+from seamus.config.models import TodoImplementation
 from seamus.config.settings import get_system_settings_store, resolve_skill_path
 from seamus.domain.entities import Agent, AgentStatus, Session, Thread
 from seamus.harness.prompt import (
@@ -170,6 +182,136 @@ class EventBroadcaster:
                 pass
 
 
+class ResilientTodoItem(BaseModel):
+    """Normalized todo item accepting common LLM field variations."""
+
+    content: str = Field(description="The content/description of the todo item.")
+    status: Literal["pending", "in_progress", "completed"] = Field(
+        default="pending",
+        description="The current status of the todo item.",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_item(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        d = dict(data)
+        if "content" not in d:
+            for alias in ("task", "name", "title", "description", "todo"):
+                if alias in d and d[alias]:
+                    d["content"] = str(d[alias])
+                    break
+        status_val = d.get("status")
+        if status_val is None:
+            for alias in ("state", "progress", "condition"):
+                if alias in d:
+                    status_val = d[alias]
+                    break
+        if isinstance(status_val, str):
+            s = status_val.strip().lower().replace("-", "_").replace(" ", "_")
+            if s in ("pending", "todo", "open", "not_started", "unstarted", "waiting"):
+                d["status"] = "pending"
+            elif s in ("in_progress", "inprogress", "running", "active", "started", "working"):
+                d["status"] = "in_progress"
+            elif s in ("completed", "complete", "done", "finished", "closed", "resolved"):
+                d["status"] = "completed"
+            else:
+                d["status"] = "pending"
+        else:
+            d["status"] = "pending"
+        return d
+
+
+class ResilientWriteTodosInput(BaseModel):
+    """Input schema for write_todos tool that normalizes LLM argument variations."""
+
+    todos: list[ResilientTodoItem] = Field(description="List of todo items.")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_todos(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        d = dict(data)
+        if "todos" not in d:
+            for alias in ("tasks", "items", "todo_list", "plan"):
+                if alias in d:
+                    d["todos"] = d[alias]
+                    break
+        if not isinstance(d.get("todos"), list):
+            if isinstance(d.get("todos"), dict):
+                d["todos"] = [d["todos"]]
+            elif "content" in d or "task" in d or "name" in d:
+                d["todos"] = [d]
+        return d
+
+
+def _resilient_write_todos(
+    runtime: ToolRuntime[ContextT, PlanningState[ResponseT]],
+    todos: Sequence[Any],
+) -> Command[Any]:
+    validated = ResilientWriteTodosInput.model_validate({"todos": list(todos)})
+    normalized = [{"content": t.content, "status": t.status} for t in validated.todos]
+    return Command(
+        update={
+            "todos": normalized,
+            "messages": [
+                ToolMessage(
+                    content=f"Updated todo list to {normalized}",
+                    tool_call_id=runtime.tool_call_id,
+                )
+            ],
+        }
+    )
+
+
+async def _aresilient_write_todos(
+    runtime: ToolRuntime[ContextT, PlanningState[ResponseT]],
+    todos: Sequence[Any],
+) -> Command[Any]:
+    return _resilient_write_todos(runtime, todos=todos)
+
+
+SEAMUS_WRITE_TODOS_SYSTEM_PROMPT = f"""{WRITE_TODOS_SYSTEM_PROMPT}
+
+## Expected Tool Arguments Schema
+
+When calling `write_todos`, always provide `todos` as a list of objects with `content` and `status`:
+```json
+{{
+  "todos": [
+    {{"content": "Step 1 description", "status": "in_progress"}},
+    {{"content": "Step 2 description", "status": "pending"}}
+  ]
+}}
+```
+Valid statuses: "pending", "in_progress", "completed".
+"""
+
+
+class SeamusTodoListMiddleware(TodoListMiddleware):
+    """TodoListMiddleware providing resilient argument normalization and JSON schema guidance."""
+
+    def __init__(
+        self,
+        *,
+        system_prompt: str = SEAMUS_WRITE_TODOS_SYSTEM_PROMPT,
+        tool_description: str = WRITE_TODOS_TOOL_DESCRIPTION,
+    ) -> None:
+        super().__init__(system_prompt=system_prompt, tool_description=tool_description)
+        self.tools = [
+            StructuredTool.from_function(
+                name="write_todos",
+                description=tool_description,
+                func=_resilient_write_todos,
+                coroutine=_aresilient_write_todos,
+                args_schema=ResilientWriteTodosInput,
+                infer_schema=False,
+            )
+        ]
+
+
 class SessionAgentRunner:
     """Manages the DeepAgent instance and execution loop for a single session."""
 
@@ -261,11 +403,15 @@ class SessionAgentRunner:
         # System-wide skills first; session-level last so session skills override system skills
         skill_sources = [*system_skill_dirs, "/workspace/.skills"]
 
+        runner_middleware: list[Any] = [dynamic_prompt_middleware]
+        if self.session.config.todo_implementation == TodoImplementation.DEEPAGENTS:
+            runner_middleware.append(SeamusTodoListMiddleware())
+
         graph = create_deep_agent(
             model=llm,
             backend=sandbox_backend,
             system_prompt=effective_prompt,
-            middleware=[dynamic_prompt_middleware],
+            middleware=runner_middleware,
             checkpointer=checkpointer,
             skills=skill_sources,
         )
@@ -307,6 +453,12 @@ class SessionAgentRunner:
     def agent(self) -> LangGraphAgent:
         """Return the underlying LangGraphAgent instance."""
         return self._agent
+
+    def reload_config(self, session: Session | None = None) -> None:
+        """Recompile agent graph with updated session config while preserving SSE and state."""
+        if session is not None:
+            self.session = session
+        self._agent = self._build_deep_agent()
 
     def is_awaiting_user(self) -> bool:
         """Check if the session's active thread is currently awaiting user input."""
@@ -653,6 +805,12 @@ class RunnerRegistry:
     def set_runner(self, session_id: str, runner: SessionAgentRunner) -> None:
         """Register a specific runner instance (useful for testing with mock agents)."""
         self._runners[session_id] = runner
+
+    def reload_session_runner(self, session: Session) -> None:
+        """Reload the SessionAgentRunner for a session if currently cached."""
+        session_key = str(session.id)
+        if session_key in self._runners:
+            self._runners[session_key].reload_config(session)
 
 
 _GLOBAL_RUNNER_REGISTRY: RunnerRegistry | None = None

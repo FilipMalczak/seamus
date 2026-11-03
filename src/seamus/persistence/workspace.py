@@ -817,6 +817,38 @@ class GitWorkspaceManager:
             logger.exception("Failed to load thread messages from %s", msgs_file)
             return []
 
+    def save_thread_todos(
+        self,
+        agent_id: UUID,
+        session_id: UUID,
+        thread_id: UUID,
+        todos: list[dict[str, Any]],
+    ) -> Path:
+        """Save task todos to the thread state directory."""
+        thread_dir = self.get_thread_state_dir(agent_id, session_id, thread_id)
+        thread_dir.mkdir(parents=True, exist_ok=True)
+        todos_file = thread_dir / "todos.json"
+        todos_file.write_text(json.dumps(todos, indent=2), encoding="utf-8")
+        return todos_file
+
+    def load_thread_todos(
+        self,
+        agent_id: UUID,
+        session_id: UUID,
+        thread_id: UUID,
+    ) -> list[dict[str, Any]]:
+        """Load task todos from the thread state directory."""
+        todos_file = self.get_thread_state_dir(agent_id, session_id, thread_id) / "todos.json"
+        if not todos_file.exists():
+            return []
+        try:
+            content = todos_file.read_text(encoding="utf-8")
+            data = json.loads(content)
+            return data if isinstance(data, list) else []
+        except Exception:
+            logger.exception("Failed to load thread todos from %s", todos_file)
+            return []
+
     def get_session_git_info(
         self,
         agent_id: UUID,

@@ -259,3 +259,39 @@ def test_session_agent_runner_system_prompts() -> None:
     # Verify create_deep_agent arguments
     assert "<identity>" in captured_kwargs["system_prompt"]
     assert any(isinstance(m, DynamicSystemPromptMiddleware) for m in captured_kwargs["middleware"])
+
+
+@pytest.mark.asyncio
+async def test_dynamic_prompt_with_todo_list_middleware_composition() -> None:
+    """Verify DynamicSystemPromptMiddleware + TodoListMiddleware prompt composition."""
+    from langchain.agents.middleware import TodoListMiddleware
+
+    dynamic_mw = DynamicSystemPromptMiddleware(prompt_provider=lambda _req: "<seamus_prompt/>")
+    todo_mw = TodoListMiddleware()
+
+    captured_requests: list[ModelRequest[Any]] = []
+
+    async def fake_handler(req: ModelRequest[Any]) -> ModelResponse[Any]:
+        captured_requests.append(req)
+        return ModelResponse([AIMessage(content="done")])
+
+    req = ModelRequest(
+        model=_FakeChatModel(),
+        messages=[HumanMessage(content="test")],
+        system_prompt="base",
+    )
+
+    async def call_todo(r: ModelRequest[Any]) -> ModelResponse[Any]:
+        res = await todo_mw.awrap_model_call(r, fake_handler)
+        assert isinstance(res, ModelResponse)
+        return res
+
+    res = await dynamic_mw.awrap_model_call(req, call_todo)
+    assert isinstance(res, ModelResponse)
+    assert len(captured_requests) == 1
+    final_sys = captured_requests[0].system_message
+    assert final_sys is not None
+
+    content_str = str(final_sys.content)
+    assert "<seamus_prompt/>" in content_str
+    assert "write_todos" in content_str

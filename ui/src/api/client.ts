@@ -21,7 +21,19 @@ async function handleResponse<T>(res: Response): Promise<T> {
     try {
       const body = await res.json();
       if (body && body.detail) {
-        detail = body.detail;
+        if (typeof body.detail === "string") {
+          detail = body.detail;
+        } else if (Array.isArray(body.detail)) {
+          detail = body.detail
+            .map((err: any) => {
+              const loc = Array.isArray(err.loc) ? err.loc.slice(1).join(".") : "";
+              const msg = err.msg || JSON.stringify(err);
+              return loc ? `${loc}: ${msg}` : msg;
+            })
+            .join("; ");
+        } else {
+          detail = JSON.stringify(body.detail);
+        }
       }
     } catch {
       // Ignore json parse error

@@ -28,20 +28,43 @@ def extract_readable_messages(checkpoint: Checkpoint) -> list[dict[str, Any]]:
     raw_msgs = values.get("messages", []) if isinstance(values, dict) else []
     result: list[dict[str, Any]] = []
     for msg in raw_msgs:
-        role = getattr(msg, "type", None) or "unknown"
-        content = getattr(msg, "content", "")
+        if isinstance(msg, dict):
+            role = msg.get("role") or msg.get("type") or "unknown"
+            content = msg.get("content", "")
+            id_val = msg.get("id")
+            tool_calls = msg.get("tool_calls")
+            tool_call_id = msg.get("tool_call_id")
+        else:
+            role = getattr(msg, "type", None) or getattr(msg, "role", "unknown")
+            content = getattr(msg, "content", "")
+            id_val = getattr(msg, "id", None)
+            tool_calls = getattr(msg, "tool_calls", None)
+            tool_call_id = getattr(msg, "tool_call_id", None)
+
         item: dict[str, Any] = {
-            "id": getattr(msg, "id", None),
+            "id": id_val,
             "role": role,
             "content": content,
         }
-        tool_calls = getattr(msg, "tool_calls", None)
         if tool_calls:
             item["tool_calls"] = tool_calls
-        tool_call_id = getattr(msg, "tool_call_id", None)
         if tool_call_id:
             item["tool_call_id"] = tool_call_id
         result.append(item)
+    return result
+
+
+def extract_readable_todos(checkpoint: Checkpoint) -> list[dict[str, Any]]:
+    """Extract a list of todo items from checkpoint channel values."""
+    values = checkpoint.get("channel_values", {}) if isinstance(checkpoint, dict) else {}
+    raw_todos = values.get("todos", []) if isinstance(values, dict) else []
+    result: list[dict[str, Any]] = []
+    if isinstance(raw_todos, list):
+        for item in raw_todos:
+            if isinstance(item, dict):
+                content = str(item.get("content", ""))
+                status = str(item.get("status", "pending"))
+                result.append({"content": content, "status": status})
     return result
 
 
@@ -232,6 +255,12 @@ class GitCheckpointSaver(MemorySaver):
             if messages:
                 self.workspace_manager.save_thread_messages(
                     self.agent_id, self.session_id, target_uuid, messages
+                )
+
+            todos = extract_readable_todos(checkpoint)
+            if todos:
+                self.workspace_manager.save_thread_todos(
+                    self.agent_id, self.session_id, target_uuid, todos
                 )
         except Exception:
             logger.exception("Failed to save checkpoint to disk for session %s", self.session_id)

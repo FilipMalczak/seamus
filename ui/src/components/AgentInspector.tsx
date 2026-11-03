@@ -14,6 +14,7 @@ import {
   FolderGit2,
   FolderOpen,
   Layers,
+  ListTodo,
   Loader2,
   MessageSquare,
   RefreshCw,
@@ -34,7 +35,7 @@ interface AgentInspectorProps {
   sessionName?: string | null;
 }
 
-type SubTab = "prompt" | "tools" | "inference" | "messages" | "workspace";
+type SubTab = "prompt" | "tools" | "todos" | "inference" | "messages" | "workspace";
 type PromptLayer = "composite" | "scaffold" | "custom";
 
 export function AgentInspector({
@@ -290,6 +291,16 @@ export function AgentInspector({
 
         <button
           type="button"
+          className={`inspector-tab-btn ${subTab === "todos" ? "active" : ""}`}
+          onClick={() => setSubTab("todos")}
+        >
+          <ListTodo className="size-4" />
+          <span>Todos</span>
+          <span className="tab-counter">{(report.todos || []).length}</span>
+        </button>
+
+        <button
+          type="button"
           className={`inspector-tab-btn ${subTab === "inference" ? "active" : ""}`}
           onClick={() => setSubTab("inference")}
         >
@@ -464,6 +475,70 @@ export function AgentInspector({
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {/* TAB: TODOS */}
+        {subTab === "todos" && (
+          <div className="inspector-todos-panel">
+            <div className="todos-panel-header">
+              <div className="todos-setting-info">
+                <span className="text-xs text-neutral-400 font-medium">Planning Implementation:</span>
+                <span className={`todo-impl-badge impl-${report.todo_implementation || "none"}`}>
+                  {report.todo_implementation || "none"}
+                </span>
+              </div>
+              {report.todos && report.todos.length > 0 && (
+                <span className="text-xs text-neutral-400">
+                  {report.todos.length} item{report.todos.length === 1 ? "" : "s"}
+                </span>
+              )}
+            </div>
+
+            {!report.todos || report.todos.length === 0 ? (
+              <div className="inspector-empty-state">
+                <ListTodo className="size-8 text-neutral-500 mb-2" />
+                {report.todo_implementation === "none" ? (
+                  <>
+                    <p>Task planning is disabled (<code>todo_implementation: none</code>).</p>
+                    <span className="text-xs text-neutral-400">
+                      Configure <code>todo_implementation</code> in session settings to enable planning tools.
+                    </span>
+                  </>
+                ) : report.todo_implementation === "deepagents" ? (
+                  <>
+                    <p>No active plan recorded for this thread yet.</p>
+                    <span className="text-xs text-neutral-400">
+                      When the agent creates or updates tasks using <code>write_todos</code>, items will appear here.
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <p>No active plan recorded for this thread yet.</p>
+                    <span className="text-xs text-neutral-400">
+                      When the agent creates or updates plan tasks, items will appear here.
+                    </span>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="todos-list">
+                {report.todos.map((todo, idx) => (
+                  <div key={idx} className={`todo-item-card status-${todo.status}`}>
+                    <div className="todo-item-header">
+                      <span className={`todo-status-badge status-${todo.status}`}>
+                        {todo.status === "completed" && <CheckCircle2 className="size-3.5" />}
+                        {todo.status === "in_progress" && <Loader2 className="size-3.5 animate-spin" />}
+                        {todo.status === "pending" && <AlertCircle className="size-3.5" />}
+                        <span>{todo.status.replace("_", " ")}</span>
+                      </span>
+                      <span className="todo-index">#{idx + 1}</span>
+                    </div>
+                    <div className="todo-content">{todo.content}</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
