@@ -18,6 +18,7 @@ from ag_ui.core.types import RunAgentInput, TextInputContent, UserMessage
 from ag_ui.encoder import EventEncoder
 from ag_ui_langgraph import LangGraphAgent
 from deepagents import create_deep_agent
+from langchain.agents.middleware import TodoListMiddleware
 from langchain_core.outputs import ChatGenerationChunk, ChatResult
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
@@ -261,11 +262,14 @@ class SessionAgentRunner:
         # System-wide skills first; session-level last so session skills override system skills
         skill_sources = [*system_skill_dirs, "/workspace/.skills"]
 
+        todo_list_middleware = TodoListMiddleware()
+        runner_middleware: list[Any] = [dynamic_prompt_middleware, todo_list_middleware]
+
         graph = create_deep_agent(
             model=llm,
             backend=sandbox_backend,
             system_prompt=effective_prompt,
-            middleware=[dynamic_prompt_middleware],
+            middleware=runner_middleware,
             checkpointer=checkpointer,
             skills=skill_sources,
         )

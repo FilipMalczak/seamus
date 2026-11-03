@@ -55,6 +55,7 @@ def test_get_default_tools_inspect_info() -> None:
         "grep",
         "execute",
         "task",
+        "write_todos",
     ]
     for expected in expected_tools:
         assert expected in tool_names
@@ -73,7 +74,7 @@ def test_get_default_tools_inspect_info() -> None:
     for tool in tools:
         if tool.name in sandbox_tools:
             assert tool.backend == "opensandbox"
-        elif tool.name == "task":
+        elif tool.name in {"task", "write_todos"}:
             assert tool.backend == "harness"
 
 
@@ -149,6 +150,8 @@ def test_inspect_endpoint_http(client: TestClient) -> None:
     assert "inference" in data
     assert "prompts" in data
     assert "tools" in data
+    assert "todos" in data
+    assert isinstance(data["todos"], list)
     assert "git" in data
     assert "history" in data
     assert "workspace" in data
@@ -189,3 +192,38 @@ def test_inspect_workspace_files(client: TestClient) -> None:
     files = data["workspace"]["files"]
     assert "output.txt" in files
     assert "src/main.py" in files
+
+
+def test_inspect_extracts_todos_from_workspace() -> None:
+    """Verify that todos saved to thread state are extracted into inspect report."""
+    store = HarnessStore()
+    reset_harness_store(store)
+    ws_mgr = get_workspace_manager()
+
+    config = AgentConfig(
+        inference=InferenceConfig(
+            format=InferenceFormat.OPENAI,
+            base_url="https://openrouter.ai/api/v1",
+            api_key="sk-secret-key-12345",
+        ),
+        model_name="openai/gpt-oss-120b",
+    )
+    agent = store.create_agent(config=config, name="todos-inspect-agent")
+    session = list(agent.sessions.values())[0]
+    thread = session.get_open_thread()
+
+    raw_todos = [
+        {"content": "Step 1: Write tests", "status": "completed"},
+        {"content": "Step 2: Implement feature", "status": "in_progress"},
+        {"content": "Step 3: Document changes", "status": "pending"},
+    ]
+    ws_mgr.save_thread_todos(agent.id, session.id, thread.id, raw_todos)
+
+    report = build_agent_inspect_report(str(agent.id), str(session.id), str(thread.id))
+    assert len(report.todos) == 3
+    assert report.todos[0].content == "Step 1: Write tests"
+    assert report.todos[0].status == "completed"
+    assert report.todos[1].content == "Step 2: Implement feature"
+    assert report.todos[1].status == "in_progress"
+    assert report.todos[2].content == "Step 3: Document changes"
+    assert report.todos[2].status == "pending"

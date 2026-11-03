@@ -151,8 +151,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - opening a session in the UI, as opposed to currently opening threads (loading all the past threads; input box being a proxy to open thread input); session view being the default when creating or selecting an agent
 - auto-naming agents, sessions and threads (agent - randomized multi-word slug; session and thread - using a small "namer" agent, needs to be configured on agent level)
 - chore: set default UI proportions to 1:2 (tree:chat ratio)
-- todo tool is BROKEN! tools dont show up in inspector
-- integrate the todo list into inspector
 - user input variations:
   - user-accepted tool calls
   - artifact-based forms that the user can open and fill

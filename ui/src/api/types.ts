@@ -193,6 +193,11 @@ export interface WorkspaceInspectInfo {
   files: string[];
 }
 
+export interface TodoInspectItem {
+  content: string;
+  status: string;
+}
+
 export interface AgentInspectReport {
   agent_id: string;
   agent_name: string | null;
@@ -205,6 +210,7 @@ export interface AgentInspectReport {
   inference: InferenceInspectInfo;
   prompts: PromptInspectInfo;
   tools: ToolInspectInfo[];
+  todos?: TodoInspectItem[];
   subagents: SubAgentInspectInfo[];
   history: HistoryInspectInfo;
   workspace: WorkspaceInspectInfo;

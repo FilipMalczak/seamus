@@ -166,6 +166,11 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md).
 - **Enforcement**: `GitWorkspaceManager.initialize_system_repo()`, `commit_system_settings()`, and `commit_system_config_template()`.
 
+### INV-033: TodoListMiddleware Integration and Prompt Composition
+- **Statement**: All DeepAgents instances constructed by Seamus must include `TodoListMiddleware` in their middleware stack, positioned immediately following `DynamicSystemPromptMiddleware`. `DynamicSystemPromptMiddleware` must set the base LM-XML system prompt (`build_effective_system_prompt`), and `TodoListMiddleware` must append its `WRITE_TODOS_SYSTEM_PROMPT` block without either layer clobbering the other. The `write_todos` tool must always be available to the agent, discoverable via the Inspector tool inventory, and active todos must be preserved in thread checkpoints and queryable via `AgentInspectReport.todos`.
+- **Justification**: [REQ-029](./requirements.md#req-029-task-planning-progress-tracking-and-todolist-middleware-integration), [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md).
+- **Enforcement**: `SessionAgentRunner._build_deep_agent()`, `seamus.harness.inspector.get_default_tools_inspect_info()`, `extract_agent_inspect_info()`, and tests in `tests/test_runner.py`, `tests/test_prompt.py`, and `tests/test_inspector.py`.
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [requirements.md](./requirements.md)
@@ -191,3 +196,4 @@ Properties and rules that must always hold across the repository.
 - [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md)
 - [0022-branching-out-and-session-lifecycle.md](../decisions/0022-branching-out-and-session-lifecycle.md)
 - [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md)
+- [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md)

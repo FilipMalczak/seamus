@@ -348,3 +348,42 @@ def test_tool_call_lifecycle_status_transitions() -> None:
         RunFinishedEvent(type=EventType.RUN_FINISHED, thread_id="t", run_id="r"),
     )
     assert session.get_open_thread().status == AgentStatus.AWAITING_USER
+
+
+def test_session_agent_runner_includes_todo_middleware(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify that _build_deep_agent passes TodoListMiddleware in correct order."""
+    from unittest.mock import MagicMock
+
+    from langchain.agents.middleware import TodoListMiddleware
+
+    from seamus.harness.prompt import DynamicSystemPromptMiddleware
+    from seamus.persistence import GitWorkspaceManager
+
+    mock_mgr = MagicMock(spec=GitWorkspaceManager)
+    monkeypatch.setattr("seamus.harness.runner.get_workspace_manager", lambda: mock_mgr)
+
+    config = AgentConfig(
+        inference=InferenceConfig(api_key="mock-key"),
+        model_name="mock-model",
+    )
+    agent = Agent(config=config, name="agent")
+    session = agent.create_session(name="session")
+
+    captured_kwargs: dict[str, Any] = {}
+
+    def mock_create_deep_agent(**kwargs: Any) -> Any:
+        captured_kwargs.update(kwargs)
+        mock_graph = MagicMock()
+        mock_graph.nodes = {}
+        return mock_graph
+
+    monkeypatch.setattr("seamus.harness.runner.create_deep_agent", mock_create_deep_agent)
+
+    runner = SessionAgentRunner(session=session, agent_entity=agent)
+    assert runner is not None
+    middleware = captured_kwargs.get("middleware", [])
+
+    assert any(isinstance(m, DynamicSystemPromptMiddleware) for m in middleware)
+    assert any(isinstance(m, TodoListMiddleware) for m in middleware)
+    types = [type(m) for m in middleware]
+    assert types.index(DynamicSystemPromptMiddleware) < types.index(TodoListMiddleware)

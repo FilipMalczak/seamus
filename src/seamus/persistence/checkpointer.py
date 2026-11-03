@@ -45,6 +45,20 @@ def extract_readable_messages(checkpoint: Checkpoint) -> list[dict[str, Any]]:
     return result
 
 
+def extract_readable_todos(checkpoint: Checkpoint) -> list[dict[str, Any]]:
+    """Extract a list of todo items from checkpoint channel values."""
+    values = checkpoint.get("channel_values", {}) if isinstance(checkpoint, dict) else {}
+    raw_todos = values.get("todos", []) if isinstance(values, dict) else []
+    result: list[dict[str, Any]] = []
+    if isinstance(raw_todos, list):
+        for item in raw_todos:
+            if isinstance(item, dict):
+                content = str(item.get("content", ""))
+                status = str(item.get("status", "pending"))
+                result.append({"content": content, "status": status})
+    return result
+
+
 class GitCheckpointSaver(MemorySaver):
     """Checkpointer that persists checkpoint state to disk and commits changes to Git."""
 
@@ -232,6 +246,12 @@ class GitCheckpointSaver(MemorySaver):
             if messages:
                 self.workspace_manager.save_thread_messages(
                     self.agent_id, self.session_id, target_uuid, messages
+                )
+
+            todos = extract_readable_todos(checkpoint)
+            if todos:
+                self.workspace_manager.save_thread_todos(
+                    self.agent_id, self.session_id, target_uuid, todos
                 )
         except Exception:
             logger.exception("Failed to save checkpoint to disk for session %s", self.session_id)

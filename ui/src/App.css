@@ -2411,6 +2411,90 @@ body {
   color: #cbd5e1;
 }
 
+/* Todos Panel */
+.inspector-todos-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.todos-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.todo-item-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition: border-color 0.15s;
+}
+
+.todo-item-card.status-completed {
+  border-color: rgba(34, 197, 94, 0.3);
+  background: rgba(34, 197, 94, 0.03);
+}
+
+.todo-item-card.status-in_progress {
+  border-color: rgba(56, 189, 248, 0.4);
+  background: rgba(56, 189, 248, 0.04);
+}
+
+.todo-item-card.status-pending {
+  border-color: var(--border-color);
+}
+
+.todo-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.todo-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: capitalize;
+  padding: 2px 8px;
+  border-radius: 9999px;
+}
+
+.todo-status-badge.status-completed {
+  color: #4ade80;
+  background: rgba(34, 197, 94, 0.15);
+}
+
+.todo-status-badge.status-in_progress {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.15);
+}
+
+.todo-status-badge.status-pending {
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.todo-index {
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+.todo-content {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* Inference Panel */
 .inspector-inference-panel {
   display: flex;

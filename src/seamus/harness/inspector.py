@@ -37,6 +37,13 @@ class ToolInspectInfo(BaseModel):
     backend: str = "opensandbox"
 
 
+class TodoInspectItem(BaseModel):
+    """Information about a task todo item."""
+
+    content: str
+    status: str = "pending"
+
+
 class SubAgentInspectInfo(BaseModel):
     """Information about a configured subagent."""
 
@@ -114,6 +121,7 @@ class AgentInspectReport(BaseModel):
     inference: InferenceInspectInfo
     prompts: PromptInspectInfo
     tools: list[ToolInspectInfo] = Field(default_factory=list)
+    todos: list[TodoInspectItem] = Field(default_factory=list)
     subagents: list[SubAgentInspectInfo] = Field(default_factory=list)
     history: HistoryInspectInfo
     workspace: WorkspaceInspectInfo
@@ -173,6 +181,7 @@ def get_default_tools_inspect_info() -> list[ToolInspectInfo]:
 
     try:
         from deepagents import create_deep_agent
+        from langchain.agents.middleware import TodoListMiddleware
         from pydantic import SecretStr
 
         dummy_llm = ReasoningChatOpenAI(
@@ -180,7 +189,7 @@ def get_default_tools_inspect_info() -> list[ToolInspectInfo]:
             api_key=SecretStr("dummy"),
             base_url="https://dummy.local/v1",
         )
-        dummy_graph = create_deep_agent(model=dummy_llm)
+        dummy_graph = create_deep_agent(model=dummy_llm, middleware=[TodoListMiddleware()])
         tools_node = dummy_graph.nodes.get("tools")
         bound = getattr(tools_node, "bound", None)
         tools_dict = (
@@ -254,6 +263,14 @@ def get_default_tools_inspect_info() -> list[ToolInspectInfo]:
             ToolInspectInfo(
                 name="task",
                 description="Launch an ephemeral subagent.",
+                backend="harness",
+            ),
+            ToolInspectInfo(
+                name="write_todos",
+                description=(
+                    "Use this tool to create and manage a structured task list "
+                    "for your current work session."
+                ),
                 backend="harness",
             ),
         ]
@@ -340,6 +357,78 @@ def extract_thread_messages(
             items.append(MessageHistoryItem(role="user", content=txt))
 
     return items, checkpoint_step or len(thread.events)
+
+
+def extract_thread_todos(
+    agent_id: UUID,
+    session_id: UUID,
+    thread: Thread,
+    runner: SessionAgentRunner | None = None,
+) -> list[TodoInspectItem]:
+    """Extract task todos for a thread from live graph state, workspace, or checkpoints."""
+    # 1. Try runner active graph state
+    if runner is not None and hasattr(runner, "agent") and hasattr(runner.agent, "graph"):
+        try:
+            config = {"configurable": {"thread_id": str(thread.id)}}
+            state = runner.agent.graph.get_state(config)
+            if state and hasattr(state, "values") and isinstance(state.values, dict):
+                raw_todos = state.values.get("todos")
+                if isinstance(raw_todos, list) and raw_todos:
+                    return [
+                        TodoInspectItem(
+                            content=str(t.get("content", "")),
+                            status=str(t.get("status", "pending")),
+                        )
+                        for t in raw_todos
+                        if isinstance(t, dict)
+                    ]
+        except Exception:
+            logger.debug("Could not get todos from live graph state for thread %s", thread.id)
+
+    # 2. Try loading from workspace todos.json
+    ws_mgr = get_workspace_manager()
+    raw_todos = ws_mgr.load_thread_todos(agent_id, session_id, thread.id)
+    if raw_todos:
+        return [
+            TodoInspectItem(
+                content=str(t.get("content", "")),
+                status=str(t.get("status", "pending")),
+            )
+            for t in raw_todos
+            if isinstance(t, dict)
+        ]
+
+    # 3. Try loading from checkpoints.json
+    cp_data = ws_mgr.load_thread_checkpoints(agent_id, session_id, thread.id)
+    if cp_data and isinstance(cp_data, dict):
+        storage = cp_data.get("storage", {})
+        latest_cp: Any = None
+        for ns_dict in storage.values():
+            for cp_dict in ns_dict.values():
+                for cp_entry in cp_dict.values():
+                    latest_cp = cp_entry
+        if latest_cp:
+            try:
+                import pickle
+                from base64 import b64decode
+
+                from seamus.persistence.checkpointer import extract_readable_todos
+
+                blob = b64decode(latest_cp[0][1])
+                cp_obj = pickle.loads(blob)
+                extracted = extract_readable_todos(cp_obj)
+                if extracted:
+                    return [
+                        TodoInspectItem(
+                            content=str(t.get("content", "")),
+                            status=str(t.get("status", "pending")),
+                        )
+                        for t in extracted
+                    ]
+            except Exception:
+                logger.debug("Could not decode checkpoint pickle for todos")
+
+    return []
 
 
 def build_agent_inspect_report(
@@ -429,6 +518,9 @@ def build_agent_inspect_report(
     else:
         tools = get_default_tools_inspect_info()
 
+    # Todos
+    todos = extract_thread_todos(agent.id, session.id, thread, runner=runner)
+
     # Message History
     messages, checkpoint_step = extract_thread_messages(agent.id, session.id, thread)
     history_info = HistoryInspectInfo(
@@ -466,6 +558,7 @@ def build_agent_inspect_report(
         inference=inference_info,
         prompts=prompt_info,
         tools=tools,
+        todos=todos,
         subagents=[],
         history=history_info,
         workspace=workspace_info,
