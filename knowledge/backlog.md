@@ -211,14 +211,25 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Manually naming agents, sessions, and threads creates unnecessary friction; automated descriptive naming keeps navigation clean and organized.
 - **Provenance**: [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md), [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [vocabulary.md](./vocabulary.md).
 
+### Configurable Skills Implementation Setting (skills_implementation)
+- **Description**: Introduce an explicit `skills_implementation` configuration setting across system defaults, agent configurations, and session overrides with supported values `none`, `deepagents` (current adapter using built-in `SkillsMiddleware`), and `native` (the planned LM-XML first-party skills system). Expose the setting in the configuration modal and dynamically reload runner middleware during session initialization and runtime updates, mirroring the pattern established for `todo_implementation`.
+- **Rationale**: Gives operators explicit control over whether and how skills are exposed, supporting granular experimentation and smooth migration from DeepAgents' middleware to Seamus's native implementation.
+- **Provenance**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md), [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md), [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md).
+
+### Minimalistic Dashboard View for Agents and Sessions
+- **Description**: Implement an alternative, lightweight "Dashboard" view alongside the rich developer/IDE-like navigation tree and inspector:
+  1. Plain agent grid: Displays all configured agents as a clean, uncluttered card grid.
+  2. Session grid: Selecting an agent transitions to a grid of its sessions. Each session card displays rows showing a `(...)`-collapsed preview of the last couple task/thread names.
+  3. Seamless view transitions: Provides a quick, distraction-free conversational interface for goal-oriented interaction, with prominent links to navigate into the "hydrated" developer/IDE view when in-depth runtime inspection or advanced configuration is required.
+- **Rationale**: Accommodates both lightweight conversational workflows focused on getting tasks done and deep engineering/debugging sessions requiring full inspectability.
+- **Provenance**: [0003-react-web-ui.md](../decisions/0003-react-web-ui.md), [architecture.md](./architecture.md#system-overview).
+
 ## Not formalized
 
-- user input variations:
+- user input variations (actively being designed):
   - user-accepted tool calls
   - artifact-based forms that the user can open and fill
   - in-message UI pieces?
   - specialized messages?
-- Seamus implementation variants:
-  - todos (at that point decide on the default)
-  - skills (add config toggle)
-- dashboard view (less detailed, less cluttered, more focused on achieving goals than understanding agent impl details)
+- default implementation selection: decide on system-wide defaults for `todo_implementation` and `skills_implementation` once alternative/native implementations are stabilized
+
