@@ -8,6 +8,7 @@ from seamus.config.models import (
     AgentConfig,
     InferenceConfig,
     InferenceFormat,
+    SkillsImplementation,
     TodoImplementation,
 )
 from seamus.config.settings import (
@@ -51,12 +52,14 @@ def test_agent_config_copy_with_overrides() -> None:
         model_name="openai/gpt-oss-120b",
         system_prompt="Base prompt",
         todo_implementation=TodoImplementation.NONE,
+        skills_implementation=SkillsImplementation.NONE,
     )
     overrides = AgentConfig(
         inference=InferenceConfig(api_key="overridden-key"),
         model_name="custom/model",
         system_prompt="Overridden prompt",
         todo_implementation=TodoImplementation.DEEPAGENTS,
+        skills_implementation=SkillsImplementation.DEEPAGENTS,
     )
     derived = base.copy_with_overrides(overrides)
 
@@ -64,30 +67,46 @@ def test_agent_config_copy_with_overrides() -> None:
     assert derived.model_name == "custom/model"
     assert derived.system_prompt == "Overridden prompt"
     assert derived.todo_implementation == TodoImplementation.DEEPAGENTS
+    assert derived.skills_implementation == SkillsImplementation.DEEPAGENTS
     # Ensure original base was not mutated
     assert base.inference.api_key == "base-key"
     assert base.model_name == "openai/gpt-oss-120b"
     assert base.system_prompt == "Base prompt"
     assert base.todo_implementation == TodoImplementation.NONE
+    assert base.skills_implementation == SkillsImplementation.NONE
 
 
-def test_agent_config_todo_implementation_validation() -> None:
+def test_agent_config_todo_and_skills_implementation_validation() -> None:
     from pydantic import ValidationError
 
     cfg = AgentConfig()
-    assert cfg.todo_implementation == TodoImplementation.NONE
+    assert cfg.todo_implementation == TodoImplementation.DEEPAGENTS
+    assert cfg.skills_implementation == SkillsImplementation.DEEPAGENTS
 
-    cfg_deep = AgentConfig(todo_implementation=TodoImplementation.DEEPAGENTS)
-    assert cfg_deep.todo_implementation == TodoImplementation.DEEPAGENTS
+    cfg_none = AgentConfig(
+        todo_implementation=TodoImplementation.NONE,
+        skills_implementation=SkillsImplementation.NONE,
+    )
+    assert cfg_none.todo_implementation == TodoImplementation.NONE
+    assert cfg_none.skills_implementation == SkillsImplementation.NONE
 
-    cfg_from_str = AgentConfig.model_validate({"todo_implementation": "deepagents"})
+    cfg_from_str = AgentConfig.model_validate(
+        {"todo_implementation": "deepagents", "skills_implementation": "deepagents"}
+    )
     assert cfg_from_str.todo_implementation == TodoImplementation.DEEPAGENTS
+    assert cfg_from_str.skills_implementation == SkillsImplementation.DEEPAGENTS
 
-    cfg_none_str = AgentConfig.model_validate({"todo_implementation": "none"})
+    cfg_none_str = AgentConfig.model_validate(
+        {"todo_implementation": "none", "skills_implementation": "none"}
+    )
     assert cfg_none_str.todo_implementation == TodoImplementation.NONE
+    assert cfg_none_str.skills_implementation == SkillsImplementation.NONE
 
     with pytest.raises(ValidationError):
         AgentConfig.model_validate({"todo_implementation": "unsupported_value"})
+
+    with pytest.raises(ValidationError):
+        AgentConfig.model_validate({"skills_implementation": "unsupported_value"})
 
 
 def test_config_template_store_crud() -> None:

@@ -99,6 +99,7 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 - [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md)
 - [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md)
 - [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md)
+- [0027-skills-config-project-rules-and-inspector.md](../decisions/0027-skills-config-project-rules-and-inspector.md)
 - [threads_modes_personas.md](./threads_modes_personas.md)
 - [abstractions.md](./abstractions.md)
 - [backlog.md](./backlog.md)

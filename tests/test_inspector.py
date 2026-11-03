@@ -1,5 +1,6 @@
 """Tests for the DeepAgent inspector service and endpoint."""
 
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -9,6 +10,7 @@ from seamus.config.models import (
     AgentConfig,
     InferenceConfig,
     InferenceFormat,
+    SkillsImplementation,
     TodoImplementation,
 )
 from seamus.config.template import ConfigTemplateStore, reset_config_template_store
@@ -344,3 +346,87 @@ def test_inspector_todo_implementation_toggle() -> None:
     report_deep = build_agent_inspect_report(str(agent.id), str(session.id))
     assert report_deep.todo_implementation == TodoImplementation.DEEPAGENTS
     assert any(t.name == "write_todos" for t in report_deep.tools)
+
+
+def test_inspector_skills_discovery_and_project_rules(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify inspector extracts skills across precedence layers and project_rules."""
+    from seamus.config.settings import (
+        SystemSettings,
+        SystemSettingsStore,
+        reset_system_settings_store,
+    )
+
+    sys_skills_dir = tmp_path / "sys_skills"
+    sys_skill_a = sys_skills_dir / "skill-a"
+    sys_skill_a.mkdir(parents=True)
+    (sys_skill_a / "SKILL.md").write_text(
+        "---\nname: skill-a\ndescription: System skill A { key: value }\n---\nSystem A body",
+        encoding="utf-8",
+    )
+
+    sys_skill_b = sys_skills_dir / "skill-b"
+    sys_skill_b.mkdir(parents=True)
+    (sys_skill_b / "SKILL.md").write_text(
+        "---\nname: skill-b\ndescription: System skill B\n---\nSystem B body",
+        encoding="utf-8",
+    )
+
+    reset_system_settings_store(
+        SystemSettingsStore(
+            initial_settings=SystemSettings(skill_directories=[str(sys_skills_dir)])
+        )
+    )
+
+    store = HarnessStore()
+    reset_harness_store(store)
+    ws_mgr = get_workspace_manager()
+
+    config = AgentConfig(
+        inference=InferenceConfig(api_key="key"),
+        model_name="test-model",
+        skills_implementation=SkillsImplementation.DEEPAGENTS,
+    )
+    agent = store.create_agent(config=config, name="skills-inspect-agent")
+    session = list(agent.sessions.values())[0]
+
+    data_dir = ws_mgr.get_session_data_dir(agent.id, session.id)
+    ws_skill_a = data_dir / "skills" / "skill-a"
+    ws_skill_a.mkdir(parents=True, exist_ok=True)
+    (ws_skill_a / "SKILL.md").write_text(
+        "---\nname: skill-a\ndescription: Workspace override skill A\n---\nWorkspace A body",
+        encoding="utf-8",
+    )
+
+    (data_dir / "AGENTS.md").write_text("Project rule: use strict typing.", encoding="utf-8")
+
+    report = build_agent_inspect_report(str(agent.id), str(session.id))
+    assert report.skills_implementation == SkillsImplementation.DEEPAGENTS
+    assert "Project rule: use strict typing." in report.prompts.project_rules
+    assert "<project_rules>" in report.prompts.composite
+
+    assert len(report.skills) == 3
+    # First skill-a is from /workspace/skills and active
+    assert report.skills[0].name == "skill-a"
+    assert report.skills[0].active is True
+    assert report.skills[0].sandbox_path == "/workspace/skills/skill-a/SKILL.md"
+    assert report.skills[0].content == "Workspace A body"
+
+    # System skill-a is shadowed
+    shadowed_a = [s for s in report.skills if s.name == "skill-a" and not s.active]
+    assert len(shadowed_a) == 1
+    assert shadowed_a[0].sandbox_path == "/skills/system/0/skill-a/SKILL.md"
+    assert "key: value" in shadowed_a[0].description
+
+    # System skill-b is active
+    active_b = [s for s in report.skills if s.name == "skill-b" and s.active]
+    assert len(active_b) == 1
+    assert active_b[0].sandbox_path == "/skills/system/0/skill-b/SKILL.md"
+
+    # When skills_implementation is NONE, skills list is empty
+    session.config.skills_implementation = SkillsImplementation.NONE
+    reset_runner_registry()
+    report_none = build_agent_inspect_report(str(agent.id), str(session.id))
+    assert report_none.skills_implementation == SkillsImplementation.NONE
+    assert report_none.skills == []

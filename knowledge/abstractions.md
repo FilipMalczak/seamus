@@ -21,7 +21,8 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `InferenceFormat`: Supported inference protocol shapes (e.g. `openai`).
 - `InferenceConfig`: Provider settings (format, base URL, optional API key).
 - `TodoImplementation`: Supported planning/todo list implementations (`none`, `deepagents`).
-- `AgentConfig`: Agent and session configuration model (inference settings, model name, optional system prompt, and `todo_implementation`). Provides `is_complete()`, `validate_complete()`, and `copy_with_overrides()` for inheritance.
+- `SkillsImplementation`: Supported skills discovery and disclosure middleware implementations (`none`, `deepagents`).
+- `AgentConfig`: Agent and session configuration model (inference settings, model name, optional system prompt, `todo_implementation`, and `skills_implementation`, both defaulting to `deepagents`). Provides `is_complete()`, `validate_complete()`, and `copy_with_overrides()` for inheritance.
 - `SystemSettings`: System-wide configuration model (`skill_directories: list[str]`) not scoped to any agent or session.
 - `ConfigTemplateStore`: Persistent container for the service-wide singleton `AgentConfig` template, backed by Gitea repository `system` with first-run defaults.
 - `SystemSettingsStore`: Persistent container for service-wide `SystemSettings`, backed by Gitea repository `system` with first-run defaults.
@@ -43,13 +44,14 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `SandboxSettings`: Runtime configuration for connecting to `opensandbox-server` and configuring sandbox container image, timeouts, operational directory (`/workspace`), and shared workspace volume.
 - `get_or_create_sandbox_api_key`: Autogenerates and retrieves the internal runtime-managed API key for `opensandbox-server` authentication without exposing secrets to users.
 - `build_scaffold_prompt` / `build_sandbox_system_prompt`: Generates structured XML system prompt instructions (serialized via `lmxml`) informing the agent of its identity, `/workspace` operational persistence boundaries, engineering discipline, tool rules, and communication style.
-- `build_effective_system_prompt`: Assembles the complete LM-XML system prompt combining the base scaffold, dynamic turn context, and user-configured custom instructions.
+- `discover_project_rules`: Inspects the session workspace `data/` directory for `AGENTS.md` and `.seamus/rules/*.md` files to assemble repository-specific project rules.
+- `build_effective_system_prompt`: Assembles the complete LM-XML system prompt combining the base scaffold, dynamic turn context, discovered `<project_rules>`, and user-configured custom instructions.
 - `DynamicSystemPromptMiddleware`: LangChain/DeepAgents middleware intercepting model requests to dynamically update `system_message` on each inference turn.
 - `TodoListMiddleware` / `SeamusTodoListMiddleware`: Middleware providing the `write_todos` tool, tracking task states (`pending`, `in_progress`, `completed`) in `PlanningState`, appending task management guidance to the dynamic system prompt, and providing resilient schema normalization (`ResilientWriteTodosInput`) for common LLM key/state variations. Instantiated conditionally when `session.config.todo_implementation == TodoImplementation.DEEPAGENTS`.
 - `SeamusOpenSandboxBackend`: `OpenSandboxBackend` (`langchain_opensandbox`) subclass providing lazy per-session `SandboxSync` container provisioning, mounting `<session_workspace>/data` at `/workspace` (read-write), and mounting configured system-wide skill directories as strictly read-only (`readOnly=True`) volumes at in-sandbox paths `/skills/system/{idx}`. Implements `get_skill_sources()` to supply DeepAgents with appropriately prioritized in-sandbox skill sources (`system[last] -> ... -> system[0] -> /workspace/.skills -> /workspace/skills`).
-- `SessionAgentRunner`: Encapsulates DeepAgent graph instantiation (with `SeamusOpenSandboxBackend`, `DynamicSystemPromptMiddleware`, conditional `TodoListMiddleware`, Anthropic skills integration via `SkillsMiddleware`, and `GitCheckpointSaver`), input handling, event lifecycle mapping (including `REASONING_*` events), and dynamic graph recompilation via `reload_config(session)`.
+- `SessionAgentRunner`: Encapsulates DeepAgent graph instantiation (with `SeamusOpenSandboxBackend`, `DynamicSystemPromptMiddleware`, conditional `TodoListMiddleware`, conditional Anthropic skills integration via `SkillsMiddleware` controlled by `skills_implementation`, and `GitCheckpointSaver`), input handling, event lifecycle mapping (including `REASONING_*` events), and dynamic graph recompilation via `reload_config(session)`.
 - `RunnerRegistry`: Maintains active `SessionAgentRunner` instances keyed by session ID with `reload_session_runner(session)` for instant configuration synchronization upon session updates.
-- `AgentInspectReport`: Data model capturing identity, Gitea branch provenance, model & inference settings, decomposed system prompts (scaffold vs. custom), tool argument schemas, active todos (`todos: list[TodoInspectItem]`), execution status, and trajectory history.
+- `AgentInspectReport`: Data model capturing identity, Gitea branch provenance, model & inference settings, decomposed system prompts (scaffold, project_rules, custom), tool argument schemas, active todos (`todos: list[TodoInspectItem]`), discovered skills (`skills: list[SkillInspectInfo]`), execution status, and trajectory history.
 - `build_agent_inspect_report`: Harness inspection service extracting semi-live agent state from active `SessionAgentRunner` instances or persisted Gitea branch state.
 - `EventBroadcaster`: Fan-out pub-sub queue mechanism for multiplexing real-time AG-UI SSE events to multiple active thread consumers.
 - `HarnessStore`: In-memory repository managing agents, sessions, and threads with scope-bound slug uniqueness.
@@ -111,6 +113,7 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md)
 - [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md)
 - [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md)
+- [0027-skills-config-project-rules-and-inspector.md](../decisions/0027-skills-config-project-rules-and-inspector.md)
 - [architecture.md](./architecture.md)
 - [backlog.md](./backlog.md)
 - [conventions.md](./conventions.md)

@@ -25,7 +25,12 @@ from ag_ui_langgraph.utils import resolve_reasoning_content
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from pydantic import SecretStr
 
-from seamus.config.models import AgentConfig, InferenceConfig, TodoImplementation
+from seamus.config.models import (
+    AgentConfig,
+    InferenceConfig,
+    SkillsImplementation,
+    TodoImplementation,
+)
 from seamus.domain.entities import Agent, AgentStatus
 from seamus.harness.runner import (
     EventBroadcaster,
@@ -558,3 +563,39 @@ def test_runner_registry_reload_session_runner() -> None:
     assert bound_updated is not None
     tools_dict_updated = bound_updated.tools_by_name
     assert "write_todos" in tools_dict_updated
+
+
+def test_session_agent_runner_skills_implementation_toggle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify _build_deep_agent passes skills only when skills_implementation is deepagents."""
+    from unittest.mock import MagicMock
+
+    captured_kwargs: list[dict[str, Any]] = []
+
+    def mock_create_deep_agent(**kwargs: Any) -> Any:
+        captured_kwargs.append(dict(kwargs))
+        mock_graph = MagicMock()
+        mock_graph.nodes = {}
+        return mock_graph
+
+    monkeypatch.setattr("seamus.harness.runner.create_deep_agent", mock_create_deep_agent)
+
+    config = AgentConfig(
+        inference=InferenceConfig(api_key="mock-key"),
+        model_name="mock-model",
+        skills_implementation=SkillsImplementation.DEEPAGENTS,
+    )
+    agent = Agent(config=config, name="skills-toggle-agent")
+    session = agent.create_session(name="skills-toggle-session")
+
+    runner = SessionAgentRunner(session=session, agent_entity=agent)
+    assert len(captured_kwargs) == 1
+    assert captured_kwargs[0]["skills"] is not None
+    assert len(captured_kwargs[0]["skills"]) >= 2
+
+    # Switch to NONE and reload
+    session.config.skills_implementation = SkillsImplementation.NONE
+    runner.reload_config()
+    assert len(captured_kwargs) == 2
+    assert captured_kwargs[1]["skills"] is None

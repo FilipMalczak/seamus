@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   AlertCircle,
+  BookOpen,
   Bot,
   Check,
   CheckCircle2,
@@ -24,7 +25,12 @@ import {
   Zap,
 } from "lucide-react";
 import { getAgentInspection } from "../api/client";
-import type { AgentInspectReport, AgentStatus, ToolInspectInfo } from "../api/types";
+import type {
+  AgentInspectReport,
+  AgentStatus,
+  SkillInspectInfo,
+  ToolInspectInfo,
+} from "../api/types";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 
 interface AgentInspectorProps {
@@ -35,8 +41,8 @@ interface AgentInspectorProps {
   sessionName?: string | null;
 }
 
-type SubTab = "prompt" | "tools" | "todos" | "inference" | "messages" | "workspace";
-type PromptLayer = "composite" | "scaffold" | "custom";
+type SubTab = "prompt" | "tools" | "skills" | "todos" | "inference" | "messages" | "workspace";
+type PromptLayer = "composite" | "scaffold" | "project_rules" | "custom";
 
 export function AgentInspector({
   agentId,
@@ -54,6 +60,7 @@ export function AgentInspector({
   const [promptLayer, setPromptLayer] = useState<PromptLayer>("composite");
   const [copiedPrompt, setCopiedPrompt] = useState<boolean>(false);
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
+  const [expandedSkills, setExpandedSkills] = useState<Record<string, boolean>>({});
 
   const fetchReport = async (isManualRefresh = false) => {
     if (!agentId || !sessionId) {
@@ -87,6 +94,13 @@ export function AgentInspector({
     setExpandedTools((prev) => ({
       ...prev,
       [toolName]: !prev[toolName],
+    }));
+  };
+
+  const toggleSkillExpand = (skillKey: string) => {
+    setExpandedSkills((prev) => ({
+      ...prev,
+      [skillKey]: !prev[skillKey],
     }));
   };
 
@@ -190,7 +204,12 @@ export function AgentInspector({
       ? report.prompts.composite
       : promptLayer === "scaffold"
       ? report.prompts.scaffold
+      : promptLayer === "project_rules"
+      ? report.prompts.project_rules || "*(No workspace project rules found in AGENTS.md or .seamus/rules/)*"
       : report.prompts.custom || "*(No custom instructions specified)*";
+
+  const isNextTurnTab =
+    subTab === "prompt" || subTab === "tools" || subTab === "skills" || subTab === "inference";
 
   return (
     <div className="inspector-container">
@@ -199,7 +218,21 @@ export function AgentInspector({
         <div className="inspector-hero-left">
           <div className="inspector-title-row">
             <h2 className="inspector-title">DeepAgent Inspector</h2>
-            <span className="badge-semi-live">Latest Inference State</span>
+            {isNextTurnTab ? (
+              <span
+                className="badge-semi-live badge-next-turn"
+                title="This tab reflects the live session configuration and workspace state for the next inference turn."
+              >
+                Next Turn Config (Live)
+              </span>
+            ) : (
+              <span
+                className="badge-semi-live badge-checkpoint-state"
+                title="This tab reflects the persisted state from the latest completed inference checkpoint."
+              >
+                Latest Checkpoint State
+              </span>
+            )}
             {renderStatusPill(report.status)}
           </div>
 
@@ -291,6 +324,16 @@ export function AgentInspector({
 
         <button
           type="button"
+          className={`inspector-tab-btn ${subTab === "skills" ? "active" : ""}`}
+          onClick={() => setSubTab("skills")}
+        >
+          <BookOpen className="size-4" />
+          <span>Skills</span>
+          <span className="tab-counter">{(report.skills || []).length}</span>
+        </button>
+
+        <button
+          type="button"
           className={`inspector-tab-btn ${subTab === "todos" ? "active" : ""}`}
           onClick={() => setSubTab("todos")}
         >
@@ -349,6 +392,13 @@ export function AgentInspector({
                   onClick={() => setPromptLayer("scaffold")}
                 >
                   Scaffold (OpenSandbox)
+                </button>
+                <button
+                  type="button"
+                  className={`layer-pill ${promptLayer === "project_rules" ? "active" : ""}`}
+                  onClick={() => setPromptLayer("project_rules")}
+                >
+                  Project Rules
                 </button>
                 <button
                   type="button"
@@ -475,6 +525,122 @@ export function AgentInspector({
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {/* TAB: SKILLS */}
+        {subTab === "skills" && (
+          <div className="inspector-skills-panel">
+            <div className="todos-panel-header">
+              <div className="todos-setting-info">
+                <span className="text-xs text-neutral-400 font-medium">Skills Implementation:</span>
+                <span className={`todo-impl-badge impl-${report.skills_implementation || "deepagents"}`}>
+                  {report.skills_implementation || "deepagents"}
+                </span>
+              </div>
+              {report.skills && report.skills.length > 0 && (
+                <span className="text-xs text-neutral-400">
+                  {report.skills.filter((s) => s.active).length} active / {report.skills.length} discovered
+                </span>
+              )}
+            </div>
+
+            {!report.skills || report.skills.length === 0 ? (
+              <div className="inspector-empty-state">
+                <BookOpen className="size-8 text-neutral-500 mb-2" />
+                {report.skills_implementation === "none" ? (
+                  <>
+                    <p>Skills discovery is disabled (<code>skills_implementation: none</code>).</p>
+                    <span className="text-xs text-neutral-400">
+                      Configure <code>skills_implementation</code> in session settings to enable filesystem skills.
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <p>No skills discovered for this session.</p>
+                    <span className="text-xs text-neutral-400">
+                      Place <code>SKILL.md</code> files under <code>/workspace/skills/&lt;name&gt;/</code>,{" "}
+                      <code>/workspace/.skills/&lt;name&gt;/</code>, or configured system skill directories.
+                    </span>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="tools-grid">
+                {report.skills.map((skill: SkillInspectInfo) => {
+                  const skillKey = `${skill.sandbox_path}:${skill.name}`;
+                  const isExpanded = !!expandedSkills[skillKey];
+                  return (
+                    <div
+                      key={skillKey}
+                      className={`tool-inspect-card ${!skill.active ? "skill-card-shadowed" : ""}`}
+                    >
+                      <div className="tool-card-header">
+                        <div className="tool-card-title-group">
+                          <BookOpen className="size-4 text-sky-400" />
+                          <h4 className="tool-name">{skill.name}</h4>
+                          <span className="tool-backend-badge backend-harness">
+                            {skill.origin_layer}
+                          </span>
+                          <span
+                            className={`tool-backend-badge ${
+                              skill.active ? "backend-sandbox" : "skill-badge-shadowed"
+                            }`}
+                          >
+                            {skill.active ? "Active" : "Shadowed"}
+                          </span>
+                        </div>
+
+                        <button
+                          type="button"
+                          className="btn-tool-toggle"
+                          onClick={() => toggleSkillExpand(skillKey)}
+                        >
+                          <span>{isExpanded ? "Hide Instructions" : "View Instructions"}</span>
+                          {isExpanded ? (
+                            <ChevronDown className="size-3.5" />
+                          ) : (
+                            <ChevronRight className="size-3.5" />
+                          )}
+                        </button>
+                      </div>
+
+                      {skill.description && (
+                        <p className="tool-description">{skill.description}</p>
+                      )}
+
+                      <div className="tool-params-preview">
+                        <span className="param-label">Sandbox Path:</span>
+                        <code className="param-pill">{skill.sandbox_path}</code>
+                      </div>
+
+                      {isExpanded && (
+                        <div className="tool-schema-expanded">
+                          <div className="schema-title-bar">
+                            <span>SKILL.md Instructions</span>
+                            <button
+                              type="button"
+                              className="btn-copy-small"
+                              onClick={() => handleCopyPrompt(skill.content)}
+                              title="Copy skill instructions"
+                            >
+                              <Copy className="size-3" />
+                              <span>Copy</span>
+                            </button>
+                          </div>
+                          <div className="skill-markdown-body">
+                            <MarkdownRenderer
+                              content={skill.content || "*(Empty skill instructions)*"}
+                              variant="assistant"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 

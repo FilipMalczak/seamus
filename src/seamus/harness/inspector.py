@@ -1,15 +1,22 @@
 """Inspector service extracting agent configuration, runtime parameters, and branch state."""
 
 import logging
+import re
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from seamus.config.models import TodoImplementation
+from seamus.config.models import SkillsImplementation, TodoImplementation
+from seamus.config.settings import get_system_settings_store, resolve_skill_path
 from seamus.domain.entities import AgentStatus, Thread
 from seamus.domain.resolution import resolve_session, resolve_thread
-from seamus.harness.prompt import build_effective_system_prompt, build_scaffold_prompt
+from seamus.harness.prompt import (
+    build_effective_system_prompt,
+    build_scaffold_prompt,
+    discover_project_rules,
+)
 from seamus.harness.runner import (
     ReasoningChatOpenAI,
     SessionAgentRunner,
@@ -43,6 +50,17 @@ class TodoInspectItem(BaseModel):
 
     content: str
     status: str = "pending"
+
+
+class SkillInspectInfo(BaseModel):
+    """Information about a discovered filesystem skill."""
+
+    name: str
+    description: str = ""
+    origin_layer: str
+    sandbox_path: str
+    content: str = ""
+    active: bool = True
 
 
 class SubAgentInspectInfo(BaseModel):
@@ -79,6 +97,7 @@ class PromptInspectInfo(BaseModel):
 
     composite: str
     scaffold: str
+    project_rules: str = ""
     custom: str
 
 
@@ -123,7 +142,9 @@ class AgentInspectReport(BaseModel):
     prompts: PromptInspectInfo
     tools: list[ToolInspectInfo] = Field(default_factory=list)
     todos: list[TodoInspectItem] = Field(default_factory=list)
-    todo_implementation: TodoImplementation = TodoImplementation.NONE
+    todo_implementation: TodoImplementation = TodoImplementation.DEEPAGENTS
+    skills: list[SkillInspectInfo] = Field(default_factory=list)
+    skills_implementation: SkillsImplementation = SkillsImplementation.DEEPAGENTS
     subagents: list[SubAgentInspectInfo] = Field(default_factory=list)
     history: HistoryInspectInfo
     workspace: WorkspaceInspectInfo
@@ -468,6 +489,110 @@ def extract_thread_todos(
     return []
 
 
+_FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*(?:\n(.*))?$", re.DOTALL)
+
+
+def _parse_skill_markdown(raw_text: str, default_name: str) -> tuple[str, str, str]:
+    """Parse SKILL.md frontmatter and body resiliently, tolerating unquoted colons/braces."""
+    match = _FRONTMATTER_RE.match(raw_text)
+    if not match:
+        return default_name, "", raw_text.strip()
+
+    fm_text = match.group(1)
+    body = (match.group(2) or "").strip()
+
+    parsed: dict[str, str] = {}
+    current_key: str | None = None
+    current_val_lines: list[str] = []
+    for line in fm_text.splitlines():
+        key_match = re.match(r"^([A-Za-z0-9_-]+)\s*:\s*(.*)$", line)
+        if key_match:
+            if current_key is not None:
+                parsed[current_key] = " ".join(current_val_lines).strip().strip("\"'")
+            current_key = key_match.group(1)
+            val_part = key_match.group(2).strip()
+            current_val_lines = [] if val_part in (">", "|", ">-", "|-") else [val_part]
+        elif current_key is not None and (line.startswith(" ") or line.startswith("\t")):
+            current_val_lines.append(line.strip())
+    if current_key is not None:
+        parsed[current_key] = " ".join(current_val_lines).strip().strip("\"'")
+
+    name = str(parsed.get("name") or default_name).strip() or default_name
+    description = str(parsed.get("description") or "").strip()
+    return name, description, body
+
+
+def extract_session_skills(
+    agent_id: UUID,
+    session_id: UUID,
+    skills_implementation: SkillsImplementation,
+) -> list[SkillInspectInfo]:
+    """Discover skills across workspace and system skill directories in precedence order."""
+    if skills_implementation == SkillsImplementation.NONE:
+        return []
+
+    ws_mgr = get_workspace_manager()
+    sandbox_settings = get_sandbox_settings()
+    system_settings = get_system_settings_store().get_settings()
+    data_dir = ws_mgr.get_session_data_dir(agent_id, session_id)
+    workdir = sandbox_settings.workdir.rstrip("/")
+
+    # Precedence order (highest to lowest):
+    # 1. /workspace/skills
+    # 2. /workspace/.skills
+    # 3. /skills/system/0, /skills/system/1, ...
+    search_roots: list[tuple[Path, str, str]] = [
+        (data_dir / "skills", f"{workdir}/skills", "Session (skills)"),
+        (data_dir / ".skills", f"{workdir}/.skills", "Session (.skills)"),
+    ]
+
+    for idx, skill_dir_str in enumerate(system_settings.skill_directories):
+        resolved = resolve_skill_path(skill_dir_str)
+        if resolved is not None:
+            label = (
+                f"System #{idx} ({skill_dir_str})"
+                if len(system_settings.skill_directories) > 1
+                else f"System ({skill_dir_str})"
+            )
+            search_roots.append((resolved, f"/skills/system/{idx}", label))
+
+    seen_names: set[str] = set()
+    discovered: list[SkillInspectInfo] = []
+
+    for host_root, sandbox_root, origin_label in search_roots:
+        if not host_root.exists() or not host_root.is_dir():
+            continue
+
+        skill_files = sorted(
+            (p for p in host_root.rglob("SKILL.md") if p.is_file()),
+            key=lambda p: str(p.relative_to(host_root)),
+        )
+        for skill_file in skill_files:
+            try:
+                raw_text = skill_file.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            rel_path = skill_file.relative_to(host_root).as_posix()
+            default_name = (
+                skill_file.parent.name if skill_file.parent != host_root else skill_file.stem
+            )
+            name, description, body = _parse_skill_markdown(raw_text, default_name)
+            is_active = name not in seen_names
+            seen_names.add(name)
+            discovered.append(
+                SkillInspectInfo(
+                    name=name,
+                    description=description,
+                    origin_layer=origin_label,
+                    sandbox_path=f"{sandbox_root}/{rel_path}",
+                    content=body,
+                    active=is_active,
+                )
+            )
+
+    return discovered
+
+
 def build_agent_inspect_report(
     agent_identifier: str,
     session_identifier: str,
@@ -519,6 +644,8 @@ def build_agent_inspect_report(
     sandbox_settings = get_sandbox_settings()
     scaffold_prompt = build_scaffold_prompt(sandbox_settings.workdir)
     custom_prompt = (session.config.system_prompt or "").strip()
+    data_dir = ws_mgr.get_session_data_dir(agent.id, session.id)
+    project_rules = discover_project_rules(data_dir) or ""
 
     # Runner & Tools
     registry = get_runner_registry()
@@ -534,19 +661,21 @@ def build_agent_inspect_report(
             )
 
     composite_prompt = (
-        runner.effective_system_prompt
+        runner.build_effective_system_prompt()
         if runner is not None
         else build_effective_system_prompt(
             workdir=sandbox_settings.workdir,
             custom_prompt=custom_prompt or None,
             session_id=str(session.id),
             agent_id=str(agent.id),
+            project_rules=project_rules or None,
         )
     )
 
     prompt_info = PromptInspectInfo(
         composite=composite_prompt,
         scaffold=scaffold_prompt,
+        project_rules=project_rules,
         custom=custom_prompt,
     )
 
@@ -561,6 +690,8 @@ def build_agent_inspect_report(
     else:
         todos = extract_thread_todos(agent.id, session.id, thread, runner=runner)
 
+    skills = extract_session_skills(agent.id, session.id, session.config.skills_implementation)
+
     # Message History
     messages, checkpoint_step = extract_thread_messages(agent.id, session.id, thread)
     history_info = HistoryInspectInfo(
@@ -570,7 +701,6 @@ def build_agent_inspect_report(
     )
 
     # Workspace Files
-    data_dir = ws_mgr.get_session_data_dir(agent.id, session.id)
     files: list[str] = []
     if data_dir.exists():
         for p in data_dir.rglob("*"):
@@ -600,6 +730,8 @@ def build_agent_inspect_report(
         tools=tools,
         todos=todos,
         todo_implementation=session.config.todo_implementation,
+        skills=skills,
+        skills_implementation=session.config.skills_implementation,
         subagents=[],
         history=history_info,
         workspace=workspace_info,

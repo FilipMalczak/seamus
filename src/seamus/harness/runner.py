@@ -33,7 +33,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.types import Command
 from pydantic import BaseModel, Field, SecretStr, model_validator
 
-from seamus.config.models import TodoImplementation
+from seamus.config.models import SkillsImplementation, TodoImplementation
 from seamus.config.settings import get_system_settings_store
 from seamus.domain.entities import Agent, AgentStatus, Session, Thread
 from seamus.harness.prompt import (
@@ -394,7 +394,11 @@ class SessionAgentRunner:
         )
         self.checkpointer = checkpointer
 
-        skill_sources = sandbox_backend.get_skill_sources()
+        skill_sources = (
+            sandbox_backend.get_skill_sources()
+            if self.session.config.skills_implementation == SkillsImplementation.DEEPAGENTS
+            else None
+        )
 
         runner_middleware: list[Any] = [dynamic_prompt_middleware]
         if self.session.config.todo_implementation == TodoImplementation.DEEPAGENTS:
@@ -419,12 +423,20 @@ class SessionAgentRunner:
         """Dynamically assemble the effective LM-XML system prompt for the session."""
         sandbox_settings = get_sandbox_settings()
         custom_prompt = (self.session.config.system_prompt or "").strip()
+        data_dir = (
+            self._sandbox_backend.data_dir
+            if self._sandbox_backend is not None
+            else get_workspace_manager().get_session_data_dir(
+                self.session.agent_id, self.session.id
+            )
+        )
         return build_effective_system_prompt(
             workdir=sandbox_settings.workdir,
             custom_prompt=custom_prompt or None,
             session_id=str(self.session.id),
             agent_id=str(self.session.agent_id),
             include_dynamic_context=include_dynamic_context,
+            data_dir=data_dir,
         )
 
     @property

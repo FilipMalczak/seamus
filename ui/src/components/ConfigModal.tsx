@@ -68,6 +68,17 @@ export function ConfigModal({
       return;
     }
 
+    if (
+      "skills_implementation" in parsed &&
+      parsed.skills_implementation !== null &&
+      !["none", "deepagents"].includes(parsed.skills_implementation)
+    ) {
+      setError(
+        `Invalid skills_implementation '${parsed.skills_implementation}'. Allowed values: 'none', 'deepagents'.`
+      );
+      return;
+    }
+
     setSaving(true);
     try {
       await onSave(parsed as AgentConfig);

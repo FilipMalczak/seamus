@@ -19,6 +19,13 @@ class TodoImplementation(StrEnum):
     DEEPAGENTS = "deepagents"
 
 
+class SkillsImplementation(StrEnum):
+    """Supported skills discovery and disclosure middleware implementations."""
+
+    NONE = "none"
+    DEEPAGENTS = "deepagents"
+
+
 class InferenceConfig(BaseModel):
     """Inference API connection and credentials configuration."""
 
@@ -43,7 +50,8 @@ class AgentConfig(BaseModel):
     inference: InferenceConfig = Field(default_factory=InferenceConfig)
     model_name: str = "openai/gpt-oss-120b"
     system_prompt: str | None = None
-    todo_implementation: TodoImplementation = TodoImplementation.NONE
+    todo_implementation: TodoImplementation = TodoImplementation.DEEPAGENTS
+    skills_implementation: SkillsImplementation = SkillsImplementation.DEEPAGENTS
 
     def is_complete(self) -> bool:
         """Return True if this configuration is complete enough to initialize an agent."""
@@ -94,6 +102,11 @@ class AgentConfig(BaseModel):
                     overrides.todo_implementation
                     if "todo_implementation" in overrides.model_fields_set
                     else self.todo_implementation
+                ),
+                "skills_implementation": (
+                    overrides.skills_implementation
+                    if "skills_implementation" in overrides.model_fields_set
+                    else self.skills_implementation
                 ),
             },
             deep=True,

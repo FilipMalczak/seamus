@@ -2050,6 +2050,18 @@ body {
   font-weight: 600;
 }
 
+.badge-next-turn {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
+.badge-checkpoint-state {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
 .inspector-meta-row {
   display: flex;
   align-items: center;
@@ -2327,6 +2339,30 @@ body {
   color: var(--text-secondary);
   line-height: 1.45;
   margin: 0;
+  white-space: pre-wrap;
+}
+
+.inspector-skills-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.skill-card-shadowed {
+  opacity: 0.65;
+}
+
+.skill-badge-shadowed {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.skill-markdown-body {
+  padding: 0.85rem 1rem;
+  max-height: 320px;
+  overflow-y: auto;
+  font-size: 0.82rem;
 }
 
 .tool-params-preview {

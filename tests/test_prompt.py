@@ -135,6 +135,42 @@ def test_build_effective_system_prompt_omits_empty_custom() -> None:
     )
     assert "<custom_instructions>" not in prompt
     assert "<dynamic_context>" not in prompt
+    assert "<project_rules>" not in prompt
+
+
+def test_discover_project_rules_and_prompt_injection(tmp_path: Any) -> None:
+    from seamus.harness.prompt import discover_project_rules
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+
+    # Empty data_dir yields None
+    assert discover_project_rules(data_dir) is None
+
+    # Create AGENTS.md and .seamus/rules/*.md
+    (data_dir / "AGENTS.md").write_text("Follow clean architecture.", encoding="utf-8")
+    rules_dir = data_dir / ".seamus" / "rules"
+    rules_dir.mkdir(parents=True)
+    (rules_dir / "01-style.md").write_text("Use snake_case.", encoding="utf-8")
+    (rules_dir / "02-testing.md").write_text("Always write unit tests.", encoding="utf-8")
+
+    discovered = discover_project_rules(data_dir)
+    assert discovered is not None
+    assert "# AGENTS.md" in discovered
+    assert "Follow clean architecture." in discovered
+    assert "# .seamus/rules/01-style.md" in discovered
+    assert "Use snake_case." in discovered
+    assert "# .seamus/rules/02-testing.md" in discovered
+    assert "Always write unit tests." in discovered
+
+    prompt = build_effective_system_prompt(
+        workdir="/workspace",
+        data_dir=data_dir,
+        include_dynamic_context=False,
+    )
+    assert "<project_rules>" in prompt
+    assert "Follow clean architecture." in prompt
+    assert "Use snake_case." in prompt
 
 
 class _FakeChatModel(BaseChatModel):

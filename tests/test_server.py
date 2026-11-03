@@ -494,12 +494,13 @@ def test_session_diff_endpoint(client: TestClient) -> None:
 
 
 def test_session_and_template_todo_implementation_config(client: TestClient) -> None:
-    """Verify todo_implementation config and validation across template and session routes."""
+    """Verify todo_implementation and skills_implementation config across template and session."""
     # 1. Template validation
     tmpl_res = client.get("/api/v-alpha/config-template")
     assert tmpl_res.status_code == 200
     tmpl_data = tmpl_res.json()["config"]
-    assert tmpl_data["todo_implementation"] == "none"
+    assert tmpl_data["todo_implementation"] == "deepagents"
+    assert tmpl_data["skills_implementation"] == "deepagents"
 
     # Invalid template value -> 422
     tmpl_data["todo_implementation"] = "invalid_choice"
@@ -507,13 +508,16 @@ def test_session_and_template_todo_implementation_config(client: TestClient) -> 
     assert bad_tmpl_res.status_code == 422
 
     # Valid template value -> 200
-    tmpl_data["todo_implementation"] = "deepagents"
+    tmpl_data["todo_implementation"] = "none"
+    tmpl_data["skills_implementation"] = "none"
     ok_tmpl_res = client.post("/api/v-alpha/config-template", json=tmpl_data)
     assert ok_tmpl_res.status_code == 200
-    assert ok_tmpl_res.json()["config"]["todo_implementation"] == "deepagents"
+    assert ok_tmpl_res.json()["config"]["todo_implementation"] == "none"
+    assert ok_tmpl_res.json()["config"]["skills_implementation"] == "none"
 
-    # Reset template back to none
+    # Reset template back to none for session inheritance check below
     tmpl_data["todo_implementation"] = "none"
+    tmpl_data["skills_implementation"] = "none"
     client.post("/api/v-alpha/config-template", json=tmpl_data)
 
     # 2. Session update and validation
@@ -523,6 +527,7 @@ def test_session_and_template_todo_implementation_config(client: TestClient) -> 
     ).json()
 
     assert session["config"]["todo_implementation"] == "none"
+    assert session["config"]["skills_implementation"] == "none"
 
     # Invalid session todo_implementation -> 422
     bad_session_update = {
@@ -538,12 +543,27 @@ def test_session_and_template_todo_implementation_config(client: TestClient) -> 
     )
     assert bad_res.status_code == 422
 
+    # Invalid session skills_implementation -> 422
+    bad_skills_update = {
+        "name": "todo-session",
+        "config": {
+            **session["config"],
+            "skills_implementation": "invalid_value",
+        },
+    }
+    bad_skills_res = client.post(
+        f"/api/v-alpha/agent/{agent['id']}/session/{session['id']}",
+        json=bad_skills_update,
+    )
+    assert bad_skills_res.status_code == 422
+
     # Valid session update -> 200
     good_session_update = {
         "name": "todo-session",
         "config": {
             **session["config"],
             "todo_implementation": "deepagents",
+            "skills_implementation": "deepagents",
         },
     }
     good_res = client.post(
@@ -552,3 +572,4 @@ def test_session_and_template_todo_implementation_config(client: TestClient) -> 
     )
     assert good_res.status_code == 200
     assert good_res.json()["config"]["todo_implementation"] == "deepagents"
+    assert good_res.json()["config"]["skills_implementation"] == "deepagents"

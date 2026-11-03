@@ -208,3 +208,4 @@ Requirements, rationale, provenance, and stable IDs.
 - [0023-github-actions-ci-pipeline.md](../decisions/0023-github-actions-ci-pipeline.md)
 - [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md)
 - [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md)
+- [0027-skills-config-project-rules-and-inspector.md](../decisions/0027-skills-config-project-rules-and-inspector.md)

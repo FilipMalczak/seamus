@@ -80,16 +80,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Improvement**: Think through and deliberately define the desired behavior when toggling between planning implementations (or to `none` and back): decide whether prior plan state should be retained, cleared, archived, or version-branched across implementation switches.
 - **Provenance**: [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md), [invariants.md](./invariants.md#inv-033-configurable-todo-planning-and-system-prompt-composition).
 
-### Inconsistent Semi-Live State in Agent Inspector Tools Section
-- **Current Problem**: The Agent Inspector is semi-live inconsistently: when session or agent configuration changes (e.g. toggling tools or settings), the tools tab immediately updates to show tools for the newly configured runner (reflecting "next inference"), whereas other tabs (messages, todos, inference trace) reflect the state preserved in checkpoints from the "last inference".
-- **Improvement**: Clearly delineate or align inspector tabs: indicate whether the inspected tool manifest represents the current runner configuration ("next turn") or the snapshot of tools active during the inspected checkpoint turn ("last inference"), or synchronize them coherently with checkpoint metadata.
-- **Provenance**: [0011-agent-inspector.md](../decisions/0011-agent-inspector.md), [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md).
-
-### Inspector Tool Description Multiline Whitespace Collapsing
-- **Current Problem**: In `AgentInspector.tsx`, the tool card description `<p className="tool-description">{tool.description}</p>` renders tool docstrings without preserving newlines (`white-space: pre-wrap`), causing multi-paragraph tool explanations or formatted argument summaries to collapse into a single unformatted run of text.
-- **Improvement**: Apply `white-space: pre-wrap` (or render with the UI Markdown component) to `.tool-description` in the inspector tools grid so formatted tool explanations remain legible.
-- **Provenance**: [0011-agent-inspector.md](../decisions/0011-agent-inspector.md), `ui/src/components/AgentInspector.tsx`.
-
 ### Testing and Verification of Session Termination and Branching Lifecycle
 - > Lost in agentic translation: I originally meant manual testing, but it makes more sense to automate these tests
 - **Current Problem**: Session killing (stopping ongoing model execution) and thread branching from historical checkpoints were introduced in [0022-branching-out-and-session-lifecycle.md](../decisions/0022-branching-out-and-session-lifecycle.md). The lifecycle mechanics were only lightly tested; edge cases around subprocess signals, container process cleanup, checkpoint consistency during mid-stream stops, and Gitea branch consistency during rapid branching remain undertested and may harbor latent bugs.
@@ -140,11 +130,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Keeps chat conversations clean and scannable while giving persistent, dedicated visibility to substantial engineering deliverables.
 - **Provenance**: `ui/src/components/`, [abstractions.md](./abstractions.md), [architecture.md](./architecture.md).
 
-### Dynamic Project Rules Discovery from Workspace (.seamus/rules and AGENTS.md)
-- **Description**: Enhance `DynamicSystemPromptMiddleware` to inspect the agent workspace (`/workspace/.seamus/rules` or `/workspace/AGENTS.md`) prior to model turns, injecting project-specific guidelines into a dedicated `<project_rules>` XML tag.
-- **Rationale**: Keeps the agent automatically synchronized with repository-level conventions and memory files without requiring session re-initialization.
-- **Provenance**: [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md).
-
 ### Thorough Security Review of Containerized OpenSandbox Server & Docker Socket Configuration
 - **Description**: Perform an in-depth security review and hardening pass on the containerized `opensandbox-server` deployment (`opensandbox/Dockerfile`, `opensandbox/sandbox.toml`, and `docker-compose.yml`). Review the security implications of mounting `/var/run/docker.sock`, tighten `allowed_host_paths` in `[storage]`, evaluate Docker socket proxies or rootless/gVisor (`runsc`)/Kata isolation runtimes (`[secure_runtime]`), review container capability drops/seccomp/AppArmor profiles, and audit sandbox network egress policies and port range exposure.
 - **Rationale**: Mounting `/var/run/docker.sock` and provisioning sibling containers grants privileged daemon control to the sandbox server; hardening these boundaries is critical before untrusted or multi-tenant workloads run in sandboxes.
@@ -181,11 +166,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: A 1:2 ratio gives greater horizontal breathing room to conversational messages, tool call payloads, and code diffs while preserving adequate width for the navigation tree.
 - **Provenance**: [0014-ui-layout-proportions-breadcrumbs.md](../decisions/0014-ui-layout-proportions-breadcrumbs.md).
 
-### Skills Visibility and Inspection in Agent Inspector
-- **Description**: Add a dedicated "Skills" view or tab within `AgentInspector` (alongside Prompt, Tools, Todos, Inference, Messages, Workspace). Display all discovered skills active for the session, showing their origin layer (workspace `/workspace/skills`, workspace dotted `/workspace/.skills`, or system `/skills/system/{idx}`), frontmatter metadata (name, description), and rendered markdown instructions.
-- **Rationale**: Following the introduction of filesystem skills in [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md) and [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md), operators need runtime visibility into which skills are mounted, active, and accessible to the agent.
-- **Provenance**: [0011-agent-inspector.md](../decisions/0011-agent-inspector.md), [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md), [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md).
-
 ### Verbose In-UI Unhandled Error Presentation
 - **Description**: Enhance frontend error handling when an unhandled error occurs during inference or backend execution. Instead of displaying a brief generic error pill or banner, surface an expandable, detailed error panel containing the full error message, stack trace / traceback, failure context, and actionable diagnostic guidance.
 - **Rationale**: When agent runs or tool calls fail unexpectedly, operators currently have to dig into server terminal logs or Logfire to diagnose the issue; rich in-UI error reporting provides immediate debugging feedback.
@@ -210,11 +190,6 @@ Persistent record of work intentionally left outstanding across the project, mai
   This forms the first component of a broader "UX Daemons" initiative: lightweight, dedicated background agents that handle peripheral UX automation (entity naming, proactive todo management, branch summaries) without interfering with primary task execution.
 - **Rationale**: Manually naming agents, sessions, and threads creates unnecessary friction; automated descriptive naming keeps navigation clean and organized.
 - **Provenance**: [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md), [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [vocabulary.md](./vocabulary.md).
-
-### Configurable Skills Implementation Setting (skills_implementation)
-- **Description**: Introduce an explicit `skills_implementation` configuration setting across system defaults, agent configurations, and session overrides with supported values `none`, `deepagents` (current adapter using built-in `SkillsMiddleware`), and `native` (the planned LM-XML first-party skills system). Expose the setting in the configuration modal and dynamically reload runner middleware during session initialization and runtime updates, mirroring the pattern established for `todo_implementation`.
-- **Rationale**: Gives operators explicit control over whether and how skills are exposed, supporting granular experimentation and smooth migration from DeepAgents' middleware to Seamus's native implementation.
-- **Provenance**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md), [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md), [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md).
 
 ### Minimalistic Dashboard View for Agents and Sessions
 - **Description**: Implement an alternative, lightweight "Dashboard" view alongside the rich developer/IDE-like navigation tree and inspector:
