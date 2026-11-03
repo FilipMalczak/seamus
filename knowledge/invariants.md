@@ -181,6 +181,11 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md), [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md).
 - **Enforcement**: `SeamusOpenSandboxBackend.build_skill_volumes()`, `SeamusOpenSandboxBackend.get_skill_sources()`, `WorkspaceManager.create_session_workspace()`, and unit tests in `tests/test_sandbox.py` and `tests/test_workspace.py`.
 
+### INV-036: Purposeful Workspace Synchronization & Auto-Pull
+- **Statement**: The agent workspace is not a freely accessible content base. Any external commit landed on an agent session's Gitea branch represents an authorized, purposeful modification (such as administrator intervention or manual skill provisioning). The harness must auto-pull remote changes with rebase (`sync_session_workspace`) upon session checkout and prior to each inference turn loop, ensuring external changes immediately reflect in the agent's live workspace and OpenSandbox container, and automatically rebase checkpoint commits if remote advanced.
+- **Justification**: [0008-git-persistence.md](../decisions/0008-git-persistence.md), [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md).
+- **Enforcement**: `GitWorkspaceManager.sync_session_workspace()`, `GitWorkspaceManager.create_session_workspace()`, `SessionAgentRunner._run_loop()`, `GitWorkspaceManager.commit_checkpoint_changes()`, and unit tests in `tests/test_workspace.py`.
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [requirements.md](./requirements.md)

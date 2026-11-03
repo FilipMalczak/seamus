@@ -28,6 +28,12 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Revisit Trigger**: When users require agents to work directly on existing external codebases without manual file copying or importing.
 - **Provenance**: [0008-git-persistence.md](../decisions/0008-git-persistence.md#8-deferred-tasks).
 
+### Gitea Repository Branch Protection Rules
+- **Description**: Configure branch protection rules on all agent and system Git repositories in Gitea to restrict direct pushes to session and main branches. Workspaces are not a freely accessible content base; all modifications must be authorized (such as administrator intervention or verified agent turns).
+- **Why Deferred**: Core Git workflow, Sync PR lifecycle, and auto-pull mechanics were established first.
+- **Revisit Trigger**: When multi-user authorization and branch governance are implemented.
+- **Provenance**: [0008-git-persistence.md](../decisions/0008-git-persistence.md), [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md), [INV-036](./invariants.md#inv-036-purposeful-workspace-synchronization--auto-pull).
+
 ### Resource Archiving and Soft Deletion in API
 - **Description**: The REST API prohibits `DELETE` operations across all resources to ensure non-destructive safety (`INV-007`). Archiving or soft deletion (hiding inactive agents, sessions, or threads from the active navigation views) was postponed.
 - **Why Deferred**: Prioritized zero accidental data loss and predictable append-only state for early iterations.
@@ -78,8 +84,8 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ### Native LM-XML Skills System with Load/Unload Skill Tools
 - **Description**: Replace the reliance on LangChain DeepAgents' built-in `SkillsMiddleware` with a first-party, native Seamus skills implementation. The native system will be built directly on `lmxml` dynamic prompt structures (integrating seamlessly with `DynamicSystemPromptMiddleware`) and explicit `load_skill` / `unload_skill` agent tools to disclose, activate, and deactivate skill instructions and associated tools on demand rather than relying on automatic middleware inspection and implicit prompt appending.
-- **Rationale**: DeepAgents' `SkillsMiddleware` operates as an external abstraction with rigid prompt formatting and implicit disclosure rules. A native implementation based on `lmxml` dynamisms and explicit `load_skill` / `unload_skill` tools will align directly with Seamus's structured XML system prompt architecture, provide tighter control over context window budgeting and prompt cache breakpoints, and avoid middleware ordering or prompt overriding frictions.
-- **Provenance**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md), [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md).
+- **Rationale**: DeepAgents' `SkillsMiddleware` operates as an external abstraction with rigid prompt formatting, strict PyYAML frontmatter parsing (which silently drops real-world skills with unquoted inline structures like colons or braces in descriptions, such as `bevy-assets`), and implicit disclosure rules. A native implementation based on `lmxml` dynamisms, relaxed/resilient YAML frontmatter parsing, and explicit `load_skill` / `unload_skill` tools will align directly with Seamus's structured XML system prompt architecture, provide tighter control over context window budgeting and prompt cache breakpoints, and avoid middleware ordering or prompt overriding frictions.
+- **Provenance**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md), [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md), [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md).
 
 ### Built-In Bundled Skills for Seamus
 - **Description**: Package a core suite of built-in skills bundled directly with Seamus (e.g., for creating a2ui artifacts, interactive planning surveys, code review workflows) mounted in sandboxes under `/skills/bundled`. These skills hold top-most precedence across all sessions as integral platform capabilities that cannot be overridden by session or system skills.
@@ -173,3 +179,4 @@ Persistent record of work intentionally left outstanding across the project, mai
 - inspector is semi-live inconsistently - tools change as soon as we switch config, so they dont present "last inference" but rather "next inference"
 - dashboard view (less detailed, less cluttered, more focused on achieving goals than understanding agent impl details)
 - In the inspector, in tools section - tool desc may include newlines, which get collapsed in the tool cards
+- Skills in inspector

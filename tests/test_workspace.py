@@ -454,3 +454,55 @@ def test_system_repo_defaults_without_explicit_args(
     settings_read = manager.read_system_settings()
     assert settings_read is not None
     assert settings_read["skill_directories"] == ["~/.seamus/skills", "~/.skills"]
+
+
+def test_sync_session_workspace_auto_pulls_external_changes(
+    git_environment: tuple[GitWorkspaceManager, Path, Path],
+    test_config: AgentConfig,
+    tmp_path: Path,
+) -> None:
+    manager, bare_remote, workspace_dir = git_environment
+    agent = Agent(name="sync-agent", config=test_config)
+    manager.initialize_agent_repo(agent)
+
+    session = Session(agent_id=agent.id, name="sync-session", config=test_config)
+    thread = session.create_thread(name="sync-thread")
+
+    session_dir = manager.create_session_workspace(session, agent)
+    branch_name = f"session/{session.id}"
+
+    # Commit initial state to establish the branch remotely
+    test_file = session_dir / "data" / "initial.txt"
+    test_file.write_text("initial content", encoding="utf-8")
+    assert manager.commit_checkpoint_changes(agent.id, session.id, thread.id, "cp-init") is True
+
+    # Simulate an external commit pushed directly to Gitea/remote
+    external_clone = tmp_path / "external_clone"
+    subprocess.run(["git", "clone", str(bare_remote), str(external_clone)], check=True)
+    subprocess.run(["git", "-C", str(external_clone), "checkout", branch_name], check=True)
+    ext_skill_dir = external_clone / "data" / ".skills" / "custom"
+    ext_skill_dir.mkdir(parents=True)
+    (ext_skill_dir / "SKILL.md").write_text("---\nname: custom\n---\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(external_clone), "add", "-A"], check=True)
+    subprocess.run(
+        ["git", "-C", str(external_clone), "commit", "-m", "external manual skill addition"],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(external_clone), "push", "origin", branch_name],
+        check=True,
+    )
+
+    # Local workspace does not have the file yet
+    assert not (session_dir / "data" / ".skills" / "custom" / "SKILL.md").exists()
+
+    # Synchronize session workspace
+    assert manager.sync_session_workspace(session) is True
+
+    # Now the externally added skill exists locally on disk
+    assert (session_dir / "data" / ".skills" / "custom" / "SKILL.md").exists()
+
+    # Further local checkpoint commit rebases and pushes cleanly
+    local_file = session_dir / "data" / "local.txt"
+    local_file.write_text("local content", encoding="utf-8")
+    assert manager.commit_checkpoint_changes(agent.id, session.id, thread.id, "cp-local") is True

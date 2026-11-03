@@ -412,6 +412,7 @@ class GitWorkspaceManager:
                 self._run_git(session_dir, ["checkout", "-b", branch_name, start_point])
         else:
             self._configure_git_identity(session_dir)
+            self.sync_session_workspace(session)
 
         # Write session config
         self.commit_session_config(session)
@@ -420,6 +421,30 @@ class GitWorkspaceManager:
         (session_dir / "data" / ".skills").mkdir(parents=True, exist_ok=True)
         (session_dir / "agent" / "state").mkdir(parents=True, exist_ok=True)
         return session_dir
+
+    def sync_session_workspace(self, session: Session) -> bool:
+        """Synchronize the local session working tree with its remote Gitea branch.
+
+        Rationale: The agent workspace is not a freely accessible content base.
+        External modifications in Gitea (e.g. administrator intervention or manual skill
+        provisioning) represent purposeful changes that must immediately reflect in the agent's
+        live workspace.
+        """
+        if not self.settings.enabled:
+            return False
+
+        session_dir = self.get_session_workspace_path(session.agent_id, session.id)
+        if not (session_dir / ".git").exists():
+            return False
+
+        branch_name = f"session/{session.id}"
+        try:
+            self._run_git(session_dir, ["pull", "--rebase", "--autostash", "origin", branch_name])
+            logger.info("Synchronized local session workspace with remote %s", branch_name)
+            return True
+        except Exception as exc:
+            logger.warning("Failed to auto-pull session workspace %s: %s", session.id, exc)
+            return False
 
     def commit_session_config(self, session: Session) -> None:
         """Serialize and commit session configuration directory to session branch."""
@@ -908,7 +933,15 @@ class GitWorkspaceManager:
 
         self._run_git(session_dir, ["add", "-A", "--", *paths_to_check])
         self._run_git(session_dir, ["commit", "-m", commit_msg])
-        self._run_git(session_dir, ["push", "origin", branch_name])
+        try:
+            self._run_git(session_dir, ["push", "origin", branch_name])
+        except Exception:
+            logger.info(
+                "Remote contains external changes; rebasing session %s before retry push",
+                session_id,
+            )
+            self._run_git(session_dir, ["pull", "--rebase", "--autostash", "origin", branch_name])
+            self._run_git(session_dir, ["push", "origin", branch_name])
         logger.info(
             "Committed checkpoint changes for session %s thread %s (checkpoint %s)",
             session_id,

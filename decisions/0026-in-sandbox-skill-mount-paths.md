@@ -46,6 +46,16 @@ This led to two critical issues:
    - `SeamusOpenSandboxBackend.get_skill_sources()` reverses the system skill list so that `system[last]` is loaded first, followed by `system[1]`, `system[0]`, `/workspace/.skills`, and finally `/workspace/skills`.
    - `SessionAgentRunner` supplies these in-sandbox sources directly to `create_deep_agent(skills=...)`.
 
+5. **Purposeful External Workspace Modifications & Auto-Pull**:
+   - The agent workspace is not a freely accessible content base; all session workspaces are tightly Git-tracked in Gitea.
+   - If an external modification lands on the session's Gitea branch (for example, administrator intervention or manual skill provisioning in `.skills/`), it represents an authorized, purposeful modification that must be visible to the agent immediately.
+   - `GitWorkspaceManager.sync_session_workspace()` performs `git pull --rebase --autostash origin session/{session_id}` upon session checkout and prior to each turn execution loop in `SessionAgentRunner._run_loop()`.
+   - `commit_checkpoint_changes()` automatically rebases and retries push if the remote branch advanced externally, ensuring zero lost updates or push rejections.
+
+6. **Technical Note: DeepAgents Strict YAML Frontmatter Parsing**:
+   - DeepAgents' built-in `SkillsMiddleware` relies strictly on PyYAML `yaml.safe_load()`. Real-world skills containing unquoted braces with colons in description frontmatter (e.g. `description: ... { key: value } ...` in `bevy-assets`) fail standard YAML mapping validation and are silently dropped by DeepAgents.
+   - Because `SkillsMiddleware` is an external dependency, this constraint is documented as a key rationale for the upcoming native Seamus skills implementation, which will incorporate relaxed/resilient frontmatter parsing.
+
 ## Consequences
 
 ### Positive

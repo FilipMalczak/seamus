@@ -636,6 +636,9 @@ class SessionAgentRunner:
             messages=[user_message] if user_message is not None else [],
         )
 
+        ws_mgr = get_workspace_manager()
+        ws_mgr.sync_session_workspace(self.session)
+
         request_agent = self._agent.clone()
         with logfire.span(
             f"agent {agent_identifier}",
