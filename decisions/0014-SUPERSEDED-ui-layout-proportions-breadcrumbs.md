@@ -1,3 +1,5 @@
+> Superseded in part by [0028-ui-ux-ergonomics-and-url-state](./0028-ui-ux-ergonomics-and-url-state.md).
+
 # 0014. Draggable UI Split Divider (50/50 Default) and Multiline Breadcrumbs
 
 Date: 2026-10-31

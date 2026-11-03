@@ -46,7 +46,7 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 
 1. **Web User Interface (`ui`)**:
    - Location: `ui/`
-   - Responsibility: React 19 single-page application built with Vite and TypeScript. Arranged with a draggable split resizer defaulting to a 50/50 balanced proportion between the navigation sidebar tree (with external system integration footer) and the main panel, with boundary clamping and local storage preference persistence. Houses top-level workspace tabs (`[Chat] | [Inspector]`), multiline wrapping breadcrumb top bar with "Accept" action button initiating thread acceptance and Sync PR lifecycle, conversational message pane with client-side Markdown rendering (GFM, code blocks with copy-to-clipboard, safe external links, and table overflow protection), DeepAgent Inspector (displaying composite/scaffold system prompts, tool schemas, inference runtime parameters, active todos checklist, and message trajectory), SSE streaming client, and in-browser JSON config editor.
+   - Responsibility: React 19 single-page application built with Vite and TypeScript. Arranged with a draggable split resizer defaulting to a 1:2 proportion (`33.33%` sidebar / `66.67%` main panel) between the navigation sidebar tree (with external system integration footer) and the main panel, with boundary clamping, double-click 1:2 reset, and local storage preference persistence. Synchronizes the active agent, session, thread, and main panel tab with URL query parameters (`?agent=...&session=...&thread=...&tab=...`) supporting deep-linking and browser history navigation. Houses top-level workspace tabs (`[Chat] | [Inspector] | [Changes]`), multiline wrapping breadcrumb top bar, conversational message pane with client-side Markdown rendering (GFM, code blocks with copy-to-clipboard, safe external links, and table overflow protection), expandable verbose error diagnostics panel, DeepAgent Inspector (displaying composite/scaffold system prompts, tool schemas, inference runtime parameters, active todos checklist, and message trajectory), automatic live diff and tree state polling during active runs, SSE streaming client, and a dual-mode (`Form` | `Raw JSON`) configuration editor (`ConfigModal`).
 2. **Configuration (`seamus.config`)**:
    - Location: `src/seamus/config/`
    - Responsibility: `InferenceConfig`, `AgentConfig`, `SystemSettings` (system-wide skill directories), and persistent stores (`ConfigTemplateStore`, `SystemSettingsStore`) backed by Gitea repository `system` with first-run defaults.
@@ -89,7 +89,7 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 - [0011-agent-inspector.md](../decisions/0011-agent-inspector.md)
 - [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md)
 - [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md)
-- [0014-ui-layout-proportions-breadcrumbs.md](../decisions/0014-ui-layout-proportions-breadcrumbs.md)
+- [0014-SUPERSEDED-ui-layout-proportions-breadcrumbs.md](../decisions/0014-SUPERSEDED-ui-layout-proportions-breadcrumbs.md)
 - [0015-session-changes-diff-tab.md](../decisions/0015-session-changes-diff-tab.md)
 - [0016-sync-pr-data-scope.md](../decisions/0016-sync-pr-data-scope.md)
 - [0017-dedicated-test-gitea.md](../decisions/0017-dedicated-test-gitea.md)
@@ -100,6 +100,7 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 - [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md)
 - [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md)
 - [0027-skills-config-project-rules-and-inspector.md](../decisions/0027-skills-config-project-rules-and-inspector.md)
+- [0028-ui-ux-ergonomics-and-url-state.md](../decisions/0028-ui-ux-ergonomics-and-url-state.md)
 - [threads_modes_personas.md](./threads_modes_personas.md)
 - [abstractions.md](./abstractions.md)
 - [backlog.md](./backlog.md)

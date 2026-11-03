@@ -141,11 +141,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Mounting `/var/run/docker.sock` and provisioning sibling containers grants privileged daemon control to the sandbox server; hardening these boundaries is critical before untrusted or multi-tenant workloads run in sandboxes.
 - **Provenance**: [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md#5-containerized-local-opensandbox-server-opensandbox-docker-composeyml-runsh), [architecture.md](./architecture.md#component-boundaries).
 
-### Dynamic Model Catalog and Dropdowns in UI Configuration Modals
-- **Description**: The in-browser `ConfigModal` currently requires raw JSON editing for all configuration fields. Add structured input fields or dropdowns for supported model names, inference formats, and `todo_implementation` (`none`, `deepagents`) while preserving the raw JSON editing tab.
-- **Rationale**: Reduces syntax errors and configuration friction when configuring agents and sessions.
-- **Provenance**: [0003-react-web-ui.md](../decisions/0003-react-web-ui.md), [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md), [abstractions.md](./abstractions.md#ui-ui).
-
 ### Custom Planning Toolset Integration
 - **Description**: Implement custom planning toolset alternatives alongside `none` and `deepagents` (e.g. customized task decomposition, plan verification, or milestone tracking), introducing corresponding `todo_implementation` enum values.
 - **Rationale**: Enables dedicated, customizable task planning architectures beyond the standard DeepAgents middleware.
@@ -160,29 +155,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Description**: Perform in-depth end-to-end testing of the thread acceptance lifecycle and Gitea Sync PR merges across complex multi-turn trajectories, concurrent operations, and error states following the resolution of tool call rendering in [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md).
 - **Rationale**: Ensures the automated Sync PR merge, thread closure, and branch synchronization are robust under realistic usage before full operational release.
 - **Provenance**: [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md), [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md).
-
-### URL should reflect what's opened in SPA
-- **Description**: No matter which chat we open, the URL stays unchanged.
-- **Expectation**: As we navigate the system, each agent, session, thread and tab should have separate URLs that mutate as we click around the page.
-- **Rationale**: One should be able to share the link to specific place in the UI, without requiring the receipient of the link to traverse the UI manually
-- **Provenance**: Manual
-
-### UI Layout Default Proportions (1:2 Tree-to-Chat Ratio)
-- **Description**: Update the default draggable split divider ratio from the current 50/50 (`0.50`) established in [0014-ui-layout-proportions-breadcrumbs.md](../decisions/0014-ui-layout-proportions-breadcrumbs.md) to a 1:2 split (~`0.333`), allocating 1/3 of the viewport width to the entity navigation sidebar and 2/3 to the primary chat and inspector panel. Retain user-customized ratio overrides in `localStorage` (`seamus_sidebar_ratio`) and double-click reset behavior.
-- **Rationale**: A 1:2 ratio gives greater horizontal breathing room to conversational messages, tool call payloads, and code diffs while preserving adequate width for the navigation tree.
-- **Provenance**: [0014-ui-layout-proportions-breadcrumbs.md](../decisions/0014-ui-layout-proportions-breadcrumbs.md).
-
-### Verbose In-UI Unhandled Error Presentation
-- **Description**: Enhance frontend error handling when an unhandled error occurs during inference or backend execution. Instead of displaying a brief generic error pill or banner, surface an expandable, detailed error panel containing the full error message, stack trace / traceback, failure context, and actionable diagnostic guidance.
-- **Rationale**: When agent runs or tool calls fail unexpectedly, operators currently have to dig into server terminal logs or Logfire to diagnose the issue; rich in-UI error reporting provides immediate debugging feedback.
-- **Provenance**: [0003-react-web-ui.md](../decisions/0003-react-web-ui.md), [0005-logfire-integration.md](../decisions/0005-logfire-integration.md).
-
-### Automatic UI Polling and State Refresh for Active Runs and Changes Tab
-- **Description**: Implement automatic UI refresh or polling for live state updates:
-  1. Automatically update thread run status, message stream, and active tool calls without requiring manual interaction.
-  2. Automatically refresh the Changes tab diff view as the agent performs filesystem modifications or when switching between turns.
-- **Rationale**: Eliminates stale UI views and manual refresh friction when observing active agent executions and inspecting workspace modifications.
-- **Provenance**: [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md), [0015-session-changes-diff-tab.md](../decisions/0015-session-changes-diff-tab.md), [0021-ui-chat-autoscroll-and-changes-file-filtering.md](../decisions/0021-ui-chat-autoscroll-and-changes-file-filtering.md).
 
 ### Session-Level UI View and Unified Thread Feed
 - **Description**: Evolve the UI navigation model so that selecting or creating an agent lands on a primary Session view rather than requiring selection of individual threads. The session view will present an aggregated, continuous chronological feed of all past threads in the session, with the composer input serving as a direct proxy to the current active open thread.

@@ -153,28 +153,54 @@ export function ChangesViewer({
   const isOpen = thread?.is_open ?? false;
   const currentStatus = agentStatus ?? thread?.status ?? "AWAITING_USER";
   const isBusy = currentStatus !== "AWAITING_USER";
+  const isRunning =
+    currentStatus === "AWAITING_LLM" || currentStatus === "EXECUTING_TOOL";
 
-  const fetchDiff = useCallback(async () => {
-    if (!agentId || !sessionId) {
-      setDiffData(null);
+  const fetchDiff = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!agentId || !sessionId) {
+        setDiffData(null);
+        setError(null);
+        return;
+      }
+      if (!options?.silent) {
+        setLoading(true);
+      }
       setError(null);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await getSessionDiff(agentId, sessionId);
-      setDiffData(data);
-    } catch (err: any) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [agentId, sessionId]);
+      try {
+        const data = await getSessionDiff(agentId, sessionId);
+        setDiffData(data);
+      } catch (err: any) {
+        if (!options?.silent) {
+          setError(err instanceof Error ? err.message : String(err));
+        }
+      } finally {
+        if (!options?.silent) {
+          setLoading(false);
+        }
+      }
+    },
+    [agentId, sessionId]
+  );
 
   useEffect(() => {
     void fetchDiff();
-  }, [fetchDiff]);
+  }, [fetchDiff, thread?.id]);
+
+  // Refresh diff when agent turn status transitions (e.g. tool execution or turn completion)
+  useEffect(() => {
+    if (!agentId || !sessionId) return;
+    void fetchDiff({ silent: true });
+  }, [agentId, sessionId, currentStatus, fetchDiff]);
+
+  // Poll diff while agent turn is actively executing
+  useEffect(() => {
+    if (!agentId || !sessionId || !isRunning) return;
+    const interval = window.setInterval(() => {
+      void fetchDiff({ silent: true });
+    }, 3000);
+    return () => window.clearInterval(interval);
+  }, [agentId, sessionId, isRunning, fetchDiff]);
 
   const handleAccept = async () => {
     if (!isOpen || isBusy || accepting || !onAcceptThread) return;

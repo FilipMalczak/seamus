@@ -599,3 +599,56 @@ def test_session_agent_runner_skills_implementation_toggle(
     runner.reload_config()
     assert len(captured_kwargs) == 2
     assert captured_kwargs[1]["skills"] is None
+
+
+@pytest.mark.asyncio
+async def test_session_agent_runner_unhandled_error_includes_type_and_traceback() -> None:
+    """Verify unhandled exceptions during execution emit RUN_ERROR with error_type and traceback."""
+
+    class FailingFakeAgent:
+        def clone(self) -> "FailingFakeAgent":
+            return self
+
+        async def run(self, input_data: RunAgentInput) -> AsyncGenerator[Any, None]:
+            yield RunStartedEvent(
+                type=EventType.RUN_STARTED,
+                thread_id=input_data.thread_id,
+                run_id=input_data.run_id,
+            )
+            msg = "Simulated upstream provider failure (402 Payment Required)"
+            raise RuntimeError(msg)
+
+    config = AgentConfig(
+        inference=InferenceConfig(api_key="mock-key"),
+        model_name="mock-model",
+    )
+    agent = Agent(config=config, name="fail-agent")
+    session = agent.create_session(name="fail-session")
+    runner = SessionAgentRunner(session=session, agent=FailingFakeAgent())
+    sub_queue = runner.broadcaster.subscribe()
+
+    await runner.dispatch_user_input("Trigger failure")
+    if runner._active_task is not None:
+        await runner._active_task
+
+    open_thread = session.get_open_thread()
+    assert open_thread.status == AgentStatus.ERROR
+
+    # Verify RUN_ERROR was appended to thread.events for SSE replay
+    error_events = [
+        ev for ev in open_thread.events if isinstance(ev, dict) and ev.get("type") == "RUN_ERROR"
+    ]
+    assert len(error_events) == 1
+    err_ev = error_events[0]
+    assert err_ev["message"] == "Simulated upstream provider failure (402 Payment Required)"
+    assert err_ev["error_type"] == "RuntimeError"
+    assert "RuntimeError: Simulated upstream provider failure" in err_ev["traceback"]
+
+    # Also verify live broadcast received the enriched event
+    live_events: list[Any] = []
+    while not sub_queue.empty():
+        live_events.append(sub_queue.get_nowait())
+    live_err = [ev for ev in live_events if isinstance(ev, dict) and ev.get("type") == "RUN_ERROR"]
+    assert len(live_err) == 1
+    assert live_err[0]["error_type"] == "RuntimeError"
+    assert "traceback" in live_err[0]

@@ -19,11 +19,24 @@ import { Sidebar } from "./components/Sidebar";
 import { useAgentsTree } from "./hooks/useAgentsTree";
 import "./App.css";
 
+const DEFAULT_SIDEBAR_RATIO = 1 / 3;
+
+function parseTabFromSearch(search: string): "chat" | "inspector" | "changes" {
+  const params = new URLSearchParams(search);
+  const tab = params.get("tab");
+  if (tab === "inspector" || tab === "changes" || tab === "chat") {
+    return tab;
+  }
+  return "chat";
+}
+
 export function App() {
   const [configTemplate, setConfigTemplate] = useState<AgentConfig | null>(null);
   const [activeStatus, setActiveStatus] = useState<AgentStatus>("AWAITING_USER");
   const [systemInfo, setSystemInfo] = useState<SystemInfoResponse | null>(null);
-  const [activeMainTab, setActiveMainTab] = useState<"chat" | "inspector" | "changes">("chat");
+  const [activeMainTab, setActiveMainTab] = useState<"chat" | "inspector" | "changes">(() =>
+    typeof window !== "undefined" ? parseTabFromSearch(window.location.search) : "chat"
+  );
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -46,7 +59,7 @@ export function App() {
   });
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
 
-  // Split pane state (default 50/50 split)
+  // Split pane state (default 1:2 tree-to-chat split)
   const [sidebarRatio, setSidebarRatio] = useState<number>(() => {
     try {
       const saved = localStorage.getItem("seamus_sidebar_ratio");
@@ -57,7 +70,7 @@ export function App() {
         }
       }
     } catch {}
-    return 0.5; // Default 50/50 split
+    return DEFAULT_SIDEBAR_RATIO;
   });
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const appBodyRef = useRef<HTMLDivElement>(null);
@@ -157,6 +170,72 @@ export function App() {
     loadSettings();
   }, []);
 
+  // Synchronize activeMainTab when user navigates browser Back/Forward
+  useEffect(() => {
+    const handlePopState = () => {
+      setActiveMainTab(parseTabFromSearch(window.location.search));
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  // Synchronize URL query parameters (?agent=...&session=...&thread=...&tab=...)
+  const hasHydratedUrlRef = useRef<boolean>(false);
+  useEffect(() => {
+    if (!selectedAgentId) return;
+    const params = new URLSearchParams();
+    params.set("agent", activeAgent?.name || selectedAgentId);
+    if (selectedSessionId) {
+      params.set("session", activeSession?.name || selectedSessionId);
+    }
+    if (selectedThreadId) {
+      params.set("thread", activeThread?.name || selectedThreadId);
+    }
+    params.set("tab", activeMainTab);
+
+    const nextSearch = `?${params.toString()}`;
+    if (window.location.search !== nextSearch) {
+      const nextUrl = `${window.location.pathname}${nextSearch}${window.location.hash}`;
+      if (!hasHydratedUrlRef.current) {
+        window.history.replaceState(null, "", nextUrl);
+      } else {
+        window.history.pushState(null, "", nextUrl);
+      }
+    }
+    hasHydratedUrlRef.current = true;
+  }, [
+    selectedAgentId,
+    selectedSessionId,
+    selectedThreadId,
+    activeAgent?.name,
+    activeSession?.name,
+    activeThread?.name,
+    activeMainTab,
+  ]);
+
+  // Refresh sidebar tree when an active turn completes or errors, and poll while busy
+  const prevStatusRef = useRef<AgentStatus>(activeStatus);
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = activeStatus;
+    if (
+      prev !== activeStatus &&
+      (activeStatus === "AWAITING_USER" || activeStatus === "ERROR")
+    ) {
+      void refreshTree();
+    }
+  }, [activeStatus, refreshTree]);
+
+  useEffect(() => {
+    const isTurnActive =
+      activeStatus === "AWAITING_LLM" || activeStatus === "EXECUTING_TOOL";
+    if (!isTurnActive) return;
+    const interval = window.setInterval(() => {
+      void refreshTree();
+    }, 4000);
+    return () => window.clearInterval(interval);
+  }, [activeStatus, refreshTree]);
+
   const handleOpenSystemSettings = () => {
     setIsSettingsModalOpen(true);
   };
@@ -246,11 +325,11 @@ export function App() {
             e.preventDefault();
             setIsDragging(true);
           }}
-          onDoubleClick={() => setSidebarRatio(0.5)}
+          onDoubleClick={() => setSidebarRatio(DEFAULT_SIDEBAR_RATIO)}
           role="separator"
           aria-orientation="vertical"
           aria-valuenow={Math.round(sidebarRatio * 100)}
-          title="Drag to resize (Double-click to reset 50/50)"
+          title="Drag to resize (Double-click to reset 1:2)"
         />
 
         <div className="main-panel">

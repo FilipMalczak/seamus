@@ -20,6 +20,53 @@ export type FullAgentNode = AgentSummary & {
   isExpanded?: boolean;
 };
 
+function resolveSelectionFromUrl(
+  fullList: FullAgentNode[],
+  search: string
+): {
+  agentId: string | null;
+  sessionId: string | null;
+  threadId: string | null;
+} {
+  if (fullList.length === 0) {
+    return { agentId: null, sessionId: null, threadId: null };
+  }
+  const params = new URLSearchParams(search);
+  const agentParam = params.get("agent");
+  const sessionParam = params.get("session");
+  const threadParam = params.get("thread");
+
+  const targetAgent =
+    (agentParam
+      ? fullList.find((a) => a.id === agentParam || a.name === agentParam)
+      : undefined) || fullList[0];
+
+  const sessions = Object.values(targetAgent.sessionsMap || {});
+  if (sessions.length === 0) {
+    return { agentId: targetAgent.id, sessionId: null, threadId: null };
+  }
+
+  const targetSession =
+    (sessionParam
+      ? sessions.find((s) => s.id === sessionParam || s.name === sessionParam)
+      : undefined) || sessions[0];
+
+  const targetThread =
+    (threadParam
+      ? targetSession.threads.find(
+          (t) => t.id === threadParam || t.name === threadParam
+        )
+      : undefined) ||
+    targetSession.threads.find((t) => t.is_open) ||
+    targetSession.threads[0];
+
+  return {
+    agentId: targetAgent.id,
+    sessionId: targetSession.id,
+    threadId: targetThread ? targetThread.id : null,
+  };
+}
+
 export function useAgentsTree() {
   const [agents, setAgents] = useState<FullAgentNode[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -63,20 +110,15 @@ export function useAgentsTree() {
 
       setAgents(fullList);
 
-      // Auto-select first agent, session, and open thread if nothing selected yet
+      // Hydrate selection from URL query params (or fallback to first entity) if nothing selected yet
       if (fullList.length > 0 && !selectedAgentId) {
-        const firstAgent = fullList[0];
-        const sessionKeys = Object.keys(firstAgent.sessionsMap || {});
-        setSelectedAgentId(firstAgent.id);
-        if (sessionKeys.length > 0) {
-          const firstSession = firstAgent.sessionsMap![sessionKeys[0]];
-          setSelectedSessionId(firstSession.id);
-          const openThread =
-            firstSession.threads.find((t) => t.is_open) || firstSession.threads[0];
-          if (openThread) {
-            setSelectedThreadId(openThread.id);
-          }
-        }
+        const resolved = resolveSelectionFromUrl(
+          fullList,
+          typeof window !== "undefined" ? window.location.search : ""
+        );
+        if (resolved.agentId) setSelectedAgentId(resolved.agentId);
+        if (resolved.sessionId) setSelectedSessionId(resolved.sessionId);
+        if (resolved.threadId) setSelectedThreadId(resolved.threadId);
       }
     } catch (err: any) {
       setError(err instanceof Error ? err.message : String(err));
@@ -88,6 +130,19 @@ export function useAgentsTree() {
   useEffect(() => {
     refreshTree();
   }, [refreshTree]);
+
+  // Synchronize entity selection when user navigates browser Back/Forward
+  useEffect(() => {
+    const handlePopState = () => {
+      if (agents.length === 0) return;
+      const resolved = resolveSelectionFromUrl(agents, window.location.search);
+      if (resolved.agentId) setSelectedAgentId(resolved.agentId);
+      if (resolved.sessionId) setSelectedSessionId(resolved.sessionId);
+      if (resolved.threadId) setSelectedThreadId(resolved.threadId);
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [agents]);
 
   const selectThread = useCallback(
     (agentId: string, sessionId: string, threadId: string) => {

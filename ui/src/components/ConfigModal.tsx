@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
-import { Check, Code, Save, Wand2, X } from "lucide-react";
-import type { AgentConfig } from "../api/types";
+import { useEffect, useMemo, useState } from "react";
+import { Check, Code, Eye, EyeOff, Save, Sliders, Wand2, X } from "lucide-react";
+import type { AgentConfig, SkillsImplementation, TodoImplementation } from "../api/types";
 
 interface ConfigModalProps {
   title: string;
@@ -10,6 +10,22 @@ interface ConfigModalProps {
   onSave: (updatedConfig: AgentConfig) => Promise<void>;
 }
 
+const MODEL_PRESETS = [
+  "openai/gpt-oss-120b",
+  "openai/gpt-oss-20b",
+  "anthropic/claude-sonnet-4",
+  "openai/gpt-4.1",
+  "openai/gpt-4.1-mini",
+  "google/gemini-2.5-pro",
+  "google/gemini-2.5-flash",
+  "deepseek/deepseek-r1",
+];
+
+const BASE_URL_PRESETS = [
+  { label: "OpenRouter", url: "https://openrouter.ai/api/v1" },
+  { label: "OpenAI", url: "https://api.openai.com/v1" },
+];
+
 export function ConfigModal({
   title,
   initialConfig,
@@ -17,7 +33,9 @@ export function ConfigModal({
   onClose,
   onSave,
 }: ConfigModalProps) {
+  const [mode, setMode] = useState<"form" | "json">("form");
   const [jsonText, setJsonText] = useState<string>("");
+  const [showApiKey, setShowApiKey] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
@@ -27,10 +45,45 @@ export function ConfigModal({
       setJsonText(JSON.stringify(initialConfig, null, 2));
       setError(null);
       setSuccess(false);
+      setShowApiKey(false);
     }
   }, [isOpen, initialConfig]);
 
+  const parsedDraft = useMemo< Record<string, any> | null>(() => {
+    try {
+      const obj = JSON.parse(jsonText);
+      return obj && typeof obj === "object" ? obj : null;
+    } catch {
+      return null;
+    }
+  }, [jsonText]);
+
   if (!isOpen) return null;
+
+  const updateDraft = (updater: (draft: Record<string, any>) => void) => {
+    const base = parsedDraft
+      ? JSON.parse(JSON.stringify(parsedDraft))
+      : JSON.parse(JSON.stringify(initialConfig));
+    if (!base.inference || typeof base.inference !== "object") {
+      base.inference = {
+        format: "openai",
+        base_url: "https://openrouter.ai/api/v1",
+        api_key: null,
+      };
+    }
+    updater(base);
+    setJsonText(JSON.stringify(base, null, 2));
+    setError(null);
+  };
+
+  const handleModeSwitch = (targetMode: "form" | "json") => {
+    if (targetMode === "form" && !parsedDraft) {
+      setError("Fix JSON syntax errors before switching to Form view.");
+      return;
+    }
+    setError(null);
+    setMode(targetMode);
+  };
 
   const handleFormat = () => {
     try {
@@ -93,13 +146,55 @@ export function ConfigModal({
     }
   };
 
+  const currentModel = parsedDraft?.model_name ?? initialConfig.model_name ?? "";
+  const currentFormat =
+    parsedDraft?.inference?.format ?? initialConfig.inference?.format ?? "openai";
+  const currentBaseUrl =
+    parsedDraft?.inference?.base_url ?? initialConfig.inference?.base_url ?? "";
+  const currentApiKey =
+    parsedDraft?.inference?.api_key !== undefined
+      ? parsedDraft.inference.api_key
+      : initialConfig.inference?.api_key ?? null;
+  const currentTodoImpl: TodoImplementation =
+    parsedDraft?.todo_implementation ?? initialConfig.todo_implementation ?? "deepagents";
+  const currentSkillsImpl: SkillsImplementation =
+    parsedDraft?.skills_implementation ?? initialConfig.skills_implementation ?? "deepagents";
+  const currentSystemPrompt =
+    parsedDraft?.system_prompt !== undefined
+      ? parsedDraft.system_prompt
+      : initialConfig.system_prompt ?? null;
+
+  const isPresetModel = MODEL_PRESETS.includes(currentModel);
+
   return (
     <div className="modal-backdrop">
       <div className="modal-panel">
         <div className="modal-header">
           <div className="modal-title">
-            <Code className="size-5 text-sky-400" />
+            {mode === "form" ? (
+              <Sliders className="size-5 text-sky-400" />
+            ) : (
+              <Code className="size-5 text-sky-400" />
+            )}
             <h3>{title}</h3>
+          </div>
+          <div className="config-mode-tabs">
+            <button
+              type="button"
+              className={`config-mode-tab ${mode === "form" ? "active" : ""}`}
+              onClick={() => handleModeSwitch("form")}
+            >
+              <Sliders className="size-3.5" />
+              <span>Form</span>
+            </button>
+            <button
+              type="button"
+              className={`config-mode-tab ${mode === "json" ? "active" : ""}`}
+              onClick={() => handleModeSwitch("json")}
+            >
+              <Code className="size-3.5" />
+              <span>Raw JSON</span>
+            </button>
           </div>
           <button type="button" className="icon-btn" onClick={onClose} title="Close">
             <X className="size-5" />
@@ -107,23 +202,232 @@ export function ConfigModal({
         </div>
 
         <div className="modal-body">
-          <p className="modal-description">
-            Edit the raw JSON configuration below. Fields such as <code>api_key</code> can be set
-            to <code>null</code> to clear or delete their values.
-          </p>
+          {mode === "form" && parsedDraft ? (
+            <div className="config-form">
+              <div className="config-form-row">
+                <div className="config-field">
+                  <label className="config-label">Model Preset / Catalog</label>
+                  <select
+                    className="config-select"
+                    value={isPresetModel ? currentModel : "__custom__"}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val !== "__custom__") {
+                        updateDraft((d) => {
+                          d.model_name = val;
+                        });
+                      }
+                    }}
+                  >
+                    {MODEL_PRESETS.map((preset) => (
+                      <option key={preset} value={preset}>
+                        {preset}
+                      </option>
+                    ))}
+                    <option value="__custom__">Custom model identifier...</option>
+                  </select>
+                </div>
 
-          <div className="editor-wrapper">
-            <textarea
-              className="json-textarea"
-              value={jsonText}
-              onChange={(e) => {
-                setJsonText(e.target.value);
-                setError(null);
-              }}
-              spellCheck={false}
-              rows={14}
-            />
-          </div>
+                <div className="config-field">
+                  <label className="config-label">Model Identifier</label>
+                  <input
+                    type="text"
+                    className="config-input"
+                    value={currentModel}
+                    placeholder="e.g. openai/gpt-oss-120b"
+                    onChange={(e) =>
+                      updateDraft((d) => {
+                        d.model_name = e.target.value;
+                      })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="config-form-row">
+                <div className="config-field">
+                  <label className="config-label">Inference Format</label>
+                  <select
+                    className="config-select"
+                    value={currentFormat}
+                    onChange={(e) =>
+                      updateDraft((d) => {
+                        d.inference.format = e.target.value;
+                      })
+                    }
+                  >
+                    <option value="openai">openai (OpenAI-compatible)</option>
+                  </select>
+                </div>
+
+                <div className="config-field">
+                  <div className="config-label-row">
+                    <label className="config-label">Base URL</label>
+                    <div className="config-preset-pills">
+                      {BASE_URL_PRESETS.map((p) => (
+                        <button
+                          key={p.label}
+                          type="button"
+                          className={`config-preset-pill ${
+                            currentBaseUrl === p.url ? "active" : ""
+                          }`}
+                          onClick={() =>
+                            updateDraft((d) => {
+                              d.inference.base_url = p.url;
+                            })
+                          }
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <input
+                    type="text"
+                    className="config-input"
+                    value={currentBaseUrl}
+                    placeholder="https://openrouter.ai/api/v1"
+                    onChange={(e) =>
+                      updateDraft((d) => {
+                        d.inference.base_url = e.target.value;
+                      })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="config-field">
+                <div className="config-label-row">
+                  <label className="config-label">
+                    API Key{" "}
+                    <span className="config-label-subtle">
+                      ({currentApiKey === null ? "null / unset" : "configured"})
+                    </span>
+                  </label>
+                  {currentApiKey !== null && (
+                    <button
+                      type="button"
+                      className="config-clear-btn"
+                      onClick={() =>
+                        updateDraft((d) => {
+                          d.inference.api_key = null;
+                        })
+                      }
+                    >
+                      Clear (set null)
+                    </button>
+                  )}
+                </div>
+                <div className="config-input-with-action">
+                  <input
+                    type={showApiKey ? "text" : "password"}
+                    className="config-input"
+                    value={currentApiKey ?? ""}
+                    placeholder="Leave empty (null) or enter provider API key..."
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      updateDraft((d) => {
+                        d.inference.api_key = val === "" ? null : val;
+                      });
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    onClick={() => setShowApiKey((prev) => !prev)}
+                    title={showApiKey ? "Hide API key" : "Show API key"}
+                  >
+                    {showApiKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="config-form-row">
+                <div className="config-field">
+                  <label className="config-label">Todo Implementation</label>
+                  <select
+                    className="config-select"
+                    value={currentTodoImpl}
+                    onChange={(e) =>
+                      updateDraft((d) => {
+                        d.todo_implementation = e.target.value;
+                      })
+                    }
+                  >
+                    <option value="deepagents">deepagents (TodoListMiddleware)</option>
+                    <option value="none">none (Disabled)</option>
+                  </select>
+                </div>
+
+                <div className="config-field">
+                  <label className="config-label">Skills Implementation</label>
+                  <select
+                    className="config-select"
+                    value={currentSkillsImpl}
+                    onChange={(e) =>
+                      updateDraft((d) => {
+                        d.skills_implementation = e.target.value;
+                      })
+                    }
+                  >
+                    <option value="deepagents">deepagents (SkillsMiddleware)</option>
+                    <option value="none">none (Disabled)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="config-field">
+                <div className="config-label-row">
+                  <label className="config-label">Custom System Prompt</label>
+                  {currentSystemPrompt !== null && (
+                    <button
+                      type="button"
+                      className="config-clear-btn"
+                      onClick={() =>
+                        updateDraft((d) => {
+                          d.system_prompt = null;
+                        })
+                      }
+                    >
+                      Clear (set null)
+                    </button>
+                  )}
+                </div>
+                <textarea
+                  className="config-textarea"
+                  rows={4}
+                  value={currentSystemPrompt ?? ""}
+                  placeholder="Optional custom instructions injected into <custom_instructions>..."
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    updateDraft((d) => {
+                      d.system_prompt = val === "" ? null : val;
+                    });
+                  }}
+                />
+              </div>
+            </div>
+          ) : (
+            <>
+              <p className="modal-description">
+                Edit the raw JSON configuration below. Fields such as <code>api_key</code> can be
+                set to <code>null</code> to clear or delete their values.
+              </p>
+
+              <div className="editor-wrapper">
+                <textarea
+                  className="json-textarea"
+                  value={jsonText}
+                  onChange={(e) => {
+                    setJsonText(e.target.value);
+                    setError(null);
+                  }}
+                  spellCheck={false}
+                  rows={14}
+                />
+              </div>
+            </>
+          )}
 
           {error && <div className="alert-error">{error}</div>}
           {success && (
@@ -135,15 +439,19 @@ export function ConfigModal({
         </div>
 
         <div className="modal-footer">
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={handleFormat}
-            title="Format and indent JSON"
-          >
-            <Wand2 className="size-4" />
-            <span>Format JSON</span>
-          </button>
+          {mode === "json" ? (
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={handleFormat}
+              title="Format and indent JSON"
+            >
+              <Wand2 className="size-4" />
+              <span>Format JSON</span>
+            </button>
+          ) : (
+            <div />
+          )}
 
           <div className="footer-actions">
             <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>

@@ -22,6 +22,12 @@ function stopStreamingReasoningParts(parts?: MessagePart[]): MessagePart[] {
   return changed ? updated : parts;
 }
 
+export interface StreamErrorDetails {
+  message: string;
+  errorType?: string;
+  traceback?: string;
+}
+
 export function useThreadStream(
   agentId: string | null,
   sessionId: string | null,
@@ -31,6 +37,9 @@ export function useThreadStream(
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<AgentStatus>("AWAITING_USER");
   const [streamError, setStreamError] = useState<string | null>(null);
+  const [streamErrorDetails, setStreamErrorDetails] = useState<StreamErrorDetails | null>(
+    null
+  );
   const [sending, setSending] = useState<boolean>(false);
 
   // Keep ref of messages for mutable updates during streaming chunks
@@ -81,6 +90,7 @@ export function useThreadStream(
 
     setMessages([]);
     setStreamError(null);
+    setStreamErrorDetails(null);
 
     const unsubscribe = subscribeToThreadStream(
       agentId,
@@ -95,7 +105,13 @@ export function useThreadStream(
           setStatus("AWAITING_USER");
         } else if (type === "RUN_ERROR") {
           setStatus("ERROR");
-          setStreamError(event.message || "Execution encountered an error.");
+          const errMsg = event.message || "Execution encountered an error.";
+          setStreamError(errMsg);
+          setStreamErrorDetails({
+            message: errMsg,
+            errorType: event.error_type || event.errorType || undefined,
+            traceback: event.traceback || undefined,
+          });
           setMessages((prev) =>
             prev.map((m) => {
               if (m.role !== "assistant") return m;
@@ -888,6 +904,10 @@ export function useThreadStream(
       },
       (err) => {
         setStreamError(err.message);
+        setStreamErrorDetails({
+          message: err.message,
+          errorType: "StreamConnectionError",
+        });
       }
     );
 
@@ -908,6 +928,7 @@ export function useThreadStream(
 
       setSending(true);
       setStreamError(null);
+      setStreamErrorDetails(null);
 
       // Optimistically append user message to chat UI with deterministic messageId
       const userMsgId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -924,7 +945,12 @@ export function useThreadStream(
         await postUserInput(agentId, sessionId, text.trim(), userMsgId);
       } catch (err: any) {
         setStatus("AWAITING_USER");
-        setStreamError(err instanceof Error ? err.message : String(err));
+        const errMsg = err instanceof Error ? err.message : String(err);
+        setStreamError(errMsg);
+        setStreamErrorDetails({
+          message: errMsg,
+          errorType: "DispatchError",
+        });
         throw err;
       } finally {
         setSending(false);
@@ -937,6 +963,7 @@ export function useThreadStream(
     messages,
     status,
     streamError,
+    streamErrorDetails,
     sending,
     sendMessage,
   };

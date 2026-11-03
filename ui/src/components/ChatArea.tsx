@@ -6,8 +6,12 @@ import {
   ArrowUp,
   Ban,
   Bot,
+  Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Clock,
+  Copy,
   GitFork,
   Loader2,
   Sparkles,
@@ -62,8 +66,10 @@ export function ChatArea({
   const viewportEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isAtBottom, setIsAtBottom] = useState<boolean>(true);
+  const [errorExpanded, setErrorExpanded] = useState<boolean>(false);
+  const [copiedError, setCopiedError] = useState<boolean>(false);
 
-  const { messages, status, streamError, sending, sendMessage } =
+  const { messages, status, streamError, streamErrorDetails, sending, sendMessage } =
     useThreadStream(agentId, sessionId, thread?.id ?? null, sessionStatus);
 
   const isSessionTerminal = sessionStatus !== "ACTIVE";
@@ -516,9 +522,74 @@ export function ChatArea({
       )}
 
       {streamError && (
-        <div className="chat-error-banner">
-          <AlertCircle className="size-4" />
-          <span>{streamError}</span>
+        <div className="chat-error-panel">
+          <div className="chat-error-header">
+            <div className="chat-error-main">
+              <AlertCircle className="size-4 shrink-0 text-rose-400" />
+              {streamErrorDetails?.errorType && (
+                <span className="chat-error-type-badge">
+                  {streamErrorDetails.errorType}
+                </span>
+              )}
+              <span className="chat-error-message">{streamError}</span>
+            </div>
+            <div className="chat-error-actions">
+              <button
+                type="button"
+                className="chat-error-action-btn"
+                onClick={() => {
+                  const fullDiag = [
+                    streamErrorDetails?.errorType
+                      ? `[${streamErrorDetails.errorType}] ${streamError}`
+                      : streamError,
+                    streamErrorDetails?.traceback || "",
+                  ]
+                    .filter(Boolean)
+                    .join("\n\n");
+                  navigator.clipboard.writeText(fullDiag).then(() => {
+                    setCopiedError(true);
+                    setTimeout(() => setCopiedError(false), 1800);
+                  });
+                }}
+                title="Copy full error diagnostics"
+              >
+                {copiedError ? (
+                  <>
+                    <Check className="size-3.5 text-emerald-400" />
+                    <span>Copied</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="size-3.5" />
+                    <span>Copy</span>
+                  </>
+                )}
+              </button>
+              {streamErrorDetails?.traceback && (
+                <button
+                  type="button"
+                  className="chat-error-action-btn"
+                  onClick={() => setErrorExpanded((prev) => !prev)}
+                  title={errorExpanded ? "Hide traceback" : "Show full stack trace"}
+                >
+                  {errorExpanded ? (
+                    <>
+                      <ChevronDown className="size-3.5" />
+                      <span>Hide Traceback</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronRight className="size-3.5" />
+                      <span>Traceback</span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+          {errorExpanded && streamErrorDetails?.traceback && (
+            <pre className="chat-error-traceback">{streamErrorDetails.traceback}</pre>
+          )}
         </div>
       )}
 

@@ -186,6 +186,11 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [0008-git-persistence.md](../decisions/0008-git-persistence.md), [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md).
 - **Enforcement**: `GitWorkspaceManager.sync_session_workspace()`, `GitWorkspaceManager.create_session_workspace()`, `SessionAgentRunner._run_loop()`, `GitWorkspaceManager.commit_checkpoint_changes()`, and unit tests in `tests/test_workspace.py`.
 
+### INV-039: Verbose `RUN_ERROR` Event Persistence & UI State Synchronization
+- **Statement**: When an unhandled exception occurs during `SessionAgentRunner._run_loop()`, the emitted `RUN_ERROR` event must include `error_type` (exception class name) and `traceback` (formatted stack trace) alongside `message`, and must be appended to `thread.events` before broadcasting so replayed streams preserve full failure diagnostics. In the Web UI, the active agent, session, thread, and main panel tab must stay synchronized with URL query parameters (`?agent=...&session=...&thread=...&tab=...`), and both the Changes diff view and sidebar tree must automatically refresh across active execution turns.
+- **Justification**: [REQ-032](./requirements.md#req-032-ui-url-state-synchronization-live-refresh-and-verbose-error-diagnostics), [0028-ui-ux-ergonomics-and-url-state.md](../decisions/0028-ui-ux-ergonomics-and-url-state.md).
+- **Enforcement**: `SessionAgentRunner._run_loop()`, `useAgentsTree.ts`, `App.tsx`, `ChangesViewer.tsx`, `useThreadStream.ts`, `ChatArea.tsx`, and unit tests in `tests/test_runner.py`.
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [requirements.md](./requirements.md)
@@ -203,7 +208,7 @@ Properties and rules that must always hold across the repository.
 - [0011-agent-inspector.md](../decisions/0011-agent-inspector.md)
 - [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md)
 - [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md)
-- [0014-ui-layout-proportions-breadcrumbs.md](../decisions/0014-ui-layout-proportions-breadcrumbs.md)
+- [0014-SUPERSEDED-ui-layout-proportions-breadcrumbs.md](../decisions/0014-SUPERSEDED-ui-layout-proportions-breadcrumbs.md)
 - [0015-session-changes-diff-tab.md](../decisions/0015-session-changes-diff-tab.md)
 - [0016-sync-pr-data-scope.md](../decisions/0016-sync-pr-data-scope.md)
 - [0017-dedicated-test-gitea.md](../decisions/0017-dedicated-test-gitea.md)
@@ -214,3 +219,4 @@ Properties and rules that must always hold across the repository.
 - [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md)
 - [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md)
 - [0027-skills-config-project-rules-and-inspector.md](../decisions/0027-skills-config-project-rules-and-inspector.md)
+- [0028-ui-ux-ergonomics-and-url-state.md](../decisions/0028-ui-ux-ergonomics-and-url-state.md)

@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import traceback
 from collections.abc import AsyncGenerator, Mapping, Sequence
 from typing import Any, Literal, cast
 from uuid import uuid4
@@ -679,10 +680,17 @@ class SessionAgentRunner:
                             thread=thread_identifier,
                             error=str(exc),
                         )
+                        err_event = {
+                            "type": "RUN_ERROR",
+                            "message": str(exc) or type(exc).__name__,
+                            "error_type": type(exc).__name__,
+                            "traceback": traceback.format_exc(),
+                        }
+                        thread.append_event(err_event)
                         self.session.fail()
                         if self._sandbox_backend is not None:
                             self._sandbox_backend.destroy()
-                        await self.broadcaster.broadcast({"type": "RUN_ERROR", "message": str(exc)})
+                        await self.broadcaster.broadcast(err_event)
                         try:
                             ws_mgr = get_workspace_manager()
                             agent_entity = self._resolve_agent_entity()
