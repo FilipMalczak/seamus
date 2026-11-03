@@ -80,6 +80,22 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Improvement**: Think through and deliberately define the desired behavior when toggling between planning implementations (or to `none` and back): decide whether prior plan state should be retained, cleared, archived, or version-branched across implementation switches.
 - **Provenance**: [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md), [invariants.md](./invariants.md#inv-033-configurable-todo-planning-and-system-prompt-composition).
 
+### Inconsistent Semi-Live State in Agent Inspector Tools Section
+- **Current Problem**: The Agent Inspector is semi-live inconsistently: when session or agent configuration changes (e.g. toggling tools or settings), the tools tab immediately updates to show tools for the newly configured runner (reflecting "next inference"), whereas other tabs (messages, todos, inference trace) reflect the state preserved in checkpoints from the "last inference".
+- **Improvement**: Clearly delineate or align inspector tabs: indicate whether the inspected tool manifest represents the current runner configuration ("next turn") or the snapshot of tools active during the inspected checkpoint turn ("last inference"), or synchronize them coherently with checkpoint metadata.
+- **Provenance**: [0011-agent-inspector.md](../decisions/0011-agent-inspector.md), [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md).
+
+### Inspector Tool Description Multiline Whitespace Collapsing
+- **Current Problem**: In `AgentInspector.tsx`, the tool card description `<p className="tool-description">{tool.description}</p>` renders tool docstrings without preserving newlines (`white-space: pre-wrap`), causing multi-paragraph tool explanations or formatted argument summaries to collapse into a single unformatted run of text.
+- **Improvement**: Apply `white-space: pre-wrap` (or render with the UI Markdown component) to `.tool-description` in the inspector tools grid so formatted tool explanations remain legible.
+- **Provenance**: [0011-agent-inspector.md](../decisions/0011-agent-inspector.md), `ui/src/components/AgentInspector.tsx`.
+
+### Testing and Verification of Session Termination and Branching Lifecycle
+- > Lost in agentic translation: I originally meant manual testing, but it makes more sense to automate these tests
+- **Current Problem**: Session killing (stopping ongoing model execution) and thread branching from historical checkpoints were introduced in [0022-branching-out-and-session-lifecycle.md](../decisions/0022-branching-out-and-session-lifecycle.md). The lifecycle mechanics were only lightly tested; edge cases around subprocess signals, container process cleanup, checkpoint consistency during mid-stream stops, and Gitea branch consistency during rapid branching remain undertested and may harbor latent bugs.
+- **Improvement**: Write comprehensive unit and integration tests exercising mid-turn cancellation, sandbox cleanup, thread termination status propagation, and branching edge cases.
+- **Provenance**: [0022-branching-out-and-session-lifecycle.md](../decisions/0022-branching-out-and-session-lifecycle.md).
+
 ## TODO
 
 ### Native LM-XML Skills System with Load/Unload Skill Tools
@@ -160,13 +176,43 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: One should be able to share the link to specific place in the UI, without requiring the receipient of the link to traverse the UI manually
 - **Provenance**: Manual
 
+### UI Layout Default Proportions (1:2 Tree-to-Chat Ratio)
+- **Description**: Update the default draggable split divider ratio from the current 50/50 (`0.50`) established in [0014-ui-layout-proportions-breadcrumbs.md](../decisions/0014-ui-layout-proportions-breadcrumbs.md) to a 1:2 split (~`0.333`), allocating 1/3 of the viewport width to the entity navigation sidebar and 2/3 to the primary chat and inspector panel. Retain user-customized ratio overrides in `localStorage` (`seamus_sidebar_ratio`) and double-click reset behavior.
+- **Rationale**: A 1:2 ratio gives greater horizontal breathing room to conversational messages, tool call payloads, and code diffs while preserving adequate width for the navigation tree.
+- **Provenance**: [0014-ui-layout-proportions-breadcrumbs.md](../decisions/0014-ui-layout-proportions-breadcrumbs.md).
+
+### Skills Visibility and Inspection in Agent Inspector
+- **Description**: Add a dedicated "Skills" view or tab within `AgentInspector` (alongside Prompt, Tools, Todos, Inference, Messages, Workspace). Display all discovered skills active for the session, showing their origin layer (workspace `/workspace/skills`, workspace dotted `/workspace/.skills`, or system `/skills/system/{idx}`), frontmatter metadata (name, description), and rendered markdown instructions.
+- **Rationale**: Following the introduction of filesystem skills in [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md) and [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md), operators need runtime visibility into which skills are mounted, active, and accessible to the agent.
+- **Provenance**: [0011-agent-inspector.md](../decisions/0011-agent-inspector.md), [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md), [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md).
+
+### Verbose In-UI Unhandled Error Presentation
+- **Description**: Enhance frontend error handling when an unhandled error occurs during inference or backend execution. Instead of displaying a brief generic error pill or banner, surface an expandable, detailed error panel containing the full error message, stack trace / traceback, failure context, and actionable diagnostic guidance.
+- **Rationale**: When agent runs or tool calls fail unexpectedly, operators currently have to dig into server terminal logs or Logfire to diagnose the issue; rich in-UI error reporting provides immediate debugging feedback.
+- **Provenance**: [0003-react-web-ui.md](../decisions/0003-react-web-ui.md), [0005-logfire-integration.md](../decisions/0005-logfire-integration.md).
+
+### Automatic UI Polling and State Refresh for Active Runs and Changes Tab
+- **Description**: Implement automatic UI refresh or polling for live state updates:
+  1. Automatically update thread run status, message stream, and active tool calls without requiring manual interaction.
+  2. Automatically refresh the Changes tab diff view as the agent performs filesystem modifications or when switching between turns.
+- **Rationale**: Eliminates stale UI views and manual refresh friction when observing active agent executions and inspecting workspace modifications.
+- **Provenance**: [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md), [0015-session-changes-diff-tab.md](../decisions/0015-session-changes-diff-tab.md), [0021-ui-chat-autoscroll-and-changes-file-filtering.md](../decisions/0021-ui-chat-autoscroll-and-changes-file-filtering.md).
+
+### Session-Level UI View and Unified Thread Feed
+- **Description**: Evolve the UI navigation model so that selecting or creating an agent lands on a primary Session view rather than requiring selection of individual threads. The session view will present an aggregated, continuous chronological feed of all past threads in the session, with the composer input serving as a direct proxy to the current active open thread.
+- **Rationale**: Treating the session as the primary unit of conversational context provides a unified conversational history across sequential thread boundaries (e.g. plan -> execute transitions) while preserving threads as clean checkpoint/execution isolation boundaries.
+- **Provenance**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [threads_modes_personas.md](./threads_modes_personas.md).
+
+### Entity Auto-Naming and UX Daemons Architecture
+- **Description**: Implement automated naming for entities across Seamus:
+  1. Agents: automatically generate randomized, memorable multi-word slugs (e.g., `brave-curie-42`).
+  2. Sessions and Threads: automatically generate descriptive names using a lightweight, dedicated "namer" agent configured at the agent level.
+  This forms the first component of a broader "UX Daemons" initiative: lightweight, dedicated background agents that handle peripheral UX automation (entity naming, proactive todo management, branch summaries) without interfering with primary task execution.
+- **Rationale**: Manually naming agents, sessions, and threads creates unnecessary friction; automated descriptive naming keeps navigation clean and organized.
+- **Provenance**: [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md), [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [vocabulary.md](./vocabulary.md).
+
 ## Not formalized
 
-- review the session killing and branching details - it was slightly undertested and there might be some bugs lingering
-- auto-refresh on UI side; eg when following state of thread and looking at changes
-- opening a session in the UI, as opposed to currently opening threads (loading all the past threads; input box being a proxy to open thread input); session view being the default when creating or selecting an agent
-- auto-naming agents, sessions and threads (agent - randomized multi-word slug; session and thread - using a small "namer" agent, needs to be configured on agent level) - this is part of bigger "daemons" initiative; daemons being small, heavily-dedicated agents for UX tasks - naming sessions and threads, auto-managing todos, etc
-- chore: set default UI proportions to 1:2 (tree:chat ratio)
 - user input variations:
   - user-accepted tool calls
   - artifact-based forms that the user can open and fill
@@ -175,8 +221,4 @@ Persistent record of work intentionally left outstanding across the project, mai
 - Seamus implementation variants:
   - todos (at that point decide on the default)
   - skills (add config toggle)
-- if there's an unhandled error, it needs to be very verbose in the UI
-- inspector is semi-live inconsistently - tools change as soon as we switch config, so they dont present "last inference" but rather "next inference"
 - dashboard view (less detailed, less cluttered, more focused on achieving goals than understanding agent impl details)
-- In the inspector, in tools section - tool desc may include newlines, which get collapsed in the tool cards
-- Skills in inspector
