@@ -137,46 +137,6 @@ def test_build_effective_system_prompt_omits_empty_custom() -> None:
     assert "<dynamic_context>" not in prompt
 
 
-def test_resolve_session_rules_and_memory_middleware(tmp_path: Any) -> None:
-    from seamus.harness.runner import SeamusMemoryMiddleware, resolve_session_rules
-
-    data_dir = tmp_path / "data"
-    data_dir.mkdir()
-
-    # Empty data_dir falls back to literal source path with empty contents
-    sources_empty, contents_empty = resolve_session_rules(
-        data_dir, ["AGENTS.md", ".seamus/rules/**/*.md"]
-    )
-    assert sources_empty == ["/workspace/AGENTS.md"]
-    assert contents_empty == {}
-
-    # Create AGENTS.md and .seamus/rules/*.md
-    (data_dir / "AGENTS.md").write_text("Follow clean architecture.", encoding="utf-8")
-    rules_dir = data_dir / ".seamus" / "rules"
-    rules_dir.mkdir(parents=True)
-    (rules_dir / "01-style.md").write_text("Use snake_case.", encoding="utf-8")
-    (rules_dir / "02-testing.md").write_text("Always write unit tests.", encoding="utf-8")
-
-    sources, contents = resolve_session_rules(data_dir, ["AGENTS.md", ".seamus/rules/**/*.md"])
-    assert sources == [
-        "/workspace/AGENTS.md",
-        "/workspace/.seamus/rules/01-style.md",
-        "/workspace/.seamus/rules/02-testing.md",
-    ]
-    assert contents["/workspace/AGENTS.md"] == "Follow clean architecture."
-    assert contents["/workspace/.seamus/rules/01-style.md"] == "Use snake_case."
-    assert contents["/workspace/.seamus/rules/02-testing.md"] == "Always write unit tests."
-
-    mw = SeamusMemoryMiddleware(
-        backend=MagicMock(),
-        data_dir=data_dir,
-        rules_globs=["AGENTS.md", ".seamus/rules/**/*.md"],
-    )
-    state_update = mw.before_agent({"messages": []}, MagicMock(), {})
-    assert state_update is not None
-    assert state_update["memory_contents"] == contents
-
-
 class _FakeChatModel(BaseChatModel):
     captured_messages: list[list[Any]] = []
 

@@ -1,9 +1,9 @@
 """Configuration models for inference and agent execution."""
 
 from enum import StrEnum
-from typing import Any, Self
+from typing import Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 
 class InferenceFormat(StrEnum):
@@ -24,16 +24,6 @@ class SkillsImplementation(StrEnum):
 
     NONE = "none"
     DEEPAGENTS = "deepagents"
-
-
-class RulesImplementation(StrEnum):
-    """Supported project rules / memory middleware implementations."""
-
-    NONE = "none"
-    DEEPAGENTS = "deepagents"
-
-
-DEFAULT_RULES_GLOBS: list[str] = ["AGENTS.md", ".seamus/rules/**/*.md"]
 
 
 class InferenceConfig(BaseModel):
@@ -62,19 +52,6 @@ class AgentConfig(BaseModel):
     system_prompt: str | None = None
     todo_implementation: TodoImplementation = TodoImplementation.DEEPAGENTS
     skills_implementation: SkillsImplementation = SkillsImplementation.DEEPAGENTS
-    rules_implementation: RulesImplementation = RulesImplementation.DEEPAGENTS
-    rules_globs: list[str] = Field(default_factory=lambda: list(DEFAULT_RULES_GLOBS))
-
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_rules_aliases(cls, data: Any) -> Any:
-        if isinstance(data, dict) and "rules_globs" not in data:
-            for alias in ("rules", "project_rules"):
-                if alias in data and isinstance(data[alias], list):
-                    d = dict(data)
-                    d["rules_globs"] = d.pop(alias)
-                    return d
-        return data
 
     def is_complete(self) -> bool:
         """Return True if this configuration is complete enough to initialize an agent."""
@@ -130,16 +107,6 @@ class AgentConfig(BaseModel):
                     overrides.skills_implementation
                     if "skills_implementation" in overrides.model_fields_set
                     else self.skills_implementation
-                ),
-                "rules_implementation": (
-                    overrides.rules_implementation
-                    if "rules_implementation" in overrides.model_fields_set
-                    else self.rules_implementation
-                ),
-                "rules_globs": (
-                    list(overrides.rules_globs)
-                    if "rules_globs" in overrides.model_fields_set
-                    else list(self.rules_globs)
                 ),
             },
             deep=True,

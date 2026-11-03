@@ -10,7 +10,6 @@ from seamus.config.models import (
     AgentConfig,
     InferenceConfig,
     InferenceFormat,
-    RulesImplementation,
     SkillsImplementation,
     TodoImplementation,
 )
@@ -400,15 +399,8 @@ def test_inspector_skills_discovery_and_project_rules(
         encoding="utf-8",
     )
 
-    (data_dir / "AGENTS.md").write_text("Project rule: use strict typing.", encoding="utf-8")
-
     report = build_agent_inspect_report(str(agent.id), str(session.id))
     assert report.skills_implementation == SkillsImplementation.DEEPAGENTS
-    assert report.rules_implementation == RulesImplementation.DEEPAGENTS
-    assert "Project rule: use strict typing." in report.prompts.composite
-    assert "Project rule: use strict typing." in report.prompts.scaffold
-    assert "<agent_memory>" in report.prompts.composite
-    assert "<agent_memory>" in report.prompts.scaffold
     assert "## Skills System" in report.prompts.composite
     assert "## Skills System" in report.prompts.scaffold
     assert "write_todos" in report.prompts.composite
@@ -437,13 +429,10 @@ def test_inspector_skills_discovery_and_project_rules(
 
     # When implementations are NONE, skills list is empty and middleware prompt sections are omitted
     session.config.skills_implementation = SkillsImplementation.NONE
-    session.config.rules_implementation = RulesImplementation.NONE
     session.config.todo_implementation = TodoImplementation.NONE
     reset_runner_registry()
     report_none = build_agent_inspect_report(str(agent.id), str(session.id))
     assert report_none.skills_implementation == SkillsImplementation.NONE
-    assert report_none.rules_implementation == RulesImplementation.NONE
     assert report_none.skills == []
     assert "## Skills System" not in report_none.prompts.composite
-    assert "<agent_memory>" not in report_none.prompts.composite
     assert "write_todos" not in report_none.prompts.composite

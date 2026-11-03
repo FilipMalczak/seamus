@@ -7,13 +7,10 @@ from pathlib import Path
 from typing import Any, cast
 from uuid import UUID
 
-from deepagents.middleware.memory import MEMORY_SYSTEM_PROMPT, MemoryMiddleware
 from deepagents.middleware.skills import SKILLS_SYSTEM_PROMPT, SkillMetadata, SkillsMiddleware
 from pydantic import BaseModel, Field
 
 from seamus.config.models import (
-    DEFAULT_RULES_GLOBS,
-    RulesImplementation,
     SkillsImplementation,
     TodoImplementation,
 )
@@ -29,7 +26,6 @@ from seamus.harness.runner import (
     ReasoningChatOpenAI,
     SessionAgentRunner,
     get_runner_registry,
-    resolve_session_rules,
 )
 from seamus.harness.sandbox import get_sandbox_settings
 from seamus.harness.store import get_harness_store
@@ -154,8 +150,6 @@ class AgentInspectReport(BaseModel):
     todo_implementation: TodoImplementation = TodoImplementation.DEEPAGENTS
     skills: list[SkillInspectInfo] = Field(default_factory=list)
     skills_implementation: SkillsImplementation = SkillsImplementation.DEEPAGENTS
-    rules_implementation: RulesImplementation = RulesImplementation.DEEPAGENTS
-    rules_globs: list[str] = Field(default_factory=lambda: list(DEFAULT_RULES_GLOBS))
     subagents: list[SubAgentInspectInfo] = Field(default_factory=list)
     history: HistoryInspectInfo
     workspace: WorkspaceInspectInfo
@@ -609,10 +603,7 @@ def build_middleware_prompt_sections(
     *,
     todo_implementation: TodoImplementation,
     skills_implementation: SkillsImplementation,
-    rules_implementation: RulesImplementation,
-    rules_globs: Sequence[str],
     skills: Sequence[SkillInspectInfo],
-    data_dir: Path | None,
     workdir: str = "/workspace",
 ) -> str:
     """Assemble the system prompt sections appended at runtime by active DeepAgents middleware."""
@@ -651,16 +642,6 @@ def build_middleware_prompt_sections(
             skills_list=sm._format_skills_list(active_meta),
         )
         sections.append(skills_section)
-
-    if rules_implementation == RulesImplementation.DEEPAGENTS:
-        rule_sources, rule_contents = resolve_session_rules(
-            data_dir=data_dir,
-            rules_globs=rules_globs,
-            workdir=norm_workdir,
-        )
-        mm = MemoryMiddleware(backend=cast(Any, None), sources=rule_sources)
-        memory_section = mm._format_agent_memory(rule_contents, MEMORY_SYSTEM_PROMPT)
-        sections.append(memory_section)
 
     return "\n\n".join(s for s in sections if s)
 
@@ -747,10 +728,7 @@ def build_agent_inspect_report(
     middleware_prompt_sections = build_middleware_prompt_sections(
         todo_implementation=session.config.todo_implementation,
         skills_implementation=session.config.skills_implementation,
-        rules_implementation=session.config.rules_implementation,
-        rules_globs=session.config.rules_globs,
         skills=skills,
-        data_dir=data_dir,
         workdir=sandbox_settings.workdir,
     )
 
@@ -822,8 +800,6 @@ def build_agent_inspect_report(
         todo_implementation=session.config.todo_implementation,
         skills=skills,
         skills_implementation=session.config.skills_implementation,
-        rules_implementation=session.config.rules_implementation,
-        rules_globs=list(session.config.rules_globs),
         subagents=[],
         history=history_info,
         workspace=workspace_info,

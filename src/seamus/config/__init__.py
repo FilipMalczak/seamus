@@ -1,11 +1,9 @@
 """Configuration package for Seamus."""
 
 from seamus.config.models import (
-    DEFAULT_RULES_GLOBS,
     AgentConfig,
     InferenceConfig,
     InferenceFormat,
-    RulesImplementation,
     SkillsImplementation,
     TodoImplementation,
 )
@@ -26,11 +24,9 @@ from seamus.config.template import (
 __all__ = [
     "AgentConfig",
     "ConfigTemplateStore",
-    "DEFAULT_RULES_GLOBS",
     "DEFAULT_SKILL_DIRECTORIES",
     "InferenceConfig",
     "InferenceFormat",
-    "RulesImplementation",
     "SkillsImplementation",
     "SystemSettings",
     "SystemSettingsStore",
