@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator, Mapping, Sequence
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from uuid import uuid4
 
 import logfire
@@ -34,7 +34,7 @@ from langgraph.types import Command
 from pydantic import BaseModel, Field, SecretStr, model_validator
 
 from seamus.config.models import TodoImplementation
-from seamus.config.settings import get_system_settings_store, resolve_skill_path
+from seamus.config.settings import get_system_settings_store
 from seamus.domain.entities import Agent, AgentStatus, Session, Thread
 from seamus.harness.prompt import (
     DynamicSystemPromptMiddleware,
@@ -394,14 +394,7 @@ class SessionAgentRunner:
         )
         self.checkpointer = checkpointer
 
-        system_skill_dirs: list[str] = []
-        for p in system_settings.skill_directories:
-            resolved = resolve_skill_path(p)
-            if resolved is not None:
-                system_skill_dirs.append(str(resolved))
-
-        # System-wide skills first; session-level last so session skills override system skills
-        skill_sources = [*system_skill_dirs, "/workspace/.skills"]
+        skill_sources = sandbox_backend.get_skill_sources()
 
         runner_middleware: list[Any] = [dynamic_prompt_middleware]
         if self.session.config.todo_implementation == TodoImplementation.DEEPAGENTS:
@@ -413,7 +406,7 @@ class SessionAgentRunner:
             system_prompt=effective_prompt,
             middleware=runner_middleware,
             checkpointer=checkpointer,
-            skills=skill_sources,
+            skills=cast(Any, skill_sources),
         )
 
         return SeamusLangGraphAgent(

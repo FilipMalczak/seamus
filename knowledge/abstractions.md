@@ -46,7 +46,7 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `build_effective_system_prompt`: Assembles the complete LM-XML system prompt combining the base scaffold, dynamic turn context, and user-configured custom instructions.
 - `DynamicSystemPromptMiddleware`: LangChain/DeepAgents middleware intercepting model requests to dynamically update `system_message` on each inference turn.
 - `TodoListMiddleware` / `SeamusTodoListMiddleware`: Middleware providing the `write_todos` tool, tracking task states (`pending`, `in_progress`, `completed`) in `PlanningState`, appending task management guidance to the dynamic system prompt, and providing resilient schema normalization (`ResilientWriteTodosInput`) for common LLM key/state variations. Instantiated conditionally when `session.config.todo_implementation == TodoImplementation.DEEPAGENTS`.
-- `SeamusOpenSandboxBackend`: `OpenSandboxBackend` (`langchain_opensandbox`) subclass providing lazy per-session `SandboxSync` container provisioning, mounting `<session_workspace>/data` at `/workspace` (read-write), and mounting configured system-wide skill directories as strictly read-only (`readOnly=True`) volumes.
+- `SeamusOpenSandboxBackend`: `OpenSandboxBackend` (`langchain_opensandbox`) subclass providing lazy per-session `SandboxSync` container provisioning, mounting `<session_workspace>/data` at `/workspace` (read-write), and mounting configured system-wide skill directories as strictly read-only (`readOnly=True`) volumes at in-sandbox paths `/skills/system/{idx}`. Implements `get_skill_sources()` to supply DeepAgents with appropriately prioritized in-sandbox skill sources (`system[last] -> ... -> system[0] -> /workspace/.skills -> /workspace/skills`).
 - `SessionAgentRunner`: Encapsulates DeepAgent graph instantiation (with `SeamusOpenSandboxBackend`, `DynamicSystemPromptMiddleware`, conditional `TodoListMiddleware`, Anthropic skills integration via `SkillsMiddleware`, and `GitCheckpointSaver`), input handling, event lifecycle mapping (including `REASONING_*` events), and dynamic graph recompilation via `reload_config(session)`.
 - `RunnerRegistry`: Maintains active `SessionAgentRunner` instances keyed by session ID with `reload_session_runner(session)` for instant configuration synchronization upon session updates.
 - `AgentInspectReport`: Data model capturing identity, Gitea branch provenance, model & inference settings, decomposed system prompts (scaffold vs. custom), tool argument schemas, active todos (`todos: list[TodoInspectItem]`), execution status, and trajectory history.
@@ -108,6 +108,9 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - [0015-session-changes-diff-tab.md](../decisions/0015-session-changes-diff-tab.md)
 - [0016-sync-pr-data-scope.md](../decisions/0016-sync-pr-data-scope.md)
 - [0017-dedicated-test-gitea.md](../decisions/0017-dedicated-test-gitea.md)
+- [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md)
+- [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md)
+- [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md)
 - [architecture.md](./architecture.md)
 - [backlog.md](./backlog.md)
 - [conventions.md](./conventions.md)

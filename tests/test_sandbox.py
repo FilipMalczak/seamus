@@ -205,7 +205,8 @@ def test_session_agent_runner_builds_deep_agent_with_opensandbox_and_prompt(
     assert "/workspace" in captured_kwargs["system_prompt"]
     assert "transient" in captured_kwargs["system_prompt"].lower()
     assert "skills" in captured_kwargs
-    assert "/workspace/.skills" in captured_kwargs["skills"]
+    assert ("/workspace/.skills", "Session (.skills)") in captured_kwargs["skills"]
+    assert ("/workspace/skills", "Session") in captured_kwargs["skills"]
 
 
 def test_session_agent_runner_includes_resolved_system_skills(
@@ -219,13 +220,21 @@ def test_session_agent_runner_includes_resolved_system_skills(
     get_persistence_settings.cache_clear()
 
     host_home = tmp_path / "host_home"
-    existing_sys_skill = host_home / ".seamus" / "skills"
-    existing_sys_skill.mkdir(parents=True)
+    existing_sys_skill_0 = host_home / "skills0"
+    existing_sys_skill_0.mkdir(parents=True)
+    existing_sys_skill_1 = host_home / "skills1"
+    existing_sys_skill_1.mkdir(parents=True)
     monkeypatch.setenv("SEAMUS_HOST_HOME", str(host_home))
 
     store = get_system_settings_store()
     store.set_settings(
-        SystemSettings(skill_directories=["~/.seamus/skills", "~/.nonexistent/skills"])
+        SystemSettings(
+            skill_directories=[
+                "~/skills0",
+                "~/skills1",
+                "~/.nonexistent/skills",
+            ]
+        )
     )
 
     config = AgentConfig(
@@ -245,12 +254,22 @@ def test_session_agent_runner_includes_resolved_system_skills(
         _runner = SessionAgentRunner(session=session, agent_entity=agent)
 
     skills = captured_kwargs.get("skills", [])
-    # Existing resolved system skill directory included first
-    assert str(existing_sys_skill.resolve()) in skills
-    # Nonexistent directory omitted
-    assert not any("nonexistent" in s for s in skills)
-    # Session workspace skills last
-    assert skills[-1] == "/workspace/.skills"
+    # In-sandbox paths mounted without leaking host path
+    assert ("/skills/system/0", "System #0") in skills
+    assert ("/skills/system/1", "System #1") in skills
+    assert not any("host_home" in str(s) for s in skills)
+    assert not any("nonexistent" in str(s) for s in skills)
+
+    # Precedence hierarchy:
+    # Later sources override earlier sources ("last one wins"):
+    # system[1] < system[0] < workspace/.skills < workspace/skills
+    idx_sys_1 = skills.index(("/skills/system/1", "System #1"))
+    idx_sys_0 = skills.index(("/skills/system/0", "System #0"))
+    idx_ws_dot = skills.index(("/workspace/.skills", "Session (.skills)"))
+    idx_ws = skills.index(("/workspace/skills", "Session"))
+
+    assert idx_sys_1 < idx_sys_0 < idx_ws_dot < idx_ws
+    assert skills[-1] == ("/workspace/skills", "Session")
 
 
 def test_sandbox_build_skill_volumes_read_only(tmp_path: Path) -> None:
@@ -270,15 +289,20 @@ def test_sandbox_build_skill_volumes_read_only(tmp_path: Path) -> None:
     volumes = backend.build_skill_volumes()
     assert len(volumes) == 2
 
-    # Verify strictly read-only and correct mount path
+    # Verify strictly read-only and in-sandbox mount path /skills/system/{idx}
     for vol in volumes:
         assert vol.read_only is True
         assert vol.host is not None
 
-    paths = [vol.mount_path for vol in volumes]
-    assert str(skill_dir_1.resolve()) in paths
-    assert str(skill_dir_2.resolve()) in paths
-    assert str(non_existent.resolve()) not in paths
+    assert volumes[0].name == "skill-0"
+    assert volumes[0].mount_path == "/skills/system/0"
+    assert volumes[0].host is not None
+    assert volumes[0].host.path == str(skill_dir_1.resolve())
+
+    assert volumes[1].name == "skill-1"
+    assert volumes[1].mount_path == "/skills/system/1"
+    assert volumes[1].host is not None
+    assert volumes[1].host.path == str(skill_dir_2.resolve())
 
 
 def test_sandbox_build_skill_volumes_tilde_expansion_and_missing_skipped(
@@ -304,7 +328,11 @@ def test_sandbox_build_skill_volumes_tilde_expansion_and_missing_skipped(
     )
 
     volumes = backend.build_skill_volumes()
-    # Missing ~/.skills is cleanly skipped without error; existing ~/.seamus/skills is mounted
+    # Missing ~/.skills is cleanly skipped without error;
+    # existing ~/.seamus/skills is mounted at /skills/system/0
     assert len(volumes) == 1
-    assert volumes[0].mount_path == str(existing_skill.resolve())
+    assert volumes[0].name == "skill-0"
+    assert volumes[0].mount_path == "/skills/system/0"
+    assert volumes[0].host is not None
+    assert volumes[0].host.path == str(existing_skill.resolve())
     assert volumes[0].read_only is True

@@ -142,7 +142,12 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
         )
 
     def build_skill_volumes(self) -> list[Volume]:
-        """Build read-only OpenSandbox Volumes for system-wide skill directories."""
+        """Build read-only OpenSandbox Volumes for system-wide skill directories.
+
+        Each configured system skill directory is mounted at `/skills/system/{idx}`,
+        where `idx` matches its 0-based position in `self.skill_directories`.
+        Non-existent directories are cleanly skipped while preserving index mapping.
+        """
         volumes: list[Volume] = []
         for idx, skill_dir_str in enumerate(self.skill_directories):
             skill_path = resolve_skill_path(skill_dir_str)
@@ -152,12 +157,49 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
             volumes.append(
                 Volume(
                     name=f"skill-{idx}",
-                    mountPath=str(skill_path),
+                    mountPath=f"/skills/system/{idx}",
                     readOnly=True,
                     host=Host(path=str(skill_path)),
                 )
             )
         return volumes
+
+    def get_skill_sources(self) -> list[tuple[str, str]]:
+        """Return the prioritized list of in-sandbox skill sources for DeepAgents.
+
+        DeepAgents resolves skill collisions with 'last one wins' (later sources in the
+        list override earlier ones). To enforce the precedence hierarchy:
+        1. /workspace/skills (top priority: explicit session workspace skills)
+        2. /workspace/.skills (session background/default skills)
+        3. system[0] (highest priority system default, mounted at /skills/system/0)
+        4. system[1] ...
+        5. system[last] (lowest priority system default)
+
+        The source list is ordered from lowest to highest priority:
+        [
+            system[last],
+            ...,
+            system[1],
+            system[0],
+            ("/workspace/.skills", "Session (.skills)"),
+            ("/workspace/skills", "Session"),
+        ]
+        """
+        system_sources: list[tuple[str, str]] = []
+        for idx, skill_dir_str in enumerate(self.skill_directories):
+            skill_path = resolve_skill_path(skill_dir_str)
+            if skill_path is None:
+                continue
+            label = f"System #{idx}" if len(self.skill_directories) > 1 else "System"
+            system_sources.append((f"/skills/system/{idx}", label))
+
+        # Reverse system sources: system[last] lowest priority, system[0] highest among system
+        sources: list[tuple[str, str]] = list(reversed(system_sources))
+
+        # Append session workspace skills (dotted first, non-dotted last so non-dotted wins)
+        sources.append((f"{self.settings.workdir}/.skills", "Session (.skills)"))
+        sources.append((f"{self.settings.workdir}/skills", "Session"))
+        return sources
 
     def build_connection_config(self) -> ConnectionConfigSync:
         """Build the OpenSandbox SDK connection configuration with runtime-managed auth."""

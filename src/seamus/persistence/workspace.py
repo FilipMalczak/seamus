@@ -384,8 +384,8 @@ class GitWorkspaceManager:
         if not self.settings.enabled:
             session_dir = self.get_session_workspace_path(session.agent_id, session.id)
             (session_dir / "data").mkdir(parents=True, exist_ok=True)
+            (session_dir / "data" / "skills").mkdir(parents=True, exist_ok=True)
             (session_dir / "data" / ".skills").mkdir(parents=True, exist_ok=True)
-            return session_dir
             return session_dir
 
         # Ensure base agent repo exists first
@@ -416,6 +416,7 @@ class GitWorkspaceManager:
         # Write session config
         self.commit_session_config(session)
         (session_dir / "data").mkdir(exist_ok=True)
+        (session_dir / "data" / "skills").mkdir(parents=True, exist_ok=True)
         (session_dir / "data" / ".skills").mkdir(parents=True, exist_ok=True)
         (session_dir / "agent" / "state").mkdir(parents=True, exist_ok=True)
         return session_dir

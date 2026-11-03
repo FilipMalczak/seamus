@@ -90,6 +90,8 @@ def test_session_workspace_and_checkpoint_commits(
     session_dir = manager.create_session_workspace(session, agent)
     assert (session_dir / ".git").exists()
     assert (session_dir / "data").exists()
+    assert (session_dir / "data" / "skills").exists()
+    assert (session_dir / "data" / ".skills").exists()
     assert (session_dir / "agent" / "config" / "config.json").exists()
 
     # Verify session branch

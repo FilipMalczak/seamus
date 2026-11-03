@@ -11,10 +11,10 @@ Persistent record of work intentionally left outstanding across the project, mai
 ## Deferred
 
 ### Multi-Mount Repository Support and Dynamic Skill Discovery
-- **Description**: When Seamus introduces support for mounting multiple repositories/projects (e.g., existing user codebases) into the agent's sandbox container, dynamically discover and track every `<mount>/.skills` directory present across all mounted workspaces as agent-level skill sources.
+- **Description**: When Seamus introduces support for mounting multiple repositories/projects (e.g., existing user codebases) into the agent's sandbox container, dynamically discover and track both `<mount>/skills` and `<mount>/.skills` directories present across all mounted workspaces as project-level skill sources. In accordance with the established skill precedence hierarchy, non-dotted `skills` takes precedence over dotted `.skills`, and project mounts take precedence after the operational `/workspace` but before ambient system-wide skills.
 - **Why Deferred**: Requires establishing multi-mount repository architecture first; single agent repository mounting is the current model.
 - **Revisit Trigger**: When multi-repository mounting is implemented in Seamus.
-- **Provenance**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md).
+- **Provenance**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md), [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md).
 
 ### Granular Gitea Commit Authors, Organizations, and Team Ownership
 - **Description**: All Git repositories created in Gitea are owned by the system service user `seamus`, and automated commits use the single author identity `Seamus Agent <agent@seamus.local>`. Per-agent, per-session, or per-user commit authors, organizations, and team permissions were postponed.
@@ -82,9 +82,9 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Provenance**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md), [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md).
 
 ### Built-In Bundled Skills for Seamus
-- **Description**: Package a core suite of built-in skills bundled directly with Seamus (e.g., for creating a2ui artifacts, interactive planning surveys, code review workflows) that are always available out-of-the-box across all sessions.
+- **Description**: Package a core suite of built-in skills bundled directly with Seamus (e.g., for creating a2ui artifacts, interactive planning surveys, code review workflows) mounted in sandboxes under `/skills/bundled`. These skills hold top-most precedence across all sessions as integral platform capabilities that cannot be overridden by session or system skills.
 - **Rationale**: Built-in skills allow offloading complex tool or UI instructions (like A2UI) from the static system prompt to on-demand progressive disclosure.
-- **Provenance**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md), [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md).
+- **Provenance**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md), [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md), [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md).
 
 ### Operational Execution Modes and Thread Transition Triggers (plan, chat, act, analyse, routing)
 - **Description**: Support an open set of configurable execution modes that govern agent interaction style, prompt framing, workspace usage, and thread-spawning triggers:
@@ -155,9 +155,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Provenance**: Manual
 
 ## Not formalized
-
-- [CRITICAL BUG] in deepagents skill impl, when we mount system-wide skills, we provide host paths in sandboxed system prompt; replace with in-sandbox paths
-  - critical, as it will impaxct bundled skills too, and we need a2ui skill for the sake of artifacts
 
 - review the session killing and branching details - it was slightly undertested and there might be some bugs lingering
 - auto-refresh on UI side; eg when following state of thread and looking at changes
