@@ -334,6 +334,7 @@ def test_inspector_todo_implementation_toggle() -> None:
     session = list(agent.sessions.values())[0]
 
     report_none = build_agent_inspect_report(str(agent.id), str(session.id))
+    assert report_none.todo_implementation == TodoImplementation.NONE
     assert not any(t.name == "write_todos" for t in report_none.tools)
     assert len(report_none.todos) == 0
 
@@ -341,4 +342,5 @@ def test_inspector_todo_implementation_toggle() -> None:
     session.config.todo_implementation = TodoImplementation.DEEPAGENTS
     reset_runner_registry()
     report_deep = build_agent_inspect_report(str(agent.id), str(session.id))
+    assert report_deep.todo_implementation == TodoImplementation.DEEPAGENTS
     assert any(t.name == "write_todos" for t in report_deep.tools)

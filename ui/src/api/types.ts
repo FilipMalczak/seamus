@@ -214,6 +214,7 @@ export interface AgentInspectReport {
   prompts: PromptInspectInfo;
   tools: ToolInspectInfo[];
   todos?: TodoInspectItem[];
+  todo_implementation?: TodoImplementation;
   subagents: SubAgentInspectInfo[];
   history: HistoryInspectInfo;
   workspace: WorkspaceInspectInfo;

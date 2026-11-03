@@ -2418,6 +2418,44 @@ body {
   gap: 1.25rem;
 }
 
+.todos-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.625rem 1rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.todos-setting-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.todo-impl-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-family: var(--font-mono, monospace);
+  font-weight: 500;
+}
+
+.todo-impl-badge.impl-deepagents {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.todo-impl-badge.impl-none {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
 .todos-list {
   display: flex;
   flex-direction: column;

@@ -69,6 +69,11 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Improvement**: Audit and resolve cross-platform compatibility issues (e.g., path normalization across Windows/macOS, process lifecycle handling, and conditional test skipping or container mocking) and re-enable macOS and Windows runners in `.github/workflows/ci.yml`.
 - **Provenance**: [0023-github-actions-ci-pipeline.md](../decisions/0023-github-actions-ci-pipeline.md), [conventions.md](./conventions.md#continuous-integration-conventions).
 
+### Plan State Recovery Across `todo_implementation` Setting Toggles
+- **Current Problem**: If a session uses `todo_implementation: deepagents` and the agent generates a task plan, switching `todo_implementation` to `none` hides the plan and tools. Switching back to `deepagents` recovers the previous plan because `PlanningState` (`todos` in LangGraph checkpoints and `todos.json` in workspace) remains intact on disk. This recovery happens incidentally because we did not put effort into lifecycle state transitions across configuration toggles.
+- **Improvement**: Think through and deliberately define the desired behavior when toggling between planning implementations (or to `none` and back): decide whether prior plan state should be retained, cleared, archived, or version-branched across implementation switches.
+- **Provenance**: [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md), [invariants.md](./invariants.md#inv-033-configurable-todo-planning-and-system-prompt-composition).
+
 ## TODO
 
 ### Native LM-XML Skills System with Load/Unload Skill Tools
@@ -150,6 +155,9 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Provenance**: Manual
 
 ## Not formalized
+
+- [CRITICAL BUG] in deepagents skill impl, when we mount system-wide skills, we provide host paths in sandboxed system prompt; replace with in-sandbox paths
+  - critical, as it will impaxct bundled skills too, and we need a2ui skill for the sake of artifacts
 
 - review the session killing and branching details - it was slightly undertested and there might be some bugs lingering
 - auto-refresh on UI side; eg when following state of thread and looking at changes

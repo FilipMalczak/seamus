@@ -481,13 +481,45 @@ export function AgentInspector({
         {/* TAB: TODOS */}
         {subTab === "todos" && (
           <div className="inspector-todos-panel">
+            <div className="todos-panel-header">
+              <div className="todos-setting-info">
+                <span className="text-xs text-neutral-400 font-medium">Planning Implementation:</span>
+                <span className={`todo-impl-badge impl-${report.todo_implementation || "none"}`}>
+                  {report.todo_implementation || "none"}
+                </span>
+              </div>
+              {report.todos && report.todos.length > 0 && (
+                <span className="text-xs text-neutral-400">
+                  {report.todos.length} item{report.todos.length === 1 ? "" : "s"}
+                </span>
+              )}
+            </div>
+
             {!report.todos || report.todos.length === 0 ? (
               <div className="inspector-empty-state">
                 <ListTodo className="size-8 text-neutral-500 mb-2" />
-                <p>No active todos recorded for this thread yet.</p>
-                <span className="text-xs text-neutral-400">
-                  When the agent plans multi-step tasks using <code>write_todos</code>, items will appear here.
-                </span>
+                {report.todo_implementation === "none" ? (
+                  <>
+                    <p>Task planning is disabled (<code>todo_implementation: none</code>).</p>
+                    <span className="text-xs text-neutral-400">
+                      Configure <code>todo_implementation</code> in session settings to enable planning tools.
+                    </span>
+                  </>
+                ) : report.todo_implementation === "deepagents" ? (
+                  <>
+                    <p>No active plan recorded for this thread yet.</p>
+                    <span className="text-xs text-neutral-400">
+                      When the agent creates or updates tasks using <code>write_todos</code>, items will appear here.
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <p>No active plan recorded for this thread yet.</p>
+                    <span className="text-xs text-neutral-400">
+                      When the agent creates or updates plan tasks, items will appear here.
+                    </span>
+                  </>
+                )}
               </div>
             ) : (
               <div className="todos-list">

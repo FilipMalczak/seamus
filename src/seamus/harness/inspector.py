@@ -123,6 +123,7 @@ class AgentInspectReport(BaseModel):
     prompts: PromptInspectInfo
     tools: list[ToolInspectInfo] = Field(default_factory=list)
     todos: list[TodoInspectItem] = Field(default_factory=list)
+    todo_implementation: TodoImplementation = TodoImplementation.NONE
     subagents: list[SubAgentInspectInfo] = Field(default_factory=list)
     history: HistoryInspectInfo
     workspace: WorkspaceInspectInfo
@@ -598,6 +599,7 @@ def build_agent_inspect_report(
         prompts=prompt_info,
         tools=tools,
         todos=todos,
+        todo_implementation=session.config.todo_implementation,
         subagents=[],
         history=history_info,
         workspace=workspace_info,
