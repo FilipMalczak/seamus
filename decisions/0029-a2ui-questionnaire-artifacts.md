@@ -62,11 +62,13 @@ To integrate this cleanly with Seamus's core tenets of strict workspace isolatio
    - In `GitWorkspaceManager`, `artifacts` is included alongside `data` and `agent/state` in `commit_checkpoint_changes()`, preserving complete version history on the session's Git branch.
 
 4. **`ask` Tool & Questionnaire Layout**:
-   - Agent tool `ask(question: str, answers: list[str], writein: bool = False, id: str | None = None) -> str`.
-   - `answers` is required with cardinality constraints: must contain at least 2 choices when `writein=False`, or at least 1 choice when `writein=True`.
-   - Normalizes question identifiers to camelCase slugs (e.g. `"What color is the background?"` -> `backgroundColor`).
-   - Gathers all questions called within a single inference turn.
-   - On turn completion, generates `/artifacts/questionnaires/<uuid>/updateComponents.json` containing an A2UI v0.9 `Card` and `Column` layout with `ChoicePicker` (mutuallyExclusive chips), optional `TextField` for write-in, and a primary `Button` with a `submit_questionnaire` action event.
+   - Agent tool `ask(question: str, answers: list[str], multiple: bool = False, writein: bool = False, id: str | None = None) -> str`.
+   - `answers` is required with cardinality constraints: must contain at least 2 choices when `writein=False` and `multiple=False`, or at least 1 choice when `writein=True` or `multiple=True`.
+   - Normalizes question identifiers to camelCase slugs (e.g. `"What color is the background?"` -> `backgroundColor`) and strips whitespace.
+   - Rejects duplicate question IDs within the current questionnaire immediately at `ask` invocation time with a `ValueError`.
+   - Gathers all questions called within a single inference turn into a single questionnaire.
+   - On turn completion, generates `/artifacts/questionnaires/<uuid>/updateComponents.json` containing an A2UI v0.9 `Card` and `Column` layout. Layout is clean and streamlined: a direct sequence of question cards followed by a primary `Button` (`"submit_button"`), omitting redundant headers, subtitles, and intermediate dividers.
+   - Inside each question card, `ChoicePicker` uses `variant="multipleSelection"` when `multiple=True` and `variant="mutuallyExclusive"` when `multiple=False`, without duplicating the question header in `label`.
 
 5. **Blocking Cadence & Submission Flow**:
    - `cadence=blocking`: while an open blocking artifact exists, `POST /session/.../input` returns HTTP 409 Conflict, and the UI disables the composer textarea and send button.
@@ -76,7 +78,7 @@ To integrate this cleanly with Seamus's core tenets of strict workspace isolatio
      2. Writes `/artifacts/questionnaires/<name>/deleteSurface.json` with `{"version": "v0.9", "deleteSurface": {"surfaceId": "surface"}}` (closing it).
      3. Synthesizes a tool call `read_artifact_submission(artifact_id=name)` with result `{"data": data}`.
      4. Broadcasts AG-UI tool events (`TOOL_CALL_START`, `TOOL_CALL_ARGS`, `TOOL_CALL_END`, `TOOL_CALL_RESULT`), updates the thread checkpointer, and resumes agent inference.
-   - `read_artifact_submission` is also registered as an agent tool to enable re-reading canonical data from disk.
+   - `read_artifact_submission` is also registered as an agent tool to enable re-reading canonical data from disk, but fails with `ValueError` if invoked in the same turn that created the questionnaire.
 
 6. **Bundled Platform Skills (`/skills/bundled`)**:
    - Bundled skills are maintained in repository source under `src/seamus/skills/bundled/`.
@@ -84,9 +86,10 @@ To integrate this cleanly with Seamus's core tenets of strict workspace isolatio
    - In `SeamusOpenSandboxBackend.get_skill_sources()` and `inspector.extract_session_skills()`, `/skills/bundled` is placed at the highest precedence (loaded last in DeepAgents "last one wins" list, surfaced as `Bundled` in Inspector and system prompt).
    - Bundled skill `artifacts` provides comprehensive operational instructions on A2UI v0.9 and the artifact lifecycle.
 
-7. **React A2UI Renderer**:
+7. **React A2UI Renderer & Changes Tab Integration**:
    - Front-end integrates `@a2ui/react` and `@a2ui/web_core` (v0.15.0) targeting A2UI v0.9 and the basic catalog. Supports both the official A2UI catalog URI (`https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json`) and the short alias (`https://a2ui.org/specification/v0_9/basic_catalog.json`).
    - Embedded surfaces render inline within assistant messages; closed questionnaires show submitted answers in a read-only state.
+   - In the **Changes tab**, artifacts are not shown as raw filesystem files. Instead, the full A2UI stream per artifact (`createSurface`, `updateComponents`, `updateDataModel`, `deleteSurface`) is synthesized as `artifacts/<kind>/<uuid>.jsonl`, pretty-printed with 2-space indentation, separated visually from `data/` deliverables, and equipped with a per-artifact segmented toggle between "Diff" view and read-only "Rendered" view.
 
 ## Consequences
 

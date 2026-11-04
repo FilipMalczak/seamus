@@ -73,6 +73,7 @@ Project-specific implementation, tooling, and development conventions not fully 
 - [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md)
 - [0017-dedicated-test-gitea.md](../decisions/0017-dedicated-test-gitea.md)
 - [0023-github-actions-ci-pipeline.md](../decisions/0023-github-actions-ci-pipeline.md)
+- [0029-a2ui-questionnaire-artifacts.md](../decisions/0029-a2ui-questionnaire-artifacts.md)
 - [abstractions.md](./abstractions.md)
 - [backlog.md](./backlog.md)
 - [invariants.md](./invariants.md)
