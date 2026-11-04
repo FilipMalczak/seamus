@@ -6,8 +6,10 @@ import {
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
+  Code2,
   Copy,
   ExternalLink,
+  Eye,
   Folder,
   FolderOpen,
   FolderTree,
@@ -25,8 +27,9 @@ import {
 } from "lucide-react";
 import { parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
-import { getSessionDiff } from "../api/client";
-import type { AgentStatus, SessionDiffResponse, ThreadInfo } from "../api/types";
+import { getSessionDiff, listArtifacts } from "../api/client";
+import type { AgentStatus, ArtifactInfo, SessionDiffResponse, ThreadInfo } from "../api/types";
+import { A2uiArtifactRenderer } from "./A2uiArtifactRenderer";
 
 interface ChangesViewerProps {
   agentId: string | null;
@@ -78,6 +81,13 @@ function getChangeStatus(type: string): { label: string; text: string; className
 }
 
 interface IndexedFileDiff {
+  fileDiff: FileDiffMetadata;
+  originalIndex: number;
+}
+
+interface RenderableArtifactItem {
+  artifact: ArtifactInfo;
+  rawPath: string;
   fileDiff: FileDiffMetadata;
   originalIndex: number;
 }
@@ -157,10 +167,18 @@ export function ChangesViewer({
   const isRunning =
     currentStatus === "AWAITING_LLM" || currentStatus === "EXECUTING_TOOL";
 
+  const [artifactsList, setArtifactsList] = useState<ArtifactInfo[]>([]);
+  const [artifactViewModes, setArtifactViewModes] = useState<Record<string, "diff" | "rendered">>({});
+
+  const toggleArtifactViewMode = (name: string, mode: "diff" | "rendered") => {
+    setArtifactViewModes((prev) => ({ ...prev, [name]: mode }));
+  };
+
   const fetchDiff = useCallback(
     async (options?: { silent?: boolean }) => {
       if (!agentId || !sessionId) {
         setDiffData(null);
+        setArtifactsList([]);
         setError(null);
         return;
       }
@@ -169,8 +187,12 @@ export function ChangesViewer({
       }
       setError(null);
       try {
-        const data = await getSessionDiff(agentId, sessionId);
+        const [data, arts] = await Promise.all([
+          getSessionDiff(agentId, sessionId),
+          listArtifacts(agentId, sessionId).catch(() => []),
+        ]);
         setDiffData(data);
+        setArtifactsList(arts);
       } catch (err: any) {
         if (!options?.silent) {
           setError(err instanceof Error ? err.message : String(err));
@@ -216,43 +238,109 @@ export function ChangesViewer({
     }
   };
 
-  const fileDiffs = useMemo<FileDiffMetadata[]>(() => {
+  const deliverableDiffs = useMemo<FileDiffMetadata[]>(() => {
     if (!diffData?.diff || diffData.diff.trim().length === 0) return [];
     try {
       const patches = parsePatchFiles(diffData.diff);
-      return patches.flatMap((p) => p.files);
+      const files = patches.flatMap((p) => p.files);
+      return files.filter((f) => !(f.name || "").startsWith("artifacts/"));
     } catch (err) {
       console.error("Failed to parse diff patch:", err);
       return [];
     }
   }, [diffData?.diff]);
 
-  const indexedFileDiffs = useMemo<IndexedFileDiff[]>(() => {
-    return fileDiffs.map((fileDiff, originalIndex) => ({
+  const artifactItems = useMemo<RenderableArtifactItem[]>(() => {
+    if (!artifactsList || artifactsList.length === 0) return [];
+    return artifactsList.map((artifact, idx) => {
+      const events: Record<string, unknown>[] = [artifact.surface];
+      if (artifact.components) {
+        events.push(artifact.components);
+      }
+      if (artifact.data) {
+        events.push(artifact.data);
+      }
+      if (artifact.delete_surface) {
+        events.push(artifact.delete_surface);
+      } else if (artifact.is_closed) {
+        events.push({
+          version: "v0.9",
+          deleteSurface: { surfaceId: "surface" },
+        });
+      }
+      const lines = events
+        .map((ev) => JSON.stringify(ev, null, 2))
+        .join("\n\n")
+        .split("\n");
+      const rawPath = `artifacts/${artifact.kind}/${artifact.name}.jsonl`;
+      const patch = [
+        `diff --git a/${rawPath} b/${rawPath}`,
+        `new file mode 100644`,
+        `--- /dev/null`,
+        `+++ b/${rawPath}`,
+        `@@ -0,0 +1,${lines.length} @@`,
+        ...lines.map((l) => `+${l}`),
+        "",
+      ].join("\n");
+
+      let fileDiff: FileDiffMetadata;
+      try {
+        const parsed = parsePatchFiles(patch);
+        fileDiff = parsed[0]?.files[0] || ({
+          name: rawPath,
+          type: "new",
+          additionLines: lines,
+          deletionLines: [],
+          hunks: [],
+        } as any);
+      } catch {
+        fileDiff = {
+          name: rawPath,
+          type: "new",
+          additionLines: lines,
+          deletionLines: [],
+          hunks: [],
+        } as any;
+      }
+
+      return {
+        artifact,
+        rawPath,
+        fileDiff,
+        originalIndex: deliverableDiffs.length + idx,
+      };
+    });
+  }, [artifactsList, deliverableDiffs.length]);
+
+  const filteredDeliverables = useMemo<IndexedFileDiff[]>(() => {
+    const list = deliverableDiffs.map((fileDiff, originalIndex) => ({
       fileDiff,
       originalIndex,
     }));
-  }, [fileDiffs]);
-
-  const filteredIndexedDiffs = useMemo(() => {
-    if (!filterQuery.trim()) return indexedFileDiffs;
+    if (!filterQuery.trim()) return list;
     const q = filterQuery.trim().toLowerCase();
-    return indexedFileDiffs.filter((item) =>
+    return list.filter((item) =>
       (item.fileDiff.name || "").toLowerCase().includes(q)
     );
-  }, [indexedFileDiffs, filterQuery]);
+  }, [deliverableDiffs, filterQuery]);
 
-  const filteredDeliverables = useMemo(() => {
-    return filteredIndexedDiffs.filter(
-      (item) => !(item.fileDiff.name || "").startsWith("artifacts/")
+  const filteredArtifactItems = useMemo<RenderableArtifactItem[]>(() => {
+    if (!filterQuery.trim()) return artifactItems;
+    const q = filterQuery.trim().toLowerCase();
+    return artifactItems.filter(
+      (item) =>
+        item.rawPath.toLowerCase().includes(q) ||
+        item.artifact.name.toLowerCase().includes(q) ||
+        item.artifact.kind.toLowerCase().includes(q)
     );
-  }, [filteredIndexedDiffs]);
+  }, [artifactItems, filterQuery]);
 
-  const filteredArtifacts = useMemo(() => {
-    return filteredIndexedDiffs.filter((item) =>
-      (item.fileDiff.name || "").startsWith("artifacts/")
-    );
-  }, [filteredIndexedDiffs]);
+  const filteredArtifactIndexedDiffs = useMemo<IndexedFileDiff[]>(() => {
+    return filteredArtifactItems.map((item) => ({
+      fileDiff: item.fileDiff,
+      originalIndex: item.originalIndex,
+    }));
+  }, [filteredArtifactItems]);
 
   const deliverablesTree = useMemo(
     () => buildFileTree(filteredDeliverables),
@@ -260,20 +348,28 @@ export function ChangesViewer({
   );
 
   const artifactsTree = useMemo(
-    () => buildFileTree(filteredArtifacts),
-    [filteredArtifacts]
+    () => buildFileTree(filteredArtifactIndexedDiffs),
+    [filteredArtifactIndexedDiffs]
   );
 
   const totalStats = useMemo(() => {
     let additions = 0;
     let deletions = 0;
-    for (const file of fileDiffs) {
+    for (const file of deliverableDiffs) {
       const stats = getFileStats(file);
       additions += stats.additions;
       deletions += stats.deletions;
     }
+    for (const item of artifactItems) {
+      const stats = getFileStats(item.fileDiff);
+      additions += stats.additions;
+      deletions += stats.deletions;
+    }
     return { additions, deletions };
-  }, [fileDiffs]);
+  }, [deliverableDiffs, artifactItems]);
+
+  const totalFilesCount = deliverableDiffs.length + artifactItems.length;
+  const hasAnyFiles = filteredDeliverables.length > 0 || filteredArtifactItems.length > 0;
 
   const toggleFile = (fileName: string) => {
     setExpandedFiles((prev) => ({
@@ -290,20 +386,24 @@ export function ChangesViewer({
   };
 
   const allFilesExpanded = useMemo(() => {
-    if (fileDiffs.length === 0) return true;
-    return fileDiffs.every((file, idx) => {
-      const name = file.name || `file-${idx}`;
-      return expandedFiles[name] ?? true;
-    });
-  }, [fileDiffs, expandedFiles]);
+    const allPaths = [
+      ...deliverableDiffs.map((f, idx) => f.name || `file-${idx}`),
+      ...artifactItems.map((item) => item.rawPath),
+    ];
+    if (allPaths.length === 0) return true;
+    return allPaths.every((name) => expandedFiles[name] ?? true);
+  }, [deliverableDiffs, artifactItems, expandedFiles]);
 
   const toggleAllFiles = () => {
     const nextState = !allFilesExpanded;
     const updated: Record<string, boolean> = {};
-    fileDiffs.forEach((file, idx) => {
-      const name = file.name || `file-${idx}`;
+    for (const f of deliverableDiffs) {
+      const name = f.name || "file";
       updated[name] = nextState;
-    });
+    }
+    for (const item of artifactItems) {
+      updated[item.rawPath] = nextState;
+    }
     setExpandedFiles(updated);
   };
 
@@ -330,7 +430,7 @@ export function ChangesViewer({
     }
   };
 
-  const hasDiffContent = fileDiffs.length > 0;
+  const hasDiffContent = totalFilesCount > 0;
 
   // Render recursive tree node
   const renderTreeNode = (node: FileTreeNode, level: number = 0): React.ReactNode => {
@@ -552,6 +652,133 @@ export function ChangesViewer({
     });
   };
 
+  const renderArtifactCards = (items: RenderableArtifactItem[]) => {
+    return items.map((item) => {
+      const fileName = item.rawPath;
+      const isExpanded = expandedFiles[fileName] ?? true;
+      const status = getChangeStatus(item.fileDiff.type || "new");
+      const stats = getFileStats(item.fileDiff);
+      const isCopied = copiedPath === fileName;
+      const mode = artifactViewModes[item.artifact.name] || "diff";
+
+      return (
+        <article
+          key={`${fileName}-${item.originalIndex}`}
+          id={`diff-file-${item.originalIndex}`}
+          className={`changes-file-diff-item ${isExpanded ? "expanded" : "collapsed"}`}
+        >
+          <header
+            className="changes-file-card-header"
+            onClick={() => toggleFile(fileName)}
+            role="button"
+            tabIndex={0}
+            aria-expanded={isExpanded}
+          >
+            <div className="changes-file-card-left">
+              <button
+                type="button"
+                className="changes-file-chevron-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleFile(fileName);
+                }}
+                aria-label={isExpanded ? "Collapse file" : "Expand file"}
+              >
+                {isExpanded ? (
+                  <ChevronDown className="size-4 text-neutral-400" />
+                ) : (
+                  <ChevronRight className="size-4 text-neutral-400" />
+                )}
+              </button>
+              <span
+                className={`changes-status-badge ${status.className}`}
+                title={status.label}
+              >
+                {status.text}
+              </span>
+              <span className="changes-file-name" title={fileName}>
+                {fileName}
+              </span>
+            </div>
+
+            <div className="changes-file-card-right">
+              {/* Per-artifact Diff vs Rendered toggle */}
+              <div
+                className="changes-artifact-mode-toggle"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  className={`changes-artifact-toggle-btn ${mode === "diff" ? "active" : ""}`}
+                  onClick={() => toggleArtifactViewMode(item.artifact.name, "diff")}
+                  title="View A2UI JSONL stream"
+                >
+                  <Code2 className="size-3.5" />
+                  <span>Diff</span>
+                </button>
+                <button
+                  type="button"
+                  className={`changes-artifact-toggle-btn ${mode === "rendered" ? "active" : ""}`}
+                  onClick={() => toggleArtifactViewMode(item.artifact.name, "rendered")}
+                  title="Render interactive A2UI surface (read-only)"
+                >
+                  <Eye className="size-3.5" />
+                  <span>Rendered</span>
+                </button>
+              </div>
+
+              <div className="changes-file-stats">
+                {stats.additions > 0 && (
+                  <span className="stat-add">+{stats.additions}</span>
+                )}
+                {stats.deletions > 0 && (
+                  <span className="stat-del">-{stats.deletions}</span>
+                )}
+              </div>
+              <button
+                type="button"
+                className="changes-file-action-icon-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleCopyPath(fileName);
+                }}
+                title="Copy file path"
+                aria-label="Copy file path"
+              >
+                {isCopied ? (
+                  <Check className="size-3.5 text-emerald-400" />
+                ) : (
+                  <Copy className="size-3.5 text-neutral-400" />
+                )}
+              </button>
+            </div>
+          </header>
+
+          {isExpanded && (
+            mode === "diff" ? (
+              <div className="changes-file-diff-body">
+                <FileDiff
+                  fileDiff={item.fileDiff}
+                  options={{
+                    diffStyle,
+                    theme: "github-dark",
+                    disableFileHeader: true,
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="changes-artifact-rendered-body">
+                <div className="changes-artifact-rendered-ro-wrapper">
+                  <A2uiArtifactRenderer artifact={item.artifact} />
+                </div>
+              </div>
+            )
+          )}
+        </article>
+      );
+    });
+  };
+
   return (
     <div className="changes-viewer">
       {/* Changes Header */}
@@ -708,8 +935,8 @@ export function ChangesViewer({
                     <span className="changes-sidebar-title">Files Changed</span>
                     <span className="changes-sidebar-count-badge">
                       {filterQuery.trim()
-                        ? `${filteredIndexedDiffs.length} / ${fileDiffs.length}`
-                        : fileDiffs.length}
+                        ? `${filteredDeliverables.length + filteredArtifactItems.length} / ${totalFilesCount}`
+                        : totalFilesCount}
                     </span>
                   </div>
                   <div className="changes-sidebar-view-toggle">
@@ -759,7 +986,7 @@ export function ChangesViewer({
                 </div>
 
                 <div className="changes-sidebar-content">
-                  {filteredIndexedDiffs.length === 0 ? (
+                  {!hasAnyFiles ? (
                     <div className="changes-no-filter-match">
                       <p>No files match "{filterQuery}"</p>
                     </div>
@@ -784,16 +1011,16 @@ export function ChangesViewer({
                         </div>
                       )}
 
-                      {filteredDeliverables.length > 0 && filteredArtifacts.length > 0 && (
+                      {filteredDeliverables.length > 0 && filteredArtifactItems.length > 0 && (
                         <div className="changes-group-separator" />
                       )}
 
-                      {filteredArtifacts.length > 0 && (
+                      {filteredArtifactItems.length > 0 && (
                         <div className="changes-group-section">
                           <div className="changes-group-header">
                             <Layers className="size-3.5 text-purple-400" />
                             <span className="changes-group-title">Artifacts</span>
-                            <span className="changes-group-badge">{filteredArtifacts.length}</span>
+                            <span className="changes-group-badge">{filteredArtifactItems.length}</span>
                           </div>
                           {viewMode === "tree" ? (
                             <div className="changes-tree-view">
@@ -801,7 +1028,7 @@ export function ChangesViewer({
                             </div>
                           ) : (
                             <div className="changes-list-view">
-                              {renderFileListRows(filteredArtifacts)}
+                              {renderFileListRows(filteredArtifactIndexedDiffs)}
                             </div>
                           )}
                         </div>
@@ -817,7 +1044,7 @@ export function ChangesViewer({
               <div className="changes-diff-summary-bar">
                 <div className="changes-diff-summary-text">
                   <span className="changes-diff-summary-count">
-                    {fileDiffs.length} changed file{fileDiffs.length === 1 ? "" : "s"}
+                    {totalFilesCount} changed file{totalFilesCount === 1 ? "" : "s"}
                   </span>
                   <span className="changes-diff-summary-stats">
                     {totalStats.additions > 0 && (
@@ -849,7 +1076,7 @@ export function ChangesViewer({
               </div>
 
               <div className="changes-diff-cards">
-                {filteredIndexedDiffs.length === 0 ? (
+                {!hasAnyFiles ? (
                   <div className="changes-empty-state">
                     <p>No changed files match "{filterQuery}".</p>
                     <button
@@ -877,7 +1104,7 @@ export function ChangesViewer({
                       </section>
                     )}
 
-                    {filteredDeliverables.length > 0 && filteredArtifacts.length > 0 && (
+                    {filteredDeliverables.length > 0 && filteredArtifactItems.length > 0 && (
                       <div className="changes-diff-group-divider">
                         <div className="changes-diff-divider-line" />
                         <span className="changes-diff-divider-text">Artifacts</span>
@@ -885,17 +1112,17 @@ export function ChangesViewer({
                       </div>
                     )}
 
-                    {filteredArtifacts.length > 0 && (
+                    {filteredArtifactItems.length > 0 && (
                       <section className="changes-diff-group">
                         <div className="changes-diff-group-header">
                           <Layers className="size-4 text-purple-400" />
                           <span>Renderable Artifacts</span>
                           <span className="changes-diff-group-count">
-                            ({filteredArtifacts.length})
+                            ({filteredArtifactItems.length})
                           </span>
                         </div>
                         <div className="changes-diff-cards">
-                          {renderDiffCards(filteredArtifacts)}
+                          {renderArtifactCards(filteredArtifactItems)}
                         </div>
                       </section>
                     )}

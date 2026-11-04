@@ -115,6 +115,7 @@ export interface ArtifactInfo {
   surface: Record<string, unknown>;
   components?: Record<string, unknown> | null;
   data?: Record<string, unknown> | null;
+  delete_surface?: Record<string, unknown> | null;
 }
 
 export type MessagePart =

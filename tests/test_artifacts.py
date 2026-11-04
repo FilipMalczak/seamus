@@ -49,15 +49,17 @@ def test_questionnaire_builder_single_question() -> None:
 
     assert "root" in ids
     assert "main" in ids
-    assert "title" in ids
+    assert "title" not in ids
+    assert "subtitle" not in ids
     assert "backgroundColor_card" in ids
     assert "backgroundColor_options" in ids
     assert "backgroundColor_other" in ids
     assert "submit_button" in ids
 
-    # Check ChoicePicker options
+    # Check ChoicePicker options (no duplicated question label)
     options_comp = next(c for c in components if c["id"] == "backgroundColor_options")
     assert options_comp["component"] == "ChoicePicker"
+    assert "label" not in options_comp
     assert len(options_comp["options"]) == 3  # white, blue, other
     assert options_comp["value"] == {"path": "/answers/backgroundColor"}
 
@@ -83,9 +85,14 @@ def test_questionnaire_builder_multiple_questions_auto_ids() -> None:
     ]
     res = QuestionnaireBuilder.build_update_components(questions)
     components = res["updateComponents"]["components"]
-    # Check dividers exist between questions
-    divider = next((c for c in components if c["component"] == "Divider"), None)
-    assert divider is not None
+    # Check no dividers exist between questions
+    assert not any(c["component"] == "Divider" for c in components)
+    main_comp = next(c for c in components if c["id"] == "main")
+    assert main_comp["children"] == [
+        "whatIsTheLayout_card",
+        "areHeadersBoldAndCapsOrJustBold_card",
+        "submit_button",
+    ]
 
     btn = next(c for c in components if c["id"] == "submit_button")
     assert len(btn["action"]["event"]["context"]) == 2
@@ -130,6 +137,11 @@ def test_artifact_resolver_closed_status(tmp_path: Path) -> None:
     inst_delete = inst_dir / "deleteSurface.json"
     inst_delete.write_text('{"deleteSurface": {"surfaceId": "surface"}}')
     assert resolver.is_closed("questionnaires", "q1")
+
+    art = resolver.load_artifact("questionnaires", "q1")
+    assert art.is_closed
+    assert art.delete_surface is not None
+    assert art.delete_surface["deleteSurface"]["surfaceId"] == "surface"
 
 
 def test_artifact_resolver_instance_manifest_validation(tmp_path: Path) -> None:
@@ -257,10 +269,8 @@ def test_questionnaire_builder_formatting_and_multi_select() -> None:
     res = QuestionnaireBuilder.build_update_components(questions, title="Survey")
     components = res["updateComponents"]["components"]
 
-    # Title component has no markdown '#' prefix
-    title_comp = next(c for c in components if c["id"] == "title")
-    assert title_comp["text"] == "Survey"
-    assert not title_comp["text"].startswith("#")
+    # Header title and subtitle are omitted from component tree
+    assert not any(c["id"] in ("title", "subtitle") for c in components)
 
     # Question text components have no '###' or numbering prefix
     q1_text = next(c for c in components if c["id"] == "features_question")
@@ -367,3 +377,43 @@ def test_read_artifact_submission_fails_in_same_turn_as_ask() -> None:
 
     res_subsequent = json.loads(runner.handle_read_artifact_submission(current_id))
     assert res_subsequent.get("status") == "pending"
+
+
+def test_questionnaire_builder_duplicate_ids_fails() -> None:
+    questions = [
+        QuestionItem(question="Pick layout", answers=["grid", "list"], id="layout"),
+        QuestionItem(question="Pick another layout", answers=["cards", "table"], id="layout"),
+    ]
+    with pytest.raises(ValueError, match="Duplicate question id 'layout'"):
+        QuestionnaireBuilder.build_update_components(questions)
+
+
+def test_runner_ask_duplicate_id_fails() -> None:
+    from seamus.config.models import AgentConfig, InferenceConfig
+    from seamus.domain.entities import Agent
+    from seamus.harness.runner import SessionAgentRunner
+    from tests.test_runner import FakeAgent
+
+    config = AgentConfig(
+        inference=InferenceConfig(api_key="mock-key"),
+        model_name="mock-model",
+    )
+    agent = Agent(config=config, name="test-agent-duplicate-id")
+    session = agent.create_session(name="test-session-duplicate-id")
+    runner = SessionAgentRunner(session=session, agent=FakeAgent())
+
+    # 1. First call with id succeeds
+    res1 = runner.handle_ask("Select framework", ["react", "vue"], id="framework")
+    assert res1 == "OK"
+    assert len(runner._pending_questions) == 1
+
+    # 2. Second call with same id fails at ask
+    with pytest.raises(ValueError, match="already exists in the current questionnaire"):
+        runner.handle_ask("Select testing framework", ["jest", "vitest"], id="framework")
+    assert len(runner._pending_questions) == 1
+
+    # 3. Duplicate auto-generated IDs also fail at ask
+    res2 = runner.handle_ask("Database type?", ["sql", "nosql"])
+    assert res2 == "OK"
+    with pytest.raises(ValueError, match="already exists in the current questionnaire"):
+        runner.handle_ask("Database type?", ["postgres", "mongo"])

@@ -3958,5 +3958,58 @@ a.changes-pr-badge:hover {
   border: 1px solid rgba(168, 85, 247, 0.25);
 }
 
+/* Artifact Card Diff vs Rendered Mode Toggle */
+.changes-artifact-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  background: #090e17;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+  margin-right: 6px;
+}
+
+.changes-artifact-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #94a3b8;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.changes-artifact-toggle-btn:hover {
+  color: #f1f5f9;
+}
+
+.changes-artifact-toggle-btn.active {
+  background: rgba(168, 85, 247, 0.22);
+  color: #e9d5ff;
+  border-color: rgba(168, 85, 247, 0.45);
+}
+
+.changes-artifact-rendered-body {
+  padding: 16px;
+  background: #080c14;
+  border-top: 1px solid var(--border-color);
+}
+
+.changes-artifact-rendered-ro-wrapper {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.changes-artifact-rendered-ro-wrapper .a2ui-card-content {
+  pointer-events: none;
+}
+
+
 
 

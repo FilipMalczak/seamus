@@ -107,8 +107,10 @@ class QuestionItem(BaseModel):
         return self
 
     def model_post_init(self, __context: Any) -> None:
-        if not self.id:
+        if not self.id or not self.id.strip():
             self.id = _to_camel_case(self.question)
+        else:
+            self.id = self.id.strip()
 
 
 class QuestionnaireBuilder:
@@ -130,46 +132,24 @@ class QuestionnaireBuilder:
             }
         ]
 
-        main_children: list[str] = ["title", "subtitle"]
-
-        components.append(
-            {
-                "id": "title",
-                "component": "Text",
-                "text": title,
-                "variant": "h2",
-            }
-        )
-        components.append(
-            {
-                "id": "subtitle",
-                "component": "Text",
-                "text": subtitle,
-                "variant": "body",
-            }
-        )
-
+        main_children: list[str] = []
         submit_context: dict[str, Any] = {}
+        seen_ids: set[str] = set()
 
         for idx, q in enumerate(questions, start=1):
             q_id = q.id or f"q{idx}"
+            if q_id in seen_ids:
+                raise ValueError(
+                    f"Duplicate question id '{q_id}' in questionnaire. Question IDs must be unique."
+                )
+            seen_ids.add(q_id)
             card_id = f"{q_id}_card"
             content_id = f"{q_id}_content"
             question_id = f"{q_id}_question"
             options_id = f"{q_id}_options"
             other_id = f"{q_id}_other"
-            divider_id = f"divider_{idx}"
 
             main_children.append(card_id)
-            if idx < len(questions):
-                main_children.append(divider_id)
-                components.append(
-                    {
-                        "id": divider_id,
-                        "component": "Divider",
-                        "axis": "horizontal",
-                    }
-                )
 
             card_children = [question_id, options_id]
             if q.writein:
@@ -209,7 +189,6 @@ class QuestionnaireBuilder:
                 {
                     "id": options_id,
                     "component": "ChoicePicker",
-                    "label": q.question,
                     "variant": "multipleSelection" if q.multiple else "mutuallyExclusive",
                     "displayStyle": "chips",
                     "options": options,
@@ -361,6 +340,19 @@ class ArtifactResolver:
             json.loads(data_path.read_text(encoding="utf-8")) if data_path else None
         )
 
+        del_path = self.resolve_file(kind, name, "deleteSurface.json")
+        delete_surface: dict[str, Any] | None = None
+        if del_path and del_path.is_file():
+            try:
+                delete_surface = json.loads(del_path.read_text(encoding="utf-8"))
+            except Exception:
+                delete_surface = None
+        elif is_closed:
+            delete_surface = {
+                "version": "v0.9",
+                "deleteSurface": {"surfaceId": STANDARD_SURFACE_ID},
+            }
+
         return ArtifactInfo(
             kind=kind,
             name=name,
@@ -369,6 +361,7 @@ class ArtifactResolver:
             surface=surface,
             components=components,
             data=data,
+            delete_surface=delete_surface,
         )
 
     def list_artifacts(self) -> list[ArtifactInfo]:

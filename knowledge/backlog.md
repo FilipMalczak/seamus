@@ -104,7 +104,17 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Improvement**: Write comprehensive unit and integration tests exercising mid-turn cancellation, sandbox cleanup, thread termination status propagation, and branching edge cases.
 - **Provenance**: [0022-branching-out-and-session-lifecycle.md](../decisions/0022-branching-out-and-session-lifecycle.md).
 
+### Review and Rethink Error Reporting Architecture and Semantics
+- **Current Problem**: Error reporting across the harness stack is unclear and fragmented. Errors originating from tool execution (e.g. argument validation or duplicate question IDs in `ask`), sandbox execution, runner loops, and SSE event streaming (`RUN_ERROR` vs `TOOL_CALL_RESULT` with `is_error=True`) lack a clear taxonomy, consistent propagation rules, and transparent visibility in both agent reasoning context and frontend user feedback.
+- **Improvement**: Review and redesign error reporting systematically: define distinct error categories (recoverable tool feedback intended for model correction vs fatal harness/system faults), establish consistent propagation through SSE events and thread status, and provide clear, actionable error indicators in the web UI.
+- **Provenance**: `src/seamus/harness/runner.py`, [0029-a2ui-questionnaire-artifacts.md](../decisions/0029-a2ui-questionnaire-artifacts.md), [architecture.md](./architecture.md).
+
 ## TODO
+
+### Steerable Model Implementation for Local Manual Testing
+- **Description**: Introduce a steerable model provider for local development and manual testing. The steerable model allows developers to script, step through, or interactively inject specific model responses, text chunks, and tool calls (such as `ask` inquiries, custom A2UI artifacts, or specific error states) into active sessions without incurring live LLM API costs or dealing with non-deterministic completions.
+- **Rationale**: Greatly streamlines local manual verification of UI features (like interactive A2UI questionnaires, diff viewers, and error handling) and reduces turnaround time for frontend and harness developers.
+- **Provenance**: `src/seamus/harness/runner.py`, `tests/test_runner.py`, [0029-a2ui-questionnaire-artifacts.md](../decisions/0029-a2ui-questionnaire-artifacts.md).
 
 ### Native LM-XML Skills System with Load/Unload Skill Tools
 - **Description**: Replace the reliance on LangChain DeepAgents' built-in `SkillsMiddleware` with a first-party, native Seamus skills implementation. The native system will be built directly on `lmxml` dynamic prompt structures (integrating seamlessly with `DynamicSystemPromptMiddleware`) and explicit `load_skill` / `unload_skill` agent tools to disclose, activate, and deactivate skill instructions and associated tools on demand rather than relying on automatic middleware inspection and implicit prompt appending.
@@ -199,3 +209,11 @@ Persistent record of work intentionally left outstanding across the project, mai
   - specialized messages?
 - default implementation selection: decide on system-wide defaults for `todo_implementation` and `skills_implementation` once alternative/native implementations are stabilized
 
+- custom artifacts
+- changes to questions: `create_questionaire` return uuid, but more importantly, `ask` doesnt take the uuid, runs on open one (mentioned in prompt); `ask`, `publish_-` and `discard_questionaire` tools become available once create is called; we remove createSurface from `/artifact/questionnaire`; we change the rule to show the artifact only when create is present; if create is present and `deleteSurface` is present -> questionnaire is closed; if create isnt present, but delete is, it means it was discarded; publish creates `createSurface` file, discard -> `deleteSurface`
+
+
+- way forward: disablability of more layers and components; 
+  - for sure context compaction, I dont like it
+  - disabling specific artifacts (generic are always allowed, in which case we need to mount custom examples directory, which might be a good idea anyway)
+  

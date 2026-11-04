@@ -678,6 +678,11 @@ class SessionAgentRunner:
             writein=writein,
             id=id or "",
         )
+        if any(q.id == item.id for q in self._pending_questions):
+            raise ValueError(
+                f"Question with id '{item.id}' already exists in the current questionnaire. "
+                f"Each question in a questionnaire must have a unique id."
+            )
         if self._current_questionnaire_id is None:
             self._current_questionnaire_id = uuid4().hex
         self._turn_created_artifact_ids.add(self._current_questionnaire_id)

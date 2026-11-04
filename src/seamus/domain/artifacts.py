@@ -41,3 +41,6 @@ class ArtifactInfo(BaseModel):
     data: dict[str, Any] | None = Field(
         default=None, description="A2UI updateDataModel message if present"
     )
+    delete_surface: dict[str, Any] | None = Field(
+        default=None, description="A2UI deleteSurface message if present or closed"
+    )
