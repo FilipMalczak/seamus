@@ -80,14 +80,20 @@ class QuestionItem(BaseModel):
 
     question: str
     answers: list[str]
+    multiple: bool = False
     writein: bool = False
     id: str = Field(default="")
 
     @model_validator(mode="after")
     def _validate_answers_cardinality(self) -> Self:
-        min_answers = 1 if self.writein else 2
+        min_answers = 1 if (self.writein or self.multiple) else 2
         if len(self.answers) < min_answers:
-            if self.writein:
+            if self.multiple:
+                msg = (
+                    f"Question '{self.question}' with multiple=True requires at least 1 choice in "
+                    f"'answers' (got {len(self.answers)})."
+                )
+            elif self.writein:
                 msg = (
                     f"Question '{self.question}' with writein=True requires at least 1 choice in "
                     f"'answers' (got {len(self.answers)})."
@@ -130,7 +136,7 @@ class QuestionnaireBuilder:
             {
                 "id": "title",
                 "component": "Text",
-                "text": f"# {title}",
+                "text": title,
                 "variant": "h2",
             }
         )
@@ -188,7 +194,7 @@ class QuestionnaireBuilder:
                 {
                     "id": question_id,
                     "component": "Text",
-                    "text": f"### {idx}. {q.question}",
+                    "text": q.question,
                     "variant": "h3",
                 }
             )
@@ -204,7 +210,7 @@ class QuestionnaireBuilder:
                     "id": options_id,
                     "component": "ChoicePicker",
                     "label": q.question,
-                    "variant": "mutuallyExclusive",
+                    "variant": "multipleSelection" if q.multiple else "mutuallyExclusive",
                     "displayStyle": "chips",
                     "options": options,
                     "value": {"path": f"/answers/{q_id}"},

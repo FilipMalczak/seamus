@@ -44,7 +44,7 @@ class GitWorkspaceError(RuntimeError):
 
 
 def filter_sync_pr_diff(raw_diff: str) -> str:
-    """Filter reviewable PR diff so that only files under the data/ working directory are kept."""
+    """Filter reviewable PR diff so that only files under data/ and artifacts/ are kept."""
     if not raw_diff:
         return ""
     pattern = re.compile(r"(?=^diff --git )", re.MULTILINE)
@@ -54,8 +54,13 @@ def filter_sync_pr_diff(raw_diff: str) -> str:
         if not chunk.strip():
             continue
         first_line = chunk.split("\n", 1)[0]
-        # Restrict strictly to agent workspace deliverables under data/
-        if " a/data/" in first_line or " b/data/" in first_line:
+        # Restrict to deliverables under data/ and renderable artifacts under artifacts/
+        if (
+            " a/data/" in first_line
+            or " b/data/" in first_line
+            or " a/artifacts/" in first_line
+            or " b/artifacts/" in first_line
+        ):
             kept.append(chunk)
     return "".join(kept)
 

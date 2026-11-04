@@ -305,8 +305,13 @@ class ResilientAskInput(BaseModel):
         ...,
         description=(
             "The list of possible answers for the user to choose from. Required. "
-            "Must contain at least 2 choices if writein=False, or 1 choice if writein=True."
+            "Must contain at least 2 choices if writein=False and multiple=False, "
+            "or at least 1 choice if writein=True or multiple=True."
         ),
+    )
+    multiple: bool = Field(
+        default=False,
+        description="Whether to allow selecting multiple options (multi-select).",
     )
     writein: bool = Field(
         default=False,
@@ -331,13 +336,23 @@ class ResilientAskInput(BaseModel):
         if not isinstance(d.get("answers"), list):
             if d.get("answers") is not None:
                 d["answers"] = [str(d["answers"])]
+        if "multiple" not in d:
+            for m_alias in ("multi_select", "multiselect", "multi"):
+                if m_alias in d:
+                    d["multiple"] = bool(d[m_alias])
+                    break
         return d
 
     @model_validator(mode="after")
     def _validate_answers_cardinality(self) -> Self:
-        min_answers = 1 if self.writein else 2
+        min_answers = 1 if (self.writein or self.multiple) else 2
         if len(self.answers) < min_answers:
-            if self.writein:
+            if self.multiple:
+                msg = (
+                    f"Question '{self.question}' with multiple=True requires at least 1 choice in "
+                    f"'answers' (got {len(self.answers)})."
+                )
+            elif self.writein:
                 msg = (
                     f"Question '{self.question}' with writein=True requires at least 1 choice in "
                     f"'answers' (got {len(self.answers)})."
@@ -479,10 +494,17 @@ class SessionAgentRunner:
         def _handle_ask(
             question: str,
             answers: list[str],
+            multiple: bool = False,
             writein: bool = False,
             id: str | None = None,
         ) -> str:
-            item = QuestionItem(question=question, answers=answers, writein=writein, id=id or "")
+            item = QuestionItem(
+                question=question,
+                answers=answers,
+                multiple=multiple,
+                writein=writein,
+                id=id or "",
+            )
             if self._current_questionnaire_id is None:
                 self._current_questionnaire_id = uuid4().hex
             self._pending_questions.append(item)

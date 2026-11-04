@@ -213,3 +213,112 @@ def test_question_answers_cardinality_validation() -> None:
         {"question": "One option with writein", "answers": ["one"], "writein": True}
     )
     assert len(ask2.answers) == 1
+
+    # multiple=True validation
+    q_multi = QuestionItem(question="Choose features", answers=["auth"], multiple=True)
+    assert q_multi.multiple is True
+    assert len(q_multi.answers) == 1
+
+    with pytest.raises(ValueError, match="requires at least 1 choice"):
+        QuestionItem(question="Choose features", answers=[], multiple=True)
+
+    # ResilientAskInput with multiple and aliases
+    ask_multi = ResilientAskInput.model_validate(
+        {"question": "Pick many", "answers": ["a"], "multiple": True}
+    )
+    assert ask_multi.multiple is True
+
+    ask_alias1 = ResilientAskInput.model_validate(
+        {"question": "Pick many", "answers": ["a"], "multi_select": True}
+    )
+    assert ask_alias1.multiple is True
+
+    ask_alias2 = ResilientAskInput.model_validate(
+        {"question": "Pick many", "answers": ["a"], "multiselect": True}
+    )
+    assert ask_alias2.multiple is True
+
+
+def test_questionnaire_builder_formatting_and_multi_select() -> None:
+    questions = [
+        QuestionItem(
+            question="Select features",
+            answers=["auth", "logging", "metrics"],
+            multiple=True,
+            id="features",
+        ),
+        QuestionItem(
+            question="Primary database",
+            answers=["postgres", "sqlite"],
+            multiple=False,
+            id="db",
+        ),
+    ]
+    res = QuestionnaireBuilder.build_update_components(questions, title="Survey")
+    components = res["updateComponents"]["components"]
+
+    # Title component has no markdown '#' prefix
+    title_comp = next(c for c in components if c["id"] == "title")
+    assert title_comp["text"] == "Survey"
+    assert not title_comp["text"].startswith("#")
+
+    # Question text components have no '###' or numbering prefix
+    q1_text = next(c for c in components if c["id"] == "features_question")
+    assert q1_text["text"] == "Select features"
+    assert not q1_text["text"].startswith("#")
+
+    q2_text = next(c for c in components if c["id"] == "db_question")
+    assert q2_text["text"] == "Primary database"
+    assert not q2_text["text"].startswith("#")
+
+    # Multi-select ChoicePicker variant is multipleSelection
+    q1_picker = next(c for c in components if c["id"] == "features_options")
+    assert q1_picker["variant"] == "multipleSelection"
+
+    # Single-select ChoicePicker variant is mutuallyExclusive
+    q2_picker = next(c for c in components if c["id"] == "db_options")
+    assert q2_picker["variant"] == "mutuallyExclusive"
+
+
+def test_filter_sync_pr_diff_keeps_data_and_artifacts() -> None:
+    from seamus.persistence.workspace import filter_sync_pr_diff
+
+    raw_diff = (
+        "diff --git a/data/results.csv b/data/results.csv\n"
+        "--- a/data/results.csv\n"
+        "+++ b/data/results.csv\n"
+        "@@ -0,0 +1 @@\n"
+        "+value1,value2\n"
+        "diff --git a/agent/state/checkpoint.json b/agent/state/checkpoint.json\n"
+        "--- a/agent/state/checkpoint.json\n"
+        "+++ b/agent/state/checkpoint.json\n"
+        "@@ -1 +1 @@\n"
+        "-old\n"
+        "+new\n"
+        "diff --git a/artifacts/q1/manifest.json b/artifacts/q1/manifest.json\n"
+        "--- a/artifacts/q1/manifest.json\n"
+        "+++ b/artifacts/q1/manifest.json\n"
+        "@@ -0,0 +1,2 @@\n"
+        "+{\n"
+        "+}\n"
+        "diff --git a/skills/custom/SKILL.md b/skills/custom/SKILL.md\n"
+        "--- a/skills/custom/SKILL.md\n"
+        "+++ b/skills/custom/SKILL.md\n"
+        "@@ -0,0 +1 @@\n"
+        "+# Skill\n"
+    )
+
+    filtered = filter_sync_pr_diff(raw_diff)
+    assert "diff --git a/data/results.csv b/data/results.csv" in filtered
+    assert "diff --git a/artifacts/q1/manifest.json" in filtered
+    assert "agent/state/checkpoint.json" not in filtered
+    assert "skills/custom/SKILL.md" not in filtered
+
+
+def test_system_prompt_user_inquiry_section() -> None:
+    from seamus.harness.prompt import build_scaffold_prompt
+
+    prompt = build_scaffold_prompt()
+    assert "<user_inquiry>" in prompt
+    assert "ask" in prompt
+    assert "Never repeat, duplicate, or re-list questions" in prompt

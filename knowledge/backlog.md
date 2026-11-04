@@ -10,6 +10,12 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## Deferred
 
+### Fine-Grained Arity Controls for Questionnaire Inquiry Tools
+- **Description**: Expand selection constraints for `ask` (and future inquiry tools) from boolean `multiple: bool` to fine-grained arity bounds: `arity: int | tuple[int, int | Literal["*"]]` (e.g. `1` for single choice, `(1, "*")` for at least one choice, `(0, "*")` for optional multiple selection, `(2, 4)` for a bounded range).
+- **Why Deferred**: Boolean `multiple` matches current A2UI ChoicePicker primitives (`mutuallyExclusive` vs `multipleSelection`) cleanly without requiring custom client-side validation logic or un-standardized A2UI catalog validation schemas.
+- **Revisit Trigger**: When A2UI catalog selection validators support custom min/max arity bounds or when complex survey forms require mandatory zero-or-more / range constraints.
+- **Provenance**: [0029-a2ui-questionnaire-artifacts.md](../decisions/0029-a2ui-questionnaire-artifacts.md).
+
 ### Tabbed Artifact Exposition and Non-Blocking Cadence Lifecycles
 - **Description**: Expand artifact exposition support from `exposition=embedded` to include `exposition=tabbed` (rendering artifacts in dedicated inspector-like tabs rather than inline in chat bubbles). Formalize the lifecycle and closing rules for non-blocking artifacts (`cadence=nonblocking`) upon submission or timeout.
 - **Why Deferred**: Focused initially on embedded questionnaires with blocking cadence to validate the core A2UI v0.9 pipeline and synthetic tool dispatch.

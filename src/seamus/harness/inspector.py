@@ -746,6 +746,7 @@ def build_agent_inspect_report(
     base_scaffold_prompt = build_scaffold_prompt(sandbox_settings.workdir)
     custom_prompt = (session.config.system_prompt or "").strip()
     data_dir = ws_mgr.get_session_data_dir(agent.id, session.id)
+    artifacts_dir = ws_mgr.get_session_artifacts_dir(agent.id, session.id)
 
     # Runner & Tools
     registry = get_runner_registry()
@@ -825,6 +826,13 @@ def build_agent_inspect_report(
                     files.append(str(p.relative_to(data_dir)))
                 except ValueError:
                     files.append(p.name)
+    if artifacts_dir.exists():
+        for p in artifacts_dir.rglob("*"):
+            if p.is_file() and p.name != ".gitkeep":
+                try:
+                    files.append(f"artifacts/{p.relative_to(artifacts_dir)}")
+                except ValueError:
+                    files.append(f"artifacts/{p.name}")
     files.sort()
 
     workspace_info = WorkspaceInspectInfo(

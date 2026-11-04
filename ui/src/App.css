@@ -3823,4 +3823,140 @@ a.changes-pr-badge:hover {
   font-size: 0.82rem;
 }
 
+.a2ui-collapse-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: transparent;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 0.35rem;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.55rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.a2ui-collapse-toggle-btn:hover {
+  background: #334155;
+  color: #f1f5f9;
+  border-color: rgba(148, 163, 184, 0.45);
+}
+
+.a2ui-artifact-card.a2ui-collapsed {
+  margin: 0.4rem 0;
+}
+
+.a2ui-artifact-card.a2ui-collapsed .a2ui-card-header {
+  border-bottom: none;
+}
+
+.a2ui-surface-disabled {
+  opacity: 0.82;
+  user-select: text;
+}
+
+.a2ui-surface-disabled button,
+.a2ui-surface-disabled [role="button"],
+.a2ui-surface-disabled input,
+.a2ui-surface-disabled textarea {
+  pointer-events: none !important;
+  cursor: not-allowed !important;
+}
+
+.a2ui-surface-disabled button {
+  display: none !important;
+}
+
+/* Changes Viewer Deliverables vs Artifacts Grouping */
+.changes-group-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.changes-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  margin-bottom: 4px;
+}
+
+.changes-group-title {
+  flex: 1;
+}
+
+.changes-group-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 6px;
+  border-radius: 9999px;
+  font-size: 0.68rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+}
+
+.changes-group-separator {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 10px 8px;
+}
+
+.changes-diff-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.changes-diff-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #f1f5f9;
+  padding: 4px 2px;
+}
+
+.changes-diff-group-count {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+.changes-diff-group-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.changes-diff-divider-line {
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.changes-diff-divider-text {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #a855f7;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(168, 85, 247, 0.1);
+  border: 1px solid rgba(168, 85, 247, 0.25);
+}
+
+
 

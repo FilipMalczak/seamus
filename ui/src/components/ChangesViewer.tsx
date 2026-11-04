@@ -12,6 +12,7 @@ import {
   FolderOpen,
   FolderTree,
   GitPullRequest,
+  Layers,
   List,
   Loader2,
   PanelLeftClose,
@@ -241,9 +242,26 @@ export function ChangesViewer({
     );
   }, [indexedFileDiffs, filterQuery]);
 
-  const fileTree = useMemo(
-    () => buildFileTree(filteredIndexedDiffs),
-    [filteredIndexedDiffs]
+  const filteredDeliverables = useMemo(() => {
+    return filteredIndexedDiffs.filter(
+      (item) => !(item.fileDiff.name || "").startsWith("artifacts/")
+    );
+  }, [filteredIndexedDiffs]);
+
+  const filteredArtifacts = useMemo(() => {
+    return filteredIndexedDiffs.filter((item) =>
+      (item.fileDiff.name || "").startsWith("artifacts/")
+    );
+  }, [filteredIndexedDiffs]);
+
+  const deliverablesTree = useMemo(
+    () => buildFileTree(filteredDeliverables),
+    [filteredDeliverables]
+  );
+
+  const artifactsTree = useMemo(
+    () => buildFileTree(filteredArtifacts),
+    [filteredArtifacts]
   );
 
   const totalStats = useMemo(() => {
@@ -382,6 +400,156 @@ export function ChangesViewer({
         </span>
       </div>
     );
+  };
+
+  const renderFileListRows = (items: IndexedFileDiff[]) => {
+    return items.map(({ fileDiff, originalIndex }) => {
+      const rawName = fileDiff.name || `file-${originalIndex}`;
+      const status = getChangeStatus(fileDiff.type || "change");
+      const stats = getFileStats(fileDiff);
+      const parts = rawName.split("/");
+      const baseName = parts[parts.length - 1];
+      const dirPath = parts.slice(0, parts.length - 1).join("/");
+      const isActive = activeFileIndex === originalIndex;
+
+      return (
+        <div
+          key={`${rawName}-${originalIndex}`}
+          className={`changes-list-file-row ${isActive ? "active" : ""}`}
+          onClick={() => handleSelectFile(originalIndex, rawName)}
+          role="button"
+          tabIndex={0}
+        >
+          <span
+            className={`changes-status-badge-sm ${status.className}`}
+            title={status.label}
+          >
+            {status.text}
+          </span>
+          <div className="changes-list-file-info" title={rawName}>
+            {dirPath && (
+              <span className="changes-list-file-dir">
+                {dirPath}/
+              </span>
+            )}
+            <span className="changes-list-file-base">
+              {baseName}
+            </span>
+          </div>
+          <span className="changes-list-file-stats">
+            {stats.additions > 0 && (
+              <span className="stat-add">+{stats.additions}</span>
+            )}
+            {stats.deletions > 0 && (
+              <span className="stat-del">-{stats.deletions}</span>
+            )}
+          </span>
+        </div>
+      );
+    });
+  };
+
+  const renderDiffCards = (items: IndexedFileDiff[]) => {
+    return items.map(({ fileDiff, originalIndex }) => {
+      const fileName = fileDiff.name || `file-${originalIndex}`;
+      const isExpanded = expandedFiles[fileName] ?? true;
+      const status = getChangeStatus(fileDiff.type || "change");
+      const stats = getFileStats(fileDiff);
+      const isCopied = copiedPath === fileName;
+
+      return (
+        <article
+          key={`${fileName}-${originalIndex}`}
+          id={`diff-file-${originalIndex}`}
+          className={`changes-file-diff-item ${isExpanded ? "expanded" : "collapsed"}`}
+        >
+          <header
+            className="changes-file-card-header"
+            onClick={() => toggleFile(fileName)}
+            role="button"
+            tabIndex={0}
+            aria-expanded={isExpanded}
+          >
+            <div className="changes-file-card-left">
+              <button
+                type="button"
+                className="changes-file-chevron-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleFile(fileName);
+                }}
+                aria-label={isExpanded ? "Collapse file" : "Expand file"}
+              >
+                {isExpanded ? (
+                  <ChevronDown className="size-4 text-neutral-400" />
+                ) : (
+                  <ChevronRight className="size-4 text-neutral-400" />
+                )}
+              </button>
+              <span
+                className={`changes-status-badge ${status.className}`}
+                title={status.label}
+              >
+                {status.text}
+              </span>
+              <span className="changes-file-name" title={fileName}>
+                {fileDiff.prevName ? (
+                  <>
+                    <span className="changes-file-prevname">
+                      {fileDiff.prevName}
+                    </span>
+                    <span className="changes-file-arrow">→</span>
+                    <span>{fileName}</span>
+                  </>
+                ) : (
+                  fileName
+                )}
+              </span>
+            </div>
+
+            <div className="changes-file-card-right">
+              <div className="changes-file-stats">
+                {stats.additions > 0 && (
+                  <span className="stat-add">+{stats.additions}</span>
+                )}
+                {stats.deletions > 0 && (
+                  <span className="stat-del">-{stats.deletions}</span>
+                )}
+              </div>
+              <button
+                type="button"
+                className="changes-file-action-icon-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleCopyPath(fileName);
+                }}
+                title="Copy file path"
+                aria-label="Copy file path"
+              >
+                {isCopied ? (
+                  <Check className="size-3.5 text-emerald-400" />
+                ) : (
+                  <Copy className="size-3.5 text-neutral-400" />
+                )}
+              </button>
+            </div>
+          </header>
+
+          {isExpanded && (
+            <div className="changes-file-diff-body">
+              <FileDiff
+                fileDiff={fileDiff}
+                options={{
+                  diffStyle,
+                  theme: "github-dark",
+                  disableFileHeader: true,
+                }}
+              />
+            </div>
+          )}
+        </article>
+      );
+    });
   };
 
   return (
@@ -595,57 +763,50 @@ export function ChangesViewer({
                     <div className="changes-no-filter-match">
                       <p>No files match "{filterQuery}"</p>
                     </div>
-                  ) : viewMode === "tree" ? (
-                    <div className="changes-tree-view">
-                      {renderTreeNode(fileTree)}
-                    </div>
                   ) : (
-                    <div className="changes-list-view">
-                      {filteredIndexedDiffs.map(({ fileDiff, originalIndex }) => {
-                        const rawName = fileDiff.name || `file-${originalIndex}`;
-                        const status = getChangeStatus(fileDiff.type || "change");
-                        const stats = getFileStats(fileDiff);
-                        const parts = rawName.split("/");
-                        const baseName = parts[parts.length - 1];
-                        const dirPath = parts.slice(0, parts.length - 1).join("/");
-                        const isActive = activeFileIndex === originalIndex;
-
-                        return (
-                          <div
-                            key={`${rawName}-${originalIndex}`}
-                            className={`changes-list-file-row ${isActive ? "active" : ""}`}
-                            onClick={() => handleSelectFile(originalIndex, rawName)}
-                            role="button"
-                            tabIndex={0}
-                          >
-                            <span
-                              className={`changes-status-badge-sm ${status.className}`}
-                              title={status.label}
-                            >
-                              {status.text}
-                            </span>
-                            <div className="changes-list-file-info" title={rawName}>
-                              {dirPath && (
-                                <span className="changes-list-file-dir">
-                                  {dirPath}/
-                                </span>
-                              )}
-                              <span className="changes-list-file-base">
-                                {baseName}
-                              </span>
-                            </div>
-                            <span className="changes-list-file-stats">
-                              {stats.additions > 0 && (
-                                <span className="stat-add">+{stats.additions}</span>
-                              )}
-                              {stats.deletions > 0 && (
-                                <span className="stat-del">-{stats.deletions}</span>
-                              )}
-                            </span>
+                    <>
+                      {filteredDeliverables.length > 0 && (
+                        <div className="changes-group-section">
+                          <div className="changes-group-header">
+                            <Folder className="size-3.5 text-sky-400" />
+                            <span className="changes-group-title">Deliverables</span>
+                            <span className="changes-group-badge">{filteredDeliverables.length}</span>
                           </div>
-                        );
-                      })}
-                    </div>
+                          {viewMode === "tree" ? (
+                            <div className="changes-tree-view">
+                              {renderTreeNode(deliverablesTree)}
+                            </div>
+                          ) : (
+                            <div className="changes-list-view">
+                              {renderFileListRows(filteredDeliverables)}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {filteredDeliverables.length > 0 && filteredArtifacts.length > 0 && (
+                        <div className="changes-group-separator" />
+                      )}
+
+                      {filteredArtifacts.length > 0 && (
+                        <div className="changes-group-section">
+                          <div className="changes-group-header">
+                            <Layers className="size-3.5 text-purple-400" />
+                            <span className="changes-group-title">Artifacts</span>
+                            <span className="changes-group-badge">{filteredArtifacts.length}</span>
+                          </div>
+                          {viewMode === "tree" ? (
+                            <div className="changes-tree-view">
+                              {renderTreeNode(artifactsTree)}
+                            </div>
+                          ) : (
+                            <div className="changes-list-view">
+                              {renderFileListRows(filteredArtifacts)}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </aside>
@@ -700,108 +861,46 @@ export function ChangesViewer({
                     </button>
                   </div>
                 ) : (
-                  filteredIndexedDiffs.map(({ fileDiff, originalIndex }) => {
-                    const fileName = fileDiff.name || `file-${originalIndex}`;
-                    const isExpanded = expandedFiles[fileName] ?? true;
-                    const status = getChangeStatus(fileDiff.type || "change");
-                    const stats = getFileStats(fileDiff);
-                    const isCopied = copiedPath === fileName;
-
-                    return (
-                      <article
-                        key={`${fileName}-${originalIndex}`}
-                        id={`diff-file-${originalIndex}`}
-                        className={`changes-file-diff-item ${isExpanded ? "expanded" : "collapsed"}`}
-                      >
-                      {/* Clickable Collapsible Header */}
-                      <header
-                        className="changes-file-card-header"
-                        onClick={() => toggleFile(fileName)}
-                        role="button"
-                        tabIndex={0}
-                        aria-expanded={isExpanded}
-                      >
-                        <div className="changes-file-card-left">
-                          <button
-                            type="button"
-                            className="changes-file-chevron-btn"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleFile(fileName);
-                            }}
-                            aria-label={isExpanded ? "Collapse file" : "Expand file"}
-                          >
-                            {isExpanded ? (
-                              <ChevronDown className="size-4 text-neutral-400" />
-                            ) : (
-                              <ChevronRight className="size-4 text-neutral-400" />
-                            )}
-                          </button>
-                          <span
-                            className={`changes-status-badge ${status.className}`}
-                            title={status.label}
-                          >
-                            {status.text}
-                          </span>
-                          <span className="changes-file-name" title={fileName}>
-                            {fileDiff.prevName ? (
-                              <>
-                                <span className="changes-file-prevname">
-                                  {fileDiff.prevName}
-                                </span>
-                                <span className="changes-file-arrow">→</span>
-                                <span>{fileName}</span>
-                              </>
-                            ) : (
-                              fileName
-                            )}
+                  <>
+                    {filteredDeliverables.length > 0 && (
+                      <section className="changes-diff-group">
+                        <div className="changes-diff-group-header">
+                          <Folder className="size-4 text-sky-400" />
+                          <span>Deliverables</span>
+                          <span className="changes-diff-group-count">
+                            ({filteredDeliverables.length})
                           </span>
                         </div>
-
-                        <div className="changes-file-card-right">
-                          <div className="changes-file-stats">
-                            {stats.additions > 0 && (
-                              <span className="stat-add">+{stats.additions}</span>
-                            )}
-                            {stats.deletions > 0 && (
-                              <span className="stat-del">-{stats.deletions}</span>
-                            )}
-                          </div>
-                          <button
-                            type="button"
-                            className="changes-file-action-icon-btn"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void handleCopyPath(fileName);
-                            }}
-                            title="Copy file path"
-                            aria-label="Copy file path"
-                          >
-                            {isCopied ? (
-                              <Check className="size-3.5 text-emerald-400" />
-                            ) : (
-                              <Copy className="size-3.5 text-neutral-400" />
-                            )}
-                          </button>
+                        <div className="changes-diff-cards">
+                          {renderDiffCards(filteredDeliverables)}
                         </div>
-                      </header>
+                      </section>
+                    )}
 
-                      {/* Diff Body (Hidden when collapsed) */}
-                      {isExpanded && (
-                        <div className="changes-file-diff-body">
-                          <FileDiff
-                            fileDiff={fileDiff}
-                            options={{
-                              diffStyle,
-                              theme: "github-dark",
-                              disableFileHeader: true,
-                            }}
-                          />
+                    {filteredDeliverables.length > 0 && filteredArtifacts.length > 0 && (
+                      <div className="changes-diff-group-divider">
+                        <div className="changes-diff-divider-line" />
+                        <span className="changes-diff-divider-text">Artifacts</span>
+                        <div className="changes-diff-divider-line" />
+                      </div>
+                    )}
+
+                    {filteredArtifacts.length > 0 && (
+                      <section className="changes-diff-group">
+                        <div className="changes-diff-group-header">
+                          <Layers className="size-4 text-purple-400" />
+                          <span>Renderable Artifacts</span>
+                          <span className="changes-diff-group-count">
+                            ({filteredArtifacts.length})
+                          </span>
                         </div>
-                      )}
-                    </article>
-                  );
-                }))}
+                        <div className="changes-diff-cards">
+                          {renderDiffCards(filteredArtifacts)}
+                        </div>
+                      </section>
+                    )}
+                  </>
+                )}
               </div>
             </main>
           </div>

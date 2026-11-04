@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, CheckCircle2, Loader2, Sparkles } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronUp, Loader2, Sparkles } from "lucide-react";
 import { MessageProcessor, type ProcessableMessage } from "@a2ui/web_core/v0_9";
 import { basicCatalog } from "@a2ui/web_core/v0_9/basic_catalog";
 import { A2uiSurface } from "@a2ui/react/v0_9";
@@ -19,8 +19,17 @@ export function A2uiArtifactRenderer({
   const [surfaceModel, setSurfaceModel] = useState<any>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<boolean>(!artifact.is_closed);
   const submittingRef = useRef<boolean>(false);
   submittingRef.current = isSubmitting;
+
+  const wasClosedRef = useRef<boolean>(artifact.is_closed);
+  useEffect(() => {
+    if (!wasClosedRef.current && artifact.is_closed) {
+      setExpanded(false);
+    }
+    wasClosedRef.current = artifact.is_closed;
+  }, [artifact.is_closed]);
 
   const aliasCatalog = useMemo(() => {
     try {
@@ -82,7 +91,11 @@ export function A2uiArtifactRenderer({
   }, [processor, artifact.surface, artifact.components, artifact.data]);
 
   return (
-    <div className={`a2ui-artifact-card ${artifact.is_closed ? "a2ui-closed" : "a2ui-open"}`}>
+    <div
+      className={`a2ui-artifact-card ${artifact.is_closed ? "a2ui-closed" : "a2ui-open"} ${
+        artifact.is_closed && !expanded ? "a2ui-collapsed" : ""
+      }`}
+    >
       <div className="a2ui-card-header">
         <div className="a2ui-header-title">
           <Sparkles className="size-4 text-sky-400" />
@@ -97,23 +110,46 @@ export function A2uiArtifactRenderer({
             <span className="a2ui-status-badge active">Action Required</span>
           )}
         </div>
-      </div>
 
-      <div className="a2ui-card-content">
-        {renderError ? (
-          <div className="a2ui-error-notice">
-            <AlertCircle className="size-4 text-rose-400" />
-            <span>{renderError}</span>
-          </div>
-        ) : surfaceModel ? (
-          <A2uiSurface surface={surfaceModel} />
-        ) : (
-          <div className="a2ui-loading">
-            <Loader2 className="size-4 animate-spin text-sky-400" />
-            <span>Rendering interface...</span>
-          </div>
+        {artifact.is_closed && (
+          <button
+            type="button"
+            className="a2ui-collapse-toggle-btn"
+            onClick={() => setExpanded((prev) => !prev)}
+            aria-expanded={expanded}
+          >
+            {expanded ? (
+              <>
+                <span>Hide submitted answers</span>
+                <ChevronUp className="size-3.5" />
+              </>
+            ) : (
+              <>
+                <span>View submitted answers</span>
+                <ChevronDown className="size-3.5" />
+              </>
+            )}
+          </button>
         )}
       </div>
+
+      {(!artifact.is_closed || expanded) && (
+        <div className={`a2ui-card-content ${artifact.is_closed ? "a2ui-surface-disabled" : ""}`}>
+          {renderError ? (
+            <div className="a2ui-error-notice">
+              <AlertCircle className="size-4 text-rose-400" />
+              <span>{renderError}</span>
+            </div>
+          ) : surfaceModel ? (
+            <A2uiSurface surface={surfaceModel} />
+          ) : (
+            <div className="a2ui-loading">
+              <Loader2 className="size-4 animate-spin text-sky-400" />
+              <span>Rendering interface...</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {isSubmitting && (
         <div className="a2ui-submitting-overlay">

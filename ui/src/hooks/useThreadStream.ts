@@ -60,6 +60,80 @@ export function useThreadStream(
   const messagesRef = useRef<ChatMessage[]>([]);
   messagesRef.current = messages;
 
+  const statusRef = useRef<AgentStatus>("AWAITING_USER");
+  const pendingArtifactsRef = useRef<Map<string, ArtifactInfo>>(new Map());
+
+  const attachArtifactToMessages = useCallback((art: ArtifactInfo) => {
+    const artId = art.name;
+    setMessages((prev) => {
+      const artPart: MessagePart = {
+        type: "artifact",
+        id: `artifact-${artId}`,
+        artifact: art,
+      };
+      const msgWithArtIdx = findLastIndex(prev, (m) =>
+        Boolean(m.parts?.some((p) => p.type === "artifact" && p.id === `artifact-${artId}`))
+      );
+      if (msgWithArtIdx >= 0) {
+        const target = prev[msgWithArtIdx];
+        const updatedParts = (target.parts || []).map((p) =>
+          p.type === "artifact" && p.id === `artifact-${artId}` ? artPart : p
+        );
+        const copy = [...prev];
+        copy[msgWithArtIdx] = { ...target, parts: updatedParts };
+        return copy;
+      }
+
+      const askMsgIdx = findLastIndex(
+        prev,
+        (m) =>
+          m.role === "assistant" &&
+          Boolean(
+            m.toolCalls?.some(
+              (c) => c.name === "ask" || c.name === "read_artifact_submission"
+            )
+          )
+      );
+      const targetIdx = askMsgIdx >= 0 ? askMsgIdx : prev.length - 1;
+      if (targetIdx >= 0 && prev[targetIdx].role === "assistant") {
+        const target = prev[targetIdx];
+        const copy = [...prev];
+        copy[targetIdx] = {
+          ...target,
+          parts: [...(target.parts || []), artPart],
+        };
+        return copy;
+      } else {
+        return [
+          ...prev,
+          {
+            id: `asst-${Date.now()}`,
+            role: "assistant",
+            text: "",
+            parts: [artPart],
+            timestamp: new Date().toISOString(),
+          },
+        ];
+      }
+    });
+  }, []);
+
+  const flushPendingArtifacts = useCallback(() => {
+    if (pendingArtifactsRef.current.size === 0) return;
+    const pending = Array.from(pendingArtifactsRef.current.values());
+    pendingArtifactsRef.current.clear();
+    for (const art of pending) {
+      attachArtifactToMessages(art);
+    }
+  }, [attachArtifactToMessages]);
+
+  useEffect(() => {
+    statusRef.current = status;
+    if (status === "AWAITING_USER") {
+      flushPendingArtifacts();
+    }
+  }, [status, flushPendingArtifacts]);
+
   const refreshArtifacts = useCallback(async () => {
     if (!agentId || !sessionId) return [];
     try {
@@ -148,57 +222,13 @@ export function useThreadStream(
                   return [...prev, art];
                 });
 
-                setMessages((prev) => {
-                  const artPart: MessagePart = {
-                    type: "artifact",
-                    id: `artifact-${artId}`,
-                    artifact: art,
-                  };
-                  const msgWithArtIdx = findLastIndex(prev, (m) =>
-                    Boolean(m.parts?.some((p) => p.type === "artifact" && p.id === `artifact-${artId}`))
-                  );
-                  if (msgWithArtIdx >= 0) {
-                    const target = prev[msgWithArtIdx];
-                    const updatedParts = (target.parts || []).map((p) =>
-                      p.type === "artifact" && p.id === `artifact-${artId}` ? artPart : p
-                    );
-                    const copy = [...prev];
-                    copy[msgWithArtIdx] = { ...target, parts: updatedParts };
-                    return copy;
-                  }
-
-                  const askMsgIdx = findLastIndex(
-                    prev,
-                    (m) =>
-                      m.role === "assistant" &&
-                      Boolean(
-                        m.toolCalls?.some(
-                          (c) => c.name === "ask" || c.name === "read_artifact_submission"
-                        )
-                      )
-                  );
-                  const targetIdx = askMsgIdx >= 0 ? askMsgIdx : prev.length - 1;
-                  if (targetIdx >= 0 && prev[targetIdx].role === "assistant") {
-                    const target = prev[targetIdx];
-                    const copy = [...prev];
-                    copy[targetIdx] = {
-                      ...target,
-                      parts: [...(target.parts || []), artPart],
-                    };
-                    return copy;
-                  } else {
-                    return [
-                      ...prev,
-                      {
-                        id: `asst-${Date.now()}`,
-                        role: "assistant",
-                        text: "",
-                        parts: [artPart],
-                        timestamp: new Date().toISOString(),
-                      },
-                    ];
-                  }
-                });
+                const isRunning =
+                  statusRef.current === "AWAITING_LLM" || statusRef.current === "EXECUTING_TOOL";
+                if (isRunning) {
+                  pendingArtifactsRef.current.set(artId, art);
+                } else {
+                  attachArtifactToMessages(art);
+                }
               })
               .catch(() => {});
           }
@@ -227,11 +257,16 @@ export function useThreadStream(
               .catch(() => {});
           }
         } else if (type === "RUN_STARTED") {
+          statusRef.current = "AWAITING_LLM";
           setStatus("AWAITING_LLM");
         } else if (type === "RUN_FINISHED") {
+          statusRef.current = "AWAITING_USER";
           setStatus("AWAITING_USER");
+          flushPendingArtifacts();
         } else if (type === "RUN_ERROR") {
+          statusRef.current = "ERROR";
           setStatus("ERROR");
+          flushPendingArtifacts();
           const errMsg = event.message || "Execution encountered an error.";
           setStreamError(errMsg);
           setStreamErrorDetails({

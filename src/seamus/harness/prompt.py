@@ -29,6 +29,14 @@ class DynamicContext(BaseModel):
     agent_id: str | None = None
 
 
+class UserInquiry(BaseModel):
+    """Guidelines and rules for user inquiry tools (questionnaires and interactive artifacts)."""
+
+    guidelines: str
+    available_tools: list[str] = Field(default_factory=list)
+    interaction_rules: list[str] = Field(default_factory=list)
+
+
 class SystemPromptDocument(BaseModel):
     """Complete structured system prompt for Seamus agents."""
 
@@ -36,6 +44,7 @@ class SystemPromptDocument(BaseModel):
     operating_environment: OperatingEnvironment
     engineering_discipline: list[str] = Field(default_factory=list)
     tool_usage: list[str] = Field(default_factory=list)
+    user_inquiry: UserInquiry | None = None
     communication_style: list[str] = Field(default_factory=list)
     dynamic_context: DynamicContext | None = None
     custom_instructions: str | None = None
@@ -141,13 +150,44 @@ def build_tool_usage() -> list[str]:
             "Tool call parallelism: Issue independent tool calls in parallel when possible; "
             "execute dependent tool calls sequentially."
         ),
-        (
-            "Interactive artifacts and questionnaires: Use the 'ask' tool to present structured, "
-            "interactive questionnaires when gathering multiple choices or preferences. "
-            "Multiple 'ask' calls in the same turn compose an A2UI questionnaire artifact. "
-            "Use 'read_artifact_submission' to inspect user responses."
-        ),
     ]
+
+
+def build_user_inquiry() -> UserInquiry:
+    """Return canonical guidelines for user inquiry and interactive questionnaire tools."""
+    return UserInquiry(
+        guidelines=(
+            "When gathering requirements, design decisions, or clarifying choices from the user, "
+            "use dedicated inquiry tools rather than free-form conversational text questions."
+        ),
+        available_tools=[
+            (
+                "ask: Presents a structured, interactive closed-choice questionnaire directly in "
+                "the user interface. Supports single-choice, multiple-choice, and optional "
+                "write-in fields."
+            ),
+        ],
+        interaction_rules=[
+            (
+                "Inquiry tools replace conversational question text. Never repeat, duplicate, or "
+                "re-list questions or choices in your assistant message text when invoking an "
+                "inquiry tool."
+            ),
+            (
+                "When calling an inquiry tool, output at most a single concise introductory "
+                "sentence (e.g. 'Please select your preferred options below.') or emit no text "
+                "at all, then immediately halt to await user submission."
+            ),
+            (
+                "Multiple questions called in the same turn are automatically composed into a "
+                "single questionnaire artifact."
+            ),
+            (
+                "Consult the 'artifacts' skill at `/skills/bundled/artifacts/SKILL.md` for "
+                "complete guidance on A2UI artifacts, data models, and submission handling."
+            ),
+        ],
+    )
 
 
 def build_communication_style() -> list[str]:
@@ -196,6 +236,7 @@ def build_scaffold_prompt(workdir: str = DEFAULT_OPERATIONAL_DIR) -> str:
         operating_environment=build_operating_environment(workdir),
         engineering_discipline=build_engineering_discipline(),
         tool_usage=build_tool_usage(),
+        user_inquiry=build_user_inquiry(),
         communication_style=build_communication_style(),
     )
     dumped = doc.model_dump(mode="json", exclude_none=True)
@@ -229,6 +270,7 @@ def build_effective_system_prompt(
         operating_environment=build_operating_environment(workdir),
         engineering_discipline=build_engineering_discipline(),
         tool_usage=build_tool_usage(),
+        user_inquiry=build_user_inquiry(),
         communication_style=build_communication_style(),
         dynamic_context=dynamic_ctx,
         custom_instructions=custom_text,
