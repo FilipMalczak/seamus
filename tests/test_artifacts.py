@@ -322,3 +322,48 @@ def test_system_prompt_user_inquiry_section() -> None:
     assert "<user_inquiry>" in prompt
     assert "ask" in prompt
     assert "Never repeat, duplicate, or re-list questions" in prompt
+
+
+def test_read_artifact_submission_fails_in_same_turn_as_ask() -> None:
+    from seamus.config.models import AgentConfig, InferenceConfig
+    from seamus.domain.entities import Agent
+    from seamus.harness.runner import SessionAgentRunner
+    from tests.test_runner import FakeAgent
+
+    config = AgentConfig(
+        inference=InferenceConfig(api_key="mock-key"),
+        model_name="mock-model",
+    )
+    agent = Agent(config=config, name="test-agent")
+    session = agent.create_session(name="test-session")
+    runner = SessionAgentRunner(session=session, agent=FakeAgent())
+
+    # 1. Calling read_artifact_submission before any ask call returns pending, does not raise
+    res = json.loads(runner.handle_read_artifact_submission("arbitrary-id"))
+    assert res.get("status") == "pending"
+
+    # 2. Call ask in current turn
+    ask_res = runner.handle_ask("What color?", ["red", "blue"], id="color_q")
+    assert ask_res == "OK"
+    assert runner._current_questionnaire_id is not None
+    current_id = runner._current_questionnaire_id
+
+    # 3. Calling read_artifact_submission with the questionnaire UUID in same turn fails
+    with pytest.raises(ValueError, match="Cannot read artifact submission"):
+        runner.handle_read_artifact_submission(current_id)
+
+    # 4. Calling with the question id alias in same turn also fails
+    with pytest.raises(ValueError, match="Cannot read artifact submission"):
+        runner.handle_read_artifact_submission("color_q")
+
+    # 5. Calling with empty string in same turn also fails
+    with pytest.raises(ValueError, match="Cannot read artifact submission"):
+        runner.handle_read_artifact_submission("")
+
+    # 6. In a subsequent turn (after turn state reset), calling does not raise same-turn error
+    runner._pending_questions = []
+    runner._current_questionnaire_id = None
+    runner._turn_created_artifact_ids.clear()
+
+    res_subsequent = json.loads(runner.handle_read_artifact_submission(current_id))
+    assert res_subsequent.get("status") == "pending"

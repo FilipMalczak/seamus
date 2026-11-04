@@ -412,6 +412,7 @@ class SessionAgentRunner:
         self.checkpointer: GitCheckpointSaver | None = getattr(agent, "checkpointer", None)
         self._pending_questions: list[QuestionItem] = []
         self._current_questionnaire_id: str | None = None
+        self._turn_created_artifact_ids: set[str] = set()
 
         if agent is not None:
             self._agent = agent
@@ -491,70 +492,23 @@ class SessionAgentRunner:
         if self.session.config.todo_implementation == TodoImplementation.DEEPAGENTS:
             runner_middleware.append(SeamusTodoListMiddleware())
 
-        def _handle_ask(
-            question: str,
-            answers: list[str],
-            multiple: bool = False,
-            writein: bool = False,
-            id: str | None = None,
-        ) -> str:
-            item = QuestionItem(
-                question=question,
-                answers=answers,
-                multiple=multiple,
-                writein=writein,
-                id=id or "",
-            )
-            if self._current_questionnaire_id is None:
-                self._current_questionnaire_id = uuid4().hex
-            self._pending_questions.append(item)
-
-            target_dir = artifacts_dir / "questionnaires" / self._current_questionnaire_id
-            target_dir.mkdir(parents=True, exist_ok=True)
-
-            components_dict = QuestionnaireBuilder.build_update_components(self._pending_questions)
-            (target_dir / "updateComponents.json").write_text(
-                json.dumps(components_dict, indent=2), encoding="utf-8"
-            )
-
-            art_event = {
-                "type": "ARTIFACT_CREATED",
-                "artifact_id": self._current_questionnaire_id,
-                "kind": "questionnaires",
-            }
-            self.broadcaster.broadcast_sync(art_event)
-            thread = self.session.get_open_thread()
-            thread.append_event(art_event)
-            return "OK"
-
-        def _handle_read_sub(artifact_id: str) -> str:
-            resolver = ArtifactResolver(artifacts_dir)
-            data_path = resolver.resolve_file("questionnaires", artifact_id, "updateDataModel.json")
-            if not data_path or not data_path.is_file():
-                return json.dumps({"data": {}, "status": "pending"})
-            try:
-                loaded = json.loads(data_path.read_text(encoding="utf-8"))
-                data_val = loaded.get("updateDataModel", {}).get("value", {})
-                return json.dumps({"data": data_val})
-            except Exception as exc:
-                return json.dumps({"error": str(exc), "data": {}})
-
         ask_tool = StructuredTool.from_function(
             name="ask",
             description=(
                 "Ask the user a closed question with multiple choices and an optional write-in "
                 "field. Batch multiple questions in the same turn to generate a questionnaire."
             ),
-            func=_handle_ask,
+            func=self.handle_ask,
             args_schema=ResilientAskInput,
         )
 
         read_sub_tool = StructuredTool.from_function(
             name="read_artifact_submission",
             description=(
-                "Read the canonical user-submitted data model for a questionnaire or artifact."
+                "Read the canonical user-submitted data model for a questionnaire or artifact. "
+                "Cannot be called in the same turn that created the questionnaire."
             ),
-            func=_handle_read_sub,
+            func=self.handle_read_artifact_submission,
             args_schema=ReadArtifactSubmissionInput,
         )
 
@@ -707,6 +661,84 @@ class SessionAgentRunner:
             self._active_task = asyncio.create_task(
                 self._run_loop(target_thread, user_message=None)
             )
+
+    def handle_ask(
+        self,
+        question: str,
+        answers: list[str],
+        multiple: bool = False,
+        writein: bool = False,
+        id: str | None = None,
+    ) -> str:
+        """Handle execution of the 'ask' tool during an inference turn."""
+        item = QuestionItem(
+            question=question,
+            answers=answers,
+            multiple=multiple,
+            writein=writein,
+            id=id or "",
+        )
+        if self._current_questionnaire_id is None:
+            self._current_questionnaire_id = uuid4().hex
+        self._turn_created_artifact_ids.add(self._current_questionnaire_id)
+        self._pending_questions.append(item)
+
+        ws_mgr = get_workspace_manager()
+        artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
+        target_dir = artifacts_dir / "questionnaires" / self._current_questionnaire_id
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        components_dict = QuestionnaireBuilder.build_update_components(self._pending_questions)
+        (target_dir / "updateComponents.json").write_text(
+            json.dumps(components_dict, indent=2), encoding="utf-8"
+        )
+
+        art_event = {
+            "type": "ARTIFACT_CREATED",
+            "artifact_id": self._current_questionnaire_id,
+            "kind": "questionnaires",
+        }
+        self.broadcaster.broadcast_sync(art_event)
+        thread = self.session.get_open_thread()
+        if thread is not None:
+            thread.append_event(art_event)
+        return "OK"
+
+    def handle_read_artifact_submission(self, artifact_id: str) -> str:
+        """Read the canonical user submission for a questionnaire or artifact.
+
+        Note for future: If called for a non-blocking artifact (cadence=nonblocking),
+        that particular artifact instance becomes blocking.
+        """
+        # Fail if called in the same turn as ask that created the questionnaire
+        is_same_turn = (
+            artifact_id in self._turn_created_artifact_ids
+            or (
+                self._current_questionnaire_id is not None
+                and (artifact_id == self._current_questionnaire_id or not artifact_id)
+            )
+            or any(q.id == artifact_id for q in self._pending_questions if q.id)
+        )
+        if is_same_turn:
+            msg = (
+                f"Cannot read artifact submission for questionnaire '{artifact_id}' in the same "
+                f"turn it was created with 'ask'. The questionnaire must first be submitted by "
+                f"the user in a subsequent turn."
+            )
+            raise ValueError(msg)
+
+        ws_mgr = get_workspace_manager()
+        artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
+        resolver = ArtifactResolver(artifacts_dir)
+        data_path = resolver.resolve_file("questionnaires", artifact_id, "updateDataModel.json")
+        if not data_path or not data_path.is_file():
+            return json.dumps({"data": {}, "status": "pending"})
+        try:
+            loaded = json.loads(data_path.read_text(encoding="utf-8"))
+            data_val = loaded.get("updateDataModel", {}).get("value", {})
+            return json.dumps({"data": data_val})
+        except Exception as exc:
+            return json.dumps({"error": str(exc), "data": {}})
 
     def has_open_blocking_artifact(self) -> bool:
         """Check if the session currently has any open artifact with cadence=blocking."""
@@ -948,6 +980,9 @@ class SessionAgentRunner:
         thread_identifier = thread_name or thread_id_str
 
         run_id = uuid4().hex
+        self._pending_questions = []
+        self._current_questionnaire_id = None
+        self._turn_created_artifact_ids.clear()
         input_data = RunAgentInput(
             thread_id=thread.id.hex,
             run_id=run_id,
@@ -1014,6 +1049,7 @@ class SessionAgentRunner:
                     finally:
                         self._pending_questions = []
                         self._current_questionnaire_id = None
+                        self._turn_created_artifact_ids.clear()
                         if thread.status != AgentStatus.ERROR and self.session.is_active:
                             thread.status = AgentStatus.AWAITING_USER
                         thread.touch()

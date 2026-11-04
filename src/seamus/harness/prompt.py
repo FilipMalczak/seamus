@@ -186,6 +186,11 @@ def build_user_inquiry() -> UserInquiry:
                 "Consult the 'artifacts' skill at `/skills/bundled/artifacts/SKILL.md` for "
                 "complete guidance on A2UI artifacts, data models, and submission handling."
             ),
+            (
+                "Never call 'read_artifact_submission' in the same turn you call 'ask'. The "
+                "questionnaire must first be answered and submitted by the user before its "
+                "submission data can be read."
+            ),
         ],
     )
 

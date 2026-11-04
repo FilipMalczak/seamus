@@ -17,9 +17,9 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Provenance**: [0029-a2ui-questionnaire-artifacts.md](../decisions/0029-a2ui-questionnaire-artifacts.md).
 
 ### Tabbed Artifact Exposition and Non-Blocking Cadence Lifecycles
-- **Description**: Expand artifact exposition support from `exposition=embedded` to include `exposition=tabbed` (rendering artifacts in dedicated inspector-like tabs rather than inline in chat bubbles). Formalize the lifecycle and closing rules for non-blocking artifacts (`cadence=nonblocking`) upon submission or timeout.
+- **Description**: Expand artifact exposition support from `exposition=embedded` to include `exposition=tabbed` (rendering artifacts in dedicated inspector-like tabs rather than inline in chat bubbles). Formalize the lifecycle and closing rules for non-blocking artifacts (`cadence=nonblocking`) upon submission or timeout. In particular, when `read_artifact_submission` is called for a non-blocking artifact, that particular artifact instance becomes blocking.
 - **Why Deferred**: Focused initially on embedded questionnaires with blocking cadence to validate the core A2UI v0.9 pipeline and synthetic tool dispatch.
-- **Revisit Trigger**: When introducing planning or multi-view artifacts that require dedicated panel real estate.
+- **Revisit Trigger**: When introducing planning or multi-view artifacts that require dedicated panel real estate or optional non-blocking surveys.
 - **Provenance**: [0029-a2ui-questionnaire-artifacts.md](../decisions/0029-a2ui-questionnaire-artifacts.md).
 
 ### Read-Write Custom Artifacts (`/artifacts/custom`)

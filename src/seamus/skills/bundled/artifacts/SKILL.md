@@ -100,3 +100,7 @@ When the user fills out and submits the questionnaire:
 
 You can also invoke `read_artifact_submission(artifact_id="<UUID>")` directly at any time if you need to re-read canonical submission data from disk.
 
+### Calling Constraints for `read_artifact_submission`
+- **Same-turn prohibition**: You MUST NOT call `read_artifact_submission` in the same turn that you invoke `ask` to create the questionnaire. Calling it in the same turn will fail because the user has not yet interacted with or submitted the questionnaire.
+- **Future non-blocking lifecycle note**: When `read_artifact_submission` is called for a non-blocking artifact (`cadence=nonblocking`), that particular artifact instance becomes blocking.
+
