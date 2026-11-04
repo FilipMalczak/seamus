@@ -102,9 +102,25 @@ export type ToolCallRecord = {
   result?: unknown;
 };
 
+export interface ArtifactManifest {
+  exposition: "embedded" | "tabbed";
+  cadence: "blocking" | "nonblocking";
+}
+
+export interface ArtifactInfo {
+  kind: string;
+  name: string;
+  manifest: ArtifactManifest;
+  is_closed: boolean;
+  surface: Record<string, unknown>;
+  components?: Record<string, unknown> | null;
+  data?: Record<string, unknown> | null;
+}
+
 export type MessagePart =
   | { type: "reasoning"; id: string; content: string; isStreaming?: boolean }
   | { type: "tool_call"; id: string; toolCall: ToolCallRecord }
+  | { type: "artifact"; id: string; artifact: ArtifactInfo }
   | { type: "text"; id: string; content: string };
 
 export type ChatMessage = {

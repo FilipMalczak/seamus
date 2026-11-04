@@ -191,6 +191,11 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-032](./requirements.md#req-032-ui-url-state-synchronization-live-refresh-and-verbose-error-diagnostics), [0028-ui-ux-ergonomics-and-url-state.md](../decisions/0028-ui-ux-ergonomics-and-url-state.md).
 - **Enforcement**: `SessionAgentRunner._run_loop()`, `useAgentsTree.ts`, `App.tsx`, `ChangesViewer.tsx`, `useThreadStream.ts`, `ChatArea.tsx`, and unit tests in `tests/test_runner.py`.
 
+### INV-040: Hierarchical Artifact Resolution, Read-Only Sandboxing, and Blocking Conversation Cadence
+- **Statement**: Session artifacts are stored in `<session_workspace>/artifacts/`, mounted into OpenSandbox containers at `/artifacts` strictly read-only (`readOnly=True`), and committed to Git on session branches. Artifact files must resolve through the 3-tier hierarchy (`/artifacts/<class>/<name>/<file>` -> `/artifacts/<class>/<file>` -> `/artifacts/<file>`), except `deleteSurface.json`, which must be checked strictly at the instance directory. An artifact is closed if and only if `deleteSurface.json` exists in its instance directory. While an open artifact with `cadence=blocking` exists in a session, standard user text dispatch (`POST /agent/.../session/.../input`) must be rejected with HTTP 409 Conflict and composer input disabled in the UI. Submitting an artifact writes canonical `updateDataModel.json` and `deleteSurface.json`, synthesizes a tool call `read_artifact_submission(<uuid>)`, and resumes the agent.
+- **Justification**: [REQ-033](./requirements.md#req-033-a2ui-questionnaire-artifacts-hierarchical-storage-and-bundled-platform-skills), [0029-a2ui-questionnaire-artifacts.md](../decisions/0029-a2ui-questionnaire-artifacts.md).
+- **Enforcement**: `seamus.harness.artifacts.ArtifactResolver`, `GitWorkspaceManager`, `SeamusOpenSandboxBackend`, `SessionAgentRunner.dispatch_user_input()`, `SessionAgentRunner.dispatch_artifact_submission()`, `ChatArea.tsx`, and unit tests in `tests/test_artifacts.py`.
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [requirements.md](./requirements.md)
@@ -220,3 +225,4 @@ Properties and rules that must always hold across the repository.
 - [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md)
 - [0027-skills-config-project-rules-and-inspector.md](../decisions/0027-skills-config-project-rules-and-inspector.md)
 - [0028-ui-ux-ergonomics-and-url-state.md](../decisions/0028-ui-ux-ergonomics-and-url-state.md)
+- [0029-a2ui-questionnaire-artifacts.md](../decisions/0029-a2ui-questionnaire-artifacts.md)

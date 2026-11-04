@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_OPERATIONAL_DIR = "/workspace"
 DEFAULT_API_KEY_FILE = Path(".seamus/opensandbox/api_key")
+BUNDLED_SKILLS_DIR = Path(__file__).resolve().parent.parent / "skills" / "bundled"
 
 
 class SandboxSettings(BaseModel):
@@ -98,6 +99,7 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
         agent_id: UUID,
         session_id: UUID,
         data_dir: Path,
+        artifacts_dir: Path | None = None,
         settings: SandboxSettings | None = None,
         skill_directories: list[str] | None = None,
         sandbox: SandboxSync | None = None,
@@ -105,6 +107,7 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
         self.agent_id = agent_id
         self.session_id = session_id
         self.data_dir = data_dir
+        self.artifacts_dir = artifacts_dir or (data_dir.parent / "artifacts")
         self.settings = settings or get_sandbox_settings()
         self.skill_directories = skill_directories if skill_directories is not None else []
         self._active_sandbox: SandboxSync | None = sandbox
@@ -140,6 +143,39 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
             readOnly=False,
             host=Host(path=str(self.data_dir.resolve())),
         )
+
+    def build_artifact_volume(self) -> Volume:
+        """Build the read-only OpenSandbox Volume mounting the session's artifacts/ directory."""
+        self.artifacts_dir.mkdir(parents=True, exist_ok=True)
+        if self.settings.workspace_volume:
+            return Volume(
+                name="artifacts",
+                mountPath="/artifacts",
+                readOnly=True,
+                pvc=PVC(
+                    claimName=self.settings.workspace_volume,
+                    createIfNotExists=True,
+                    deleteOnSandboxTermination=False,
+                ),
+                subPath=f"{self.agent_id}/{self.session_id}/artifacts",
+            )
+        return Volume(
+            name="artifacts",
+            mountPath="/artifacts",
+            readOnly=True,
+            host=Host(path=str(self.artifacts_dir.resolve())),
+        )
+
+    def build_bundled_skill_volume(self) -> Volume | None:
+        """Build read-only OpenSandbox Volume for built-in platform skills if present."""
+        if BUNDLED_SKILLS_DIR.is_dir():
+            return Volume(
+                name="skills-bundled",
+                mountPath="/skills/bundled",
+                readOnly=True,
+                host=Host(path=str(BUNDLED_SKILLS_DIR.resolve())),
+            )
+        return None
 
     def build_skill_volumes(self) -> list[Volume]:
         """Build read-only OpenSandbox Volumes for system-wide skill directories.
@@ -199,6 +235,11 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
         # Append session workspace skills (dotted first, non-dotted last so non-dotted wins)
         sources.append((f"{self.settings.workdir}/.skills", "Session (.skills)"))
         sources.append((f"{self.settings.workdir}/skills", "Session"))
+
+        # Append bundled platform skills (top-most priority, wins against all collisions)
+        if BUNDLED_SKILLS_DIR.is_dir():
+            sources.append(("/skills/bundled", "Bundled"))
+
         return sources
 
     def build_connection_config(self) -> ConnectionConfigSync:
@@ -216,14 +257,21 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
         if self._active_sandbox is None:
             connection_config = self.build_connection_config()
             workspace_volume = self.build_workspace_volume()
+            artifact_volume = self.build_artifact_volume()
+            bundled_volume = self.build_bundled_skill_volume()
             skill_volumes = self.build_skill_volumes()
-            all_volumes = [workspace_volume, *skill_volumes]
+            all_volumes = [
+                workspace_volume,
+                artifact_volume,
+                *([bundled_volume] if bundled_volume is not None else []),
+                *skill_volumes,
+            ]
             logger.info(
                 "Creating OpenSandbox (image=%s, domain=%s, mount=%s, skills=%d) for session %s",
                 self.settings.image,
                 self.settings.domain,
                 self.settings.workdir,
-                len(skill_volumes),
+                len(skill_volumes) + (1 if bundled_volume else 0),
                 self.session_id,
             )
             self._active_sandbox = SandboxSync.create(

@@ -5,7 +5,7 @@ import json
 import logging
 import traceback
 from collections.abc import AsyncGenerator, Mapping, Sequence
-from typing import Any, Literal, cast
+from typing import Any, Literal, Self, cast
 from uuid import uuid4
 
 import logfire
@@ -27,7 +27,7 @@ from langchain.agents.middleware.todo import (
 )
 from langchain.agents.middleware.types import ContextT, ResponseT
 from langchain.tools import ToolRuntime
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.outputs import ChatGenerationChunk, ChatResult
 from langchain_core.tools import StructuredTool
 from langchain_openai import ChatOpenAI
@@ -37,6 +37,12 @@ from pydantic import BaseModel, Field, SecretStr, model_validator
 from seamus.config.models import SkillsImplementation, TodoImplementation
 from seamus.config.settings import get_system_settings_store
 from seamus.domain.entities import Agent, AgentStatus, Session, Thread
+from seamus.harness.artifacts import (
+    STANDARD_SURFACE_ID,
+    ArtifactResolver,
+    QuestionItem,
+    QuestionnaireBuilder,
+)
 from seamus.harness.prompt import (
     DynamicSystemPromptMiddleware,
     build_effective_system_prompt,
@@ -291,6 +297,66 @@ Valid statuses: "pending", "in_progress", "completed".
 """
 
 
+class ResilientAskInput(BaseModel):
+    """Input schema for the ask tool."""
+
+    question: str = Field(description="The closed question to ask the user.")
+    answers: list[str] = Field(
+        ...,
+        description=(
+            "The list of possible answers for the user to choose from. Required. "
+            "Must contain at least 2 choices if writein=False, or 1 choice if writein=True."
+        ),
+    )
+    writein: bool = Field(
+        default=False,
+        description="Whether to include an 'Other: [text field]' option for user write-in.",
+    )
+    id: str | None = Field(
+        default=None,
+        description="Optional unique identifier for the question (e.g. 'backgroundColor').",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_answers(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        d = dict(data)
+        if "answers" not in d:
+            for alias in ("options", "choices", "asnwers", "possible_answers"):
+                if alias in d:
+                    d["answers"] = d[alias]
+                    break
+        if not isinstance(d.get("answers"), list):
+            if d.get("answers") is not None:
+                d["answers"] = [str(d["answers"])]
+        return d
+
+    @model_validator(mode="after")
+    def _validate_answers_cardinality(self) -> Self:
+        min_answers = 1 if self.writein else 2
+        if len(self.answers) < min_answers:
+            if self.writein:
+                msg = (
+                    f"Question '{self.question}' with writein=True requires at least 1 choice in "
+                    f"'answers' (got {len(self.answers)})."
+                )
+            else:
+                msg = (
+                    f"Question '{self.question}' with writein=False requires at least 2 choices in "
+                    f"'answers' (got {len(self.answers)})."
+                )
+            raise ValueError(msg)
+        return self
+
+
+class ReadArtifactSubmissionInput(BaseModel):
+    """Input schema for read_artifact_submission tool."""
+
+    artifact_id: str = Field(description="UUID of the questionnaire or artifact to read.")
+
+
 class SeamusTodoListMiddleware(TodoListMiddleware):
     """TodoListMiddleware providing resilient argument normalization and JSON schema guidance."""
 
@@ -329,6 +395,8 @@ class SessionAgentRunner:
         self._agent_entity = agent_entity
         self._sandbox_backend: SeamusOpenSandboxBackend | None = None
         self.checkpointer: GitCheckpointSaver | None = getattr(agent, "checkpointer", None)
+        self._pending_questions: list[QuestionItem] = []
+        self._current_questionnaire_id: str | None = None
 
         if agent is not None:
             self._agent = agent
@@ -368,12 +436,15 @@ class SessionAgentRunner:
 
         data_dir = ws_mgr.get_session_data_dir(self.session.agent_id, self.session.id)
         data_dir.mkdir(parents=True, exist_ok=True)
+        artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
         sandbox_settings = get_sandbox_settings()
         system_settings = get_system_settings_store().get_settings()
         sandbox_backend = SeamusOpenSandboxBackend(
             agent_id=self.session.agent_id,
             session_id=self.session.id,
             data_dir=data_dir,
+            artifacts_dir=artifacts_dir,
             settings=sandbox_settings,
             skill_directories=system_settings.skill_directories,
         )
@@ -405,8 +476,71 @@ class SessionAgentRunner:
         if self.session.config.todo_implementation == TodoImplementation.DEEPAGENTS:
             runner_middleware.append(SeamusTodoListMiddleware())
 
+        def _handle_ask(
+            question: str,
+            answers: list[str],
+            writein: bool = False,
+            id: str | None = None,
+        ) -> str:
+            item = QuestionItem(question=question, answers=answers, writein=writein, id=id or "")
+            if self._current_questionnaire_id is None:
+                self._current_questionnaire_id = uuid4().hex
+            self._pending_questions.append(item)
+
+            target_dir = artifacts_dir / "questionnaires" / self._current_questionnaire_id
+            target_dir.mkdir(parents=True, exist_ok=True)
+
+            components_dict = QuestionnaireBuilder.build_update_components(self._pending_questions)
+            (target_dir / "updateComponents.json").write_text(
+                json.dumps(components_dict, indent=2), encoding="utf-8"
+            )
+
+            art_event = {
+                "type": "ARTIFACT_CREATED",
+                "artifact_id": self._current_questionnaire_id,
+                "kind": "questionnaires",
+            }
+            self.broadcaster.broadcast_sync(art_event)
+            thread = self.session.get_open_thread()
+            thread.append_event(art_event)
+            return "OK"
+
+        def _handle_read_sub(artifact_id: str) -> str:
+            resolver = ArtifactResolver(artifacts_dir)
+            data_path = resolver.resolve_file("questionnaires", artifact_id, "updateDataModel.json")
+            if not data_path or not data_path.is_file():
+                return json.dumps({"data": {}, "status": "pending"})
+            try:
+                loaded = json.loads(data_path.read_text(encoding="utf-8"))
+                data_val = loaded.get("updateDataModel", {}).get("value", {})
+                return json.dumps({"data": data_val})
+            except Exception as exc:
+                return json.dumps({"error": str(exc), "data": {}})
+
+        ask_tool = StructuredTool.from_function(
+            name="ask",
+            description=(
+                "Ask the user a closed question with multiple choices and an optional write-in "
+                "field. Batch multiple questions in the same turn to generate a questionnaire."
+            ),
+            func=_handle_ask,
+            args_schema=ResilientAskInput,
+        )
+
+        read_sub_tool = StructuredTool.from_function(
+            name="read_artifact_submission",
+            description=(
+                "Read the canonical user-submitted data model for a questionnaire or artifact."
+            ),
+            func=_handle_read_sub,
+            args_schema=ReadArtifactSubmissionInput,
+        )
+
+        artifact_tools = [ask_tool, read_sub_tool]
+
         graph = create_deep_agent(
             model=llm,
+            tools=artifact_tools,
             backend=sandbox_backend,
             system_prompt=effective_prompt,
             middleware=runner_middleware,
@@ -552,6 +686,156 @@ class SessionAgentRunner:
                 self._run_loop(target_thread, user_message=None)
             )
 
+    def has_open_blocking_artifact(self) -> bool:
+        """Check if the session currently has any open artifact with cadence=blocking."""
+        try:
+            ws_mgr = get_workspace_manager()
+            artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
+            resolver = ArtifactResolver(artifacts_dir)
+            return resolver.has_open_blocking_artifact()
+        except Exception:
+            return False
+
+    async def dispatch_artifact_submission(
+        self,
+        kind: str,
+        name: str,
+        data: dict[str, Any],
+    ) -> str:
+        """Process artifact submission, persist data, and resume agent with synthetic tool call."""
+        async with self._lock:
+            if not self.session.is_active:
+                msg = (
+                    f"Session '{self.session.id}' is not active "
+                    f"(current status: {self.session.status.value})."
+                )
+                raise SessionBusyError(msg)
+
+            ws_mgr = get_workspace_manager()
+            artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
+            target_dir = artifacts_dir / kind / name
+            if not target_dir.is_dir():
+                msg = f"Artifact '{kind}/{name}' does not exist."
+                raise ValueError(msg)
+
+            resolver = ArtifactResolver(artifacts_dir)
+            if resolver.is_closed(kind, name):
+                msg = f"Artifact '{kind}/{name}' is already closed."
+                raise ValueError(msg)
+
+            # 1. Write updateDataModel.json
+            data_model = {
+                "version": "v0.9",
+                "updateDataModel": {
+                    "surfaceId": STANDARD_SURFACE_ID,
+                    "path": "/answers",
+                    "value": data,
+                },
+            }
+            (target_dir / "updateDataModel.json").write_text(
+                json.dumps(data_model, indent=2), encoding="utf-8"
+            )
+
+            # 2. Write deleteSurface.json to mark it closed
+            delete_surface = {
+                "version": "v0.9",
+                "deleteSurface": {
+                    "surfaceId": STANDARD_SURFACE_ID,
+                },
+            }
+            (target_dir / "deleteSurface.json").write_text(
+                json.dumps(delete_surface, indent=2), encoding="utf-8"
+            )
+
+            # 3. Create synthetic tool call
+            thread = self.session.get_open_thread()
+            call_id = f"call_{uuid4().hex[:12]}"
+            submission_payload = {"data": data}
+
+            art_sub = {
+                "type": "ARTIFACT_SUBMITTED",
+                "kind": kind,
+                "name": name,
+            }
+            thread.append_event(art_sub)
+            await self.broadcaster.broadcast(art_sub)
+
+            tc_start = {
+                "type": "TOOL_CALL_START",
+                "tool_call_id": call_id,
+                "tool_call_name": "read_artifact_submission",
+            }
+            tc_args = {
+                "type": "TOOL_CALL_ARGS",
+                "tool_call_id": call_id,
+                "args": {"artifact_id": name},
+            }
+            tc_end = {
+                "type": "TOOL_CALL_END",
+                "tool_call_id": call_id,
+            }
+            tc_result = {
+                "type": "TOOL_CALL_RESULT",
+                "tool_call_id": call_id,
+                "content": json.dumps(submission_payload),
+                "role": "tool",
+            }
+
+            thread.append_event(tc_start)
+            thread.append_event(tc_args)
+            thread.append_event(tc_end)
+            thread.append_event(tc_result)
+
+            await self.broadcaster.broadcast(tc_start)
+            await self.broadcaster.broadcast(tc_args)
+            await self.broadcaster.broadcast(tc_end)
+            await self.broadcaster.broadcast(tc_result)
+
+            # 4. Inject into checkpointer state for thread
+            ai_msg = AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "read_artifact_submission",
+                        "args": {"artifact_id": name},
+                        "id": call_id,
+                    }
+                ],
+            )
+            tool_msg = ToolMessage(
+                content=json.dumps(submission_payload),
+                tool_call_id=call_id,
+                name="read_artifact_submission",
+            )
+
+            try:
+                self._agent.graph.update_state(
+                    {"configurable": {"thread_id": thread.id.hex}},
+                    {"messages": [ai_msg, tool_msg]},
+                    as_node="tools",
+                )
+            except Exception:
+                logger.exception("Failed to update graph state with synthetic tool messages")
+
+            thread.status = AgentStatus.AWAITING_LLM
+            thread.touch()
+            self.session.touch()
+
+            try:
+                ws_mgr.save_thread_events(
+                    self.session.agent_id, self.session.id, thread.id, thread.events
+                )
+                ws_mgr.commit_checkpoint_changes(self.session.agent_id, self.session.id, thread.id)
+            except Exception:
+                logger.exception("Failed to save thread events or commit state on submission")
+
+            # 5. Start background execution turn to resume agent
+            self._active_task = asyncio.create_task(
+                self._run_loop(thread=thread, user_message=None)
+            )
+
+            return call_id
+
     async def dispatch_user_input(
         self,
         text: str,
@@ -563,6 +847,13 @@ class SessionAgentRunner:
                 msg = (
                     f"Session '{self.session.id}' is not active "
                     f"(current status: {self.session.status.value})."
+                )
+                raise SessionBusyError(msg)
+
+            if self.has_open_blocking_artifact():
+                msg = (
+                    f"Session '{self.session.id}' has an open blocking questionnaire. "
+                    "User must submit the questionnaire before sending messages."
                 )
                 raise SessionBusyError(msg)
 
@@ -699,6 +990,8 @@ class SessionAgentRunner:
                         except Exception:
                             logger.exception("Failed to close Sync PR on session failure")
                     finally:
+                        self._pending_questions = []
+                        self._current_questionnaire_id = None
                         if thread.status != AgentStatus.ERROR and self.session.is_active:
                             thread.status = AgentStatus.AWAITING_USER
                         thread.touch()

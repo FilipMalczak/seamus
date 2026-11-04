@@ -74,6 +74,9 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 10. **Test Infrastructure & Isolation (`tests`)**:
    - Location: `tests/`
    - Responsibility: Test suites verifying unit, component, and persistence logic. `tests/conftest.py` orchestrates an ephemeral, SQLite-backed Gitea container fixture with dynamic port allocation and temporary workspace root, isolating the test suite from live development environments and enabling collision-free parallel execution.
+11. **Artifact Subsystem & Bundled Skills (`seamus.harness.artifacts`, `seamus.skills.bundled`)**:
+   - Location: `src/seamus/harness/artifacts.py`, `src/seamus/domain/artifacts.py`, `src/seamus/skills/bundled/`
+   - Responsibility: Persistence, hierarchical resolution (`instance` -> `class` -> `root`), and validation of A2UI v0.9 renderable artifacts under `<session_workspace>/artifacts/`. Houses specialized builders (e.g. `QuestionnaireBuilder`) and agent tools (`ask`, `read_artifact_submission`). Manages `/skills/bundled` mounted read-only into OpenSandbox containers at highest priority.
 
 ## Cross-References
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
@@ -101,6 +104,7 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 - [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md)
 - [0027-skills-config-project-rules-and-inspector.md](../decisions/0027-skills-config-project-rules-and-inspector.md)
 - [0028-ui-ux-ergonomics-and-url-state.md](../decisions/0028-ui-ux-ergonomics-and-url-state.md)
+- [0029-a2ui-questionnaire-artifacts.md](../decisions/0029-a2ui-questionnaire-artifacts.md)
 - [threads_modes_personas.md](./threads_modes_personas.md)
 - [abstractions.md](./abstractions.md)
 - [backlog.md](./backlog.md)

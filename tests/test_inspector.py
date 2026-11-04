@@ -406,13 +406,15 @@ def test_inspector_skills_discovery_and_project_rules(
     assert "write_todos" in report.prompts.composite
     assert "write_todos" in report.prompts.scaffold
 
-    assert len(report.skills) == 3
-    # First skill-a is from /workspace/skills and active (mounted skill -> host_path is None)
-    assert report.skills[0].name == "skill-a"
-    assert report.skills[0].active is True
-    assert report.skills[0].sandbox_path == "/workspace/skills/skill-a/SKILL.md"
-    assert report.skills[0].host_path is None
-    assert report.skills[0].content == "Workspace A body"
+    # Report includes bundled platform skill (artifacts) plus the test skills
+    assert len(report.skills) == 4
+    assert any(s.name == "artifacts" and s.origin_layer == "Bundled" for s in report.skills)
+
+    # Workspace skill-a is active (mounted skill -> host_path is None)
+    active_ws_a = next(s for s in report.skills if s.name == "skill-a" and s.active)
+    assert active_ws_a.sandbox_path == "/workspace/skills/skill-a/SKILL.md"
+    assert active_ws_a.host_path is None
+    assert active_ws_a.content == "Workspace A body"
 
     # System skill-a is shadowed and includes host_path
     shadowed_a = [s for s in report.skills if s.name == "skill-a" and not s.active]

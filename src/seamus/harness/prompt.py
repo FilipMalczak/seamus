@@ -141,6 +141,12 @@ def build_tool_usage() -> list[str]:
             "Tool call parallelism: Issue independent tool calls in parallel when possible; "
             "execute dependent tool calls sequentially."
         ),
+        (
+            "Interactive artifacts and questionnaires: Use the 'ask' tool to present structured, "
+            "interactive questionnaires when gathering multiple choices or preferences. "
+            "Multiple 'ask' calls in the same turn compose an A2UI questionnaire artifact. "
+            "Use 'read_artifact_submission' to inspect user responses."
+        ),
     ]
 
 

@@ -1,6 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { getThreadStatus, postUserInput, subscribeToThreadStream } from "../api/client";
-import type { AgentStatus, ChatMessage, MessagePart, ToolCallRecord } from "../api/types";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  getArtifact,
+  getThreadStatus,
+  listArtifacts,
+  postUserInput,
+  submitArtifact,
+  subscribeToThreadStream,
+} from "../api/client";
+import type {
+  AgentStatus,
+  ArtifactInfo,
+  ChatMessage,
+  MessagePart,
+  ToolCallRecord,
+} from "../api/types";
 
 function findLastIndex<T>(arr: T[], predicate: (val: T) => boolean): number {
   for (let i = arr.length - 1; i >= 0; i--) {
@@ -41,10 +54,30 @@ export function useThreadStream(
     null
   );
   const [sending, setSending] = useState<boolean>(false);
+  const [artifacts, setArtifacts] = useState<ArtifactInfo[]>([]);
 
   // Keep ref of messages for mutable updates during streaming chunks
   const messagesRef = useRef<ChatMessage[]>([]);
   messagesRef.current = messages;
+
+  const refreshArtifacts = useCallback(async () => {
+    if (!agentId || !sessionId) return [];
+    try {
+      const list = await listArtifacts(agentId, sessionId);
+      setArtifacts(list);
+      return list;
+    } catch {
+      return [];
+    }
+  }, [agentId, sessionId]);
+
+  useEffect(() => {
+    if (!agentId || !sessionId) {
+      setArtifacts([]);
+      return;
+    }
+    refreshArtifacts();
+  }, [agentId, sessionId, threadId, refreshArtifacts]);
 
   // Poll status occasionally or fetch initial status
   useEffect(() => {
@@ -99,7 +132,101 @@ export function useThreadStream(
       (event: any) => {
         const type = event.type || event.event;
 
-        if (type === "RUN_STARTED") {
+        if (type === "ARTIFACT_CREATED") {
+          const artId = event.artifact_id || event.artifactId;
+          const kind = event.kind || "questionnaires";
+          if (artId && agentId && sessionId) {
+            getArtifact(agentId, sessionId, kind, artId)
+              .then((art) => {
+                setArtifacts((prev) => {
+                  const idx = prev.findIndex((a) => a.kind === kind && a.name === artId);
+                  if (idx >= 0) {
+                    const next = [...prev];
+                    next[idx] = art;
+                    return next;
+                  }
+                  return [...prev, art];
+                });
+
+                setMessages((prev) => {
+                  const artPart: MessagePart = {
+                    type: "artifact",
+                    id: `artifact-${artId}`,
+                    artifact: art,
+                  };
+                  const msgWithArtIdx = findLastIndex(prev, (m) =>
+                    Boolean(m.parts?.some((p) => p.type === "artifact" && p.id === `artifact-${artId}`))
+                  );
+                  if (msgWithArtIdx >= 0) {
+                    const target = prev[msgWithArtIdx];
+                    const updatedParts = (target.parts || []).map((p) =>
+                      p.type === "artifact" && p.id === `artifact-${artId}` ? artPart : p
+                    );
+                    const copy = [...prev];
+                    copy[msgWithArtIdx] = { ...target, parts: updatedParts };
+                    return copy;
+                  }
+
+                  const askMsgIdx = findLastIndex(
+                    prev,
+                    (m) =>
+                      m.role === "assistant" &&
+                      Boolean(
+                        m.toolCalls?.some(
+                          (c) => c.name === "ask" || c.name === "read_artifact_submission"
+                        )
+                      )
+                  );
+                  const targetIdx = askMsgIdx >= 0 ? askMsgIdx : prev.length - 1;
+                  if (targetIdx >= 0 && prev[targetIdx].role === "assistant") {
+                    const target = prev[targetIdx];
+                    const copy = [...prev];
+                    copy[targetIdx] = {
+                      ...target,
+                      parts: [...(target.parts || []), artPart],
+                    };
+                    return copy;
+                  } else {
+                    return [
+                      ...prev,
+                      {
+                        id: `asst-${Date.now()}`,
+                        role: "assistant",
+                        text: "",
+                        parts: [artPart],
+                        timestamp: new Date().toISOString(),
+                      },
+                    ];
+                  }
+                });
+              })
+              .catch(() => {});
+          }
+        } else if (type === "ARTIFACT_SUBMITTED") {
+          const artId = event.artifact_id || event.artifactId || event.name;
+          const kind = event.kind || "questionnaires";
+          if (artId && agentId && sessionId) {
+            getArtifact(agentId, sessionId, kind, artId)
+              .then((art) => {
+                setArtifacts((prev) =>
+                  prev.map((a) => (a.kind === kind && a.name === artId ? art : a))
+                );
+                setMessages((prev) =>
+                  prev.map((m) => {
+                    if (!m.parts) return m;
+                    const updatedParts = m.parts.map((p) =>
+                      p.type === "artifact" &&
+                      (p.artifact.name === artId || p.id === `artifact-${artId}`)
+                        ? { ...p, artifact: art }
+                        : p
+                    );
+                    return { ...m, parts: updatedParts };
+                  })
+                );
+              })
+              .catch(() => {});
+          }
+        } else if (type === "RUN_STARTED") {
           setStatus("AWAITING_LLM");
         } else if (type === "RUN_FINISHED") {
           setStatus("AWAITING_USER");
@@ -959,6 +1086,41 @@ export function useThreadStream(
     [agentId, sessionId, status]
   );
 
+  const hasOpenBlockingArtifact = useMemo(() => {
+    return artifacts.some(
+      (a) => !a.is_closed && a.manifest?.cadence === "blocking"
+    );
+  }, [artifacts]);
+
+  const submitArtifactHandler = useCallback(
+    async (artifact: ArtifactInfo, data: Record<string, unknown>) => {
+      if (!agentId || !sessionId) return;
+      await submitArtifact(agentId, sessionId, artifact.kind, artifact.name, data);
+      try {
+        const updated = await getArtifact(agentId, sessionId, artifact.kind, artifact.name);
+        setArtifacts((prev) =>
+          prev.map((a) =>
+            a.kind === artifact.kind && a.name === artifact.name ? updated : a
+          )
+        );
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (!m.parts) return m;
+            const updatedParts = m.parts.map((p) =>
+              p.type === "artifact" && p.artifact.name === artifact.name
+                ? { ...p, artifact: updated }
+                : p
+            );
+            return { ...m, parts: updatedParts };
+          })
+        );
+      } catch (err) {
+        console.error("Failed to refresh artifact after submission:", err);
+      }
+    },
+    [agentId, sessionId]
+  );
+
   return {
     messages,
     status,
@@ -966,6 +1128,10 @@ export function useThreadStream(
     streamErrorDetails,
     sending,
     sendMessage,
+    artifacts,
+    hasOpenBlockingArtifact,
+    refreshArtifacts,
+    submitArtifact: submitArtifactHandler,
   };
 }
 

@@ -4,6 +4,7 @@ import type {
   AgentInspectReport,
   AgentSummary,
   AgentStatus,
+  ArtifactInfo,
   ConfigTemplateResponse,
   SessionDetail,
   SessionDiffResponse,
@@ -344,6 +345,46 @@ export async function getSessionDiff(
     `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/diff`
   );
   return handleResponse<SessionDiffResponse>(res);
+}
+
+export async function listArtifacts(
+  agentId: string,
+  sessionId: string
+): Promise<ArtifactInfo[]> {
+  const res = await fetch(
+    `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/artifact`
+  );
+  return handleResponse<ArtifactInfo[]>(res);
+}
+
+export async function getArtifact(
+  agentId: string,
+  sessionId: string,
+  kind: string,
+  name: string
+): Promise<ArtifactInfo> {
+  const res = await fetch(
+    `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/artifact/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`
+  );
+  return handleResponse<ArtifactInfo>(res);
+}
+
+export async function submitArtifact(
+  agentId: string,
+  sessionId: string,
+  kind: string,
+  name: string,
+  data: Record<string, unknown>
+): Promise<{ status: string; artifact_id: string; tool_call_id: string }> {
+  const res = await fetch(
+    `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/artifact/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/submit`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data }),
+    }
+  );
+  return handleResponse<{ status: string; artifact_id: string; tool_call_id: string }>(res);
 }
 
 

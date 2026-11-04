@@ -85,6 +85,15 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `ChangesViewer`: Tabbed session changes view rendering the active Sync PR unified diff using `@pierre/diffs` with unified/split mode toggle, hierarchical Tree and flat List file navigation sidebar with status badges and diff stats, per-file collapsible diff cards, external Gitea PR link, manual and automatic live turn-transition/polling refresh, and the relocated "Accept" button.
 - `ConfigModal`: Modal editor for agent and session configuration supporting both a structured Form view (model presets + custom identifier, inference format, base URL presets, API key toggle/clear, middleware implementation selectors, and system prompt) and a Raw JSON editor with syntax validation and formatting.
 - `SettingsModal`: Modal editor for system settings (managing `skill_directories` via path list and raw JSON with a prominent warning against system-level skills).
+- `A2uiArtifactRenderer`: Front-end component rendering A2UI v0.9 surfaces (`@a2ui/react` and `@a2ui/web_core`) within chat message bubbles, handling form action dispatching and disabled state for closed artifacts.
+
+### Artifacts Subsystem (`seamus.domain.artifacts`, `seamus.harness.artifacts`)
+- `ArtifactManifest`: Pydantic model (`exposition: Literal["embedded", "tabbed"]`, `cadence: Literal["blocking", "nonblocking"]`).
+- `ArtifactInfo`: Pydantic model describing an artifact instance (`kind`, `name`, `manifest`, `is_closed`, `surface`, `components`, `data`).
+- `ArtifactResolver`: File resolver traversing the 3-tier directory hierarchy (`/artifacts/<kind>/<name>/<file>` -> `/artifacts/<kind>/<file>` -> `/artifacts/<file>`) and checking instance-scoped `deleteSurface.json` for closure.
+- `QuestionnaireBuilder`: Builder constructing A2UI v0.9 `updateComponents` structures from batched `QuestionItem` inputs.
+- `ask`: Agent tool batching questionnaire questions during an inference turn.
+- `read_artifact_submission`: Agent tool and synthetic tool call returning `{data: ...}` from canonical `updateDataModel.json`.
 
 ## Design Principles
 - **Explicit over Implicit**: Prefer concrete, simple classes and protocols rather than speculative abstraction layers.
@@ -114,6 +123,7 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md)
 - [0027-skills-config-project-rules-and-inspector.md](../decisions/0027-skills-config-project-rules-and-inspector.md)
 - [0028-ui-ux-ergonomics-and-url-state.md](../decisions/0028-ui-ux-ergonomics-and-url-state.md)
+- [0029-a2ui-questionnaire-artifacts.md](../decisions/0029-a2ui-questionnaire-artifacts.md)
 - [architecture.md](./architecture.md)
 - [backlog.md](./backlog.md)
 - [conventions.md](./conventions.md)

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Bot, Brain, ChevronDown, ChevronRight, GitFork, RotateCcw, User } from "lucide-react";
-import type { ChatMessage } from "../api/types";
+import type { ArtifactInfo, ChatMessage } from "../api/types";
+import { A2uiArtifactRenderer } from "./A2uiArtifactRenderer";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { ToolCallItem } from "./ToolCallItem";
 
@@ -62,10 +63,14 @@ export function MessageItem({
   message,
   onBranch,
   onBranchTool,
+  onSubmitArtifact,
+  submittingArtifactId,
 }: {
   message: ChatMessage;
   onBranch?: () => void;
   onBranchTool?: () => void;
+  onSubmitArtifact?: (artifact: ArtifactInfo, data: Record<string, unknown>) => Promise<void> | void;
+  submittingArtifactId?: string | null;
 }) {
   const isUser = message.role === "user";
   const hasParts = !isUser && Boolean(message.parts && message.parts.length > 0);
@@ -101,6 +106,16 @@ export function MessageItem({
               }
               if (part.type === "tool_call") {
                 return <ToolCallItem key={part.id} toolCall={part.toolCall} />;
+              }
+              if (part.type === "artifact") {
+                return (
+                  <A2uiArtifactRenderer
+                    key={part.id}
+                    artifact={part.artifact}
+                    onSubmit={(data) => onSubmitArtifact?.(part.artifact, data)}
+                    isSubmitting={submittingArtifactId === part.artifact.name}
+                  />
+                );
               }
               if (part.type === "text") {
                 if (!part.content) return null;

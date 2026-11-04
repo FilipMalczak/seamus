@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import type {
   AgentStatus,
+  ArtifactInfo,
   ChatMessage,
   MessagePart,
   SessionBranchProvenance,
@@ -68,9 +69,32 @@ export function ChatArea({
   const [isAtBottom, setIsAtBottom] = useState<boolean>(true);
   const [errorExpanded, setErrorExpanded] = useState<boolean>(false);
   const [copiedError, setCopiedError] = useState<boolean>(false);
+  const [submittingArtifactId, setSubmittingArtifactId] = useState<string | null>(null);
 
-  const { messages, status, streamError, streamErrorDetails, sending, sendMessage } =
-    useThreadStream(agentId, sessionId, thread?.id ?? null, sessionStatus);
+  const {
+    messages,
+    status,
+    streamError,
+    streamErrorDetails,
+    sending,
+    sendMessage,
+    hasOpenBlockingArtifact,
+    refreshArtifacts,
+    submitArtifact,
+  } = useThreadStream(agentId, sessionId, thread?.id ?? null, sessionStatus);
+
+  const handleSubmitArtifact = useCallback(
+    async (artifact: ArtifactInfo, data: Record<string, unknown>) => {
+      setSubmittingArtifactId(artifact.name);
+      try {
+        await submitArtifact(artifact, data);
+        await refreshArtifacts();
+      } finally {
+        setSubmittingArtifactId(null);
+      }
+    },
+    [submitArtifact, refreshArtifacts]
+  );
 
   const isSessionTerminal = sessionStatus !== "ACTIVE";
   const isOpen = (thread?.is_open ?? false) && !isSessionTerminal;
@@ -467,6 +491,8 @@ export function ChatArea({
                     ? () => handleBranchToolItem(msg)
                     : undefined
                 }
+                onSubmitArtifact={handleSubmitArtifact}
+                submittingArtifactId={submittingArtifactId}
               />
               {branchPoints.get(idx)?.map((prov, pIdx) => (
                 <div
@@ -600,6 +626,15 @@ export function ChatArea({
         </div>
       )}
 
+      {hasOpenBlockingArtifact && (
+        <div className="blocking-artifact-notice">
+          <Sparkles className="size-4 text-sky-400" />
+          <span>
+            An interactive questionnaire requires your response before conversation can continue.
+          </span>
+        </div>
+      )}
+
       <div className="composer-container">
         <div className="composer-box">
           <textarea
@@ -612,14 +647,16 @@ export function ChatArea({
                   ? "This session failed. Branch off any message above to retry."
                   : !isOpen
                     ? "This thread is closed. Select the active open thread to continue."
-                    : isBusy
-                      ? "Agent is busy processing... please wait."
-                      : "Send a message to Seamus... (Enter to send, Shift+Enter for newline)"
+                    : hasOpenBlockingArtifact
+                      ? "Questionnaire in progress. Please submit the questionnaire above to continue."
+                      : isBusy
+                        ? "Agent is busy processing... please wait."
+                        : "Send a message to Seamus... (Enter to send, Shift+Enter for newline)"
             }
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={handleKeyDown}
-            disabled={!isOpen || isBusy || sending}
+            disabled={!isOpen || isBusy || sending || hasOpenBlockingArtifact}
             rows={2}
             autoFocus
           />
@@ -628,8 +665,14 @@ export function ChatArea({
             type="button"
             className="composer-send-btn"
             onClick={handleSend}
-            disabled={!inputText.trim() || !isOpen || isBusy || sending}
-            title={isBusy ? "Agent is busy" : "Send message (Enter)"}
+            disabled={!inputText.trim() || !isOpen || isBusy || sending || hasOpenBlockingArtifact}
+            title={
+              hasOpenBlockingArtifact
+                ? "Questionnaire in progress"
+                : isBusy
+                  ? "Agent is busy"
+                  : "Send message (Enter)"
+            }
           >
             {isOpen && (isBusy || sending) ? (
               <Loader2 className="size-4 animate-spin" />

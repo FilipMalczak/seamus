@@ -123,6 +123,10 @@ class GitWorkspaceManager:
         """Return path to the session's agent-accessible data/ directory."""
         return self.get_session_workspace_path(agent_id, session_id) / "data"
 
+    def get_session_artifacts_dir(self, agent_id: UUID, session_id: UUID) -> Path:
+        """Return path to the session's artifacts/ directory."""
+        return self.get_session_workspace_path(agent_id, session_id) / "artifacts"
+
     def get_thread_state_dir(self, agent_id: UUID, session_id: UUID, thread_id: UUID) -> Path:
         """Return path to a specific thread's state directory within the session workspace."""
         return (
@@ -386,6 +390,11 @@ class GitWorkspaceManager:
             (session_dir / "data").mkdir(parents=True, exist_ok=True)
             (session_dir / "data" / "skills").mkdir(parents=True, exist_ok=True)
             (session_dir / "data" / ".skills").mkdir(parents=True, exist_ok=True)
+            artifacts_dir = self.get_session_artifacts_dir(session.agent_id, session.id)
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+            from seamus.harness.artifacts import seed_default_artifacts
+
+            seed_default_artifacts(artifacts_dir)
             return session_dir
 
         # Ensure base agent repo exists first
@@ -420,6 +429,19 @@ class GitWorkspaceManager:
         (session_dir / "data" / "skills").mkdir(parents=True, exist_ok=True)
         (session_dir / "data" / ".skills").mkdir(parents=True, exist_ok=True)
         (session_dir / "agent" / "state").mkdir(parents=True, exist_ok=True)
+        artifacts_dir = self.get_session_artifacts_dir(session.agent_id, session.id)
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        from seamus.harness.artifacts import seed_default_artifacts
+
+        seed_default_artifacts(artifacts_dir)
+
+        if (session_dir / ".git").exists() and self.settings.enabled:
+            status = self._run_git(session_dir, ["status", "--porcelain", "--", "artifacts"])
+            if status.stdout.strip():
+                self._run_git(session_dir, ["add", "artifacts"])
+                self._run_git(session_dir, ["commit", "-m", "artifacts: initialize defaults"])
+                self._run_git(session_dir, ["push", "origin", branch_name])
+
         return session_dir
 
     def sync_session_workspace(self, session: Session) -> bool:
@@ -919,7 +941,9 @@ class GitWorkspaceManager:
         if not (session_dir / ".git").exists():
             return False
 
-        paths_to_check = [p for p in ["data", "agent/state"] if (session_dir / p).exists()]
+        paths_to_check = [
+            p for p in ["data", "agent/state", "artifacts"] if (session_dir / p).exists()
+        ]
         if not paths_to_check:
             return False
 

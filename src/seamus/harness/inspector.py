@@ -27,7 +27,7 @@ from seamus.harness.runner import (
     SessionAgentRunner,
     get_runner_registry,
 )
-from seamus.harness.sandbox import get_sandbox_settings
+from seamus.harness.sandbox import BUNDLED_SKILLS_DIR, get_sandbox_settings
 from seamus.harness.store import get_harness_store
 from seamus.persistence import (
     extract_readable_messages,
@@ -209,16 +209,43 @@ def get_default_tools_inspect_info() -> list[ToolInspectInfo]:
 
     try:
         from deepagents import create_deep_agent
+        from langchain_core.tools import StructuredTool
         from pydantic import SecretStr
 
-        from seamus.harness.runner import SeamusTodoListMiddleware
+        from seamus.harness.runner import (
+            ReadArtifactSubmissionInput,
+            ResilientAskInput,
+            SeamusTodoListMiddleware,
+        )
+
+        dummy_ask = StructuredTool.from_function(
+            name="ask",
+            description=(
+                "Ask the user a closed question with multiple choices and an optional write-in "
+                "field. Batch multiple questions in the same turn to generate a questionnaire."
+            ),
+            func=lambda *args, **kwargs: "OK",
+            args_schema=ResilientAskInput,
+        )
+        dummy_read_sub = StructuredTool.from_function(
+            name="read_artifact_submission",
+            description=(
+                "Read the canonical user-submitted data model for a questionnaire or artifact."
+            ),
+            func=lambda *args, **kwargs: "{}",
+            args_schema=ReadArtifactSubmissionInput,
+        )
 
         dummy_llm = ReasoningChatOpenAI(
             model="dummy",
             api_key=SecretStr("dummy"),
             base_url="https://dummy.local/v1",
         )
-        dummy_graph = create_deep_agent(model=dummy_llm, middleware=[SeamusTodoListMiddleware()])
+        dummy_graph = create_deep_agent(
+            model=dummy_llm,
+            tools=[dummy_ask, dummy_read_sub],
+            middleware=[SeamusTodoListMiddleware()],
+        )
         tools_node = dummy_graph.nodes.get("tools")
         bound = getattr(tools_node, "bound", None)
         tools_dict = (
@@ -320,6 +347,23 @@ def get_default_tools_inspect_info() -> list[ToolInspectInfo]:
                     },
                     "required": ["todos"],
                 },
+                backend="harness",
+            ),
+            ToolInspectInfo(
+                name="ask",
+                description=(
+                    "Ask the user a closed question with multiple choices and an optional write-in "
+                    "field. Batch multiple questions in the same turn to generate a questionnaire."
+                ),
+                parameters=ResilientAskInput.model_json_schema(),
+                backend="harness",
+            ),
+            ToolInspectInfo(
+                name="read_artifact_submission",
+                description=(
+                    "Read the canonical user-submitted data model for a questionnaire or artifact."
+                ),
+                parameters=ReadArtifactSubmissionInput.model_json_schema(),
                 backend="harness",
             ),
         ]
@@ -543,13 +587,15 @@ def extract_session_skills(
     workdir = sandbox_settings.workdir.rstrip("/")
 
     # Precedence order (highest to lowest):
-    # 1. /workspace/skills
-    # 2. /workspace/.skills
-    # 3. /skills/system/0, /skills/system/1, ...
-    search_roots: list[tuple[Path, str, str, bool]] = [
-        (data_dir / "skills", f"{workdir}/skills", "Session (skills)", False),
-        (data_dir / ".skills", f"{workdir}/.skills", "Session (.skills)", False),
-    ]
+    # 1. /skills/bundled (bundled platform skills)
+    # 2. /workspace/skills
+    # 3. /workspace/.skills
+    # 4. /skills/system/0, /skills/system/1, ...
+    search_roots: list[tuple[Path, str, str, bool]] = []
+    if BUNDLED_SKILLS_DIR.is_dir():
+        search_roots.append((BUNDLED_SKILLS_DIR, "/skills/bundled", "Bundled", True))
+    search_roots.append((data_dir / "skills", f"{workdir}/skills", "Session (skills)", False))
+    search_roots.append((data_dir / ".skills", f"{workdir}/.skills", "Session (.skills)", False))
 
     for idx, skill_dir_str in enumerate(system_settings.skill_directories):
         resolved = resolve_skill_path(skill_dir_str)
@@ -622,6 +668,8 @@ def build_middleware_prompt_sections(
             f"{norm_workdir}/.skills",
             f"{norm_workdir}/skills",
         ]
+        if BUNDLED_SKILLS_DIR.is_dir():
+            skill_sources.append("/skills/bundled")
         sm = SkillsMiddleware(backend=cast(Any, None), sources=skill_sources)
         active_meta: list[SkillMetadata] = [
             SkillMetadata(

@@ -10,6 +10,18 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## Deferred
 
+### Tabbed Artifact Exposition and Non-Blocking Cadence Lifecycles
+- **Description**: Expand artifact exposition support from `exposition=embedded` to include `exposition=tabbed` (rendering artifacts in dedicated inspector-like tabs rather than inline in chat bubbles). Formalize the lifecycle and closing rules for non-blocking artifacts (`cadence=nonblocking`) upon submission or timeout.
+- **Why Deferred**: Focused initially on embedded questionnaires with blocking cadence to validate the core A2UI v0.9 pipeline and synthetic tool dispatch.
+- **Revisit Trigger**: When introducing planning or multi-view artifacts that require dedicated panel real estate.
+- **Provenance**: [0029-a2ui-questionnaire-artifacts.md](../decisions/0029-a2ui-questionnaire-artifacts.md).
+
+### Read-Write Custom Artifacts (`/artifacts/custom`)
+- **Description**: Support custom, user/agent-authored A2UI artifacts under `/artifacts/custom` where the directory is mounted read-write (`readOnly=False`) in OpenSandbox, allowing agents to author arbitrary A2UI surface, component, and data definitions directly with per-instance manifests.
+- **Why Deferred**: Prioritized specialized, validated artifact families (questionnaires) to establish disk structure and rendering contracts before opening raw A2UI creation.
+- **Revisit Trigger**: When introducing custom agent generative UI authoring workflows.
+- **Provenance**: [0029-a2ui-questionnaire-artifacts.md](../decisions/0029-a2ui-questionnaire-artifacts.md).
+
 ### Multi-Mount Repository Support and Dynamic Skill Discovery
 - **Description**: When Seamus introduces support for mounting multiple repositories/projects (e.g., existing user codebases) into the agent's sandbox container, dynamically discover and track both `<mount>/skills` and `<mount>/.skills` directories present across all mounted workspaces as project-level skill sources. In accordance with the established skill precedence hierarchy, non-dotted `skills` takes precedence over dotted `.skills`, and project mounts take precedence after the operational `/workspace` but before ambient system-wide skills.
 - **Why Deferred**: Requires establishing multi-mount repository architecture first; single agent repository mounting is the current model.
@@ -91,11 +103,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 ### Native LM-XML Skills System with Load/Unload Skill Tools
 - **Description**: Replace the reliance on LangChain DeepAgents' built-in `SkillsMiddleware` with a first-party, native Seamus skills implementation. The native system will be built directly on `lmxml` dynamic prompt structures (integrating seamlessly with `DynamicSystemPromptMiddleware`) and explicit `load_skill` / `unload_skill` agent tools to disclose, activate, and deactivate skill instructions and associated tools on demand rather than relying on automatic middleware inspection and implicit prompt appending.
 - **Rationale**: DeepAgents' `SkillsMiddleware` operates as an external abstraction with rigid prompt formatting, strict PyYAML frontmatter parsing (which silently drops real-world skills with unquoted inline structures like colons or braces in descriptions, such as `bevy-assets`), and implicit disclosure rules. A native implementation based on `lmxml` dynamisms, relaxed/resilient YAML frontmatter parsing, and explicit `load_skill` / `unload_skill` tools will align directly with Seamus's structured XML system prompt architecture, provide tighter control over context window budgeting and prompt cache breakpoints, and avoid middleware ordering or prompt overriding frictions.
-- **Provenance**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md), [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md), [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md).
-
-### Built-In Bundled Skills for Seamus
-- **Description**: Package a core suite of built-in skills bundled directly with Seamus (e.g., for creating a2ui artifacts, interactive planning surveys, code review workflows) mounted in sandboxes under `/skills/bundled`. These skills hold top-most precedence across all sessions as integral platform capabilities that cannot be overridden by session or system skills.
-- **Rationale**: Built-in skills allow offloading complex tool or UI instructions (like A2UI) from the static system prompt to on-demand progressive disclosure.
 - **Provenance**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md), [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md), [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md).
 
 ### Operational Execution Modes and Thread Transition Triggers (plan, chat, act, analyse, routing)

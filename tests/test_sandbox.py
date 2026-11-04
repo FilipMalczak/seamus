@@ -161,9 +161,13 @@ def test_seamus_opensandbox_backend_lazy_provisioning_and_execution(
             "seamus.agent_id": str(agent_id),
             "seamus.session_id": str(session_id),
         }
-        assert len(call_kwargs["volumes"]) == 1
-        assert call_kwargs["volumes"][0].mount_path == "/workspace"
-        assert call_kwargs["volumes"][0].sub_path == f"{agent_id}/{session_id}/data"
+        vol_names = [v.name for v in call_kwargs["volumes"]]
+        assert "workspace" in vol_names
+        assert "artifacts" in vol_names
+        assert "skills-bundled" in vol_names
+        ws_vol = next(v for v in call_kwargs["volumes"] if v.name == "workspace")
+        assert ws_vol.mount_path == "/workspace"
+        assert ws_vol.sub_path == f"{agent_id}/{session_id}/data"
 
     backend.close()
     mock_sb.close.assert_called_once()
@@ -262,14 +266,15 @@ def test_session_agent_runner_includes_resolved_system_skills(
 
     # Precedence hierarchy:
     # Later sources override earlier sources ("last one wins"):
-    # system[1] < system[0] < workspace/.skills < workspace/skills
+    # system[1] < system[0] < workspace/.skills < workspace/skills < bundled
     idx_sys_1 = skills.index(("/skills/system/1", "System #1"))
     idx_sys_0 = skills.index(("/skills/system/0", "System #0"))
     idx_ws_dot = skills.index(("/workspace/.skills", "Session (.skills)"))
     idx_ws = skills.index(("/workspace/skills", "Session"))
+    idx_bundled = skills.index(("/skills/bundled", "Bundled"))
 
-    assert idx_sys_1 < idx_sys_0 < idx_ws_dot < idx_ws
-    assert skills[-1] == ("/workspace/skills", "Session")
+    assert idx_sys_1 < idx_sys_0 < idx_ws_dot < idx_ws < idx_bundled
+    assert skills[-1] == ("/skills/bundled", "Bundled")
 
 
 def test_sandbox_build_skill_volumes_read_only(tmp_path: Path) -> None:
