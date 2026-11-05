@@ -141,14 +141,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Aligns agent behavior with specific user intents while using threads as deterministic boundaries between planning, discussion, analysis, and execution.
 - **Provenance**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), [threads_modes_personas.md](./threads_modes_personas.md), [REQ-025](./requirements.md#req-025-operational-modes-and-thread-transition-triggers), [INV-028](./invariants.md#inv-028-mode-transition-thread-spawning-boundary).
 
-### Mode as First-Class Configuration (Template Defaults and Agent-Defined Session Mode)
-- **Description**: Treat the operational mode as a formal part of agent and session configuration (`AgentConfig`):
-  1. Configuration templates (`ConfigTemplate`) should include a default mode field (e.g. defaulting to `chat`, with options for `plan`, `act`, etc.).
-  2. An `Agent` defines its default mode in its configuration, inherited from the template or set explicitly.
-  3. When an agent creates a new session, the session initializes its initial thread directly in the agent's configured default mode rather than hardcoding `chat`.
-- **Rationale**: Currently agents always initialize new sessions in `chat` mode, requiring manual switching if an agent is intended as a dedicated planner. Incorporating mode into configuration allows defining purpose-built agents (e.g. an architectural planner agent whose sessions immediately start in `plan` mode).
-- **Provenance**: [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), `src/seamus/config/models.py`, `src/seamus/domain/entities.py`.
-
 ### Configuration Synchronization (Template-to-Agent and Agent-to-Session)
 - **Description**: Implement mechanisms to synchronize configurations across entity hierarchies:
   1. Template to Agent: Allow updating an agent's `config` from its base `ConfigTemplate`, propagating newly added settings, models, or defaults while preserving agent-specific overrides.
@@ -228,7 +220,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 - add comments to plans (maybe to all the artifacts?) [CRITICAL]
 - once the plan is accepted, when we try to look it up in Changes tab, it takes a moment to load
-- switch default model to 120b
 - once the harness opens a new thread, we should auto-switch there (if we're in the thread from which we switched)
 - session view (its already above, but it has high prio)
 - "branch" icon should be more granular and to the right of bubbles (instead of below)

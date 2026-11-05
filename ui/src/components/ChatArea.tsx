@@ -35,6 +35,7 @@ interface ChatAreaProps {
   agentName: string | null;
   sessionId: string | null;
   sessionName: string | null;
+  sessionMode?: string;
   sessionStatus?: SessionStatus;
   sessionProvenance?: SessionBranchProvenance | null;
   sessionLineage?: SessionBranchProvenance[];
@@ -67,6 +68,7 @@ export function ChatArea({
   agentName,
   sessionId,
   sessionName,
+  sessionMode,
   sessionStatus = "ACTIVE",
   sessionProvenance,
   sessionLineage,
@@ -414,16 +416,17 @@ export function ChatArea({
     );
   }
 
-  const currentMode = (thread.mode || "chat") as "chat" | "plan";
+  const currentThreadMode = (thread.mode || "plan") as "chat" | "plan";
+  const activeSessionMode = ((sessionMode || currentThreadMode || "plan") as "chat" | "plan");
   const currentModeLabel =
     thread.mode_label ||
-    (thread.phase ? `${currentMode}/${thread.phase}` : currentMode);
+    (thread.phase ? `${currentThreadMode}/${thread.phase}` : currentThreadMode);
 
   const handleModeClick = async (targetMode: "chat" | "plan") => {
     if (!onSwitchMode || switchingMode || isBusy || sending || isSessionTerminal) {
       return;
     }
-    if (currentMode === targetMode && isOpen) {
+    if (activeSessionMode === targetMode && isOpen && currentThreadMode === targetMode) {
       return;
     }
     setSwitchingMode(true);
@@ -450,7 +453,7 @@ export function ChatArea({
             <span className="crumb-thread">
               {thread.name || thread.id}
             </span>
-            <span className={`thread-mode-badge mode-${currentMode}`}>
+            <span className={`thread-mode-badge mode-${currentThreadMode}`}>
               {currentModeLabel}
             </span>
             <span className={`thread-state-badge ${isOpen ? "state-open" : "state-closed"}`}>
@@ -464,22 +467,22 @@ export function ChatArea({
             <div className="mode-selector-group" role="group" aria-label="Operational Mode">
               <button
                 type="button"
-                className={`mode-selector-btn ${currentMode === "chat" ? "active" : ""}`}
+                className={`mode-selector-btn ${activeSessionMode === "chat" ? "active" : ""}`}
                 onClick={() => handleModeClick("chat")}
                 disabled={isBusy || sending || switchingMode}
-                title="Switch to Chat mode (opens a new Chat thread)"
+                title="Switch session to Chat mode (opens a new Chat thread)"
               >
                 Chat
               </button>
               <button
                 type="button"
-                className={`mode-selector-btn mode-plan ${currentMode === "plan" ? "active" : ""}`}
+                className={`mode-selector-btn mode-plan ${activeSessionMode === "plan" ? "active" : ""}`}
                 onClick={() => handleModeClick("plan")}
                 disabled={isBusy || sending || switchingMode}
-                title="Switch to Plan mode (opens a new Plan/Discuss thread)"
+                title="Switch session to Plan mode (opens a new Plan/Discuss thread)"
               >
-                {currentMode === "plan" && thread.phase
-                  ? `Plan (${thread.phase})`
+                {activeSessionMode === "plan" && (thread.mode === "plan" && thread.phase ? thread.phase : "discuss")
+                  ? `Plan (${thread.mode === "plan" && thread.phase ? thread.phase : "discuss"})`
                   : "Plan"}
               </button>
             </div>

@@ -170,13 +170,13 @@ MODES_REGISTRY: dict[str, ModeDescriptor] = {
 
 
 def get_mode_descriptor(mode: str) -> ModeDescriptor:
-    """Resolve a ModeDescriptor by name, defaulting to Chat mode if unknown."""
-    return MODES_REGISTRY.get(mode, CHAT_MODE)
+    """Resolve a ModeDescriptor by name, defaulting to Plan mode if unknown."""
+    return MODES_REGISTRY.get(mode, PLAN_MODE)
 
 
 def normalize_mode_and_phase(mode: str | None, phase: str | None = None) -> tuple[str, str | None]:
     """Normalize a mode and optional phase into a valid canonical (mode, phase) pair."""
-    resolved_mode_name = mode if mode in MODES_REGISTRY else ModeName.CHAT.value
+    resolved_mode_name = mode if mode in MODES_REGISTRY else ModeName.PLAN.value
     descriptor = MODES_REGISTRY[resolved_mode_name]
     if not descriptor.phases:
         return descriptor.name, None

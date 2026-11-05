@@ -54,9 +54,9 @@ def test_modes_domain_registration_and_normalization() -> None:
     m, p = normalize_mode_and_phase("plan", "execute")
     assert m == "plan" and p == "execute"
 
-    # Unknown mode safely falls back to Chat
+    # Unknown mode safely falls back to Plan
     unknown_m, unknown_p = normalize_mode_and_phase("unknown_mode")
-    assert unknown_m == "chat" and unknown_p is None
+    assert unknown_m == "plan" and unknown_p == "discuss"
 
 
 def test_mount_policy_resolution() -> None:
@@ -207,13 +207,28 @@ async def test_session_mode_switch_and_phase_transitions() -> None:
 
     runner = SessionAgentRunner(session=session)
 
-    # Initial state is chat
+    # Initial state is plan (discuss)
     open_thread = session.get_open_thread()
-    assert open_thread.mode == "chat"
-    assert open_thread.phase is None
-    assert open_thread.mode_label == "chat"
+    assert open_thread.mode == "plan"
+    assert open_thread.phase == "discuss"
+    assert open_thread.mode_label == "plan/discuss"
+    assert session.config.mode == "plan"
 
-    # Switch session mode to plan via store with empty initial thread (reuses empty thread)
+    # Switch session mode to chat via store with empty initial thread (reuses empty thread)
+    updated_session = store.switch_session_mode(
+        str(agent.id),
+        str(session.id),
+        mode=ModeName.CHAT.value,
+    )
+    chat_thread = updated_session.get_open_thread()
+    assert chat_thread.mode == "chat"
+    assert chat_thread.phase is None
+    assert chat_thread.mode_label == "chat"
+    assert updated_session.config.mode == "chat"
+    assert chat_thread.id == open_thread.id
+    assert open_thread.is_open
+
+    # Switch session mode back to plan
     updated_session = store.switch_session_mode(
         str(agent.id),
         str(session.id),
@@ -223,6 +238,7 @@ async def test_session_mode_switch_and_phase_transitions() -> None:
     assert new_thread.mode == "plan"
     assert new_thread.phase == "discuss"
     assert new_thread.mode_label == "plan/discuss"
+    assert updated_session.config.mode == "plan"
     assert new_thread.id == open_thread.id
     assert open_thread.is_open
 

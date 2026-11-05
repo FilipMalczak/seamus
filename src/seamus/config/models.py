@@ -26,6 +26,13 @@ class SkillsImplementation(StrEnum):
     DEEPAGENTS = "deepagents"
 
 
+class OperationalMode(StrEnum):
+    """Supported operational modes."""
+
+    CHAT = "chat"
+    PLAN = "plan"
+
+
 class InferenceConfig(BaseModel):
     """Inference API connection and credentials configuration."""
 
@@ -49,6 +56,7 @@ class AgentConfig(BaseModel):
 
     inference: InferenceConfig = Field(default_factory=InferenceConfig)
     model_name: str = "openai/gpt-oss-120b"
+    mode: str = OperationalMode.PLAN.value
     system_prompt: str | None = None
     todo_implementation: TodoImplementation = TodoImplementation.DEEPAGENTS
     skills_implementation: SkillsImplementation = SkillsImplementation.DEEPAGENTS
@@ -93,6 +101,7 @@ class AgentConfig(BaseModel):
                     if "model_name" in overrides.model_fields_set
                     else self.model_name
                 ),
+                "mode": (overrides.mode if "mode" in overrides.model_fields_set else self.mode),
                 "system_prompt": (
                     overrides.system_prompt
                     if "system_prompt" in overrides.model_fields_set

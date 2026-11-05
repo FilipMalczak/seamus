@@ -22,7 +22,8 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `InferenceConfig`: Provider settings (format, base URL, optional API key).
 - `TodoImplementation`: Supported planning/todo list implementations (`none`, `deepagents`).
 - `SkillsImplementation`: Supported skills discovery and disclosure middleware implementations (`none`, `deepagents`).
-- `AgentConfig`: Agent and session configuration model (inference settings, model name, optional system prompt, `todo_implementation`, and `skills_implementation`, both defaulting to `deepagents`). Provides `is_complete()`, `validate_complete()`, and `copy_with_overrides()` for inheritance.
+- `OperationalMode`: Supported operational execution modes (`chat`, `plan`).
+- `AgentConfig`: Agent and session configuration model (inference settings, model name defaulting to `openai/gpt-oss-120b`, operational `mode` defaulting to `plan`, optional system prompt, `todo_implementation`, and `skills_implementation`, both defaulting to `deepagents`). Provides `is_complete()`, `validate_complete()`, and `copy_with_overrides()` for inheritance.
 - `SystemSettings`: System-wide configuration model (`skill_directories: list[str]`) not scoped to any agent or session.
 - `ConfigTemplateStore`: Persistent container for the service-wide singleton `AgentConfig` template, backed by Gitea repository `system` with first-run defaults.
 - `SystemSettingsStore`: Persistent container for service-wide `SystemSettings`, backed by Gitea repository `system` with first-run defaults.

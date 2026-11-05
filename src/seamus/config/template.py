@@ -9,7 +9,12 @@ from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
 
-from seamus.config.models import AgentConfig, InferenceConfig, InferenceFormat
+from seamus.config.models import (
+    AgentConfig,
+    InferenceConfig,
+    InferenceFormat,
+    OperationalMode,
+)
 
 if TYPE_CHECKING:
     from seamus.persistence.workspace import GitWorkspaceManager
@@ -74,6 +79,11 @@ class ConfigTemplateStore:
             or os.getenv("MODEL_NAME", "").strip()
             or "openai/gpt-oss-120b"
         )
+        mode = (
+            os.getenv("DEFAULT_MODE", "").strip()
+            or os.getenv("SEAMUS_MODE", "").strip()
+            or OperationalMode.PLAN.value
+        )
 
         return AgentConfig(
             inference=InferenceConfig(
@@ -82,6 +92,7 @@ class ConfigTemplateStore:
                 api_key=api_key if api_key else None,
             ),
             model_name=model_name,
+            mode=mode,
         )
 
     def get_template(self) -> AgentConfig:

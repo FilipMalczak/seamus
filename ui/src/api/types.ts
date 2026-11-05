@@ -8,9 +8,12 @@ export type TodoImplementation = "none" | "deepagents";
 
 export type SkillsImplementation = "none" | "deepagents";
 
+export type OperationalMode = "chat" | "plan";
+
 export type AgentConfig = {
   inference: InferenceConfig;
   model_name: string;
+  mode?: OperationalMode | string;
   system_prompt?: string | null;
   todo_implementation?: TodoImplementation;
   skills_implementation?: SkillsImplementation;

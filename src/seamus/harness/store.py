@@ -868,6 +868,7 @@ class HarnessStore:
                             }
                         )
 
+        session.config.mode = target_mode
         new_thread = session.create_thread(mode=target_mode, phase=target_phase)
         session.touch()
         agent.touch()
