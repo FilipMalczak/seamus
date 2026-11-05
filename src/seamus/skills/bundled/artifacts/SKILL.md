@@ -1,11 +1,11 @@
 ---
 name: artifacts
-description: Comprehensive operational guide for A2UI v0.9 renderable artifacts, questionnaires, and synthetic submission tool calls in Seamus.
+description: Comprehensive operational guide for A2UI v0.9 renderable artifacts, questionnaires, forms, plans, and synthetic submission tool calls in Seamus.
 ---
 
 # Seamus Renderable Artifacts & A2UI v0.9 Guide
 
-Seamus provides renderable artifacts allowing agents to present rich, interactive user interfaces directly in the chat or in specialized panels. All artifacts are formatted using the **A2UI v0.9** protocol and persisted on disk under `/artifacts/`.
+Seamus provides renderable artifacts allowing agents to present rich, interactive user interfaces directly in the chat or in dedicated workspace tabs. All artifacts are formatted using the **A2UI v0.9** protocol and persisted on disk under `/artifacts/`.
 
 ## A2UI v0.9 Protocol Foundations
 
@@ -17,18 +17,32 @@ A2UI represents user interfaces as an event stream:
 
 ## Filesystem Structure & Hierarchical Resolution
 
-Inside your sandbox, `/artifacts/` is mounted **read-only**. You can read existing artifacts to inspect prior structures or user responses, but you create and modify artifacts exclusively through specialized tools (e.g. `ask`).
+Inside your sandbox, `/artifacts/` is mounted **read-only**. You can read existing artifacts to inspect prior structures, plans, or user responses, while creating and modifying artifacts through dedicated harness tools (`ask`, `form`, `make_plan`, `update_plan`, `edit_plan`, `discard`).
 
 Artifact files are organized by family and instance:
 ```
 /artifacts/
 ├── createSurface.json              # Shared root default surface configuration
-└── questionnaires/
-    ├── manifest.json               # Family manifest (exposition=embedded, cadence=blocking)
-    └── <artifact_uuid>/
-        ├── updateComponents.json   # Generated A2UI component tree
-        ├── updateDataModel.json    # Canonical user-submitted data model
-        └── deleteSurface.json      # Present if and only if artifact is closed
+├── questionnaires/
+│   ├── manifest.json               # Family manifest (exposition=embedded, cadence=blocking)
+│   └── <artifact_uuid>/
+│       ├── updateComponents.json   # Generated A2UI component tree
+│       ├── updateDataModel.json    # Canonical user-submitted data model
+│       └── deleteSurface.json      # Present if and only if artifact is closed
+├── forms/
+│   ├── manifest.json               # Family manifest (exposition=tabbed, cadence=nonblocking)
+│   └── <artifact_uuid>/
+│       ├── manifest.json           # Instance manifest (custom tab title)
+│       ├── updateComponents.json   # Generated A2UI component tree
+│       ├── updateDataModel.json    # Canonical user-submitted data model
+│       └── deleteSurface.json      # Present if and only if artifact is closed
+└── plans/
+    ├── manifest.json               # Family manifest (exposition=tabbed, cadence=nonblocking)
+    └── <plan_uuid>/
+        ├── manifest.json           # Instance manifest (plan tab title)
+        ├── updateComponents.json   # Rendered Markdown plan + Proceed button (in Make phase)
+        ├── updateDataModel.json    # Canonical Markdown content, title, and approval state
+        └── deleteSurface.json      # Present when plan is closed or discarded
 ```
 
 ### Hierarchical Resolution
@@ -39,12 +53,10 @@ When loading artifact files, the system checks:
 
 *Exception*: `deleteSurface.json` is checked strictly at the instance level (`/artifacts/<family>/<name>/deleteSurface.json`). An artifact is open until this file exists, and closed once it is created.
 
-## Specialized Questionnaire Artifacts
+## Specialized Questionnaire & Form Artifacts
 
-To ask clarifying questions, collect user preferences, or resolve design choices, use the `ask` tool.
-
-### The `ask` Tool
-Signature:
+### The `ask` Tool (Embedded + Blocking)
+Available in `Chat` mode and `Plan/Discuss` phase:
 ```python
 ask(
     question: str,
@@ -54,53 +66,45 @@ ask(
     id: str | None = None,
 ) -> str
 ```
-- `question`: The question prompt (e.g., `"What color is the background?"`).
-- `answers`: The available choices (e.g., `["white", "blue"]`).
-- `multiple`: Set to `True` to allow multi-select (multiple choices simultaneously).
-- `writein`: Set to `True` to provide an "Other" option with an accompanying text field for user-specified input.
-- `id`: Optional identifier slug (e.g., `"backgroundColor"`). If omitted, an identifier is automatically derived from the question.
+- Creates an inline `questionnaires` artifact (`exposition=embedded`, `cadence=blocking`).
+- Multiple calls in the same turn are batched into a single questionnaire.
+- While open, the chat composer is disabled until the user submits the questionnaire.
+
+### The `form` Tool (Tabbed + Non-Blocking)
+Available in `Plan/Discuss` phase:
+```python
+form(
+    question: str,
+    answers: list[str],
+    multiple: bool = False,
+    writein: bool = False,
+    id: str | None = None,
+    title: str = "Form",
+) -> str
+```
+- Creates a `forms` artifact (`exposition=tabbed`, `cadence=nonblocking`) rendered in its own tab to the right of `Changes`.
+- Multiple calls in the same turn are batched into a single form tab.
+- Because `cadence=nonblocking`, the user can continue freestyle conversation in the chat before or instead of submitting the form.
 
 ### Communication Rule: Do NOT Duplicate Questions in Text
-When invoking `ask`, the interactive questionnaire UI presents all questions, options, and write-in inputs directly to the user.
+When invoking `ask` or `form`, the interactive UI presents all questions, options, and write-in inputs directly to the user.
 - **NEVER** re-state, list, or duplicate the questions or choices in your assistant message text.
-- Emit at most a single brief introductory sentence (e.g., "Please select your preferences below.") or emit no text at all.
-- Halt your turn to allow the user to interact with the questionnaire.
+- Emit at most a single brief introductory sentence or emit no text at all.
 
-### Batching Behavior
-When you call `ask` one or more times in a single turn, Seamus batches all calls from that inference into a single questionnaire artifact under `/artifacts/questionnaires/<UUID>/`.
+## Plan Artifacts (`plans`)
 
-The tool returns `"OK"` in your tool history so you can proceed.
+In `Plan` mode (`Make` phase):
+- `make_plan(content: str, name: str = "Plan") -> str`: Creates the session-local plan artifact under `/artifacts/plans/<plan_id>/` (`exposition=tabbed`, `cadence=nonblocking`), opening a tab named `name` to the right of `Changes` with rendered Markdown and a **Proceed** button.
+- Once `make_plan` has been called, `make_plan` disappears and is replaced by:
+  - `update_plan(content: str) -> str`: Overwrites the full Markdown content of the active session plan.
+  - `edit_plan(old_string: str, new_string: str) -> str`: Performs an exact substring replacement on the active session plan.
+- Clicking **Proceed** on the Plan tab approves the plan and transitions the session into a new `Plan/Execute` thread.
+- Accepting the Sync PR in `Plan/Execute` (or calling `discard()` on explicit user command) writes `deleteSurface.json` to close the plan artifact and removes its tab.
 
-### Conversation Cadence (`blocking`)
-Questionnaires default to `cadence=blocking`. While an open questionnaire exists:
-- The user cannot send normal chat messages.
-- The UI send button is disabled.
-- The user is prompted to complete and submit the questionnaire.
+## Receiving User Submissions & `read_artifact_submission`
 
-## Receiving User Submissions
-
-When the user fills out and submits the questionnaire:
-1. The system canonically saves the filled values to `/artifacts/questionnaires/<UUID>/updateDataModel.json`.
-2. The system writes `/artifacts/questionnaires/<UUID>/deleteSurface.json`, marking the questionnaire closed.
-3. The system generates a **synthetic tool call**:
-   ```json
-   read_artifact_submission(artifact_id="<UUID>")
-   ```
-   returning:
-   ```json
-   {
-     "data": {
-       "backgroundColor": "other",
-       "backgroundOther": "fuchsia",
-       "headerStyle": "bold"
-     }
-   }
-   ```
-4. Your inference resumes immediately with the submitted answers so you can continue executing the task.
-
-You can also invoke `read_artifact_submission(artifact_id="<UUID>")` directly at any time if you need to re-read canonical submission data from disk.
+When the user submits a `questionnaires` or `forms` artifact, the system saves `updateDataModel.json`, writes `deleteSurface.json`, and synthesizes `read_artifact_submission(artifact_id="<UUID>")` to resume inference.
 
 ### Calling Constraints for `read_artifact_submission`
-- **Same-turn prohibition**: You MUST NOT call `read_artifact_submission` in the same turn that you invoke `ask` to create the questionnaire. Calling it in the same turn will fail because the user has not yet interacted with or submitted the questionnaire.
-- **Future non-blocking lifecycle note**: When `read_artifact_submission` is called for a non-blocking artifact (`cadence=nonblocking`), that particular artifact instance becomes blocking.
-
+- **Same-turn prohibition**: You MUST NOT call `read_artifact_submission` in the same turn that you invoke `ask`, `form`, or `make_plan`.
+- **Non-blocking to blocking promotion**: When `read_artifact_submission` is explicitly called on an open non-blocking artifact (`cadence=nonblocking`), that artifact instance's manifest is promoted to `cadence=blocking` until the user submits it.

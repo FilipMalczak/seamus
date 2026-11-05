@@ -9,6 +9,15 @@ from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResp
 from langchain_core.messages import AIMessage, SystemMessage
 from pydantic import BaseModel, Field
 
+from seamus.domain.modes import (
+    ModeName,
+    PlanPhase,
+    get_mode_descriptor,
+    normalize_mode_and_phase,
+    resolve_available_harness_tools,
+    resolve_mount_policy,
+)
+
 DEFAULT_OPERATIONAL_DIR = "/workspace"
 
 
@@ -16,8 +25,49 @@ class OperatingEnvironment(BaseModel):
     """Execution sandbox and operational filesystem boundaries."""
 
     workspace_directory: str = DEFAULT_OPERATIONAL_DIR
+    workspace_access: str = "read-write"
+    notes_directory: str | None = None
+    notes_access: str | None = None
+    artifacts_directory: str = "/artifacts"
+    artifacts_access: str = "read-only"
     filesystem_persistence: str
     execution_sandbox: str
+
+
+class PlanDocumentSpec(BaseModel):
+    """Specification for authoring the Markdown Plan artifact in Plan/Make phase."""
+
+    overview: str
+    required_sections: list[str] = Field(default_factory=list)
+    authoring_rules: list[str] = Field(default_factory=list)
+
+
+class ActivePlanPromptContext(BaseModel):
+    """Session-local Plan artifact pointer and handoff context."""
+
+    plan_id: str
+    plan_title: str
+    plan_artifact_directory: str
+    plan_data_model_path: str
+    notes_directory: str = "/notes"
+    instructions: str
+
+
+class OperationalModeSection(BaseModel):
+    """Structured mode and phase context injected into the system prompt."""
+
+    mode_name: str
+    mode_slug: str
+    mode_description: str
+    phase_name: str | None = None
+    phase_slug: str | None = None
+    phase_description: str | None = None
+    architecture_and_continuity: list[str] = Field(default_factory=list)
+    phase_objectives: list[str] = Field(default_factory=list)
+    phase_workflow: list[str] = Field(default_factory=list)
+    plan_document_specification: PlanDocumentSpec | None = None
+    active_plan_context: ActivePlanPromptContext | None = None
+    transition_and_discard_rules: list[str] = Field(default_factory=list)
 
 
 class DynamicContext(BaseModel):
@@ -25,6 +75,9 @@ class DynamicContext(BaseModel):
 
     current_timestamp: str
     operational_workdir: str = DEFAULT_OPERATIONAL_DIR
+    operational_mode: str = ModeName.CHAT.value
+    operational_phase: str | None = None
+    active_plan_id: str | None = None
     session_id: str | None = None
     agent_id: str | None = None
 
@@ -42,6 +95,7 @@ class SystemPromptDocument(BaseModel):
 
     identity: str
     operating_environment: OperatingEnvironment
+    operational_mode: OperationalModeSection
     engineering_discipline: list[str] = Field(default_factory=list)
     tool_usage: list[str] = Field(default_factory=list)
     user_inquiry: UserInquiry | None = None
@@ -60,16 +114,57 @@ def build_default_identity() -> str:
     )
 
 
-def build_operating_environment(workdir: str = DEFAULT_OPERATIONAL_DIR) -> OperatingEnvironment:
+def build_operating_environment(
+    workdir: str = DEFAULT_OPERATIONAL_DIR,
+    mode: str = ModeName.CHAT.value,
+    phase: str | None = None,
+) -> OperatingEnvironment:
     """Return the filesystem persistence and sandbox execution boundary model."""
-    persistence = (
-        "You run inside an isolated sandbox container.\n"
-        f"Your Git-tracked operational directory is mounted at `{workdir}`.\n"
-        "All persistent project work, repositories, created files, and artifacts "
-        f"MUST be located within `{workdir}`.\n"
-        f"Anything outside `{workdir}` (such as `/tmp`, `/root`, or system directories) "
-        "is transient and ephemeral, and will be discarded when the sandbox restarts."
+    resolved_mode, resolved_phase = normalize_mode_and_phase(mode, phase)
+    mount_policy = resolve_mount_policy(resolved_mode, resolved_phase)
+    workspace_access = "read-only" if mount_policy.workspace_readonly else "read-write"
+    notes_dir = "/notes" if mount_policy.notes_mounted else None
+    notes_access = (
+        ("read-only" if mount_policy.notes_readonly else "read-write")
+        if mount_policy.notes_mounted
+        else None
     )
+
+    if mount_policy.workspace_readonly:
+        persistence = (
+            "You run inside an isolated sandbox container.\n"
+            f"Your Git-tracked operational directory at `{workdir}` is currently mounted "
+            "READ-ONLY for this phase. Do NOT attempt to write, edit, or delete files inside "
+            f"`{workdir}` during this phase.\n"
+            + (
+                "Your persistent session notes directory at `/notes` is mounted READ-WRITE. "
+                "Record and organize all requirements, architectural findings, and user decisions "
+                "inside `/notes` so subsequent phases can read them.\n"
+                if notes_access == "read-write"
+                else (
+                    "Your session notes directory at `/notes` is mounted READ-ONLY for reference.\n"
+                )
+            )
+            + "Renderable A2UI artifacts are mounted READ-ONLY at `/artifacts`.\n"
+            f"Anything outside `{workdir}`, `/notes`, and `/artifacts` (such as `/tmp` or `/root`) "
+            "is transient and ephemeral, and will be discarded when the sandbox restarts."
+        )
+    else:
+        persistence = (
+            "You run inside an isolated sandbox container.\n"
+            f"Your Git-tracked operational directory is mounted READ-WRITE at `{workdir}`.\n"
+            "All persistent project work, repositories, created files, and deliverables "
+            f"MUST be located within `{workdir}`.\n"
+            + (
+                "Your session notes from earlier planning phases are mounted READ-ONLY at `/notes` "
+                "and approved plan artifacts are mounted READ-ONLY at `/artifacts/plans/`.\n"
+                if notes_dir
+                else ""
+            )
+            + f"Anything outside `{workdir}` (such as `/tmp`, `/root`, or system directories) "
+            "is transient and ephemeral, and will be discarded when the sandbox restarts."
+        )
+
     sandbox_desc = (
         "Shell commands and tools execute inside the isolated sandbox environment. "
         "You have full access to developer tooling, package managers, and compilers "
@@ -77,8 +172,295 @@ def build_operating_environment(workdir: str = DEFAULT_OPERATIONAL_DIR) -> Opera
     )
     return OperatingEnvironment(
         workspace_directory=workdir,
+        workspace_access=workspace_access,
+        notes_directory=notes_dir,
+        notes_access=notes_access,
+        artifacts_directory="/artifacts",
+        artifacts_access="read-only",
         filesystem_persistence=persistence,
         execution_sandbox=sandbox_desc,
+    )
+
+
+def build_plan_document_specification() -> PlanDocumentSpec:
+    """Return structured Markdown specification for authoring plans in Plan/Make phase."""
+    return PlanDocumentSpec(
+        overview=(
+            "The implementation plan is a clean, self-contained GitHub-Flavored Markdown "
+            "document rendered in a dedicated Plan tab with a Proceed button. It serves as "
+            "the authoritative blueprint for the Execute phase, which runs in a fresh thread "
+            "with zero prior chat history."
+        ),
+        required_sections=[
+            (
+                "Context & Goal: Concisely state the problem being solved, user requirements "
+                "synthesized from `/notes`, and the intended outcome."
+            ),
+            (
+                "Key Decisions & Constraints: Document resolved architectural choices, agreed "
+                "trade-offs, and invariants established during the Discuss phase."
+            ),
+            (
+                "Proposed Changes: Group changes by subsystem or component. For every file to "
+                "create, modify, or delete, cite its exact path (`path/to/file`), the functions, "
+                "classes, or interfaces involved, and existing utilities to reuse."
+            ),
+            (
+                "Verification Plan: Specify exact automated test commands, linter/type-check "
+                "invocations, and concrete test scenarios that Execute must run."
+            ),
+        ],
+        authoring_rules=[
+            (
+                "Ground every file path, symbol name, and data flow in actual inspection of "
+                "`/workspace` and the requirement notes in `/notes`."
+            ),
+            (
+                "Keep the plan surgical and high-signal: describe interfaces, contracts, and "
+                "key logic clearly without dumping complete multi-hundred-line source files."
+            ),
+            (
+                "Ensure the plan is completely self-sufficient so an engineer waking up in the "
+                "Execute thread with no conversation history can execute it end-to-end."
+            ),
+        ],
+    )
+
+
+def build_operational_mode_section(
+    mode: str = ModeName.CHAT.value,
+    phase: str | None = None,
+    *,
+    active_plan_id: str | None = None,
+    active_plan_title: str | None = None,
+) -> OperationalModeSection:
+    """Construct the structured OperationalModeSection for the given mode and phase."""
+    resolved_mode, resolved_phase = normalize_mode_and_phase(mode, phase)
+    mode_desc = get_mode_descriptor(resolved_mode)
+    phase_desc = mode_desc.get_phase(resolved_phase)
+
+    if resolved_mode == ModeName.CHAT.value or phase_desc is None:
+        return OperationalModeSection(
+            mode_name=mode_desc.title,
+            mode_slug=mode_desc.name,
+            mode_description=mode_desc.description,
+            phase_objectives=[
+                (
+                    "Collaborate directly with the user to answer questions, explore the codebase, "
+                    "and implement requested changes in `/workspace`."
+                ),
+                (
+                    "Use `ask` when you are genuinely blocked on a user preference or requirement "
+                    "that cannot be inferred from the codebase."
+                ),
+            ],
+            phase_workflow=[
+                "Inspect relevant files in `/workspace` before proposing or applying edits.",
+                "Implement minimal, well-tested changes and verify them with project checks.",
+            ],
+        )
+
+    architecture_and_continuity = [
+        (
+            "Plan mode is divided into three sequential phases: Discuss (`plan/discuss`) -> "
+            "Make (`plan/make`) -> Execute (`plan/execute`)."
+        ),
+        (
+            "Each phase runs in its own isolated thread with a completely fresh message history "
+            "(zero prior chat messages carry over across phases)."
+        ),
+        (
+            "Cross-phase continuity relies strictly on disk state: `/notes` (written in Discuss, "
+            "read-only in Make and Execute) and the session-local Plan artifact under "
+            "`/artifacts/plans/<plan_id>/` (authored in Make, executed in Execute)."
+        ),
+    ]
+
+    active_plan_ctx: ActivePlanPromptContext | None = None
+    if active_plan_id:
+        title_str = active_plan_title or "Plan"
+        plan_dir = f"/artifacts/plans/{active_plan_id}"
+        data_path = f"{plan_dir}/updateDataModel.json"
+        active_plan_ctx = ActivePlanPromptContext(
+            plan_id=active_plan_id,
+            plan_title=title_str,
+            plan_artifact_directory=plan_dir,
+            plan_data_model_path=data_path,
+            notes_directory="/notes",
+            instructions=(
+                f"Active session plan '{title_str}' (id: `{active_plan_id}`) is stored at "
+                f"`{data_path}` (under `/plan/content`). Read `{data_path}` and `/notes` "
+                "to inspect the full plan and background notes."
+            ),
+        )
+
+    if phase_desc.name == PlanPhase.DISCUSS.value:
+        return OperationalModeSection(
+            mode_name=mode_desc.title,
+            mode_slug=mode_desc.name,
+            mode_description=mode_desc.description,
+            phase_name=phase_desc.title,
+            phase_slug=phase_desc.name,
+            phase_description=phase_desc.description,
+            architecture_and_continuity=architecture_and_continuity,
+            phase_objectives=[
+                (
+                    "Explore `/workspace` (mounted read-only) to understand the existing "
+                    "architecture, relevant files, conventions, and constraints."
+                ),
+                (
+                    "Clarify ambiguities, requirements, and design trade-offs with the user using "
+                    "blocking questionnaires (`ask`), non-blocking tabbed forms (`form`), or "
+                    "direct freestyle conversation."
+                ),
+                (
+                    "Continuously record and organize structured requirement notes, codebase "
+                    "findings, and user decisions inside `/notes` (mounted read-write)."
+                ),
+            ],
+            phase_workflow=[
+                (
+                    "1. Read and search `/workspace` to locate existing abstractions, affected "
+                    "files, and edge cases."
+                ),
+                (
+                    "2. Choose the right inquiry mechanism when user input is needed: use `ask` "
+                    "for immediate blocking choices, `form` for broader non-blocking "
+                    "multi-question surveys rendered in a dedicated tab alongside chat, "
+                    "or conversational prose."
+                ),
+                (
+                    "3. Before transitioning, ensure `/notes` contains well-organized Markdown "
+                    "notes capturing the full goal, user answers, affected file paths, and "
+                    "agreed design decisions—because the Make phase will wake up in a new thread "
+                    "with NO chat history and will rely entirely on `/notes`."
+                ),
+                (
+                    "4. Once requirements are clear and `/notes` is organized, call `plan()` to "
+                    "transition the session into the Make phase."
+                ),
+            ],
+            transition_and_discard_rules=[
+                (
+                    "Call `plan()` ONLY after you have gathered sufficient context and written "
+                    "organized notes to `/notes`. Calling `plan()` opens a new Make phase thread "
+                    "and wakes the agent automatically."
+                ),
+                (
+                    "Call `discard()` ONLY when explicitly instructed by the user to abandon or "
+                    "reset the current planning effort."
+                ),
+            ],
+        )
+
+    if phase_desc.name == PlanPhase.MAKE.value:
+        return OperationalModeSection(
+            mode_name=mode_desc.title,
+            mode_slug=mode_desc.name,
+            mode_description=mode_desc.description,
+            phase_name=phase_desc.title,
+            phase_slug=phase_desc.name,
+            phase_description=phase_desc.description,
+            architecture_and_continuity=architecture_and_continuity,
+            phase_objectives=[
+                (
+                    "Read the organized requirement notes in `/notes` (mounted read-only) and "
+                    "verify any remaining technical details in `/workspace` (mounted read-only)."
+                ),
+                (
+                    "Author a comprehensive, surgical Markdown implementation plan using "
+                    "`make_plan(content, name)` (or refine the existing session plan using "
+                    "`update_plan(content)` and `edit_plan(old_string, new_string)`)."
+                ),
+            ],
+            phase_workflow=[
+                (
+                    "1. Start by listing and reading `/notes` to recover all requirements, "
+                    "decisions, and context gathered during Discuss."
+                ),
+                (
+                    "2. Inspect `/workspace` as needed to confirm exact file paths, signatures, "
+                    "and test patterns."
+                ),
+                (
+                    "3. Call `make_plan(content=..., name=...)` to publish the Plan artifact tab. "
+                    "Once `make_plan` is called, `make_plan` is replaced by `update_plan` (full "
+                    "Markdown overwrite) and `edit_plan` (targeted string replacement) for "
+                    "subsequent refinements."
+                ),
+                (
+                    "4. After creating or updating the plan, briefly inform the user that the "
+                    "plan is ready in its tab and await either their feedback in chat or their "
+                    "approval via the **Proceed** button."
+                ),
+            ],
+            plan_document_specification=build_plan_document_specification(),
+            active_plan_context=active_plan_ctx,
+            transition_and_discard_rules=[
+                (
+                    "There is NO tool to transition from Make to Execute. The user transitions "
+                    "the session to Execute by clicking the **Proceed** button on the Plan tab."
+                ),
+                (
+                    "Do NOT repeat the full Markdown plan text in your chat response—the plan is "
+                    "rendered directly in the Plan tab."
+                ),
+                (
+                    "Call `discard()` ONLY when explicitly instructed by the user to discard the "
+                    "plan and return to a fresh Discuss thread."
+                ),
+            ],
+        )
+
+    # PlanPhase.EXECUTE
+    return OperationalModeSection(
+        mode_name=mode_desc.title,
+        mode_slug=mode_desc.name,
+        mode_description=mode_desc.description,
+        phase_name=phase_desc.title,
+        phase_slug=phase_desc.name,
+        phase_description=phase_desc.description,
+        architecture_and_continuity=architecture_and_continuity,
+        phase_objectives=[
+            (
+                "Read the approved implementation plan from `/artifacts/plans/` and supporting "
+                "notes in `/notes`."
+            ),
+            (
+                "Execute the plan systematically in `/workspace` (now mounted read-write) and "
+                "run all verification checks specified in the plan."
+            ),
+        ],
+        phase_workflow=[
+            (
+                "1. Immediately read the active plan artifact (pointed to in "
+                "`active_plan_context` or under `/artifacts/plans/`) and inspect `/notes` "
+                "if additional context is needed."
+            ),
+            (
+                "2. Implement each planned change surgically in `/workspace`, following existing "
+                "codebase conventions and invariants."
+            ),
+            (
+                "3. Run the test suite, linters, and type checks specified in the plan's "
+                "Verification Plan section until all checks pass."
+            ),
+            (
+                "4. Present a concise summary of the completed implementation and verification "
+                "results so the user can review and accept the Sync PR."
+            ),
+        ],
+        active_plan_context=active_plan_ctx,
+        transition_and_discard_rules=[
+            (
+                "When the user accepts the Sync PR in the Changes tab, the active plan artifact "
+                "is automatically closed, changes are merged, and a new Discuss thread opens."
+            ),
+            (
+                "Call `discard()` ONLY when explicitly instructed by the user to abort execution, "
+                "discard the active plan, and return to Discuss."
+            ),
+        ],
     )
 
 
@@ -153,20 +535,42 @@ def build_tool_usage() -> list[str]:
     ]
 
 
-def build_user_inquiry() -> UserInquiry:
-    """Return canonical guidelines for user inquiry and interactive questionnaire tools."""
+def build_user_inquiry(
+    mode: str = ModeName.CHAT.value,
+    phase: str | None = None,
+) -> UserInquiry | None:
+    """Return mode- and phase-aware guidelines for user inquiry tools, or None when omitted."""
+    resolved_mode, resolved_phase = normalize_mode_and_phase(mode, phase)
+    available = resolve_available_harness_tools(resolved_mode, resolved_phase)
+
+    if "ask" not in available and "form" not in available:
+        return None
+
+    tools_list: list[str] = []
+    if "ask" in available:
+        tools_list.append(
+            "ask: Presents an embedded, blocking closed-choice questionnaire directly in the "
+            "chat stream (`exposition=embedded`, `cadence=blocking`). Best for 1-4 focused "
+            "questions that must be answered before proceeding."
+        )
+    if "form" in available:
+        tools_list.append(
+            "form: Presents a tabbed, non-blocking questionnaire in a dedicated tab to the "
+            "right of Changes (`exposition=tabbed`, `cadence=nonblocking`). Best in Discuss "
+            "phase when offering a structured multi-question survey while allowing the user to "
+            "continue freestyle chat before or alongside submitting the form."
+        )
+
+    guidelines = (
+        "When gathering requirements, design decisions, or clarifying choices from the user, "
+        "use the available inquiry tools (`ask`"
+        + (" or `form`, or freestyle conversation" if "form" in available else "")
+        + ")."
+    )
+
     return UserInquiry(
-        guidelines=(
-            "When gathering requirements, design decisions, or clarifying choices from the user, "
-            "use dedicated inquiry tools rather than free-form conversational text questions."
-        ),
-        available_tools=[
-            (
-                "ask: Presents a structured, interactive closed-choice questionnaire directly in "
-                "the user interface. Supports single-choice, multiple-choice, and optional "
-                "write-in fields."
-            ),
-        ],
+        guidelines=guidelines,
+        available_tools=tools_list,
         interaction_rules=[
             (
                 "Inquiry tools replace conversational question text. Never repeat, duplicate, or "
@@ -174,21 +578,21 @@ def build_user_inquiry() -> UserInquiry:
                 "inquiry tool."
             ),
             (
-                "When calling an inquiry tool, output at most a single concise introductory "
-                "sentence (e.g. 'Please select your preferred options below.') or emit no text "
-                "at all, then immediately halt to await user submission."
+                "When calling `ask`, output at most a single concise introductory sentence "
+                "(e.g. 'Please select your preferred options below.') or emit no text at all, "
+                "then immediately halt to await user submission."
             ),
             (
-                "Multiple questions called in the same turn are automatically composed into a "
-                "single questionnaire artifact."
+                "Multiple `ask` calls or multiple `form` calls in the same turn are automatically "
+                "batched into a single questionnaire or form artifact."
             ),
             (
                 "Consult the 'artifacts' skill at `/skills/bundled/artifacts/SKILL.md` for "
                 "complete guidance on A2UI artifacts, data models, and submission handling."
             ),
             (
-                "Never call 'read_artifact_submission' in the same turn you call 'ask'. The "
-                "questionnaire must first be answered and submitted by the user before its "
+                "Never call 'read_artifact_submission' in the same turn you call 'ask' or 'form'. "
+                "The artifact must first be answered and submitted by the user before its "
                 "submission data can be read."
             ),
         ],
@@ -223,25 +627,45 @@ def build_dynamic_context(
     session_id: str | None = None,
     agent_id: str | None = None,
     timestamp: datetime | None = None,
+    mode: str = ModeName.CHAT.value,
+    phase: str | None = None,
+    active_plan_id: str | None = None,
 ) -> DynamicContext:
     """Return runtime context evaluated for a specific model inference turn."""
     now = timestamp or datetime.now(UTC)
+    resolved_mode, resolved_phase = normalize_mode_and_phase(mode, phase)
     return DynamicContext(
         current_timestamp=now.isoformat(),
         operational_workdir=workdir,
+        operational_mode=resolved_mode,
+        operational_phase=resolved_phase,
+        active_plan_id=active_plan_id,
         session_id=session_id,
         agent_id=agent_id,
     )
 
 
-def build_scaffold_prompt(workdir: str = DEFAULT_OPERATIONAL_DIR) -> str:
+def build_scaffold_prompt(
+    workdir: str = DEFAULT_OPERATIONAL_DIR,
+    mode: str = ModeName.CHAT.value,
+    phase: str | None = None,
+    *,
+    active_plan_id: str | None = None,
+    active_plan_title: str | None = None,
+) -> str:
     """Construct the base XML prompt scaffold without dynamic context or custom additions."""
     doc = SystemPromptDocument(
         identity=build_default_identity(),
-        operating_environment=build_operating_environment(workdir),
+        operating_environment=build_operating_environment(workdir, mode=mode, phase=phase),
+        operational_mode=build_operational_mode_section(
+            mode=mode,
+            phase=phase,
+            active_plan_id=active_plan_id,
+            active_plan_title=active_plan_title,
+        ),
         engineering_discipline=build_engineering_discipline(),
         tool_usage=build_tool_usage(),
-        user_inquiry=build_user_inquiry(),
+        user_inquiry=build_user_inquiry(mode=mode, phase=phase),
         communication_style=build_communication_style(),
     )
     dumped = doc.model_dump(mode="json", exclude_none=True)
@@ -255,6 +679,10 @@ def build_effective_system_prompt(
     agent_id: str | None = None,
     include_dynamic_context: bool = True,
     timestamp: datetime | None = None,
+    mode: str = ModeName.CHAT.value,
+    phase: str | None = None,
+    active_plan_id: str | None = None,
+    active_plan_title: str | None = None,
 ) -> str:
     """Assemble and serialize the complete effective LM-XML system prompt."""
     dynamic_ctx = (
@@ -263,6 +691,9 @@ def build_effective_system_prompt(
             session_id=session_id,
             agent_id=agent_id,
             timestamp=timestamp,
+            mode=mode,
+            phase=phase,
+            active_plan_id=active_plan_id,
         )
         if include_dynamic_context
         else None
@@ -272,10 +703,16 @@ def build_effective_system_prompt(
 
     doc = SystemPromptDocument(
         identity=build_default_identity(),
-        operating_environment=build_operating_environment(workdir),
+        operating_environment=build_operating_environment(workdir, mode=mode, phase=phase),
+        operational_mode=build_operational_mode_section(
+            mode=mode,
+            phase=phase,
+            active_plan_id=active_plan_id,
+            active_plan_title=active_plan_title,
+        ),
         engineering_discipline=build_engineering_discipline(),
         tool_usage=build_tool_usage(),
-        user_inquiry=build_user_inquiry(),
+        user_inquiry=build_user_inquiry(mode=mode, phase=phase),
         communication_style=build_communication_style(),
         dynamic_context=dynamic_ctx,
         custom_instructions=custom_text,
@@ -285,19 +722,42 @@ def build_effective_system_prompt(
 
 
 class DynamicSystemPromptMiddleware(AgentMiddleware):
-    """LangChain/DeepAgents middleware dynamically injecting system prompt per model turn."""
+    """LangChain/DeepAgents middleware dynamically injecting prompt, tools, and trigger messages."""
 
-    def __init__(self, prompt_provider: Callable[[ModelRequest[Any]], str]) -> None:
+    def __init__(
+        self,
+        prompt_provider: Callable[[ModelRequest[Any]], str],
+        tools_provider: Callable[[ModelRequest[Any]], list[Any]] | None = None,
+        messages_provider: Callable[[ModelRequest[Any]], list[Any] | None] | None = None,
+        should_short_circuit: Callable[[ModelRequest[Any]], bool] | None = None,
+    ) -> None:
         super().__init__()
         self.prompt_provider = prompt_provider
+        self.tools_provider = tools_provider
+        self.messages_provider = messages_provider
+        self.should_short_circuit = should_short_circuit
+
+    def _build_overridden_request(self, request: ModelRequest[Any]) -> ModelRequest[Any]:
+        prompt_text = self.prompt_provider(request)
+        overrides: dict[str, Any] = {
+            "system_message": SystemMessage(content=prompt_text),
+        }
+        if self.tools_provider is not None:
+            overrides["tools"] = self.tools_provider(request)
+        if self.messages_provider is not None:
+            override_msgs = self.messages_provider(request)
+            if override_msgs is not None:
+                overrides["messages"] = override_msgs
+        return request.override(**overrides)
 
     def wrap_model_call(
         self,
         request: ModelRequest[Any],
         handler: Callable[[ModelRequest[Any]], ModelResponse[Any]],
     ) -> ModelResponse[Any] | AIMessage:
-        prompt_text = self.prompt_provider(request)
-        overridden = request.override(system_message=SystemMessage(content=prompt_text))
+        if self.should_short_circuit is not None and self.should_short_circuit(request):
+            return ModelResponse([AIMessage(content="")])
+        overridden = self._build_overridden_request(request)
         return handler(overridden)
 
     async def awrap_model_call(
@@ -305,6 +765,7 @@ class DynamicSystemPromptMiddleware(AgentMiddleware):
         request: ModelRequest[Any],
         handler: Callable[[ModelRequest[Any]], Awaitable[ModelResponse[Any]]],
     ) -> ModelResponse[Any] | AIMessage:
-        prompt_text = self.prompt_provider(request)
-        overridden = request.override(system_message=SystemMessage(content=prompt_text))
+        if self.should_short_circuit is not None and self.should_short_circuit(request):
+            return ModelResponse([AIMessage(content="")])
+        overridden = self._build_overridden_request(request)
         return await handler(overridden)

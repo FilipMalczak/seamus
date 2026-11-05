@@ -92,12 +92,13 @@ Modes are **open and creatable**—the core list below is an illustrative set, n
 ### Detailed Mode Semantics
 
 #### `plan`
-- **Objective**: Formulate a structured, verified plan before making any code modifications.
+- **Objective**: Formulate a structured, verified plan across three sequential phases (**Discuss** -> **Make** -> **Execute**) before modifying production deliverables.
 - **Workflow**:
-  1. *Planning Phase*: The agent explores existing files, analyzes requirements, and drafts a step-by-step plan. Write operations are restricted or confined to scratchpad planning files.
-  2. *Plan Alignment*: The user reviews the plan and approves execution.
-  3. *Execution Phase*: The mode transitions to execution (or `act`), which **spawns a new thread** to carry out the implementation steps.
-- **Workspace Role**: Initially inspected in read-only fashion; during execution, becomes the target of verified changes.
+  1. *Discuss Phase* (`plan/discuss`): The agent explores `/workspace` (mounted read-only) and clarifies requirements with the user (via `ask`, `form`, or conversation), recording all findings in `/notes` (mounted read-write). Calling `plan()` spawns a fresh `plan/make` thread.
+  2. *Make Phase* (`plan/make`): Synthesizes requirements into a session-local Markdown Plan artifact (`exposition="tabbed"`, `cadence="nonblocking"`) via `make_plan`, `update_plan`, and `edit_plan` with `/workspace` and `/notes` mounted read-only. Clicking the "Proceed" button advances the session to Execute.
+  3. *Execute Phase* (`plan/execute`): Spawns a fresh execution thread with `/workspace` mounted read-write and `/notes` mounted read-only to implement and test the approved plan.
+  4. *Discarding*: Calling `discard()` in any phase discards active plans and returns the session to a fresh `plan/discuss` thread.
+- **Workspace Role**: Inspected in read-only mode during Discuss and Make; becomes the target of verified changes in Execute.
 
 #### `chat`
 - **Objective**: Conversational discussion, brainstorming, high-level guidance, or explaining concepts without modifying project deliverables.
@@ -127,7 +128,9 @@ In Seamus, **Threads are the deterministic execution boundaries** for modes and 
 
 ### Mode Transitions Spawn Threads
 
-Whenever a session switches modes, Seamus closes the active thread and spawns a fresh thread:
+Whenever a session switches modes or advances phases, Seamus opens a fresh thread if the current open thread was non-empty. If the current thread is empty (contains no recorded events, such as immediately upon creating a new agent session), the empty thread is reused and updated in place with the new mode and phase rather than stacking orphaned empty threads in the navigation tree.
+
+When the active thread contains conversational history:
 
 ```mermaid
 stateDiagram-v2

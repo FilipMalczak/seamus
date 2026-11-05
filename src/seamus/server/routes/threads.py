@@ -47,6 +47,9 @@ async def create_thread(
         last_touched_at=thread.last_touched_at,
         is_open=thread.is_open,
         status=thread.status,
+        mode=thread.mode,
+        phase=thread.phase,
+        mode_label=thread.mode_label,
     )
 
 
@@ -155,6 +158,9 @@ async def update_thread(
         last_touched_at=thread.last_touched_at,
         is_open=thread.is_open,
         status=thread.status,
+        mode=thread.mode,
+        phase=thread.phase,
+        mode_label=thread.mode_label,
     )
 
 
@@ -184,4 +190,7 @@ async def accept_thread(
         last_touched_at=new_thread.last_touched_at,
         is_open=new_thread.is_open,
         status=new_thread.status,
+        mode=new_thread.mode,
+        phase=new_thread.phase,
+        mode_label=new_thread.mode_label,
     )

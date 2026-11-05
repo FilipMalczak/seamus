@@ -10,6 +10,12 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## Deferred
 
+### Rich Plan Presentation, Inline Commenting, and Section-Level Editing
+- **Description**: Enhance the Plan artifact tab presentation in the Web UI: provide structured section folding, side-by-side split comparison with requirements, and rich inline commenting allowing users to select plan text segments or steps and provide targeted feedback directly into the A2UI surface before clicking "Proceed".
+- **Why Deferred**: Focused initially on establishing operational modes, multi-phase thread lifecycles, and standard Markdown rendering with the "Proceed" action in the dedicated tab.
+- **Revisit Trigger**: When complex, multi-component planning workflows require fine-grained human-in-the-loop review on individual plan sections.
+- **Provenance**: [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md).
+
 ### Fine-Grained Arity Controls for Questionnaire Inquiry Tools
 - **Description**: Expand selection constraints for `ask` (and future inquiry tools) from boolean `multiple: bool` to fine-grained arity bounds: `arity: int | tuple[int, int | Literal["*"]]` (e.g. `1` for single choice, `(1, "*")` for at least one choice, `(0, "*")` for optional multiple selection, `(2, 4)` for a bounded range).
 - **Why Deferred**: Boolean `multiple` matches current A2UI ChoicePicker primitives (`mutuallyExclusive` vs `multipleSelection`) cleanly without requiring custom client-side validation logic or un-standardized A2UI catalog validation schemas.
@@ -78,6 +84,11 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## Technical debt
 
+### Session Branching Interaction with Session-Local Non-Blocking Artifacts and Multi-Repo Git Mounts
+- **Current Problem**: Session branching (`branch_session`) copies thread checkpoint history and Git commits from a specific parent assistant turn. However, non-blocking artifacts (such as `plan`) and session-level directories (`/notes`) are session-scoped and encompass multi-turn, multi-phase exchanges. In addition, when future multi-repository mounts are introduced, multiple Git repositories must remain synchronized across branches, phases, and thread checkpoints. We need to rethink and review how session branching, session-local non-blocking artifacts, and multi-repo Git mounts interact safely without orphaned artifacts, desynchronized working trees, or broken plan lineage.
+- **Improvement**: Formally model artifact provenance and multi-repo checkpoint synchronization in `branch_session`, ensuring child branched sessions cleanly copy or fork active plan artifacts and multi-mount Git states without conflicting with the parent session.
+- **Provenance**: [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), `src/seamus/harness/runner.py`, `src/seamus/persistence/workspace.py`.
+
 ### Synchronous Git Subprocess Invocations in Async Server Flows
 - **Current Problem**: `GitWorkspaceManager._run_git` calls `subprocess.run(["git", ...])` synchronously. During HTTP requests (`create_agent`, `commit_agent_config`, `commit_session_config`) and checkpoint serialization (`GitCheckpointSaver`), disk I/O and remote Git pushes to Gitea block the asyncio event loop thread.
 - **Improvement**: Offload Git commands to a thread pool via `asyncio.to_thread` or switch to an asynchronous subprocess runner (`asyncio.create_subprocess_exec`) to avoid blocking the server event loop during Git operations.
@@ -121,16 +132,29 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: DeepAgents' `SkillsMiddleware` operates as an external abstraction with rigid prompt formatting, strict PyYAML frontmatter parsing (which silently drops real-world skills with unquoted inline structures like colons or braces in descriptions, such as `bevy-assets`), and implicit disclosure rules. A native implementation based on `lmxml` dynamisms, relaxed/resilient YAML frontmatter parsing, and explicit `load_skill` / `unload_skill` tools will align directly with Seamus's structured XML system prompt architecture, provide tighter control over context window budgeting and prompt cache breakpoints, and avoid middleware ordering or prompt overriding frictions.
 - **Provenance**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md), [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md), [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md).
 
-### Operational Execution Modes and Thread Transition Triggers (plan, chat, act, analyse, routing)
-- **Description**: Support an open set of configurable execution modes that govern agent interaction style, prompt framing, workspace usage, and thread-spawning triggers:
-  1. `plan`: Generates a structured execution plan before implementing changes. Spawns a new thread when formulating a plan, and automatically opens another new thread when transitioning from plan alignment to execution.
-  2. `chat`: Conversational orientation; the workspace serves primarily as an agent scratchpad rather than the focus of production file changes.
-  3. `act`: Direct task execution; executes user commands and edits promptly without upfront planning cycles.
-  4. `analyse`: Read-only workspace investigation; answers questions and analyzes code without modifying persistent files.
-  5. `routing` (planned): Uses a classifier model (such as Jev or an LLM wrapped in dedicated tools) to triage user input and dispatch to an appropriate operational mode.
-  Switching between operational modes always closes the current thread and opens a fresh thread.
+### Operational Execution Modes and Thread Transition Triggers (act, analyse, routing)
+- **Description**: Following the initial implementation of `chat` and `plan` modes in [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), expand the operational mode set to include:
+  1. `act`: Direct task execution; executes user commands and edits promptly without upfront planning cycles.
+  2. `analyse`: Read-only workspace investigation; answers questions and analyzes code without modifying persistent files.
+  3. `routing`: Uses a classifier model (such as Jev or an LLM wrapped in dedicated tools) to triage user input and dispatch to an appropriate operational mode.
+  Switching between operational modes closes non-empty threads and opens a fresh thread (reusing empty initial threads).
 - **Rationale**: Aligns agent behavior with specific user intents while using threads as deterministic boundaries between planning, discussion, analysis, and execution.
-- **Provenance**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [threads_modes_personas.md](./threads_modes_personas.md), [REQ-025](./requirements.md#req-025-operational-modes-and-thread-transition-triggers), [INV-028](./invariants.md#inv-028-mode-transition-thread-spawning-boundary).
+- **Provenance**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), [threads_modes_personas.md](./threads_modes_personas.md), [REQ-025](./requirements.md#req-025-operational-modes-and-thread-transition-triggers), [INV-028](./invariants.md#inv-028-mode-transition-thread-spawning-boundary).
+
+### Mode as First-Class Configuration (Template Defaults and Agent-Defined Session Mode)
+- **Description**: Treat the operational mode as a formal part of agent and session configuration (`AgentConfig`):
+  1. Configuration templates (`ConfigTemplate`) should include a default mode field (e.g. defaulting to `chat`, with options for `plan`, `act`, etc.).
+  2. An `Agent` defines its default mode in its configuration, inherited from the template or set explicitly.
+  3. When an agent creates a new session, the session initializes its initial thread directly in the agent's configured default mode rather than hardcoding `chat`.
+- **Rationale**: Currently agents always initialize new sessions in `chat` mode, requiring manual switching if an agent is intended as a dedicated planner. Incorporating mode into configuration allows defining purpose-built agents (e.g. an architectural planner agent whose sessions immediately start in `plan` mode).
+- **Provenance**: [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), `src/seamus/config/models.py`, `src/seamus/domain/entities.py`.
+
+### Configuration Synchronization (Template-to-Agent and Agent-to-Session)
+- **Description**: Implement mechanisms to synchronize configurations across entity hierarchies:
+  1. Template to Agent: Allow updating an agent's `config` from its base `ConfigTemplate`, propagating newly added settings, models, or defaults while preserving agent-specific overrides.
+  2. Agent to Session: Provide an explicit sync or inheritance mechanism to propagate updated agent configurations down to existing active sessions, and ensure newly spawned sessions accurately reflect the latest agent configuration state.
+- **Rationale**: Agents and sessions currently take snapshot copies of configs during creation. When a template or agent configuration is updated, existing downstream entities remain on stale configuration snapshots with no automated or selective synchronization path.
+- **Provenance**: `src/seamus/config/models.py`, `src/seamus/domain/entities.py`, `src/seamus/server/routes/config.py`.
 
 ### Pluggable Agent Personas (Coder, Office Worker, Designer, etc.)
 - **Description**: Support an extensible architecture for agent personas, with immediate near-term focus on the `Coder` persona to support self-hosting / dogfooding development (developing Seamus with Seamus), while supporting custom persona registration in the long term. Personas establish baseline `<identity>`, domain instructions, and specialized tool suites/backends (exact rules for persona switching/inheritance across sessions remain TBD).

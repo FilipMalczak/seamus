@@ -100,6 +100,10 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
         session_id: UUID,
         data_dir: Path,
         artifacts_dir: Path | None = None,
+        notes_dir: Path | None = None,
+        workspace_readonly: bool = False,
+        notes_mounted: bool = False,
+        notes_readonly: bool = True,
         settings: SandboxSettings | None = None,
         skill_directories: list[str] | None = None,
         sandbox: SandboxSync | None = None,
@@ -108,10 +112,41 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
         self.session_id = session_id
         self.data_dir = data_dir
         self.artifacts_dir = artifacts_dir or (data_dir.parent / "artifacts")
+        self.notes_dir = notes_dir or (data_dir.parent / "notes")
+        self.workspace_readonly = workspace_readonly
+        self.notes_mounted = notes_mounted
+        self.notes_readonly = notes_readonly
         self.settings = settings or get_sandbox_settings()
         self.skill_directories = skill_directories if skill_directories is not None else []
         self._active_sandbox: SandboxSync | None = sandbox
         super().__init__(sandbox=sandbox, timeout=self.settings.timeout)
+
+    def reconfigure_mounts(
+        self,
+        *,
+        workspace_readonly: bool,
+        notes_mounted: bool = False,
+        notes_readonly: bool = True,
+    ) -> None:
+        """Update volume mount flags and recycle the active sandbox if flags changed."""
+        changed = (
+            self.workspace_readonly != workspace_readonly
+            or self.notes_mounted != notes_mounted
+            or self.notes_readonly != notes_readonly
+        )
+        self.workspace_readonly = workspace_readonly
+        self.notes_mounted = notes_mounted
+        self.notes_readonly = notes_readonly
+        if changed and self._active_sandbox is not None:
+            logger.info(
+                "Reconfiguring OpenSandbox mounts for session %s "
+                "(workspace_ro=%s, notes_mounted=%s, notes_ro=%s)",
+                self.session_id,
+                workspace_readonly,
+                notes_mounted,
+                notes_readonly,
+            )
+            self.destroy()
 
     @property
     def _sandbox(self) -> SandboxSync:
@@ -129,7 +164,7 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
             return Volume(
                 name="workspace",
                 mountPath=self.settings.workdir,
-                readOnly=False,
+                readOnly=self.workspace_readonly,
                 pvc=PVC(
                     claimName=self.settings.workspace_volume,
                     createIfNotExists=True,
@@ -140,8 +175,32 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
         return Volume(
             name="workspace",
             mountPath=self.settings.workdir,
-            readOnly=False,
+            readOnly=self.workspace_readonly,
             host=Host(path=str(self.data_dir.resolve())),
+        )
+
+    def build_notes_volume(self) -> Volume | None:
+        """Build the OpenSandbox Volume mounting the session's notes/ directory when enabled."""
+        if not self.notes_mounted:
+            return None
+        self.notes_dir.mkdir(parents=True, exist_ok=True)
+        if self.settings.workspace_volume:
+            return Volume(
+                name="notes",
+                mountPath="/notes",
+                readOnly=self.notes_readonly,
+                pvc=PVC(
+                    claimName=self.settings.workspace_volume,
+                    createIfNotExists=True,
+                    deleteOnSandboxTermination=False,
+                ),
+                subPath=f"{self.agent_id}/{self.session_id}/notes",
+            )
+        return Volume(
+            name="notes",
+            mountPath="/notes",
+            readOnly=self.notes_readonly,
+            host=Host(path=str(self.notes_dir.resolve())),
         )
 
     def build_artifact_volume(self) -> Volume:
@@ -258,11 +317,13 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
             connection_config = self.build_connection_config()
             workspace_volume = self.build_workspace_volume()
             artifact_volume = self.build_artifact_volume()
+            notes_volume = self.build_notes_volume()
             bundled_volume = self.build_bundled_skill_volume()
             skill_volumes = self.build_skill_volumes()
             all_volumes = [
                 workspace_volume,
                 artifact_volume,
+                *([notes_volume] if notes_volume is not None else []),
                 *([bundled_volume] if bundled_volume is not None else []),
                 *skill_volumes,
             ]

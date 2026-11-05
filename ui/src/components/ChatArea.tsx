@@ -41,6 +41,20 @@ interface ChatAreaProps {
   thread: ThreadInfo | null;
   onStatusChange?: (status: AgentStatus) => void;
   onKillSession?: () => void;
+  onSwitchMode?: (mode: "chat" | "plan") => Promise<void> | void;
+  onThreadTransition?: (
+    toThreadId: string,
+    mode?: string,
+    phase?: string | null
+  ) => void;
+  onArtifactsSync?: (
+    artifacts: ArtifactInfo[],
+    submitArtifact: (
+      artifact: ArtifactInfo,
+      data: Record<string, unknown>
+    ) => Promise<void>,
+    submittingArtifactId: string | null
+  ) => void;
   onBranchMessage?: (
     messageId: string | null,
     options?: { retryInference?: boolean; promptToSend?: string }
@@ -59,6 +73,9 @@ export function ChatArea({
   thread,
   onStatusChange,
   onKillSession,
+  onSwitchMode,
+  onThreadTransition,
+  onArtifactsSync,
   onBranchMessage,
   onNavigateToSession,
 }: ChatAreaProps) {
@@ -70,6 +87,7 @@ export function ChatArea({
   const [errorExpanded, setErrorExpanded] = useState<boolean>(false);
   const [copiedError, setCopiedError] = useState<boolean>(false);
   const [submittingArtifactId, setSubmittingArtifactId] = useState<string | null>(null);
+  const [switchingMode, setSwitchingMode] = useState<boolean>(false);
 
   const {
     messages,
@@ -78,10 +96,17 @@ export function ChatArea({
     streamErrorDetails,
     sending,
     sendMessage,
+    artifacts,
     hasOpenBlockingArtifact,
     refreshArtifacts,
     submitArtifact,
-  } = useThreadStream(agentId, sessionId, thread?.id ?? null, sessionStatus);
+  } = useThreadStream(
+    agentId,
+    sessionId,
+    thread?.id ?? null,
+    sessionStatus,
+    onThreadTransition
+  );
 
   const handleSubmitArtifact = useCallback(
     async (artifact: ArtifactInfo, data: Record<string, unknown>) => {
@@ -95,6 +120,10 @@ export function ChatArea({
     },
     [submitArtifact, refreshArtifacts]
   );
+
+  useEffect(() => {
+    onArtifactsSync?.(artifacts, handleSubmitArtifact, submittingArtifactId);
+  }, [artifacts, handleSubmitArtifact, submittingArtifactId, onArtifactsSync]);
 
   const isSessionTerminal = sessionStatus !== "ACTIVE";
   const isOpen = (thread?.is_open ?? false) && !isSessionTerminal;
@@ -385,6 +414,26 @@ export function ChatArea({
     );
   }
 
+  const currentMode = (thread.mode || "chat") as "chat" | "plan";
+  const currentModeLabel =
+    thread.mode_label ||
+    (thread.phase ? `${currentMode}/${thread.phase}` : currentMode);
+
+  const handleModeClick = async (targetMode: "chat" | "plan") => {
+    if (!onSwitchMode || switchingMode || isBusy || sending || isSessionTerminal) {
+      return;
+    }
+    if (currentMode === targetMode && isOpen) {
+      return;
+    }
+    setSwitchingMode(true);
+    try {
+      await onSwitchMode(targetMode);
+    } finally {
+      setSwitchingMode(false);
+    }
+  };
+
   return (
     <main className="chat-main">
       <div className="chat-top-bar">
@@ -401,6 +450,9 @@ export function ChatArea({
             <span className="crumb-thread">
               {thread.name || thread.id}
             </span>
+            <span className={`thread-mode-badge mode-${currentMode}`}>
+              {currentModeLabel}
+            </span>
             <span className={`thread-state-badge ${isOpen ? "state-open" : "state-closed"}`}>
               {isOpen ? "Active Open Thread" : "Closed Thread"}
             </span>
@@ -408,6 +460,30 @@ export function ChatArea({
         </div>
 
         <div className="chat-top-actions">
+          {sessionStatus === "ACTIVE" && onSwitchMode && (
+            <div className="mode-selector-group" role="group" aria-label="Operational Mode">
+              <button
+                type="button"
+                className={`mode-selector-btn ${currentMode === "chat" ? "active" : ""}`}
+                onClick={() => handleModeClick("chat")}
+                disabled={isBusy || sending || switchingMode}
+                title="Switch to Chat mode (opens a new Chat thread)"
+              >
+                Chat
+              </button>
+              <button
+                type="button"
+                className={`mode-selector-btn mode-plan ${currentMode === "plan" ? "active" : ""}`}
+                onClick={() => handleModeClick("plan")}
+                disabled={isBusy || sending || switchingMode}
+                title="Switch to Plan mode (opens a new Plan/Discuss thread)"
+              >
+                {currentMode === "plan" && thread.phase
+                  ? `Plan (${thread.phase})`
+                  : "Plan"}
+              </button>
+            </div>
+          )}
           {sessionStatus === "ACTIVE" && status !== "ERROR" && onKillSession && (
             <button
               type="button"

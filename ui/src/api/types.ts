@@ -47,6 +47,9 @@ export type ThreadInfo = {
   last_touched_at: string;
   is_open: boolean;
   status: AgentStatus;
+  mode?: string;
+  phase?: string | null;
+  mode_label?: string;
 };
 
 export type SessionSummary = {
@@ -57,6 +60,7 @@ export type SessionSummary = {
   last_touched_at: string;
   config: AgentConfig;
   status: SessionStatus;
+  active_plan_id?: string | null;
   provenance?: SessionBranchProvenance | null;
   lineage?: SessionBranchProvenance[];
 };
@@ -69,6 +73,7 @@ export type SessionDetail = {
   last_touched_at: string;
   config: AgentConfig;
   status: SessionStatus;
+  active_plan_id?: string | null;
   provenance?: SessionBranchProvenance | null;
   lineage?: SessionBranchProvenance[];
   threads: ThreadInfo[];
@@ -105,11 +110,13 @@ export type ToolCallRecord = {
 export interface ArtifactManifest {
   exposition: "embedded" | "tabbed";
   cadence: "blocking" | "nonblocking";
+  title?: string | null;
 }
 
 export interface ArtifactInfo {
   kind: string;
   name: string;
+  title?: string | null;
   manifest: ArtifactManifest;
   is_closed: boolean;
   surface: Record<string, unknown>;

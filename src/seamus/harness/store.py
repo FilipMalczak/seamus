@@ -18,12 +18,14 @@ from seamus.domain.entities import (
     SessionStatus,
     Thread,
 )
+from seamus.domain.modes import normalize_mode_and_phase
 from seamus.domain.resolution import (
     EntityNotFoundError,
     parse_uuid,
     resolve_session,
     resolve_thread,
 )
+from seamus.harness.artifacts import STANDARD_SURFACE_ID, ArtifactResolver, PlanBuilder
 from seamus.persistence import get_workspace_manager, parse_stored_event
 
 logger = logging.getLogger(__name__)
@@ -724,15 +726,40 @@ class HarnessStore:
             agent_identifier=agent_ident,
             operation="accept",
         ):
-            # 1. Close current thread
+            ws_mgr = get_workspace_manager()
+
+            # 1. Close active plan if present (e.g. when accepting Sync PR in Plan/Execute)
+            if session.active_plan_id:
+                try:
+                    artifacts_dir = ws_mgr.get_session_artifacts_dir(agent.id, session.id)
+                    PlanBuilder.close_plan(artifacts_dir, session.active_plan_id)
+                    closed_plan_id = session.active_plan_id
+                    session.active_plan_id = None
+                    from seamus.harness.runner import get_runner_registry
+
+                    runner = get_runner_registry()._runners.get(str(session.id))
+                    if runner is not None:
+                        runner.broadcaster.broadcast_sync(
+                            {
+                                "type": "ARTIFACT_CLOSED",
+                                "artifact_id": closed_plan_id,
+                                "kind": "plans",
+                            }
+                        )
+                    ws_mgr.commit_checkpoint_changes(agent.id, session.id, thread.id)
+                except Exception:
+                    logger.exception(
+                        "Failed to close active plan upon Sync PR accept for session %s",
+                        session.id,
+                    )
+
+            # 2. Close current thread
             thread.is_open = False
             thread.touch()
             session.touch()
             agent.touch()
 
-            ws_mgr = get_workspace_manager()
-
-            # 2. Commit closed thread state to session branch
+            # 3. Commit closed thread state to session branch
             try:
                 ws_mgr.commit_session_config(session)
             except Exception:
@@ -740,18 +767,38 @@ class HarnessStore:
                     "Failed to commit session config upon thread close for %s", session.id
                 )
 
-            # 3. Approve and merge active Sync PR into main
+            # 4. Approve and merge active Sync PR into main
             try:
                 ws_mgr.merge_sync_pr(session, agent)
             except Exception:
                 logger.exception("Failed to merge Sync PR for session %s", session.id)
 
-            # 4. Open a new thread on the same session branch
-            new_thread = session.create_thread()
+            # 5. Open a new thread on the same session branch (Plan mode resets to Discuss)
+            new_thread = session.create_thread(mode=thread.mode, phase=None)
             session.touch()
             agent.touch()
 
-            # 5. Commit session config with the new thread and open a renewed Sync PR
+            try:
+                from seamus.harness.runner import get_runner_registry
+
+                runner = get_runner_registry()._runners.get(str(session.id))
+                if runner is not None:
+                    runner.sync_sandbox_mounts(new_thread)
+                    runner.broadcaster.broadcast_sync(
+                        {
+                            "type": "THREAD_TRANSITION",
+                            "thread_id": str(new_thread.id),
+                            "mode": new_thread.mode,
+                            "phase": new_thread.phase,
+                            "mode_label": new_thread.mode_label,
+                            "active_plan_id": session.active_plan_id,
+                            "auto_wake": False,
+                        }
+                    )
+            except Exception:
+                logger.exception("Failed to sync runner mounts after accept_thread")
+
+            # 6. Commit session config with the new thread and open a renewed Sync PR
             try:
                 ws_mgr.commit_session_config(session)
             except Exception:
@@ -763,6 +810,97 @@ class HarnessStore:
                 logger.exception("Failed to open renewed Sync PR for session %s", session.id)
 
             return new_thread
+
+    def switch_session_mode(
+        self,
+        agent_identifier: str,
+        session_identifier: str,
+        mode: str,
+    ) -> Session:
+        """Switch the operational mode of a session by spawning a new thread in the target mode."""
+        agent = self.resolve_agent(agent_identifier)
+        session = resolve_session(agent, session_identifier)
+        if not session.is_active:
+            raise ValueError(
+                f"Cannot switch mode on inactive session '{session.id}' "
+                f"(status: {session.status.value})."
+            )
+
+        target_mode, target_phase = normalize_mode_and_phase(mode, None)
+        ws_mgr = get_workspace_manager()
+        artifacts_dir = ws_mgr.get_session_artifacts_dir(agent.id, session.id)
+
+        from seamus.harness.runner import get_runner_registry
+
+        runner = get_runner_registry()._runners.get(str(session.id))
+        old_thread = session.get_open_thread()
+
+        # Close active plan if one is open when switching modes
+        if session.active_plan_id:
+            closed_plan_id = session.active_plan_id
+            PlanBuilder.close_plan(artifacts_dir, closed_plan_id)
+            session.active_plan_id = None
+            if runner is not None:
+                runner.broadcaster.broadcast_sync(
+                    {
+                        "type": "ARTIFACT_CLOSED",
+                        "artifact_id": closed_plan_id,
+                        "kind": "plans",
+                    }
+                )
+
+        # Close any open questionnaires or forms so the new mode thread starts unblocked
+        if artifacts_dir.is_dir():
+            resolver = ArtifactResolver(artifacts_dir)
+            for art in resolver.list_artifacts():
+                if not art.is_closed:
+                    del_file = artifacts_dir / art.kind / art.name / "deleteSurface.json"
+                    del_file.write_text(
+                        json.dumps(
+                            {
+                                "version": "v0.9",
+                                "deleteSurface": {"surfaceId": STANDARD_SURFACE_ID},
+                            },
+                            indent=2,
+                        ),
+                        encoding="utf-8",
+                    )
+                    if runner is not None:
+                        runner.broadcaster.broadcast_sync(
+                            {
+                                "type": "ARTIFACT_CLOSED",
+                                "artifact_id": art.name,
+                                "kind": art.kind,
+                            }
+                        )
+
+        new_thread = session.create_thread(mode=target_mode, phase=target_phase)
+        session.touch()
+        agent.touch()
+
+        if runner is not None:
+            runner.sync_sandbox_mounts(new_thread)
+            runner.broadcaster.broadcast_sync(
+                {
+                    "type": "THREAD_TRANSITION",
+                    "from_thread_id": str(old_thread.id),
+                    "to_thread_id": str(new_thread.id),
+                    "thread_id": str(new_thread.id),
+                    "mode": new_thread.mode,
+                    "phase": new_thread.phase,
+                    "mode_label": new_thread.mode_label,
+                    "active_plan_id": session.active_plan_id,
+                    "auto_wake": False,
+                }
+            )
+
+        try:
+            ws_mgr.commit_checkpoint_changes(agent.id, session.id, old_thread.id)
+            ws_mgr.commit_session_config(session)
+        except Exception:
+            logger.exception("Failed to commit session mode switch for %s", session.id)
+
+        return session
 
     def hydrate_from_gitea(self) -> None:
         """Discover existing agent repositories from Gitea and reconstruct domain entities."""
@@ -858,6 +996,7 @@ class HarnessStore:
                             name=session_payload.get("name"),
                             config=session_config,
                             status=session_status,
+                            active_plan_id=session_payload.get("active_plan_id"),
                             provenance=provenance,
                             lineage=lineage,
                             created_at=session_created_at,
@@ -879,11 +1018,17 @@ class HarnessStore:
                                     if status_str in AgentStatus.__members__
                                     else AgentStatus.AWAITING_USER
                                 )
+                                t_mode, t_phase = normalize_mode_and_phase(
+                                    t_data.get("mode"),
+                                    t_data.get("phase"),
+                                )
                                 thread = Thread(
                                     id=t_id,
                                     name=t_data.get("name"),
                                     is_open=bool(t_data.get("is_open", False)),
                                     status=status_enum,
+                                    mode=t_mode,
+                                    phase=t_phase,
                                     created_at=t_created_at,
                                 )
 

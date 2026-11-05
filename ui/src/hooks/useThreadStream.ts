@@ -45,7 +45,8 @@ export function useThreadStream(
   agentId: string | null,
   sessionId: string | null,
   threadId: string | null,
-  sessionStatus?: string
+  sessionStatus?: string,
+  onThreadTransition?: (toThreadId: string, mode?: string, phase?: string | null) => void
 ) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<AgentStatus>("AWAITING_USER");
@@ -56,6 +57,9 @@ export function useThreadStream(
   const [sending, setSending] = useState<boolean>(false);
   const [artifacts, setArtifacts] = useState<ArtifactInfo[]>([]);
 
+  const onThreadTransitionRef = useRef(onThreadTransition);
+  onThreadTransitionRef.current = onThreadTransition;
+
   // Keep ref of messages for mutable updates during streaming chunks
   const messagesRef = useRef<ChatMessage[]>([]);
   messagesRef.current = messages;
@@ -64,6 +68,9 @@ export function useThreadStream(
   const pendingArtifactsRef = useRef<Map<string, ArtifactInfo>>(new Map());
 
   const attachArtifactToMessages = useCallback((art: ArtifactInfo) => {
+    if (art.manifest?.exposition === "tabbed") {
+      return;
+    }
     const artId = art.name;
     setMessages((prev) => {
       const artPart: MessagePart = {
@@ -222,13 +229,63 @@ export function useThreadStream(
                   return [...prev, art];
                 });
 
-                const isRunning =
-                  statusRef.current === "AWAITING_LLM" || statusRef.current === "EXECUTING_TOOL";
-                if (isRunning) {
-                  pendingArtifactsRef.current.set(artId, art);
-                } else {
-                  attachArtifactToMessages(art);
+                if (art.manifest?.exposition !== "tabbed") {
+                  const isRunning =
+                    statusRef.current === "AWAITING_LLM" ||
+                    statusRef.current === "EXECUTING_TOOL";
+                  if (isRunning) {
+                    pendingArtifactsRef.current.set(artId, art);
+                  } else {
+                    attachArtifactToMessages(art);
+                  }
                 }
+              })
+              .catch(() => {});
+          }
+        } else if (type === "ARTIFACT_UPDATED") {
+          const artId = event.artifact_id || event.artifactId || event.name;
+          const kind = event.kind || "plans";
+          if (artId && agentId && sessionId) {
+            getArtifact(agentId, sessionId, kind, artId)
+              .then((art) => {
+                setArtifacts((prev) => {
+                  const idx = prev.findIndex((a) => a.kind === kind && a.name === artId);
+                  if (idx >= 0) {
+                    const next = [...prev];
+                    next[idx] = art;
+                    return next;
+                  }
+                  return [...prev, art];
+                });
+                setMessages((prev) =>
+                  prev.map((m) => {
+                    if (!m.parts) return m;
+                    const updatedParts = m.parts.map((p) =>
+                      p.type === "artifact" &&
+                      (p.artifact.name === artId || p.id === `artifact-${artId}`)
+                        ? { ...p, artifact: art }
+                        : p
+                    );
+                    return { ...m, parts: updatedParts };
+                  })
+                );
+              })
+              .catch(() => {});
+          }
+        } else if (type === "ARTIFACT_CLOSED") {
+          const artId = event.artifact_id || event.artifactId || event.name;
+          const kind = event.kind || "plans";
+          if (artId && agentId && sessionId) {
+            setArtifacts((prev) =>
+              prev.map((a) =>
+                a.kind === kind && a.name === artId ? { ...a, is_closed: true } : a
+              )
+            );
+            getArtifact(agentId, sessionId, kind, artId)
+              .then((art) => {
+                setArtifacts((prev) =>
+                  prev.map((a) => (a.kind === kind && a.name === artId ? art : a))
+                );
               })
               .catch(() => {});
           }
@@ -255,6 +312,15 @@ export function useThreadStream(
                 );
               })
               .catch(() => {});
+          }
+        } else if (type === "THREAD_TRANSITION") {
+          const toThreadId =
+            event.to_thread_id ||
+            event.toThreadId ||
+            event.thread_id ||
+            event.threadId;
+          if (toThreadId) {
+            onThreadTransitionRef.current?.(toThreadId, event.mode, event.phase);
           }
         } else if (type === "RUN_STARTED") {
           statusRef.current = "AWAITING_LLM";

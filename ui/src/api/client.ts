@@ -156,6 +156,22 @@ export async function killSession(agentId: string, sessionId: string): Promise<S
   return handleResponse<SessionDetail>(res);
 }
 
+export async function switchSessionMode(
+  agentId: string,
+  sessionId: string,
+  mode: "chat" | "plan"
+): Promise<SessionDetail> {
+  const res = await fetch(
+    `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/mode`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode }),
+    }
+  );
+  return handleResponse<SessionDetail>(res);
+}
+
 export async function branchSession(
   agentId: string,
   sessionId: string,

@@ -9,6 +9,7 @@ import {
   getSession,
   killSession,
   listAgents,
+  switchSessionMode,
   updateAgent,
   updateSession,
   updateThread,
@@ -283,6 +284,23 @@ export function useAgentsTree() {
     [refreshTree]
   );
 
+  const handleSwitchSessionMode = useCallback(
+    async (agentId: string, sessionId: string, mode: "chat" | "plan") => {
+      const updatedSession = await switchSessionMode(agentId, sessionId, mode);
+      await refreshTree();
+      setSelectedAgentId(agentId);
+      setSelectedSessionId(sessionId);
+      const openThread =
+        updatedSession.threads.find((t) => t.is_open) ||
+        updatedSession.threads[updatedSession.threads.length - 1];
+      if (openThread) {
+        setSelectedThreadId(openThread.id);
+      }
+      return updatedSession;
+    },
+    [refreshTree]
+  );
+
   const handleBranchSession = useCallback(
     async (
       agentId: string,
@@ -330,6 +348,7 @@ export function useAgentsTree() {
     createSession: handleCreateSession,
     createThread: handleCreateThread,
     killSession: handleKillSession,
+    switchSessionMode: handleSwitchSessionMode,
     branchSession: handleBranchSession,
     acceptThread: handleAcceptThread,
     updateAgentName: handleUpdateAgentName,

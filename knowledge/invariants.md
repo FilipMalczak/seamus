@@ -25,8 +25,8 @@ Properties and rules that must always hold across the repository.
 - **Enforcement**: Domain model validation in `AgentConfig.validate_complete()` and pre-initialization checks in session runner.
 
 ### INV-005: Single Open Thread Invariant
-- **Statement**: Within any Session, exactly one thread—the most recently created one—is open (`is_open = True`). All previous threads must be closed (`is_open = False`).
-- **Justification**: [REQ-006](./requirements.md#req-006-thread-redirection-event-streaming--status-tracking), [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md).
+- **Statement**: Within any Session, exactly one thread—the most recently created or active one—is open (`is_open = True`). All previous threads must be closed (`is_open = False`). When a new thread is requested or a mode is switched on an empty thread (`is_empty = True`), the empty thread is reused in place rather than closed, preserving single open thread invariants without creating orphaned threads.
+- **Justification**: [REQ-006](./requirements.md#req-006-thread-redirection-event-streaming--status-tracking), [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md), [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md).
 - **Enforcement**: Session thread management methods in `Session.create_thread()`.
 
 ### INV-006: Slug Format and Scope Uniqueness

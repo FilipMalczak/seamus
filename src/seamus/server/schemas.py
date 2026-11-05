@@ -1,6 +1,7 @@
 """Pydantic schemas for the Seamus REST API under /api/v-alpha/."""
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -40,6 +41,7 @@ __all__ = [
     "PromptInspectInfo",
     "SessionCreateRequest",
     "SessionDetailResponse",
+    "SessionModeSwitchRequest",
     "SessionSummaryResponse",
     "SessionUpdateRequest",
     "SkillInspectInfo",
@@ -98,6 +100,12 @@ class SessionUpdateRequest(BaseModel):
     config: AgentConfig
 
 
+class SessionModeSwitchRequest(BaseModel):
+    """Request payload for switching the operational mode of a session."""
+
+    mode: Literal["chat", "plan"]
+
+
 class BranchSessionRequest(BaseModel):
     """Request payload for branching a session from a completed assistant message."""
 
@@ -143,6 +151,9 @@ class ThreadResponse(BaseModel):
     last_touched_at: datetime
     is_open: bool
     status: AgentStatus
+    mode: str = "chat"
+    phase: str | None = None
+    mode_label: str = "chat"
 
 
 class ThreadStatusResponse(BaseModel):
@@ -161,6 +172,7 @@ class SessionSummaryResponse(BaseModel):
     last_touched_at: datetime
     config: AgentConfig
     status: SessionStatus = SessionStatus.ACTIVE
+    active_plan_id: str | None = None
     provenance: SessionBranchProvenance | None = None
     lineage: list[SessionBranchProvenance] = Field(default_factory=list)
 
@@ -175,6 +187,7 @@ class SessionDetailResponse(BaseModel):
     last_touched_at: datetime
     config: AgentConfig
     status: SessionStatus = SessionStatus.ACTIVE
+    active_plan_id: str | None = None
     provenance: SessionBranchProvenance | None = None
     lineage: list[SessionBranchProvenance] = Field(default_factory=list)
     threads: list[ThreadResponse]

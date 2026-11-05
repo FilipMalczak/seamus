@@ -456,6 +456,11 @@ export function Sidebar({
                                       thread.name && thread.name.trim() !== ""
                                         ? thread.name
                                         : thread.id;
+                                    const modeLabel =
+                                      thread.mode_label ||
+                                      (thread.phase
+                                        ? `${thread.mode || "chat"}/${thread.phase}`
+                                        : thread.mode || "chat");
 
                                     return (
                                       <div
@@ -489,7 +494,13 @@ export function Sidebar({
                                                 : "dot-closed"
                                             }`}
                                           />
-                                          <Sparkles className="size-3 text-sky-400" />
+                                          <Sparkles className="size-3 text-sky-400 shrink-0" />
+                                          <span
+                                            className={`badge-mode badge-mode-${thread.mode || "chat"}`}
+                                            title={`Thread Mode: ${modeLabel}`}
+                                          >
+                                            {modeLabel}
+                                          </span>
                                           {isEditingThread ? (
                                             <input
                                               type="text"

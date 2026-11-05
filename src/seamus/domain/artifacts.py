@@ -25,13 +25,15 @@ class ArtifactManifest(BaseModel):
 
     exposition: ExpositionMode = ExpositionMode.EMBEDDED
     cadence: CadenceMode = CadenceMode.BLOCKING
+    title: str | None = None
 
 
 class ArtifactInfo(BaseModel):
     """Summary and hydrated state of an artifact instance."""
 
-    kind: str = Field(description="Artifact family/class (e.g. 'questionnaires')")
+    kind: str = Field(description="Artifact family/class (e.g. 'questionnaires', 'forms', 'plans')")
     name: str = Field(description="Artifact instance identifier (e.g. UUID)")
+    title: str | None = Field(default=None, description="Display title for tabbed artifacts")
     manifest: ArtifactManifest
     is_closed: bool = Field(description="True if deleteSurface.json is present at instance level")
     surface: dict[str, Any] = Field(description="A2UI createSurface message")

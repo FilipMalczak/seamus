@@ -15,6 +15,7 @@ from seamus.server.schemas import (
     SessionCreateRequest,
     SessionDetailResponse,
     SessionDiffResponse,
+    SessionModeSwitchRequest,
     SessionUpdateRequest,
     ThreadResponse,
     UserInputRequest,
@@ -33,6 +34,9 @@ def _to_session_detail(session: Any) -> SessionDetailResponse:
             last_touched_at=t.last_touched_at,
             is_open=t.is_open,
             status=t.status,
+            mode=t.mode,
+            phase=t.phase,
+            mode_label=t.mode_label,
         )
         for t in sorted(session.threads.values(), key=lambda t: t.created_at)
     ]
@@ -44,6 +48,7 @@ def _to_session_detail(session: Any) -> SessionDetailResponse:
         last_touched_at=session.last_touched_at,
         config=session.config,
         status=session.status,
+        active_plan_id=session.active_plan_id,
         provenance=session.provenance,
         lineage=session.lineage,
         threads=threads,
@@ -133,6 +138,28 @@ async def kill_session(
         )
     except EntityNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return _to_session_detail(session)
+
+
+@router.post("/{session_identifier}/mode", response_model=SessionDetailResponse)
+async def switch_session_mode(
+    agent_identifier: str,
+    session_identifier: str,
+    payload: SessionModeSwitchRequest,
+) -> SessionDetailResponse:
+    """Switch the session's operational mode and spawn a new thread in that mode."""
+    store = get_harness_store()
+    try:
+        session = store.switch_session_mode(
+            agent_identifier=agent_identifier,
+            session_identifier=session_identifier,
+            mode=payload.mode,
+        )
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     return _to_session_detail(session)
 
