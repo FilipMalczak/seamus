@@ -50,21 +50,21 @@ flowchart LR
 
 #### Phase 1: `discuss` (`plan/discuss`)
 - **Primary Objective**: Explore the existing codebase, understand the problem, ask clarifying questions, and document findings and decisions before drafting a plan.
-- **Behavioral Posture**: Exploratory, investigative, and inquisitive. Code modification is strictly forbidden.
+- **Behavioral Posture**: Exploratory, investigative, and inquisitive. Focuses on gathering requirements, context, and edge cases. Premature code implementation and drafting the Plan artifact are strictly prohibited.
 - **Prompt Framing & Injected Instructions**:
-  - Explicitly informs the agent that code execution and codebase modification are prohibited during this phase.
-  - Instructs the agent to inspect files, trace references, and read documentation using read-only search commands.
-  - Directs the agent to formulate clarifying questions using `ask` (or conversational dialogue) whenever ambiguities exist.
-  - Instructs the agent to record notes, architectural discoveries, and requirements in `/workspace/notes/`.
+  - Explicitly informs the agent that the operational workspace (`/workspace`) is mounted read-write and that it is free to organize notes and specifications in any workspace directory.
+  - Strictly prohibits following user instructions to implement code or authoring the actual Plan artifact during Discuss.
+  - Instructs the agent to inspect files, trace references, and read documentation.
+  - Directs the agent to formulate clarifying questions using `ask`, `form`, or conversational dialogue whenever ambiguities exist.
+  - Instructs the agent to record notes, architectural discoveries, and requirements in the workspace.
   - Prompts the agent to call `plan()` once all necessary context has been collected to advance to the plan-drafting phase.
 - **Tool Availability**:
-  - **Enabled**: `ask`, `read_artifact_submission`, `plan()` (transitions session to `plan/make`), `discard()` (resets planning state). Codebase inspection tools (`read_file`, `glob`, `grep`, `ls`).
-  - **Walled Off**: Plan authoring tools (`make_plan`, `update_plan`, `edit_plan`). Code modification tools (`write_file`, `edit_file`, destructive shell commands).
+  - **Enabled**: `ask`, `form`, `read_artifact_submission`, `plan()` (transitions session to `plan/make`), `discard()` (resets planning state). Workspace file tools (`read_file`, `write_file`, `edit_file`, shell commands).
+  - **Walled Off**: Plan authoring tools (`make_plan`, `update_plan`, `edit_plan`).
 - **Filesystem & Mount Policy**:
-  - `/workspace` (`data/`): Mounted strictly **read-only** (`readOnly=True`). Code cannot be touched.
-  - `/workspace/notes` (`data/notes/`): Mounted **read-write** (`readOnly=False`) as an overlay so notes, findings, and requirements persist, show up in Changes tab diffs, and survive subsequent phase transitions.
+  - `/workspace` (`data/`): Mounted **read-write** (`readOnly=False`). Notes and specifications can be placed anywhere in the workspace.
 - **Artifacts & Surfaces**:
-  - Blocking questionnaires via `ask` for structured multiple-choice requirement gathering.
+  - Blocking questionnaires via `ask` and non-blocking tabbed forms via `form` for structured requirement gathering.
 
 #### Phase 2: `make` (`plan/make`)
 - **Primary Objective**: Synthesize collected requirements into a complete, structured Markdown plan document for user review.
@@ -209,7 +209,7 @@ A **Persona** represents an agent's enduring identity, operational philosophy, d
 | Mode / Phase | Persona Customization | `/workspace` Mount | `/workspace/notes` Mount | Enabled Special Tools | Gated / Walled Tools | Primary Surface |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`chat`** | General advisor / brainstorming | Read-Write (scratchpad) | N/A | `ask`, `read_artifact_submission` | `plan`, `make_plan`, `update_plan`, `edit_plan`, `discard` | Conversation stream |
-| **`plan/discuss`** | Exploratory investigator | **Read-Only** | **Read-Write** | `ask`, `read_artifact_submission`, `plan()`, `discard()` | `make_plan`, `update_plan`, `edit_plan`, `write_file`, `edit_file` | Stream + Notes |
+| **`plan/discuss`** | Exploratory investigator | **Read-Write** | N/A (unconstrained) | `ask`, `form`, `read_artifact_submission`, `plan()`, `discard()` | `make_plan`, `update_plan`, `edit_plan` | Stream + Notes |
 | **`plan/make`** | Methodical plan author | **Read-Only** | **Read-Only** | `make_plan`, `update_plan`, `edit_plan`, `discard()` | `plan()`, `ask`, `write_file`, `edit_file` | Adaptive Card Tabbed Plan |
 | **`plan/execute`** | Disciplined implementer | **Read-Write** | **Read-Only** | `discard()`, full engineering suite | `plan()`, `make_plan`, `update_plan`, `edit_plan`, `ask` | Adaptive Card Tabbed Plan + Changes Diff |
 | **`act`** *(planned)* | Direct, prompt implementer | **Read-Write** | N/A | Full engineering suite | `plan`, `make_plan`, `update_plan`, `edit_plan`, `ask` | Changes Diff |

@@ -105,14 +105,15 @@ PLAN_DISCUSS_PHASE = PhaseDescriptor(
     name=PlanPhase.DISCUSS.value,
     title="Discuss",
     description=(
-        "Explore the read-only workspace, clarify requirements and trade-offs with the user "
-        "via conversation, blocking questionnaires (`ask`), or non-blocking forms (`form`), "
-        "and organize structured requirement notes in `/workspace/notes` before calling `plan()`."
+        "Explore the workspace with read-write access, clarify requirements and trade-offs "
+        "with the user via conversation, blocking questionnaires (`ask`), or non-blocking "
+        "forms (`form`), and record findings and notes across the workspace before "
+        "calling `plan()`."
     ),
     mount_policy=MountPolicy(
-        workspace_readonly=True,
-        notes_mounted=True,
-        notes_readonly=False,
+        workspace_readonly=False,
+        notes_mounted=False,
+        notes_readonly=True,
     ),
     tools=("ask", "form", "plan", "discard"),
 )
@@ -154,8 +155,8 @@ PLAN_MODE = ModeDescriptor(
     title="Plan",
     description=(
         "Structured three-phase planning and execution workflow (Discuss -> Make -> Execute) "
-        "with phase-isolated threads, read-only exploration and plan authoring, and dedicated "
-        "`/workspace/notes` and Plan artifact handoffs."
+        "with phase-isolated threads, flexible workspace exploration, read-only plan authoring, "
+        "and dedicated Plan artifact handoffs."
     ),
     mount_policy=PLAN_DISCUSS_PHASE.mount_policy,
     tools=(),

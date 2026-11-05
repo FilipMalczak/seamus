@@ -65,11 +65,10 @@ def test_mount_policy_resolution() -> None:
     assert chat_mp.workspace_readonly is False
     assert chat_mp.notes_mounted is False
 
-    # Plan/Discuss: RO workspace, RW notes
+    # Plan/Discuss: RW workspace, no notes mount
     disc_mp = resolve_mount_policy("plan", "discuss")
-    assert disc_mp.workspace_readonly is True
-    assert disc_mp.notes_mounted is True
-    assert disc_mp.notes_readonly is False
+    assert disc_mp.workspace_readonly is False
+    assert disc_mp.notes_mounted is False
 
     # Plan/Make: RO workspace, RO notes
     make_mp = resolve_mount_policy("plan", "make")

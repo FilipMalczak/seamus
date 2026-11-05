@@ -94,11 +94,11 @@ Modes are **open and creatable**—the core list below is an illustrative set, n
 #### `plan`
 - **Objective**: Formulate a structured, verified plan across three sequential phases (**Discuss** -> **Make** -> **Execute**) before modifying production deliverables.
 - **Workflow**:
-  1. *Discuss Phase* (`plan/discuss`): The agent explores `/workspace` (mounted read-only) and clarifies requirements with the user (via `ask`, `form`, or conversation), recording all findings in `/workspace/notes` (mounted read-write). Calling `plan()` spawns a fresh `plan/make` thread.
-  2. *Make Phase* (`plan/make`): Synthesizes requirements into a session-local Markdown Plan artifact (`exposition="tabbed"`, `cadence="nonblocking"`) via `make_plan`, `update_plan`, and `edit_plan` with `/workspace` and `/workspace/notes` mounted read-only. Clicking the "Proceed" button advances the session to Execute.
+  1. *Discuss Phase* (`plan/discuss`): The agent explores `/workspace` (mounted read-write) and clarifies requirements with the user (via `ask`, `form`, or conversation), recording all findings, specifications, and notes across `/workspace` without directory restrictions. The agent is explicitly constrained from implementing code or writing the plan artifact during Discuss. Calling `plan()` spawns a fresh `plan/make` thread.
+  2. *Make Phase* (`plan/make`): Synthesizes requirements into a session-local Markdown Plan artifact (`exposition="tabbed"`, `cadence="nonblocking"`) via `make_plan`, `update_plan`, and `edit_plan` with `/workspace` mounted read-only. Clicking the "Proceed" button advances the session to Execute.
   3. *Execute Phase* (`plan/execute`): Spawns a fresh execution thread with `/workspace` mounted read-write and `/workspace/notes` mounted read-only to implement and test the approved plan.
   4. *Discarding*: Calling `discard()` in any phase discards active plans and returns the session to a fresh `plan/discuss` thread.
-- **Workspace Role**: Inspected in read-only mode during Discuss and Make (with `/workspace/notes` read-write in Discuss); becomes the target of verified changes in Execute.
+- **Workspace Role**: Mounted read-write in Discuss for unconstrained context gathering and note-taking; mounted read-only in Make for plan formulation; becomes the target of verified changes in Execute.
 
 #### `chat`
 - **Objective**: Conversational discussion, brainstorming, high-level guidance, or explaining concepts without modifying project deliverables.
