@@ -144,7 +144,6 @@ export function AdaptiveCardArtifactRenderer({
         delete cardPayload.actions;
 
         const answers =
-          (artifact.data?.updateDataModel as any)?.value ||
           (artifact.data as any)?.value ||
           (artifact.data as any)?.data ||
           artifact.data ||

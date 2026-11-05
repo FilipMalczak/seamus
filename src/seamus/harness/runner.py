@@ -1277,14 +1277,6 @@ class SessionAgentRunner:
 
         data_path = resolver.resolve_file(matched_kind, artifact_id, "submission.json")
         if not data_path or not data_path.is_file():
-            legacy_path = resolver.resolve_file(matched_kind, artifact_id, "updateDataModel.json")
-            if legacy_path and legacy_path.is_file():
-                try:
-                    loaded = json.loads(legacy_path.read_text(encoding="utf-8"))
-                    data_val = loaded.get("updateDataModel", {}).get("value", loaded)
-                    return json.dumps({"data": data_val})
-                except Exception:
-                    pass
             return json.dumps({"data": {}, "status": "pending"})
         try:
             loaded = json.loads(data_path.read_text(encoding="utf-8"))

@@ -127,7 +127,10 @@ def test_plan_builder_lifecycle(tmp_path: Path) -> None:
     # 1. Create plan
     PlanBuilder.create_plan(artifacts_dir, plan_id, initial_content, title="Migration Plan")
     card_path = artifacts_dir / "plans" / plan_id / "card.json"
+    plan_md_path = artifacts_dir / "plans" / plan_id / "plan.md"
     assert card_path.is_file()
+    assert plan_md_path.is_file()
+    assert plan_md_path.read_text(encoding="utf-8") == initial_content
 
     content, title = PlanBuilder.read_plan(artifacts_dir, plan_id)
     assert content == initial_content
@@ -149,11 +152,13 @@ def test_plan_builder_lifecycle(tmp_path: Path) -> None:
     PlanBuilder.update_plan(artifacts_dir, plan_id, updated_content)
     content, _ = PlanBuilder.read_plan(artifacts_dir, plan_id)
     assert content == updated_content
+    assert plan_md_path.read_text(encoding="utf-8") == updated_content
 
     # 3. Edit plan with substring replacement
     PlanBuilder.edit_plan(artifacts_dir, plan_id, "Step 2: Run tests", "Step 2: Run all tests")
     content, _ = PlanBuilder.read_plan(artifacts_dir, plan_id)
     assert "Step 2: Run all tests" in content
+    assert "Step 2: Run all tests" in plan_md_path.read_text(encoding="utf-8")
 
     # 4. Approve plan
     PlanBuilder.approve_plan(artifacts_dir, plan_id)

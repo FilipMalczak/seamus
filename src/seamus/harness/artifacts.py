@@ -365,6 +365,7 @@ class PlanBuilder:
             json.dumps(card_payload, indent=2),
             encoding="utf-8",
         )
+        (inst_dir / "plan.md").write_text(content, encoding="utf-8")
         return inst_dir
 
     @classmethod
@@ -382,6 +383,13 @@ class PlanBuilder:
                 manifest_data = json.loads(manifest_file.read_text(encoding="utf-8"))
                 if isinstance(manifest_data.get("title"), str) and manifest_data["title"].strip():
                     title = manifest_data["title"].strip()
+            except Exception:
+                pass
+
+        plan_md_file = inst_dir / "plan.md"
+        if plan_md_file.is_file():
+            try:
+                return plan_md_file.read_text(encoding="utf-8"), title
             except Exception:
                 pass
 
@@ -411,6 +419,7 @@ class PlanBuilder:
             json.dumps(card_payload, indent=2),
             encoding="utf-8",
         )
+        (inst_dir / "plan.md").write_text(content, encoding="utf-8")
         return inst_dir
 
     @classmethod
@@ -589,14 +598,6 @@ class ArtifactResolver:
                 data = json.loads(data_path.read_text(encoding="utf-8"))
             except Exception:
                 data = None
-        else:
-            legacy_data_path = self.resolve_file(kind, name, "updateDataModel.json")
-            if legacy_data_path and legacy_data_path.is_file():
-                try:
-                    loaded = json.loads(legacy_data_path.read_text(encoding="utf-8"))
-                    data = loaded.get("updateDataModel", {}).get("value", loaded)
-                except Exception:
-                    data = None
 
         resolved_title = manifest.title
         if resolved_title is None and isinstance(data, dict):

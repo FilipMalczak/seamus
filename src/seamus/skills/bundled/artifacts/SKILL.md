@@ -41,6 +41,7 @@ Artifact files are organized by family and instance:
     └── <plan_uuid>/
         ├── manifest.json          # Instance manifest (plan tab title)
         ├── card.json              # Structured document card with Proceed action
+        ├── plan.md                # Canonical Markdown plan content
         └── closed.json            # Present when plan is closed, approved, or discarded
 ```
 

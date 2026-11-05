@@ -122,6 +122,11 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## TODO
 
+### Review and Audit Plan Mode Implementation
+- **Description**: Conduct a thorough review and audit of the Plan mode and planner implementation (`PlanBuilder`, prompt composition, `make_plan`/`update_plan`/`edit_plan` tool lifecycle, phase transitions, and UI presentation). In particular, evaluate whether the current Adaptive Card structure and tool mechanics provide optimal model steerability, assess how user comments and section-level revisions should be incorporated, and review whether the prompt instructions and sandbox handoff (`/artifacts/plans/<id>/plan.md`) cleanly support execution across long tasks.
+- **Rationale**: Plan mode was quickly composed across multiple iterations (initial mode scaffolding, Adaptive Cards migration, and A2UI decoupling). A dedicated review pass will consolidate lessons learned, eliminate residual rough edges, and prepare the foundation for rich plan commenting and section-level revisions.
+- **Provenance**: [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), [0031-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-migrate-a2ui-to-adaptive-cards.md), [0033-decouple-plans-and-submissions-from-a2ui.md](../decisions/0033-decouple-plans-and-submissions-from-a2ui.md), `src/seamus/harness/artifacts.py`, `src/seamus/harness/prompt.py`.
+
 ### Steerable Model Implementation for Local Manual Testing
 - **Description**: Introduce a steerable model provider for local development and manual testing. The steerable model allows developers to script, step through, or interactively inject specific model responses, text chunks, and tool calls (such as `ask` inquiries, custom Adaptive Card artifacts, or specific error states) into active sessions without incurring live LLM API costs or dealing with non-deterministic completions.
 - **Rationale**: Greatly streamlines local manual verification of UI features (like interactive Adaptive Card questionnaires, diff viewers, and error handling) and reduces turnaround time for frontend and harness developers.

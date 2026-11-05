@@ -41,6 +41,7 @@ All artifacts reside inside the session workspace under `<session_dir>/artifacts
     └── <plan_uuid>/
         ├── manifest.json          # Instance manifest (plan title)
         ├── card.json              # Structured document card + Proceed action
+        ├── plan.md                # Canonical Markdown plan content
         └── closed.json            # Status marker (written on approval or discard)
 ```
 

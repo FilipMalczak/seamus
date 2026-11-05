@@ -48,7 +48,7 @@ class ActivePlanPromptContext(BaseModel):
     plan_id: str
     plan_title: str
     plan_artifact_directory: str
-    plan_data_model_path: str
+    plan_path: str
     notes_directory: str = "/workspace/notes"
     instructions: str
 
@@ -284,16 +284,16 @@ def build_operational_mode_section(
     if active_plan_id:
         title_str = active_plan_title or "Plan"
         plan_dir = f"/artifacts/plans/{active_plan_id}"
-        data_path = f"{plan_dir}/updateDataModel.json"
+        plan_path = f"{plan_dir}/plan.md"
         active_plan_ctx = ActivePlanPromptContext(
             plan_id=active_plan_id,
             plan_title=title_str,
             plan_artifact_directory=plan_dir,
-            plan_data_model_path=data_path,
+            plan_path=plan_path,
             notes_directory="/workspace",
             instructions=(
                 f"Active session plan '{title_str}' (id: `{active_plan_id}`) is stored at "
-                f"`{data_path}` (under `/plan/content`). Read `{data_path}` and `/workspace` "
+                f"`{plan_path}`. Read `{plan_path}` and `/workspace` "
                 "to inspect the full plan and background notes."
             ),
         )

@@ -140,6 +140,8 @@ def test_plan_builder_lifecycle(tmp_path: Path) -> None:
     assert plan_path.exists()
     assert (plan_path / "manifest.json").exists()
     assert (plan_path / "card.json").exists()
+    assert (plan_path / "plan.md").exists()
+    assert (plan_path / "plan.md").read_text(encoding="utf-8") == "# Initial Plan\n\n- Step 1"
 
     # Read plan
     read_content, title = PlanBuilder.read_plan(artifacts_dir, "test-plan")
@@ -195,6 +197,8 @@ def test_system_prompt_lmxml_composition() -> None:
     assert "<active_plan_context>" in scaffold_exec
     assert "my-plan-id" in scaffold_exec
     assert "Engine Overhaul" in scaffold_exec
+    assert "/artifacts/plans/my-plan-id/plan.md" in scaffold_exec
+    assert "updateDataModel.json" not in scaffold_exec
 
 
 @pytest.mark.asyncio
