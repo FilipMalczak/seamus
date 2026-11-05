@@ -153,7 +153,7 @@ Requirements, rationale, provenance, and stable IDs.
 ### REQ-025: Operational Modes and Thread Transition Triggers
 - **Description**: The harness must support an open, extensible set of operational execution modes (such as `plan`, `chat`, `act`, `analyse`, and a planned classifier-based `routing` mode) that dictate interaction posture, prompt framing, and workspace mutability. Switching operational modes within a session must deterministically close the active thread and open a fresh thread. Modes must also define internal thread-opening triggers (e.g. transitioning from plan formulation to execution in `plan` mode).
 - **Rationale**: Cleanly isolates exploratory planning and conversational scratchpads from execution trajectories and Git Sync PR diffs.
-- **Provenance**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [threads_modes_personas.md](./threads_modes_personas.md).
+- **Provenance**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), [threads_modes_personas.md](./threads_modes_personas.md).
 - **Linked Invariants**: [INV-028](./invariants.md#inv-028-mode-transition-thread-spawning-boundary).
 
 ### REQ-026: Exact Turn-Level Session Branching and Lineage Provenance
@@ -194,6 +194,12 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0029-a2ui-questionnaire-artifacts.md](../decisions/0029-a2ui-questionnaire-artifacts.md).
 - **Linked Invariants**: [INV-040](./invariants.md#inv-040-hierarchical-artifact-resolution-read-only-sandboxing-and-blocking-conversation-cadence).
 
+### REQ-034: Operational Modes, Multi-Phase Plan Lifecycle, Tabbed Plan Artifacts, and Recursion Limit
+- **Description**: The harness must formalize operational execution modes with `chat` and `plan` (with phases `discuss`, `make`, `execute`), dynamic tool provisioning (`ask`, `make_plan`, `update_plan`, `edit_plan`, `discard`), non-blocking tabbed plan artifacts rendered in A2UI alongside Changes, read-only workspace sandboxing with read-write `/workspace/notes` (`data/notes`) during planning, empty thread reuse upon mode switches or thread creation, left-aligned mode/phase thread badges (`<icon><label><ID/name>`), and elevated LangGraph recursion limit (`DEFAULT_RECURSION_LIMIT = 250`, overridable via `SEAMUS_RECURSION_LIMIT`) to support long autonomous thinking and tool sequences.
+- **Rationale**: Protects production workspaces from unreviewed changes during plan formulation, structures complex goals into phased planning with interactive A2UI plan surfaces, avoids orphaned empty threads, and prevents premature recursion errors on lengthy agent reasoning.
+- **Provenance**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), [threads_modes_personas.md](./threads_modes_personas.md).
+- **Linked Invariants**: [INV-005](./invariants.md#inv-005-single-open-thread-invariant), [INV-028](./invariants.md#inv-028-mode-transition-thread-spawning-boundary), [INV-041](./invariants.md#inv-041-operational-mode-mount-policy-non-blocking-tabbed-plans-and-recursion-limit).
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [invariants.md](./invariants.md)
@@ -223,3 +229,4 @@ Requirements, rationale, provenance, and stable IDs.
 - [0027-skills-config-project-rules-and-inspector.md](../decisions/0027-skills-config-project-rules-and-inspector.md)
 - [0028-ui-ux-ergonomics-and-url-state.md](../decisions/0028-ui-ux-ergonomics-and-url-state.md)
 - [0029-a2ui-questionnaire-artifacts.md](../decisions/0029-a2ui-questionnaire-artifacts.md)
+- [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md)

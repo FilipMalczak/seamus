@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import os
 import traceback
 from collections.abc import AsyncGenerator, Mapping, Sequence
 from typing import Any, Literal, Self, cast
@@ -27,7 +28,7 @@ from langchain.agents.middleware.todo import (
 )
 from langchain.agents.middleware.types import ContextT, ResponseT
 from langchain.tools import ToolRuntime
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.outputs import ChatGenerationChunk, ChatResult
 from langchain_core.tools import StructuredTool
 from langchain_openai import ChatOpenAI
@@ -36,12 +37,23 @@ from pydantic import BaseModel, Field, SecretStr, model_validator
 
 from seamus.config.models import SkillsImplementation, TodoImplementation
 from seamus.config.settings import get_system_settings_store
+from seamus.domain.artifacts import CadenceMode
 from seamus.domain.entities import Agent, AgentStatus, Session, Thread
+from seamus.domain.modes import (
+    ALL_HARNESS_TOOLS,
+    ModeName,
+    PlanPhase,
+    normalize_mode_and_phase,
+    resolve_available_harness_tools,
+    resolve_mount_policy,
+)
 from seamus.harness.artifacts import (
     STANDARD_SURFACE_ID,
     ArtifactResolver,
+    PlanBuilder,
     QuestionItem,
     QuestionnaireBuilder,
+    seed_default_artifacts,
 )
 from seamus.harness.prompt import (
     DynamicSystemPromptMiddleware,
@@ -55,6 +67,8 @@ from seamus.harness.sandbox import (
 from seamus.persistence import GitCheckpointSaver, get_workspace_manager
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_RECURSION_LIMIT: int = 250
 
 
 def _extract_reasoning_text(payload: Mapping[str, Any]) -> str | None:
@@ -366,10 +380,52 @@ class ResilientAskInput(BaseModel):
         return self
 
 
+class ResilientFormInput(ResilientAskInput):
+    """Input schema for the form tool (tabbed, non-blocking questionnaire in Plan/Discuss)."""
+
+    title: str = Field(
+        default="Form",
+        description="Optional display title for the form tab (defaults to 'Form').",
+    )
+
+
 class ReadArtifactSubmissionInput(BaseModel):
     """Input schema for read_artifact_submission tool."""
 
-    artifact_id: str = Field(description="UUID of the questionnaire or artifact to read.")
+    artifact_id: str = Field(description="UUID of the questionnaire, form, or plan artifact.")
+
+
+class PlanTransitionInput(BaseModel):
+    """Input schema for the plan() phase transition tool."""
+
+
+class MakePlanInput(BaseModel):
+    """Input schema for the make_plan tool in Plan/Make phase."""
+
+    content: str = Field(description="Full GitHub-Flavored Markdown content of the plan.")
+    name: str = Field(
+        default="Plan",
+        description="Display title for the Plan tab (defaults to 'Plan').",
+    )
+
+
+class UpdatePlanInput(BaseModel):
+    """Input schema for the update_plan tool in Plan/Make phase."""
+
+    content: str = Field(description="Updated full GitHub-Flavored Markdown content of the plan.")
+
+
+class EditPlanInput(BaseModel):
+    """Input schema for the edit_plan tool in Plan/Make phase."""
+
+    old_string: str = Field(
+        description="Exact existing substring in the active plan Markdown to replace."
+    )
+    new_string: str = Field(description="Replacement string to substitute in place of old_string.")
+
+
+class DiscardInput(BaseModel):
+    """Input schema for the discard() tool across Plan mode phases."""
 
 
 class SeamusTodoListMiddleware(TodoListMiddleware):
@@ -402,8 +458,14 @@ class SessionAgentRunner:
         session: Session,
         agent: LangGraphAgent | None = None,
         agent_entity: Agent | None = None,
+        recursion_limit: int | None = None,
     ) -> None:
         self.session = session
+        self.recursion_limit = (
+            recursion_limit
+            if recursion_limit is not None
+            else int(os.environ.get("SEAMUS_RECURSION_LIMIT", str(DEFAULT_RECURSION_LIMIT)))
+        )
         self.broadcaster = EventBroadcaster()
         self._lock = asyncio.Lock()
         self._active_task: asyncio.Task[None] | None = None
@@ -412,10 +474,19 @@ class SessionAgentRunner:
         self.checkpointer: GitCheckpointSaver | None = getattr(agent, "checkpointer", None)
         self._pending_questions: list[QuestionItem] = []
         self._current_questionnaire_id: str | None = None
+        self._pending_form_questions: list[QuestionItem] = []
+        self._current_form_id: str | None = None
+        self._current_form_title: str = "Form"
         self._turn_created_artifact_ids: set[str] = set()
+        self._pending_phase_transition: tuple[str, str | None, bool] | None = None
 
         if agent is not None:
             self._agent = agent
+            if hasattr(self._agent, "config"):
+                agent_cfg = dict(self._agent.config) if self._agent.config else {}
+                if "recursion_limit" not in agent_cfg:
+                    agent_cfg["recursion_limit"] = self.recursion_limit
+                    self._agent.config = agent_cfg
         else:
             self._agent = self._build_deep_agent()
 
@@ -454,6 +525,19 @@ class SessionAgentRunner:
         data_dir.mkdir(parents=True, exist_ok=True)
         artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
         artifacts_dir.mkdir(parents=True, exist_ok=True)
+        seed_default_artifacts(artifacts_dir)
+        notes_dir = ws_mgr.get_session_notes_dir(self.session.agent_id, self.session.id)
+        notes_dir.mkdir(parents=True, exist_ok=True)
+
+        open_thread = (
+            self.session.get_open_thread()
+            if self.session.is_active or self.session.threads
+            else None
+        )
+        mode = open_thread.mode if open_thread else ModeName.CHAT.value
+        phase = open_thread.phase if open_thread else None
+        mount_policy = resolve_mount_policy(mode, phase)
+
         sandbox_settings = get_sandbox_settings()
         system_settings = get_system_settings_store().get_settings()
         sandbox_backend = SeamusOpenSandboxBackend(
@@ -461,18 +545,31 @@ class SessionAgentRunner:
             session_id=self.session.id,
             data_dir=data_dir,
             artifacts_dir=artifacts_dir,
+            notes_dir=notes_dir,
+            workspace_readonly=mount_policy.workspace_readonly,
+            notes_mounted=mount_policy.notes_mounted,
+            notes_readonly=mount_policy.notes_readonly,
             settings=sandbox_settings,
             skill_directories=system_settings.skill_directories,
         )
         self._sandbox_backend = sandbox_backend
-        sandbox_prompt = build_scaffold_prompt(sandbox_settings.workdir)
+        sandbox_prompt = build_scaffold_prompt(
+            sandbox_settings.workdir,
+            mode=mode,
+            phase=phase,
+            active_plan_id=self.session.active_plan_id,
+            active_plan_title=self._get_active_plan_title(),
+        )
         effective_prompt = self.build_effective_system_prompt()
 
         self._sandbox_system_prompt = sandbox_prompt
         self._effective_system_prompt = effective_prompt
 
         dynamic_prompt_middleware = DynamicSystemPromptMiddleware(
-            prompt_provider=lambda _req: self.build_effective_system_prompt()
+            prompt_provider=lambda _req: self.build_effective_system_prompt(),
+            tools_provider=lambda req: self.get_active_tools_for_request(req.tools),
+            messages_provider=self._provide_messages_for_request,
+            should_short_circuit=lambda _req: self._pending_phase_transition is not None,
         )
 
         checkpointer = GitCheckpointSaver(
@@ -496,23 +593,95 @@ class SessionAgentRunner:
             name="ask",
             description=(
                 "Ask the user a closed question with multiple choices and an optional write-in "
-                "field. Batch multiple questions in the same turn to generate a questionnaire."
+                "field. Batch multiple questions in the same turn to generate an embedded, "
+                "blocking questionnaire."
             ),
             func=self.handle_ask,
             args_schema=ResilientAskInput,
         )
 
+        form_tool = StructuredTool.from_function(
+            name="form",
+            description=(
+                "Create a tabbed, non-blocking questionnaire form in a dedicated tab to the "
+                "right of Changes. Batch multiple questions in the same turn to populate the form."
+            ),
+            func=self.handle_form,
+            args_schema=ResilientFormInput,
+        )
+
         read_sub_tool = StructuredTool.from_function(
             name="read_artifact_submission",
             description=(
-                "Read the canonical user-submitted data model for a questionnaire or artifact. "
-                "Cannot be called in the same turn that created the questionnaire."
+                "Read the canonical user-submitted data model for a questionnaire or form "
+                "artifact. Calling this on a non-blocking artifact promotes it to blocking. "
+                "Cannot be called in the same turn that created the artifact."
             ),
             func=self.handle_read_artifact_submission,
             args_schema=ReadArtifactSubmissionInput,
         )
 
-        artifact_tools = [ask_tool, read_sub_tool]
+        plan_tool = StructuredTool.from_function(
+            name="plan",
+            description=(
+                "Transition the session from the Discuss phase to the Make phase in a new "
+                "thread. Call only after recording organized requirement notes in "
+                "`/workspace/notes`."
+            ),
+            func=self.handle_plan,
+            args_schema=PlanTransitionInput,
+        )
+
+        make_plan_tool = StructuredTool.from_function(
+            name="make_plan",
+            description=(
+                "Create the session's Markdown implementation plan artifact in a dedicated "
+                "tab with a Proceed button. Once called, make_plan is replaced by update_plan "
+                "and edit_plan."
+            ),
+            func=self.handle_make_plan,
+            args_schema=MakePlanInput,
+        )
+
+        update_plan_tool = StructuredTool.from_function(
+            name="update_plan",
+            description=(
+                "Overwrite the full Markdown content of the active session plan artifact."
+            ),
+            func=self.handle_update_plan,
+            args_schema=UpdatePlanInput,
+        )
+
+        edit_plan_tool = StructuredTool.from_function(
+            name="edit_plan",
+            description=(
+                "Perform an exact string replacement (old_string -> new_string) on the active "
+                "session plan's Markdown content."
+            ),
+            func=self.handle_edit_plan,
+            args_schema=EditPlanInput,
+        )
+
+        discard_tool = StructuredTool.from_function(
+            name="discard",
+            description=(
+                "Discard any active session plan and open a new thread back in the Discuss "
+                "phase. Use ONLY when explicitly commanded by the user."
+            ),
+            func=self.handle_discard,
+            args_schema=DiscardInput,
+        )
+
+        artifact_tools = [
+            ask_tool,
+            form_tool,
+            read_sub_tool,
+            plan_tool,
+            make_plan_tool,
+            update_plan_tool,
+            edit_plan_tool,
+            discard_tool,
+        ]
 
         graph = create_deep_agent(
             model=llm,
@@ -528,34 +697,119 @@ class SessionAgentRunner:
             name=f"session-agent-{self.session.id}",
             graph=graph,
             description=f"DeepAgent for session {self.session.id}",
+            config={"recursion_limit": self.recursion_limit},
         )
 
-    def build_effective_system_prompt(self, include_dynamic_context: bool = True) -> str:
+    def _get_active_plan_title(self) -> str | None:
+        """Return the display title of the session's active plan if one exists."""
+        if not self.session.active_plan_id:
+            return None
+        try:
+            ws_mgr = get_workspace_manager()
+            artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
+            _, title = PlanBuilder.read_plan(artifacts_dir, self.session.active_plan_id)
+            return title
+        except Exception:
+            return "Plan"
+
+    def get_active_tools_for_request(
+        self,
+        request_tools: Sequence[Any],
+        thread: Thread | None = None,
+    ) -> list[Any]:
+        """Filter bound tools dynamically for the current mode, phase, and active plan state."""
+        if self._pending_phase_transition is not None:
+            return []
+        target_thread = thread or self.session.get_open_thread()
+        has_active_plan = bool(self.session.active_plan_id)
+        allowed_harness = resolve_available_harness_tools(
+            target_thread.mode,
+            target_thread.phase,
+            has_active_plan=has_active_plan,
+        )
+        filtered: list[Any] = []
+        for tool_obj in request_tools:
+            t_name = getattr(tool_obj, "name", None) or (
+                tool_obj.get("name") if isinstance(tool_obj, dict) else None
+            )
+            if isinstance(t_name, str) and t_name in ALL_HARNESS_TOOLS:
+                if t_name in allowed_harness:
+                    filtered.append(tool_obj)
+            else:
+                filtered.append(tool_obj)
+        return filtered
+
+    def _provide_messages_for_request(self, request: Any) -> list[Any] | None:
+        """Supply a synthetic trigger HumanMessage when auto-waking a fresh phase thread."""
+        msgs = getattr(request, "messages", None)
+        if not msgs:
+            open_thread = self.session.get_open_thread()
+            return [
+                HumanMessage(
+                    content=(
+                        f"Begin execution for mode '{open_thread.mode}'"
+                        + (f" phase '{open_thread.phase}'." if open_thread.phase else ".")
+                    )
+                )
+            ]
+        return None
+
+    def sync_sandbox_mounts(self, thread: Thread | None = None) -> None:
+        """Synchronize sandbox volume mount permissions with the active thread's mode/phase."""
+        if self._sandbox_backend is None:
+            return
+        target_thread = thread or self.session.get_open_thread()
+        policy = resolve_mount_policy(target_thread.mode, target_thread.phase)
+        self._sandbox_backend.reconfigure_mounts(
+            workspace_readonly=policy.workspace_readonly,
+            notes_mounted=policy.notes_mounted,
+            notes_readonly=policy.notes_readonly,
+        )
+
+    def build_effective_system_prompt(
+        self,
+        include_dynamic_context: bool = True,
+        thread: Thread | None = None,
+    ) -> str:
         """Dynamically assemble the effective LM-XML system prompt for the session."""
         sandbox_settings = get_sandbox_settings()
         custom_prompt = (self.session.config.system_prompt or "").strip()
+        target_thread = thread or (
+            self.session.get_open_thread()
+            if self.session.is_active or self.session.threads
+            else None
+        )
+        mode = target_thread.mode if target_thread else ModeName.CHAT.value
+        phase = target_thread.phase if target_thread else None
         return build_effective_system_prompt(
             workdir=sandbox_settings.workdir,
             custom_prompt=custom_prompt or None,
             session_id=str(self.session.id),
             agent_id=str(self.session.agent_id),
             include_dynamic_context=include_dynamic_context,
+            mode=mode,
+            phase=phase,
+            active_plan_id=self.session.active_plan_id,
+            active_plan_title=self._get_active_plan_title(),
         )
 
     @property
     def sandbox_system_prompt(self) -> str:
         """Return the base OpenSandbox scaffolding system prompt."""
-        if not hasattr(self, "_sandbox_system_prompt"):
-            sandbox_settings = get_sandbox_settings()
-            self._sandbox_system_prompt = build_scaffold_prompt(sandbox_settings.workdir)
-        return self._sandbox_system_prompt
+        sandbox_settings = get_sandbox_settings()
+        open_thread = self.session.get_open_thread()
+        return build_scaffold_prompt(
+            sandbox_settings.workdir,
+            mode=open_thread.mode,
+            phase=open_thread.phase,
+            active_plan_id=self.session.active_plan_id,
+            active_plan_title=self._get_active_plan_title(),
+        )
 
     @property
     def effective_system_prompt(self) -> str:
         """Return the composite effective system prompt passed to the agent."""
-        if not hasattr(self, "_effective_system_prompt"):
-            self._effective_system_prompt = self.build_effective_system_prompt()
-        return self._effective_system_prompt
+        return self.build_effective_system_prompt()
 
     @property
     def agent(self) -> LangGraphAgent:
@@ -709,33 +963,328 @@ class SessionAgentRunner:
             thread.append_event(art_event)
         return "OK"
 
-    def handle_read_artifact_submission(self, artifact_id: str) -> str:
-        """Read the canonical user submission for a questionnaire or artifact.
+    def handle_form(
+        self,
+        question: str,
+        answers: list[str],
+        multiple: bool = False,
+        writein: bool = False,
+        id: str | None = None,
+        title: str = "Form",
+    ) -> str:
+        """Handle execution of the 'form' tool (tabbed, non-blocking questionnaire) in Discuss."""
+        item = QuestionItem(
+            question=question,
+            answers=answers,
+            multiple=multiple,
+            writein=writein,
+            id=id or "",
+        )
+        if any(q.id == item.id for q in self._pending_form_questions):
+            raise ValueError(
+                f"Question with id '{item.id}' already exists in the current form. "
+                f"Each question in a form must have a unique id."
+            )
+        if self._current_form_id is None:
+            self._current_form_id = uuid4().hex
+            self._current_form_title = title.strip() or "Form"
+        elif title and title.strip() and title.strip() != "Form":
+            self._current_form_title = title.strip()
 
-        Note for future: If called for a non-blocking artifact (cadence=nonblocking),
-        that particular artifact instance becomes blocking.
+        self._turn_created_artifact_ids.add(self._current_form_id)
+        self._pending_form_questions.append(item)
+
+        ws_mgr = get_workspace_manager()
+        artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
+        seed_default_artifacts(artifacts_dir)
+        target_dir = artifacts_dir / "forms" / self._current_form_id
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        manifest_payload = {
+            "exposition": "tabbed",
+            "cadence": "nonblocking",
+            "title": self._current_form_title,
+        }
+        (target_dir / "manifest.json").write_text(
+            json.dumps(manifest_payload, indent=2),
+            encoding="utf-8",
+        )
+        components_dict = QuestionnaireBuilder.build_update_components(
+            self._pending_form_questions,
+            title=self._current_form_title,
+        )
+        (target_dir / "updateComponents.json").write_text(
+            json.dumps(components_dict, indent=2),
+            encoding="utf-8",
+        )
+
+        art_event = {
+            "type": "ARTIFACT_CREATED",
+            "artifact_id": self._current_form_id,
+            "kind": "forms",
+            "title": self._current_form_title,
+        }
+        self.broadcaster.broadcast_sync(art_event)
+        thread = self.session.get_open_thread()
+        if thread is not None:
+            thread.append_event(art_event)
+        return "OK"
+
+    def handle_plan(self) -> str:
+        """Transition from Plan/Discuss to Plan/Make in a new thread and auto-wake."""
+        open_thread = self.session.get_open_thread()
+        if open_thread.mode != ModeName.PLAN.value or open_thread.phase != PlanPhase.DISCUSS.value:
+            raise ValueError("The 'plan' tool can only be called during the Plan/Discuss phase.")
+        self._pending_phase_transition = (ModeName.PLAN.value, PlanPhase.MAKE.value, True)
+        return "Transitioning session to Plan/Make phase in a new thread."
+
+    def handle_make_plan(self, content: str, name: str = "Plan") -> str:
+        """Create the session-local Plan artifact in Plan/Make phase."""
+        open_thread = self.session.get_open_thread()
+        if open_thread.mode != ModeName.PLAN.value or open_thread.phase != PlanPhase.MAKE.value:
+            raise ValueError("make_plan is only available in the Plan/Make phase.")
+
+        ws_mgr = get_workspace_manager()
+        artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
+        resolver = ArtifactResolver(artifacts_dir)
+
+        if self.session.active_plan_id and not resolver.is_closed(
+            "plans", self.session.active_plan_id
+        ):
+            raise ValueError(
+                f"Active plan '{self.session.active_plan_id}' already exists for this session. "
+                "Use update_plan or edit_plan to modify it."
+            )
+
+        plan_id = uuid4().hex
+        clean_title = name.strip() or "Plan"
+        PlanBuilder.create_plan(artifacts_dir, plan_id, content, title=clean_title)
+        self.session.active_plan_id = plan_id
+        self.session.touch()
+        self._turn_created_artifact_ids.add(plan_id)
+
+        art_event = {
+            "type": "ARTIFACT_CREATED",
+            "artifact_id": plan_id,
+            "kind": "plans",
+            "title": clean_title,
+        }
+        self.broadcaster.broadcast_sync(art_event)
+        open_thread.append_event(art_event)
+        return f"Created plan '{clean_title}' (id={plan_id})."
+
+    def handle_update_plan(self, content: str) -> str:
+        """Overwrite the full Markdown content of the active session plan in Plan/Make phase."""
+        open_thread = self.session.get_open_thread()
+        if open_thread.mode != ModeName.PLAN.value or open_thread.phase != PlanPhase.MAKE.value:
+            raise ValueError("update_plan is only available in the Plan/Make phase.")
+        if not self.session.active_plan_id:
+            raise ValueError("No active plan exists in this session. Call make_plan first.")
+
+        ws_mgr = get_workspace_manager()
+        artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
+        plan_id = self.session.active_plan_id
+        PlanBuilder.update_plan(artifacts_dir, plan_id, content)
+        self.session.touch()
+
+        upd_event = {
+            "type": "ARTIFACT_UPDATED",
+            "artifact_id": plan_id,
+            "kind": "plans",
+        }
+        self.broadcaster.broadcast_sync(upd_event)
+        open_thread.append_event(upd_event)
+        return f"Updated plan (id={plan_id})."
+
+    def handle_edit_plan(self, old_string: str, new_string: str) -> str:
+        """Perform an exact string replacement on the active session plan in Plan/Make phase."""
+        open_thread = self.session.get_open_thread()
+        if open_thread.mode != ModeName.PLAN.value or open_thread.phase != PlanPhase.MAKE.value:
+            raise ValueError("edit_plan is only available in the Plan/Make phase.")
+        if not self.session.active_plan_id:
+            raise ValueError("No active plan exists in this session. Call make_plan first.")
+
+        ws_mgr = get_workspace_manager()
+        artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
+        plan_id = self.session.active_plan_id
+        PlanBuilder.edit_plan(artifacts_dir, plan_id, old_string, new_string)
+        self.session.touch()
+
+        upd_event = {
+            "type": "ARTIFACT_UPDATED",
+            "artifact_id": plan_id,
+            "kind": "plans",
+        }
+        self.broadcaster.broadcast_sync(upd_event)
+        open_thread.append_event(upd_event)
+        return f"Edited plan (id={plan_id})."
+
+    def close_active_plan(self) -> str | None:
+        """Close the active session plan artifact if present and clear session.active_plan_id."""
+        plan_id = self.session.active_plan_id
+        if not plan_id:
+            return None
+        ws_mgr = get_workspace_manager()
+        artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
+        PlanBuilder.close_plan(artifacts_dir, plan_id)
+        self.session.active_plan_id = None
+        self.session.touch()
+        close_event = {
+            "type": "ARTIFACT_CLOSED",
+            "artifact_id": plan_id,
+            "kind": "plans",
+        }
+        self.broadcaster.broadcast_sync(close_event)
+        return plan_id
+
+    def handle_discard(self) -> str:
+        """Discard any active session plan and open a new thread back in Plan/Discuss."""
+        open_thread = self.session.get_open_thread()
+        if open_thread.mode != ModeName.PLAN.value:
+            raise ValueError("discard is only available in Plan mode.")
+
+        closed_plan_id = self.close_active_plan()
+        if closed_plan_id:
+            open_thread.append_event(
+                {
+                    "type": "ARTIFACT_CLOSED",
+                    "artifact_id": closed_plan_id,
+                    "kind": "plans",
+                }
+            )
+
+        # Also close any open forms or questionnaires in the session
+        ws_mgr = get_workspace_manager()
+        artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
+        resolver = ArtifactResolver(artifacts_dir)
+        for art in resolver.list_artifacts():
+            if not art.is_closed:
+                del_file = artifacts_dir / art.kind / art.name / "deleteSurface.json"
+                del_file.write_text(
+                    json.dumps(
+                        {
+                            "version": "v0.9",
+                            "deleteSurface": {"surfaceId": STANDARD_SURFACE_ID},
+                        },
+                        indent=2,
+                    ),
+                    encoding="utf-8",
+                )
+                close_ev = {
+                    "type": "ARTIFACT_CLOSED",
+                    "artifact_id": art.name,
+                    "kind": art.kind,
+                }
+                self.broadcaster.broadcast_sync(close_ev)
+                open_thread.append_event(close_ev)
+
+        self._pending_phase_transition = (ModeName.PLAN.value, PlanPhase.DISCUSS.value, False)
+        return "Discarded active plan and resetting session to a new Plan/Discuss thread."
+
+    async def transition_to_phase(
+        self,
+        mode: str,
+        phase: str | None = None,
+        *,
+        auto_wake: bool = False,
+    ) -> Thread:
+        """Close the current thread, open a new thread in (mode, phase), and auto-wake if set."""
+        resolved_mode, resolved_phase = normalize_mode_and_phase(mode, phase)
+        new_thread = self.session.create_thread(mode=resolved_mode, phase=resolved_phase)
+        if auto_wake:
+            new_thread.status = AgentStatus.AWAITING_LLM
+        self.sync_sandbox_mounts(new_thread)
+
+        try:
+            ws_mgr = get_workspace_manager()
+            ws_mgr.save_thread_events(
+                self.session.agent_id, self.session.id, new_thread.id, new_thread.events
+            )
+            ws_mgr.commit_state_changes(self.session.agent_id, self.session.id, new_thread.id)
+            ws_mgr.commit_session_config(self.session)
+        except Exception:
+            logger.exception("Failed to persist thread transition for session %s", self.session.id)
+
+        transition_event = {
+            "type": "THREAD_TRANSITION",
+            "thread_id": str(new_thread.id),
+            "mode": new_thread.mode,
+            "phase": new_thread.phase,
+            "mode_label": new_thread.mode_label,
+            "active_plan_id": self.session.active_plan_id,
+            "auto_wake": auto_wake,
+        }
+        await self.broadcaster.broadcast(transition_event)
+
+        if auto_wake:
+            self._active_task = asyncio.create_task(
+                self._run_loop(thread=new_thread, user_message=None)
+            )
+        return new_thread
+
+    def handle_read_artifact_submission(self, artifact_id: str) -> str:
+        """Read the canonical user submission for a questionnaire, form, or plan artifact.
+
+        If called for an open non-blocking artifact (cadence=nonblocking),
+        that artifact instance is promoted to cadence=blocking.
         """
-        # Fail if called in the same turn as ask that created the questionnaire
         is_same_turn = (
             artifact_id in self._turn_created_artifact_ids
             or (
                 self._current_questionnaire_id is not None
                 and (artifact_id == self._current_questionnaire_id or not artifact_id)
             )
+            or (
+                self._current_form_id is not None
+                and (artifact_id == self._current_form_id or not artifact_id)
+            )
             or any(q.id == artifact_id for q in self._pending_questions if q.id)
+            or any(q.id == artifact_id for q in self._pending_form_questions if q.id)
         )
         if is_same_turn:
             msg = (
                 f"Cannot read artifact submission for questionnaire '{artifact_id}' in the same "
-                f"turn it was created with 'ask'. The questionnaire must first be submitted by "
-                f"the user in a subsequent turn."
+                f"turn it was created with 'ask' or 'form'. The artifact must first be submitted "
+                f"by the user in a subsequent turn."
             )
             raise ValueError(msg)
 
         ws_mgr = get_workspace_manager()
         artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
         resolver = ArtifactResolver(artifacts_dir)
-        data_path = resolver.resolve_file("questionnaires", artifact_id, "updateDataModel.json")
+
+        matched_kind = "questionnaires"
+        for candidate_kind in ("questionnaires", "forms", "plans"):
+            if (artifacts_dir / candidate_kind / artifact_id).is_dir():
+                matched_kind = candidate_kind
+                break
+
+        # If open and nonblocking, promote instance manifest to blocking
+        inst_dir = artifacts_dir / matched_kind / artifact_id
+        if inst_dir.is_dir() and not resolver.is_closed(matched_kind, artifact_id):
+            try:
+                manifest = resolver.load_manifest(matched_kind, artifact_id)
+                if manifest.cadence == CadenceMode.NONBLOCKING:
+                    promoted = manifest.model_copy(update={"cadence": CadenceMode.BLOCKING})
+                    (inst_dir / "manifest.json").write_text(
+                        promoted.model_dump_json(indent=2, exclude_none=True),
+                        encoding="utf-8",
+                    )
+                    self.broadcaster.broadcast_sync(
+                        {
+                            "type": "ARTIFACT_UPDATED",
+                            "artifact_id": artifact_id,
+                            "kind": matched_kind,
+                        }
+                    )
+            except Exception:
+                logger.exception(
+                    "Failed to promote artifact %s/%s to blocking",
+                    matched_kind,
+                    artifact_id,
+                )
+
+        data_path = resolver.resolve_file(matched_kind, artifact_id, "updateDataModel.json")
         if not data_path or not data_path.is_file():
             return json.dumps({"data": {}, "status": "pending"})
         try:
@@ -782,6 +1331,44 @@ class SessionAgentRunner:
                 msg = f"Artifact '{kind}/{name}' is already closed."
                 raise ValueError(msg)
 
+            thread = self.session.get_open_thread()
+
+            if kind == "plans":
+                # User clicked Proceed on the Plan tab -> approve plan and transition to Execute
+                PlanBuilder.approve_plan(artifacts_dir, name)
+                self.session.active_plan_id = name
+                art_sub = {
+                    "type": "ARTIFACT_SUBMITTED",
+                    "kind": kind,
+                    "name": name,
+                }
+                art_upd = {
+                    "type": "ARTIFACT_UPDATED",
+                    "artifact_id": name,
+                    "kind": "plans",
+                }
+                thread.append_event(art_sub)
+                thread.append_event(art_upd)
+                await self.broadcaster.broadcast(art_sub)
+                await self.broadcaster.broadcast(art_upd)
+
+                try:
+                    ws_mgr.save_thread_events(
+                        self.session.agent_id, self.session.id, thread.id, thread.events
+                    )
+                    ws_mgr.commit_checkpoint_changes(
+                        self.session.agent_id, self.session.id, thread.id
+                    )
+                except Exception:
+                    logger.exception("Failed to save thread events on plan approval")
+
+                await self.transition_to_phase(
+                    ModeName.PLAN.value,
+                    PlanPhase.EXECUTE.value,
+                    auto_wake=True,
+                )
+                return f"proceed_{name}"
+
             # 1. Write updateDataModel.json
             data_model = {
                 "version": "v0.9",
@@ -807,7 +1394,6 @@ class SessionAgentRunner:
             )
 
             # 3. Create synthetic tool call
-            thread = self.session.get_open_thread()
             call_id = f"call_{uuid4().hex[:12]}"
             submission_payload = {"data": data}
 
@@ -816,8 +1402,15 @@ class SessionAgentRunner:
                 "kind": kind,
                 "name": name,
             }
+            art_closed = {
+                "type": "ARTIFACT_CLOSED",
+                "artifact_id": name,
+                "kind": kind,
+            }
             thread.append_event(art_sub)
+            thread.append_event(art_closed)
             await self.broadcaster.broadcast(art_sub)
+            await self.broadcaster.broadcast(art_closed)
 
             tc_start = {
                 "type": "TOOL_CALL_START",
@@ -987,7 +1580,12 @@ class SessionAgentRunner:
         run_id = uuid4().hex
         self._pending_questions = []
         self._current_questionnaire_id = None
+        self._pending_form_questions = []
+        self._current_form_id = None
+        self._current_form_title = "Form"
         self._turn_created_artifact_ids.clear()
+        self._pending_phase_transition = None
+        self.sync_sandbox_mounts(thread)
         input_data = RunAgentInput(
             thread_id=thread.id.hex,
             run_id=run_id,
@@ -1052,8 +1650,13 @@ class SessionAgentRunner:
                         except Exception:
                             logger.exception("Failed to close Sync PR on session failure")
                     finally:
+                        pending_transition = self._pending_phase_transition
+                        self._pending_phase_transition = None
                         self._pending_questions = []
                         self._current_questionnaire_id = None
+                        self._pending_form_questions = []
+                        self._current_form_id = None
+                        self._current_form_title = "Form"
                         self._turn_created_artifact_ids.clear()
                         if thread.status != AgentStatus.ERROR and self.session.is_active:
                             thread.status = AgentStatus.AWAITING_USER
@@ -1074,6 +1677,17 @@ class SessionAgentRunner:
                                 "for session %s thread %s",
                                 self.session.id,
                                 thread.id,
+                            )
+                        if (
+                            pending_transition is not None
+                            and thread.status != AgentStatus.ERROR
+                            and self.session.is_active
+                        ):
+                            t_mode, t_phase, t_auto_wake = pending_transition
+                            await self.transition_to_phase(
+                                t_mode,
+                                t_phase,
+                                auto_wake=t_auto_wake,
                             )
 
     def _update_status_from_event(self, thread: Thread, event: Any) -> None:
@@ -1143,6 +1757,9 @@ class SessionAgentRunner:
                 except TimeoutError:
                     # Keepalive ping or check if thread was closed
                     continue
+            while not queue.empty():
+                event = queue.get_nowait()
+                yield self._format_sse_event(encoder, event)
         finally:
             self.broadcaster.unsubscribe(queue)
 

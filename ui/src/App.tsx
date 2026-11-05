@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Eye, GitPullRequest, MessageSquare } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Eye, FileText, GitPullRequest, MessageSquare } from "lucide-react";
 import {
   getConfigTemplate,
   getSystemInfo,
@@ -8,7 +8,14 @@ import {
   updateConfigTemplate,
   updateSystemSettings,
 } from "./api/client";
-import type { AgentConfig, AgentStatus, SystemInfoResponse, SystemSettings } from "./api/types";
+import type {
+  AgentConfig,
+  AgentStatus,
+  ArtifactInfo,
+  SystemInfoResponse,
+  SystemSettings,
+} from "./api/types";
+import { A2uiArtifactRenderer } from "./components/A2uiArtifactRenderer";
 import { AgentInspector } from "./components/AgentInspector";
 import { ChangesViewer } from "./components/ChangesViewer";
 import { ChatArea } from "./components/ChatArea";
@@ -21,10 +28,15 @@ import "./App.css";
 
 const DEFAULT_SIDEBAR_RATIO = 1 / 3;
 
-function parseTabFromSearch(search: string): "chat" | "inspector" | "changes" {
+function parseTabFromSearch(search: string): string {
   const params = new URLSearchParams(search);
   const tab = params.get("tab");
-  if (tab === "inspector" || tab === "changes" || tab === "chat") {
+  if (
+    tab === "inspector" ||
+    tab === "changes" ||
+    tab === "chat" ||
+    (tab && tab.startsWith("artifact:"))
+  ) {
     return tab;
   }
   return "chat";
@@ -34,9 +46,46 @@ export function App() {
   const [configTemplate, setConfigTemplate] = useState<AgentConfig | null>(null);
   const [activeStatus, setActiveStatus] = useState<AgentStatus>("AWAITING_USER");
   const [systemInfo, setSystemInfo] = useState<SystemInfoResponse | null>(null);
-  const [activeMainTab, setActiveMainTab] = useState<"chat" | "inspector" | "changes">(() =>
+  const [activeMainTab, setActiveMainTab] = useState<string>(() =>
     typeof window !== "undefined" ? parseTabFromSearch(window.location.search) : "chat"
   );
+  const [sessionArtifacts, setSessionArtifacts] = useState<ArtifactInfo[]>([]);
+  const [submittingArtifactId, setSubmittingArtifactId] = useState<string | null>(null);
+  const submitArtifactRef = useRef<
+    ((artifact: ArtifactInfo, data: Record<string, unknown>) => Promise<void>) | null
+  >(null);
+
+  const handleArtifactsSync = useCallback(
+    (
+      artifacts: ArtifactInfo[],
+      submitFn: (artifact: ArtifactInfo, data: Record<string, unknown>) => Promise<void>,
+      submittingId: string | null
+    ) => {
+      setSessionArtifacts(artifacts);
+      submitArtifactRef.current = submitFn;
+      setSubmittingArtifactId(submittingId);
+    },
+    []
+  );
+
+  const openTabbedArtifacts = useMemo(
+    () =>
+      sessionArtifacts.filter(
+        (a) => a.manifest?.exposition === "tabbed" && !a.is_closed
+      ),
+    [sessionArtifacts]
+  );
+
+  useEffect(() => {
+    if (activeMainTab.startsWith("artifact:")) {
+      const stillOpen = openTabbedArtifacts.some(
+        (a) => `artifact:${a.kind}:${a.name}` === activeMainTab
+      );
+      if (!stillOpen) {
+        setActiveMainTab("chat");
+      }
+    }
+  }, [activeMainTab, openTabbedArtifacts]);
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -127,6 +176,7 @@ export function App() {
     createAgent,
     createSession,
     killSession,
+    switchSessionMode,
     branchSession,
     acceptThread,
     updateAgentName,
@@ -359,6 +409,33 @@ export function App() {
               <GitPullRequest className="size-4" />
               <span>Changes</span>
             </button>
+            {openTabbedArtifacts.map((art) => {
+              const tabKey = `artifact:${art.kind}:${art.name}`;
+              const tabTitle =
+                art.title ||
+                art.manifest?.title ||
+                (art.kind === "plans"
+                  ? "Plan"
+                  : art.kind === "forms"
+                    ? "Form"
+                    : art.name);
+              return (
+                <button
+                  key={tabKey}
+                  type="button"
+                  className={`main-tab main-tab-artifact ${
+                    activeMainTab === tabKey ? "active" : ""
+                  }`}
+                  onClick={() => setActiveMainTab(tabKey)}
+                >
+                  <FileText className="size-4" />
+                  <span>{tabTitle}</span>
+                  <span className="main-tab-badge">
+                    {art.kind === "plans" ? "Plan" : "Form"}
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
           <div className="main-panel-content">
@@ -385,6 +462,29 @@ export function App() {
                     await killSession(selectedAgentId, selectedSessionId);
                   }
                 }}
+                onSwitchMode={async (mode) => {
+                  if (selectedAgentId && selectedSessionId) {
+                    const updated = await switchSessionMode(
+                      selectedAgentId,
+                      selectedSessionId,
+                      mode
+                    );
+                    await refreshTree();
+                    const openThread = Object.values(updated.threads || {}).find(
+                      (t: any) => t.is_open
+                    );
+                    if (openThread) {
+                      selectThread(selectedAgentId, selectedSessionId, openThread.id);
+                    }
+                  }
+                }}
+                onThreadTransition={async (toThreadId) => {
+                  await refreshTree();
+                  if (selectedAgentId && selectedSessionId && toThreadId) {
+                    selectThread(selectedAgentId, selectedSessionId, toThreadId);
+                  }
+                }}
+                onArtifactsSync={handleArtifactsSync}
                 onBranchMessage={async (
                   targetId: string | null,
                   options?: { retryInference?: boolean; promptToSend?: string }
@@ -443,6 +543,27 @@ export function App() {
                 }}
               />
             )}
+
+            {openTabbedArtifacts.map((art) => {
+              const tabKey = `artifact:${art.kind}:${art.name}`;
+              if (activeMainTab !== tabKey) return null;
+              return (
+                <div key={tabKey} className="artifact-tab-panel">
+                  <div className="artifact-tab-container">
+                    <A2uiArtifactRenderer
+                      artifact={art}
+                      isSubmitting={submittingArtifactId === art.name}
+                      onSubmit={async (data) => {
+                        if (submitArtifactRef.current) {
+                          await submitArtifactRef.current(art, data);
+                          await refreshTree();
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

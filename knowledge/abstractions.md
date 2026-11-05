@@ -32,23 +32,24 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `AgentStatus`: Enumeration of thread states (`AWAITING_USER`, `AWAITING_LLM`, `EXECUTING_TOOL`, `ERROR`).
 - `SessionStatus`: Enumeration of session lifecycle states (`ACTIVE`, `KILLED`, `FAILED`).
 - `SessionBranchProvenance`: Data model recording branching lineage (`parent_session_id`, `parent_message_id`, `parent_session_name`, `branched_at`).
-- `Thread`: Models conversation thread state, open/closed flag, creation and touched timestamps, and past AG-UI event records.
-- `Session`: Models an ongoing conversation with an agent, holding an isolated `AgentConfig`, lifecycle `status`, optional `provenance` (immediate parent), cumulative `lineage` (multi-level branch provenance chain), a dedicated runner, and child threads.
+- `Thread`: Models conversation thread state, open/closed flag, creation and touched timestamps, active `mode`, optional `phase`, computed `mode_label`, empty check `is_empty`, and past AG-UI event records.
+- `Session`: Models an ongoing conversation with an agent, holding an isolated `AgentConfig`, lifecycle `status`, `active_plan_id`, optional `provenance` (immediate parent), cumulative `lineage` (multi-level branch provenance chain), a dedicated runner, and child threads with `create_thread(reuse_empty=True)` empty-thread reuse.
 - `Agent`: Models an agent entity holding a complete `AgentConfig` and child sessions.
 - `Resolution`: Identifier resolution functions mapping UUID or slug strings to entities within their scope.
+- `Operational Modes` (`seamus.domain.modes`): Declarative descriptors (`ModeDescriptor`, `PhaseDescriptor`, `MountPolicy`) defining operational modes (`CHAT_MODE`, `PLAN_MODE` with `discuss`, `make`, `execute` phases), tool gating, and hardware container mount policies.
 
 ### `seamus.harness` (`src/seamus/harness`)
 - Execution engine, sandbox integration, and state storage.
 - `ReasoningChatOpenAI`: `ChatOpenAI` subclass extracting OpenAI-compatible and OpenRouter reasoning fields (`reasoning`, `reasoning_content`, `reasoning_details`) into `additional_kwargs["reasoning_content"]`.
-- `SeamusLangGraphAgent`: `LangGraphAgent` subclass preserving full checkpoint message history in `langgraph_default_merge_state` so `gen_ai.prompt.messages` remains a prefix of `gen_ai.completion.messages`.
+- `SeamusLangGraphAgent`: `LangGraphAgent` subclass preserving full checkpoint message history in `langgraph_default_merge_state` and configuring LangGraph's `recursion_limit` (defaulting to 250 via `DEFAULT_RECURSION_LIMIT`).
 - `SandboxSettings`: Runtime configuration for connecting to `opensandbox-server` and configuring sandbox container image, timeouts, operational directory (`/workspace`), and shared workspace volume.
 - `get_or_create_sandbox_api_key`: Autogenerates and retrieves the internal runtime-managed API key for `opensandbox-server` authentication without exposing secrets to users.
 - `build_scaffold_prompt` / `build_sandbox_system_prompt`: Generates structured XML system prompt instructions (serialized via `lmxml`) informing the agent of its identity, `/workspace` operational persistence boundaries, engineering discipline, tool rules, and communication style.
-- `build_effective_system_prompt`: Assembles the complete LM-XML system prompt combining the base scaffold, dynamic turn context, and user-configured custom instructions.
-- `DynamicSystemPromptMiddleware`: LangChain/DeepAgents middleware intercepting model requests to dynamically update `system_message` on each inference turn.
+- `build_effective_system_prompt`: Assembles the complete LM-XML system prompt combining the base scaffold, dynamic turn context, operational mode/phase sections (`OperationalModeSection`, `PlanDocumentSpec`, `ActivePlanPromptContext`), and user-configured custom instructions.
+- `DynamicSystemPromptMiddleware`: LangChain/DeepAgents middleware intercepting model requests to dynamically update `system_message`, filter tools by active mode/phase, and inject synthetic auto-wake prompts on phase transitions.
 - `TodoListMiddleware` / `SeamusTodoListMiddleware`: Middleware providing the `write_todos` tool, tracking task states (`pending`, `in_progress`, `completed`) in `PlanningState`, appending task management guidance to the dynamic system prompt, and providing resilient schema normalization (`ResilientWriteTodosInput`) for common LLM key/state variations. Instantiated conditionally when `session.config.todo_implementation == TodoImplementation.DEEPAGENTS`.
-- `SeamusOpenSandboxBackend`: `OpenSandboxBackend` (`langchain_opensandbox`) subclass providing lazy per-session `SandboxSync` container provisioning, mounting `<session_workspace>/data` at `/workspace` (read-write), and mounting configured system-wide skill directories as strictly read-only (`readOnly=True`) volumes at in-sandbox paths `/skills/system/{idx}`. Implements `get_skill_sources()` to supply DeepAgents with appropriately prioritized in-sandbox skill sources (`system[last] -> ... -> system[0] -> /workspace/.skills -> /workspace/skills`).
-- `SessionAgentRunner`: Encapsulates DeepAgent graph instantiation (with `SeamusOpenSandboxBackend`, `DynamicSystemPromptMiddleware`, conditional `TodoListMiddleware`, conditional Anthropic skills integration via `SkillsMiddleware` controlled by `skills_implementation`, and `GitCheckpointSaver`), input handling, event lifecycle mapping (including `REASONING_*` events), and dynamic graph recompilation via `reload_config(session)`.
+- `SeamusOpenSandboxBackend`: `OpenSandboxBackend` (`langchain_opensandbox`) subclass providing lazy per-session `SandboxSync` container provisioning, mounting `<session_workspace>/data` at `/workspace` (with read-only or read-write permissions per phase) and `/workspace/notes` (`<session_workspace>/data/notes`) as read-write during `plan/discuss` over a read-only `/workspace`, and mounting configured system-wide skill directories as strictly read-only (`readOnly=True`) volumes at in-sandbox paths `/skills/system/{idx}`. Supports dynamic volume recycling via `reconfigure_mounts(...)`.
+- `SessionAgentRunner`: Encapsulates DeepAgent graph instantiation (with `SeamusOpenSandboxBackend`, `DynamicSystemPromptMiddleware`, conditional `TodoListMiddleware`, conditional Anthropic skills integration via `SkillsMiddleware` controlled by `skills_implementation`, and `GitCheckpointSaver`), input handling, event lifecycle mapping (including `REASONING_*` events), phase transitions (`transition_to_phase`), plan/form tool handlers, and dynamic graph recompilation via `reload_config(session)`.
 - `RunnerRegistry`: Maintains active `SessionAgentRunner` instances keyed by session ID with `reload_session_runner(session)` for instant configuration synchronization upon session updates.
 - `AgentInspectReport`: Data model capturing identity, Gitea branch provenance, model & inference settings, decomposed system prompts (composite and scaffold including active `TodoListMiddleware` and `SkillsMiddleware` prompt sections, plus custom instructions), tool argument schemas, active todos (`todos: list[TodoInspectItem]`), discovered skills (`skills: list[SkillInspectInfo]` with `host_path` for system-mounted skills), execution status, and trajectory history.
 - `build_agent_inspect_report`: Harness inspection service extracting semi-live agent state from active `SessionAgentRunner` instances or persisted Gitea branch state.
@@ -92,7 +93,12 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `ArtifactInfo`: Pydantic model describing an artifact instance (`kind`, `name`, `manifest`, `is_closed`, `surface`, `components`, `data`, `delete_surface`).
 - `ArtifactResolver`: File resolver traversing the 3-tier directory hierarchy (`/artifacts/<kind>/<name>/<file>` -> `/artifacts/<kind>/<file>` -> `/artifacts/<file>`) and checking instance-scoped `deleteSurface.json` for closure.
 - `QuestionnaireBuilder`: Builder constructing A2UI v0.9 `updateComponents` structures from batched `QuestionItem` inputs with a clean sequence of question cards and a submit button (omitting redundant titles, subtitles, and dividers) and rejecting duplicate question IDs.
+- `PlanBuilder`: Builder constructing and managing session-local Markdown Plan artifacts under `/artifacts/plans/<plan_id>/` with tabbed exposition (`exposition="tabbed"`), non-blocking cadence (`cadence="nonblocking"`), and a primary "Proceed" action button.
 - `ask`: Agent tool batching questionnaire questions during an inference turn with multi-select (`multiple: bool`), write-in (`writein: bool`), cardinality checks, and immediate duplicate ID rejection.
+- `form`: Agent tool batching non-blocking questionnaire forms rendered in dedicated UI tabs.
+- `plan`: Agent tool transitioning session from Discuss phase to Make phase in a fresh thread.
+- `make_plan` / `update_plan` / `edit_plan`: Agent tools in Make phase creating and surgically editing the session-local Plan artifact.
+- `discard`: Agent tool available across all Plan phases resetting session to Discuss and clearing active plans.
 - `read_artifact_submission`: Agent tool and synthetic tool call returning `{data: ...}` from canonical `updateDataModel.json`, with same-turn re-read prevention.
 
 ## Design Principles
@@ -124,6 +130,7 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - [0027-skills-config-project-rules-and-inspector.md](../decisions/0027-skills-config-project-rules-and-inspector.md)
 - [0028-ui-ux-ergonomics-and-url-state.md](../decisions/0028-ui-ux-ergonomics-and-url-state.md)
 - [0029-a2ui-questionnaire-artifacts.md](../decisions/0029-a2ui-questionnaire-artifacts.md)
+- [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md)
 - [architecture.md](./architecture.md)
 - [backlog.md](./backlog.md)
 - [conventions.md](./conventions.md)

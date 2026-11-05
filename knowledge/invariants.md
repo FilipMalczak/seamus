@@ -25,8 +25,8 @@ Properties and rules that must always hold across the repository.
 - **Enforcement**: Domain model validation in `AgentConfig.validate_complete()` and pre-initialization checks in session runner.
 
 ### INV-005: Single Open Thread Invariant
-- **Statement**: Within any Session, exactly one thread—the most recently created one—is open (`is_open = True`). All previous threads must be closed (`is_open = False`).
-- **Justification**: [REQ-006](./requirements.md#req-006-thread-redirection-event-streaming--status-tracking), [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md).
+- **Statement**: Within any Session, exactly one thread—the most recently created or active one—is open (`is_open = True`). All previous threads must be closed (`is_open = False`). When a new thread is requested or a mode is switched on an empty thread (`is_empty = True`), the empty thread is reused in place rather than closed, preserving single open thread invariants without creating orphaned threads.
+- **Justification**: [REQ-006](./requirements.md#req-006-thread-redirection-event-streaming--status-tracking), [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md), [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md).
 - **Enforcement**: Session thread management methods in `Session.create_thread()`.
 
 ### INV-006: Slug Format and Scope Uniqueness
@@ -140,9 +140,9 @@ Properties and rules that must always hold across the repository.
 - **Enforcement**: `seamus.harness.prompt.build_effective_system_prompt()`, `discover_project_rules()`, `DynamicSystemPromptMiddleware`, `SessionAgentRunner._build_deep_agent()`, and unit tests in `tests/test_prompt.py`.
 
 ### INV-028: Mode Transition Thread-Spawning Boundary
-- **Statement**: Every transition between operational modes (e.g. `plan`, `chat`, `act`, `analyse`, `routing`) within a session must immediately close the active thread and spawn a new thread. No single thread may span multiple operational modes. Furthermore, mode-specific phase transitions (such as transitioning from plan formulation to plan execution in `plan` mode) must spawn a fresh thread.
-- **Justification**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [threads_modes_personas.md](./threads_modes_personas.md).
-- **Enforcement**: Session runner orchestration and domain lifecycle in `src/seamus/harness/runner.py`.
+- **Statement**: Every transition between operational modes (e.g. `plan`, `chat`, `act`, `analyse`, `routing`) within a session must immediately close the active thread and spawn a new thread. No single thread may span multiple operational modes. Furthermore, mode-specific phase transitions (such as transitioning from plan formulation to plan execution in `plan` mode) must spawn a fresh thread. When a mode or phase transition occurs, if the current open thread is empty (`is_empty = True`), that thread is reused in place rather than closed, updating its mode/phase label without creating orphaned empty threads.
+- **Justification**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), [threads_modes_personas.md](./threads_modes_personas.md).
+- **Enforcement**: Session runner orchestration and domain lifecycle in `src/seamus/harness/runner.py` and `Session.create_thread(reuse_empty=True)`.
 
 ### INV-029: Session Terminal Immutability & Resource Teardown
 - **Statement**: When a session enters a terminal state (`KILLED` or `FAILED`), it must permanently reject any further user message submissions (`POST .../input` returning 409 Conflict) and block thread creation. Transition to a terminal state must cancel active execution tasks, immediately destroy the session's OpenSandbox container (`sandbox_backend.destroy()`), and close the active Gitea Sync PR without merging. Killing a session during active tool execution must append interrupted `TOOL_CALL_RESULT` events (`is_error=True`) and a `RUN_ERROR` event to resolve in-flight tools, set thread status to `AgentStatus.ERROR`, and ensure the composer send button does not render in a spinning state. The kill session action must be hidden and disabled whenever a session is already in an errored state.
@@ -196,6 +196,11 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-033](./requirements.md#req-033-a2ui-questionnaire-artifacts-hierarchical-storage-and-bundled-platform-skills), [0029-a2ui-questionnaire-artifacts.md](../decisions/0029-a2ui-questionnaire-artifacts.md).
 - **Enforcement**: `seamus.harness.artifacts.ArtifactResolver`, `seamus.harness.artifacts.QuestionnaireBuilder`, `GitWorkspaceManager`, `SeamusOpenSandboxBackend`, `SessionAgentRunner.handle_ask()`, `SessionAgentRunner.handle_read_artifact_submission()`, `SessionAgentRunner.dispatch_user_input()`, `SessionAgentRunner.dispatch_artifact_submission()`, `ChatArea.tsx`, `ChangesViewer.tsx`, and unit tests in `tests/test_artifacts.py`.
 
+### INV-041: Operational Mode Mount Policy, Non-Blocking Tabbed Plans, and Recursion Limit
+- **Statement**: In `plan` mode phases `discuss` and `make`, the primary workspace mount `/workspace` (`data/`) must be mounted read-only (`readOnly=True`), while `/workspace/notes` (`data/notes/`) is mounted read-write (`readOnly=False`) in `discuss` phase so notes persist and appear in the Changes diff view without permitting arbitrary code modification. In `execute` phase, the workspace is mounted read-write. Plan artifacts (`artifacts/plans/<uuid>/`) have `exposition=tabbed` and `cadence=nonblocking` (exactly one session-local active plan across all three phases), rendered as dedicated tabs to the right of Changes in the Web UI. Mode badges in the UI navigation tree must be left-aligned (`<icon><label><ID or name>`). LangGraph agent execution must use an elevated recursion limit (defaulting to 250, overridable via `SEAMUS_RECURSION_LIMIT`) to prevent premature `GraphRecursionError` on extended multi-step reasoning.
+- **Justification**: [REQ-034](./requirements.md#req-034-operational-modes-multi-phase-plan-lifecycle-tabbed-plan-artifacts-and-recursion-limit), [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md).
+- **Enforcement**: `seamus.harness.sandbox.SeamusOpenSandboxBackend.build_session_volumes()`, `seamus.harness.artifacts.PlanBuilder`, `seamus.harness.runner.DEFAULT_RECURSION_LIMIT`, `Sidebar.tsx`, and tests in `tests/test_modes_and_plan.py` and `tests/test_sandbox.py`.
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [requirements.md](./requirements.md)
@@ -226,3 +231,4 @@ Properties and rules that must always hold across the repository.
 - [0027-skills-config-project-rules-and-inspector.md](../decisions/0027-skills-config-project-rules-and-inspector.md)
 - [0028-ui-ux-ergonomics-and-url-state.md](../decisions/0028-ui-ux-ergonomics-and-url-state.md)
 - [0029-a2ui-questionnaire-artifacts.md](../decisions/0029-a2ui-questionnaire-artifacts.md)
+- [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md)

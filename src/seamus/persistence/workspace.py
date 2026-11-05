@@ -1,5 +1,6 @@
 """Git workspace manager orchestrating local clones and repositories."""
 
+import contextlib
 import json
 import logging
 import re
@@ -131,6 +132,10 @@ class GitWorkspaceManager:
     def get_session_artifacts_dir(self, agent_id: UUID, session_id: UUID) -> Path:
         """Return path to the session's artifacts/ directory."""
         return self.get_session_workspace_path(agent_id, session_id) / "artifacts"
+
+    def get_session_notes_dir(self, agent_id: UUID, session_id: UUID) -> Path:
+        """Return path to the session's notes/ directory under data/."""
+        return self.get_session_workspace_path(agent_id, session_id) / "data" / "notes"
 
     def get_thread_state_dir(self, agent_id: UUID, session_id: UUID, thread_id: UUID) -> Path:
         """Return path to a specific thread's state directory within the session workspace."""
@@ -395,6 +400,7 @@ class GitWorkspaceManager:
             (session_dir / "data").mkdir(parents=True, exist_ok=True)
             (session_dir / "data" / "skills").mkdir(parents=True, exist_ok=True)
             (session_dir / "data" / ".skills").mkdir(parents=True, exist_ok=True)
+            (session_dir / "data" / "notes").mkdir(parents=True, exist_ok=True)
             artifacts_dir = self.get_session_artifacts_dir(session.agent_id, session.id)
             artifacts_dir.mkdir(parents=True, exist_ok=True)
             from seamus.harness.artifacts import seed_default_artifacts
@@ -433,6 +439,7 @@ class GitWorkspaceManager:
         (session_dir / "data").mkdir(exist_ok=True)
         (session_dir / "data" / "skills").mkdir(parents=True, exist_ok=True)
         (session_dir / "data" / ".skills").mkdir(parents=True, exist_ok=True)
+        (session_dir / "data" / "notes").mkdir(parents=True, exist_ok=True)
         (session_dir / "agent" / "state").mkdir(parents=True, exist_ok=True)
         artifacts_dir = self.get_session_artifacts_dir(session.agent_id, session.id)
         artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -492,6 +499,7 @@ class GitWorkspaceManager:
             "created_at": session.created_at.isoformat(),
             "config": session.config.model_dump(),
             "status": session.status.value,
+            "active_plan_id": session.active_plan_id,
             "provenance": (
                 session.provenance.model_dump(mode="json") if session.provenance else None
             ),
@@ -503,6 +511,8 @@ class GitWorkspaceManager:
                     "created_at": t.created_at.isoformat(),
                     "is_open": t.is_open,
                     "status": t.status.value,
+                    "mode": t.mode,
+                    "phase": t.phase,
                 }
                 for t in sorted(session.threads.values(), key=lambda t: t.created_at)
             ],
@@ -645,10 +655,14 @@ class GitWorkspaceManager:
                     # Discard conflicts arising in harness-internal state/config directories
                     pass
 
-                # Reset and restore agent/ to HEAD (main)
-                self._run_git(agent_dir, ["reset", "HEAD", "--", "agent"])
-                self._run_git(agent_dir, ["checkout", "HEAD", "--", "agent"])
-                self._run_git(agent_dir, ["clean", "-fd", "agent"])
+                # Reset and restore non-data directories to HEAD (main)
+                for internal_dir in ("agent", "notes", "artifacts"):
+                    with contextlib.suppress(GitWorkspaceError):
+                        self._run_git(agent_dir, ["reset", "HEAD", "--", internal_dir])
+                    with contextlib.suppress(GitWorkspaceError):
+                        self._run_git(agent_dir, ["checkout", "HEAD", "--", internal_dir])
+                    with contextlib.suppress(GitWorkspaceError):
+                        self._run_git(agent_dir, ["clean", "-fd", internal_dir])
 
                 # Stage only data/ deliverables
                 if (agent_dir / "data").exists():
@@ -947,7 +961,7 @@ class GitWorkspaceManager:
             return False
 
         paths_to_check = [
-            p for p in ["data", "agent/state", "artifacts"] if (session_dir / p).exists()
+            p for p in ["data", "agent/state", "artifacts", "notes"] if (session_dir / p).exists()
         ]
         if not paths_to_check:
             return False

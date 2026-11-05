@@ -52,9 +52,18 @@ def test_session_single_open_thread_invariant() -> None:
     assert len(session.threads) == 1
     t1 = session.get_open_thread()
     assert t1.is_open is True
+    assert t1.is_empty is True
 
-    # Creating a second thread closes the first (INV-005)
-    t2 = session.create_thread(name="second-thread")
+    # When open thread is empty, creating a thread reuses it
+    t_reused = session.create_thread(name="second-thread")
+    assert t_reused.id == t1.id
+    assert t_reused.name == "second-thread"
+    assert len(session.threads) == 1
+
+    # Once the thread is non-empty, creating another thread closes the first (INV-005)
+    t_reused.append_event({"type": "MESSAGE", "content": "hi"})
+    assert t_reused.is_empty is False
+    t2 = session.create_thread(name="third-thread")
     assert len(session.threads) == 2
     assert t1.is_open is False
     assert t2.is_open is True

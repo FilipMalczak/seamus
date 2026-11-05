@@ -652,3 +652,52 @@ async def test_session_agent_runner_unhandled_error_includes_type_and_traceback(
     assert len(live_err) == 1
     assert live_err[0]["error_type"] == "RuntimeError"
     assert "traceback" in live_err[0]
+
+
+def test_session_agent_runner_recursion_limit_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify recursion_limit is configured on built SeamusLangGraphAgent and cloneable."""
+    from unittest.mock import MagicMock
+
+    def mock_create_deep_agent(**kwargs: Any) -> Any:
+        mock_graph = MagicMock()
+        mock_graph.nodes = {}
+        return mock_graph
+
+    monkeypatch.setattr("seamus.harness.runner.create_deep_agent", mock_create_deep_agent)
+
+    config = AgentConfig(
+        inference=InferenceConfig(api_key="mock-key"),
+        model_name="mock-model",
+    )
+    agent = Agent(config=config, name="agent-rec")
+    session = agent.create_session(name="sess-rec")
+
+    # 1. Default recursion limit (250)
+    runner_default = SessionAgentRunner(session=session)
+    assert runner_default.recursion_limit == 250
+    assert runner_default.agent.config == {"recursion_limit": 250}
+    cloned = runner_default.agent.clone()
+    assert cloned.config == {"recursion_limit": 250}
+
+    # 2. Explicit recursion limit override
+    runner_custom = SessionAgentRunner(session=session, recursion_limit=500)
+    assert runner_custom.recursion_limit == 500
+    assert runner_custom.agent.config == {"recursion_limit": 500}
+
+    # 3. Environment variable override
+    monkeypatch.setenv("SEAMUS_RECURSION_LIMIT", "350")
+    runner_env = SessionAgentRunner(session=session)
+    assert runner_env.recursion_limit == 350
+    assert runner_env.agent.config == {"recursion_limit": 350}
+
+    # 4. Provided agent without recursion_limit receives configured limit
+    from ag_ui_langgraph import LangGraphAgent
+
+    mock_graph2 = MagicMock()
+    mock_graph2.nodes = {}
+    external_agent = LangGraphAgent(name="ext", graph=mock_graph2)
+    assert external_agent.config == {}
+    runner_provided = SessionAgentRunner(session=session, agent=external_agent, recursion_limit=420)
+    assert runner_provided.agent.config == {"recursion_limit": 420}

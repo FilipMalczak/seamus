@@ -2,8 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, CheckCircle2, ChevronDown, ChevronUp, Loader2, Sparkles } from "lucide-react";
 import { MessageProcessor, type ProcessableMessage } from "@a2ui/web_core/v0_9";
 import { basicCatalog } from "@a2ui/web_core/v0_9/basic_catalog";
-import { A2uiSurface } from "@a2ui/react/v0_9";
+import { A2uiSurface, MarkdownComponentContext } from "@a2ui/react/v0_9";
 import type { ArtifactInfo } from "../api/types";
+import { MarkdownRenderer } from "./MarkdownRenderer";
+
+function A2uiMarkdownBridge({ markdown }: { markdown: string }) {
+  return <MarkdownRenderer content={markdown} variant="assistant" />;
+}
 
 interface A2uiArtifactRendererProps {
   artifact: ArtifactInfo;
@@ -53,11 +58,15 @@ export function A2uiArtifactRenderer({
       const actionName = (action as any)?.name || (action as any)?.event?.name;
       const context = (action as any)?.context || (action as any)?.event?.context || {};
 
-      if (actionName === "submit_questionnaire" || !actionName) {
+      if (
+        actionName === "submit_questionnaire" ||
+        actionName === "proceed_plan" ||
+        !actionName
+      ) {
         if (onSubmit) {
           setSubmitError(null);
           Promise.resolve(onSubmit(context)).catch((err: any) => {
-            setSubmitError(err?.message || "Failed to submit questionnaire.");
+            setSubmitError(err?.message || "Failed to submit artifact.");
           });
         }
       }
@@ -90,6 +99,17 @@ export function A2uiArtifactRenderer({
     }
   }, [processor, artifact.surface, artifact.components, artifact.data]);
 
+  const displayTitle =
+    artifact.title ||
+    artifact.manifest?.title ||
+    (artifact.kind === "questionnaires"
+      ? "Questionnaire"
+      : artifact.kind === "forms"
+        ? "Form"
+        : artifact.kind === "plans"
+          ? "Plan"
+          : artifact.kind);
+
   return (
     <div
       className={`a2ui-artifact-card ${artifact.is_closed ? "a2ui-closed" : "a2ui-open"} ${
@@ -99,15 +119,16 @@ export function A2uiArtifactRenderer({
       <div className="a2ui-card-header">
         <div className="a2ui-header-title">
           <Sparkles className="size-4 text-sky-400" />
-          <span className="font-semibold text-zinc-100">
-            {artifact.kind === "questionnaires" ? "Questionnaire" : artifact.kind}
-          </span>
+          <span className="font-semibold text-zinc-100">{displayTitle}</span>
           {artifact.is_closed ? (
             <span className="a2ui-status-badge closed">
-              <CheckCircle2 className="size-3" /> Submitted
+              <CheckCircle2 className="size-3" />{" "}
+              {artifact.kind === "plans" ? "Closed" : "Submitted"}
             </span>
           ) : (
-            <span className="a2ui-status-badge active">Action Required</span>
+            <span className="a2ui-status-badge active">
+              {artifact.kind === "plans" ? "Ready to Proceed" : "Action Required"}
+            </span>
           )}
         </div>
 
@@ -120,12 +141,12 @@ export function A2uiArtifactRenderer({
           >
             {expanded ? (
               <>
-                <span>Hide submitted answers</span>
+                <span>Hide details</span>
                 <ChevronUp className="size-3.5" />
               </>
             ) : (
               <>
-                <span>View submitted answers</span>
+                <span>View details</span>
                 <ChevronDown className="size-3.5" />
               </>
             )}
@@ -141,7 +162,9 @@ export function A2uiArtifactRenderer({
               <span>{renderError}</span>
             </div>
           ) : surfaceModel ? (
-            <A2uiSurface surface={surfaceModel} />
+            <MarkdownComponentContext.Provider value={A2uiMarkdownBridge}>
+              <A2uiSurface surface={surfaceModel} />
+            </MarkdownComponentContext.Provider>
           ) : (
             <div className="a2ui-loading">
               <Loader2 className="size-4 animate-spin text-sky-400" />
@@ -154,7 +177,7 @@ export function A2uiArtifactRenderer({
       {isSubmitting && (
         <div className="a2ui-submitting-overlay">
           <Loader2 className="size-4 animate-spin text-sky-400" />
-          <span>Submitting your answers...</span>
+          <span>Submitting...</span>
         </div>
       )}
 

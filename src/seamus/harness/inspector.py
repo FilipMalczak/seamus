@@ -16,6 +16,7 @@ from seamus.config.models import (
 )
 from seamus.config.settings import get_system_settings_store, resolve_skill_path
 from seamus.domain.entities import AgentStatus, Thread
+from seamus.domain.modes import ALL_HARNESS_TOOLS, resolve_available_harness_tools
 from seamus.domain.resolution import resolve_session, resolve_thread
 from seamus.harness.prompt import (
     build_effective_system_prompt,
@@ -213,28 +214,85 @@ def get_default_tools_inspect_info() -> list[ToolInspectInfo]:
         from pydantic import SecretStr
 
         from seamus.harness.runner import (
+            DiscardInput,
+            EditPlanInput,
+            MakePlanInput,
+            PlanTransitionInput,
             ReadArtifactSubmissionInput,
             ResilientAskInput,
+            ResilientFormInput,
             SeamusTodoListMiddleware,
+            UpdatePlanInput,
         )
 
-        dummy_ask = StructuredTool.from_function(
-            name="ask",
-            description=(
-                "Ask the user a closed question with multiple choices and an optional write-in "
-                "field. Batch multiple questions in the same turn to generate a questionnaire."
+        dummy_tools = [
+            StructuredTool.from_function(
+                name="ask",
+                description=(
+                    "Ask the user a closed question with multiple choices and an optional write-in "
+                    "field. Batch multiple questions in the same turn to generate a questionnaire."
+                ),
+                func=lambda *args, **kwargs: "OK",
+                args_schema=ResilientAskInput,
             ),
-            func=lambda *args, **kwargs: "OK",
-            args_schema=ResilientAskInput,
-        )
-        dummy_read_sub = StructuredTool.from_function(
-            name="read_artifact_submission",
-            description=(
-                "Read the canonical user-submitted data model for a questionnaire or artifact."
+            StructuredTool.from_function(
+                name="form",
+                description=(
+                    "Create a tabbed, non-blocking questionnaire form in a dedicated tab to the "
+                    "right of Changes."
+                ),
+                func=lambda *args, **kwargs: "OK",
+                args_schema=ResilientFormInput,
             ),
-            func=lambda *args, **kwargs: "{}",
-            args_schema=ReadArtifactSubmissionInput,
-        )
+            StructuredTool.from_function(
+                name="read_artifact_submission",
+                description=(
+                    "Read the canonical user-submitted data model for a questionnaire or artifact."
+                ),
+                func=lambda *args, **kwargs: "{}",
+                args_schema=ReadArtifactSubmissionInput,
+            ),
+            StructuredTool.from_function(
+                name="plan",
+                description=(
+                    "Transition the session from the Discuss phase to the Make phase "
+                    "in a new thread."
+                ),
+                func=lambda *args, **kwargs: "OK",
+                args_schema=PlanTransitionInput,
+            ),
+            StructuredTool.from_function(
+                name="make_plan",
+                description=(
+                    "Create the session's Markdown implementation plan artifact in a dedicated tab."
+                ),
+                func=lambda *args, **kwargs: "OK",
+                args_schema=MakePlanInput,
+            ),
+            StructuredTool.from_function(
+                name="update_plan",
+                description=(
+                    "Overwrite the full Markdown content of the active session plan artifact."
+                ),
+                func=lambda *args, **kwargs: "OK",
+                args_schema=UpdatePlanInput,
+            ),
+            StructuredTool.from_function(
+                name="edit_plan",
+                description="Perform an exact string replacement on the active session plan.",
+                func=lambda *args, **kwargs: "OK",
+                args_schema=EditPlanInput,
+            ),
+            StructuredTool.from_function(
+                name="discard",
+                description=(
+                    "Discard any active session plan and open a new thread back in "
+                    "the Discuss phase."
+                ),
+                func=lambda *args, **kwargs: "OK",
+                args_schema=DiscardInput,
+            ),
+        ]
 
         dummy_llm = ReasoningChatOpenAI(
             model="dummy",
@@ -243,7 +301,7 @@ def get_default_tools_inspect_info() -> list[ToolInspectInfo]:
         )
         dummy_graph = create_deep_agent(
             model=dummy_llm,
-            tools=[dummy_ask, dummy_read_sub],
+            tools=dummy_tools,
             middleware=[SeamusTodoListMiddleware()],
         )
         tools_node = dummy_graph.nodes.get("tools")
@@ -743,10 +801,16 @@ def build_agent_inspect_report(
 
     # System Prompts
     sandbox_settings = get_sandbox_settings()
-    base_scaffold_prompt = build_scaffold_prompt(sandbox_settings.workdir)
+    base_scaffold_prompt = build_scaffold_prompt(
+        sandbox_settings.workdir,
+        mode=thread.mode,
+        phase=thread.phase,
+        active_plan_id=session.active_plan_id,
+    )
     custom_prompt = (session.config.system_prompt or "").strip()
     data_dir = ws_mgr.get_session_data_dir(agent.id, session.id)
     artifacts_dir = ws_mgr.get_session_artifacts_dir(agent.id, session.id)
+    notes_dir = ws_mgr.get_session_notes_dir(agent.id, session.id)
 
     # Runner & Tools
     registry = get_runner_registry()
@@ -762,13 +826,16 @@ def build_agent_inspect_report(
             )
 
     base_composite_prompt = (
-        runner.build_effective_system_prompt()
+        runner.build_effective_system_prompt(thread=thread)
         if runner is not None
         else build_effective_system_prompt(
             workdir=sandbox_settings.workdir,
             custom_prompt=custom_prompt or None,
             session_id=str(session.id),
             agent_id=str(agent.id),
+            mode=thread.mode,
+            phase=thread.phase,
+            active_plan_id=session.active_plan_id,
         )
     )
 
@@ -803,6 +870,13 @@ def build_agent_inspect_report(
     else:
         tools = get_default_tools_inspect_info()
 
+    allowed_harness_tools = resolve_available_harness_tools(
+        thread.mode,
+        thread.phase,
+        has_active_plan=bool(session.active_plan_id),
+    )
+    tools = [t for t in tools if t.name not in ALL_HARNESS_TOOLS or t.name in allowed_harness_tools]
+
     if session.config.todo_implementation == TodoImplementation.NONE:
         tools = [t for t in tools if t.name != "write_todos"]
         todos = []
@@ -833,7 +907,14 @@ def build_agent_inspect_report(
                     files.append(f"artifacts/{p.relative_to(artifacts_dir)}")
                 except ValueError:
                     files.append(f"artifacts/{p.name}")
-    files.sort()
+    if notes_dir.exists():
+        for p in notes_dir.rglob("*"):
+            if p.is_file() and p.name != ".gitkeep":
+                try:
+                    files.append(f"notes/{p.relative_to(notes_dir)}")
+                except ValueError:
+                    files.append(f"notes/{p.name}")
+    files = sorted(set(files))
 
     workspace_info = WorkspaceInspectInfo(
         operational_dir=sandbox_settings.workdir,

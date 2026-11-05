@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, Field, field_validator
 
 from seamus.config.models import AgentConfig
+from seamus.domain.modes import ModeName, normalize_mode_and_phase
 
 SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -64,7 +65,16 @@ class Thread(BaseModel):
     last_touched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     is_open: bool = True
     status: AgentStatus = AgentStatus.AWAITING_USER
+    mode: str = ModeName.CHAT.value
+    phase: str | None = None
     events: list[Any] = Field(default_factory=list)
+
+    @property
+    def mode_label(self) -> str:
+        """Return display label '<mode>' or '<mode>/<phase>'."""
+        if self.phase:
+            return f"{self.mode}/{self.phase}"
+        return self.mode
 
     @field_validator("name", mode="before")
     @classmethod
@@ -80,6 +90,11 @@ class Thread(BaseModel):
         self.events.append(event)
         self.touch()
 
+    @property
+    def is_empty(self) -> bool:
+        """Check if the thread has no recorded events or user exchanges."""
+        return len(self.events) == 0
+
 
 class Session(BaseModel):
     """A conversation instance with an agent, comprising one or more threads."""
@@ -91,6 +106,7 @@ class Session(BaseModel):
     last_touched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     config: AgentConfig
     status: SessionStatus = Field(default=SessionStatus.ACTIVE)
+    active_plan_id: str | None = None
     provenance: SessionBranchProvenance | None = None
     lineage: list[SessionBranchProvenance] = Field(default_factory=list)
     threads: dict[UUID, Thread] = Field(default_factory=dict)
@@ -125,16 +141,53 @@ class Session(BaseModel):
             thread.is_open = False
         self.touch()
 
-    def create_thread(self, name: str | None = None) -> Thread:
-        """Create a new open thread, closing all previous threads in the session."""
+    def create_thread(
+        self,
+        name: str | None = None,
+        mode: str | None = None,
+        phase: str | None = None,
+        reuse_empty: bool = True,
+    ) -> Thread:
+        """Create a new open thread, closing all previous threads in the session.
+
+        If reuse_empty is True (default) and the currently open thread in the session
+        is empty (has no events), the open thread is kept and updated in place with the
+        new mode, phase, and name rather than creating an unnecessary empty thread.
+        """
         if not self.is_active:
             msg = f"Cannot create thread in session '{self.id}' with status '{self.status.value}'."
             raise ValueError(msg)
 
+        inherited_mode = mode
+        if inherited_mode is None and self.threads:
+            last_thread = list(self.threads.values())[-1]
+            inherited_mode = last_thread.mode
+
+        resolved_mode, resolved_phase = normalize_mode_and_phase(inherited_mode, phase)
+
+        if reuse_empty:
+            for thread in reversed(list(self.threads.values())):
+                if thread.is_open:
+                    if thread.is_empty:
+                        if name is not None:
+                            thread.name = name
+                        thread.mode = resolved_mode
+                        thread.phase = resolved_phase
+                        thread.touch()
+                        self.touch()
+                        return thread
+                    break
+
         for thread in self.threads.values():
             thread.is_open = False
 
-        new_thread = Thread(name=name, is_open=True, status=AgentStatus.AWAITING_USER)
+        new_thread = Thread(
+            name=name,
+            is_open=True,
+            status=AgentStatus.AWAITING_USER,
+            mode=resolved_mode,
+            phase=resolved_phase,
+        )
         self.threads[new_thread.id] = new_thread
         self.touch()
         return new_thread

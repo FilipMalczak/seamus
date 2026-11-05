@@ -36,11 +36,17 @@ The mechanism and lineage metadata tracking the creation of a child session from
 
 ### Operational Mode
 The active execution posture and behavioral style governing an agent during a thread turn within an open, extensible set of modes:
-- `plan`: Formulates a structured execution plan before implementing changes; transitions from planning to execution open a new thread.
-- `chat`: Conversational orientation; dialogue is primary, and the workspace serves strictly as an internal agent scratchpad rather than a production codebase.
+- `chat`: Conversational dialogue and direct code editing posture; `/workspace` is mounted read-write and notes is an unconstrained directory. Exposes `ask` and `read_artifact_submission`.
+- `plan`: Multi-phase planning mode comprising three distinct execution phases, each operating in an isolated thread boundary:
+  - `discuss`: Read-only exploration of `/workspace` with `/workspace/notes` mounted read-write. Exposes `ask`, `form`, `plan()`, `read_artifact_submission`, and `discard()`. Calling `plan()` transitions to Make.
+  - `make`: Synthesizes notes into a session-local Plan artifact (`exposition="tabbed"`, `cadence="nonblocking"`) with `/workspace` and `/workspace/notes` mounted read-only. Exposes `make_plan` (replaced dynamically by `update_plan` and `edit_plan` once created), `read_artifact_submission`, and `discard()`. Advancing to Execute is driven by user clicking the "Proceed" button on the Plan tab.
+  - `execute`: Implements and verifies the approved plan with `/workspace` mounted read-write and `/workspace/notes` mounted read-only. Exposes `discard()`.
 - `act`: Direct task execution; follows commands and performs edits immediately without upfront planning cycles.
 - `analyse`: Read-only workspace investigation; inspects code, runs queries, and answers questions without mutating persistent files.
 - `routing` (planned): Uses a classifier model or tool-wrapped LLM to triage user input and dispatch to an appropriate operational mode.
+
+### Plan Artifact
+A specialized declarative Markdown document artifact representing a session-level implementation plan (`exposition="tabbed"`, `cadence="nonblocking"`). Rendered in a dedicated tab to the right of `Changes` in the Web UI with a "Proceed" button that advances the session from `plan/make` to `plan/execute`. Closed when the thread is accepted or discarded.
 
 ### Thread
 A sub-conversation segment within a session representing a discrete execution phase and mode boundary. Only the most recently created thread in a session is open; earlier threads are closed. A thread records AG-UI streaming events, tracks execution status, and executes within a specific operational mode. Switching operational modes closes the active thread and spawns a fresh thread.

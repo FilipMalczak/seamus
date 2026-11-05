@@ -1,4 +1,4 @@
-"""Artifact storage, hierarchical resolution, and specialized questionnaire generation."""
+"""Artifact storage, hierarchical resolution, and specialized questionnaire/form/plan generation."""
 
 import json
 import logging
@@ -35,7 +35,17 @@ DEFAULT_QUESTIONNAIRE_MANIFEST: dict[str, Any] = {
     "cadence": "blocking",
 }
 
-SUPPORTED_ARTIFACT_KINDS = {"questionnaires", "questionaires"}
+DEFAULT_FORM_MANIFEST: dict[str, Any] = {
+    "exposition": "tabbed",
+    "cadence": "nonblocking",
+}
+
+DEFAULT_PLAN_MANIFEST: dict[str, Any] = {
+    "exposition": "tabbed",
+    "cadence": "nonblocking",
+}
+
+SUPPORTED_ARTIFACT_KINDS = {"questionnaires", "questionaires", "forms", "plans"}
 
 
 def seed_default_artifacts(artifacts_dir: Path) -> None:
@@ -45,13 +55,20 @@ def seed_default_artifacts(artifacts_dir: Path) -> None:
     if not root_surface.exists():
         root_surface.write_text(json.dumps(DEFAULT_CREATE_SURFACE, indent=2), encoding="utf-8")
 
-    questionnaires_dir = artifacts_dir / "questionnaires"
-    questionnaires_dir.mkdir(parents=True, exist_ok=True)
-    class_manifest = questionnaires_dir / "manifest.json"
-    if not class_manifest.exists():
-        class_manifest.write_text(
-            json.dumps(DEFAULT_QUESTIONNAIRE_MANIFEST, indent=2), encoding="utf-8"
-        )
+    class_defaults: dict[str, dict[str, Any]] = {
+        "questionnaires": DEFAULT_QUESTIONNAIRE_MANIFEST,
+        "forms": DEFAULT_FORM_MANIFEST,
+        "plans": DEFAULT_PLAN_MANIFEST,
+    }
+    for kind_name, default_manifest in class_defaults.items():
+        kind_dir = artifacts_dir / kind_name
+        kind_dir.mkdir(parents=True, exist_ok=True)
+        class_manifest = kind_dir / "manifest.json"
+        if not class_manifest.exists():
+            class_manifest.write_text(
+                json.dumps(default_manifest, indent=2),
+                encoding="utf-8",
+            )
 
 
 def _to_camel_case(s: str) -> str:
@@ -251,6 +268,235 @@ class QuestionnaireBuilder:
         }
 
 
+class PlanBuilder:
+    """Compiles and manages a Markdown Plan artifact as an A2UI v0.9 surface."""
+
+    @staticmethod
+    def build_update_components(
+        content: str,
+        *,
+        include_proceed: bool = True,
+        surface_id: str = STANDARD_SURFACE_ID,
+    ) -> dict[str, Any]:
+        """Construct A2UI v0.9 updateComponents payload for a Markdown plan."""
+        main_children = ["plan_markdown"]
+        if include_proceed:
+            main_children.append("proceed_button")
+
+        components: list[dict[str, Any]] = [
+            {
+                "id": "root",
+                "component": "Card",
+                "child": "main",
+            },
+            {
+                "id": "main",
+                "component": "Column",
+                "children": main_children,
+                "align": "stretch",
+            },
+            {
+                "id": "plan_markdown",
+                "component": "Text",
+                "text": content,
+                "variant": "body",
+            },
+        ]
+
+        if include_proceed:
+            components.extend(
+                [
+                    {
+                        "id": "proceed_label",
+                        "component": "Text",
+                        "text": "Proceed",
+                    },
+                    {
+                        "id": "proceed_button",
+                        "component": "Button",
+                        "child": "proceed_label",
+                        "variant": "primary",
+                        "action": {
+                            "event": {
+                                "name": "proceed_plan",
+                                "context": {"approved": True},
+                            }
+                        },
+                    },
+                ]
+            )
+
+        return {
+            "version": "v0.9",
+            "updateComponents": {
+                "surfaceId": surface_id,
+                "components": components,
+            },
+        }
+
+    @staticmethod
+    def build_update_data_model(
+        content: str,
+        title: str = "Plan",
+        *,
+        approved: bool = False,
+        surface_id: str = STANDARD_SURFACE_ID,
+    ) -> dict[str, Any]:
+        """Construct A2UI v0.9 updateDataModel payload for a plan."""
+        return {
+            "version": "v0.9",
+            "updateDataModel": {
+                "surfaceId": surface_id,
+                "path": "/plan",
+                "value": {
+                    "title": title,
+                    "content": content,
+                    "approved": approved,
+                },
+            },
+        }
+
+    @classmethod
+    def create_plan(
+        cls,
+        artifacts_dir: Path,
+        plan_id: str,
+        content: str,
+        title: str = "Plan",
+    ) -> Path:
+        """Create a new plan artifact instance directory and write manifest and data."""
+        seed_default_artifacts(artifacts_dir)
+        clean_title = title.strip() or "Plan"
+        inst_dir = artifacts_dir / "plans" / plan_id
+        inst_dir.mkdir(parents=True, exist_ok=True)
+
+        manifest_payload = {
+            "exposition": ExpositionMode.TABBED.value,
+            "cadence": CadenceMode.NONBLOCKING.value,
+            "title": clean_title,
+        }
+        (inst_dir / "manifest.json").write_text(
+            json.dumps(manifest_payload, indent=2),
+            encoding="utf-8",
+        )
+        (inst_dir / "updateDataModel.json").write_text(
+            json.dumps(cls.build_update_data_model(content, clean_title, approved=False), indent=2),
+            encoding="utf-8",
+        )
+        (inst_dir / "updateComponents.json").write_text(
+            json.dumps(cls.build_update_components(content, include_proceed=True), indent=2),
+            encoding="utf-8",
+        )
+        return inst_dir
+
+    @classmethod
+    def read_plan(cls, artifacts_dir: Path, plan_id: str) -> tuple[str, str]:
+        """Return (content, title) of an existing plan artifact."""
+        inst_dir = artifacts_dir / "plans" / plan_id
+        if not inst_dir.is_dir():
+            msg = f"Plan artifact '{plan_id}' does not exist."
+            raise ValueError(msg)
+
+        title = "Plan"
+        manifest_file = inst_dir / "manifest.json"
+        if manifest_file.is_file():
+            try:
+                manifest_data = json.loads(manifest_file.read_text(encoding="utf-8"))
+                if isinstance(manifest_data.get("title"), str) and manifest_data["title"].strip():
+                    title = manifest_data["title"].strip()
+            except Exception:
+                pass
+
+        data_file = inst_dir / "updateDataModel.json"
+        if data_file.is_file():
+            data_payload = json.loads(data_file.read_text(encoding="utf-8"))
+            val = data_payload.get("updateDataModel", {}).get("value", {})
+            if isinstance(val, dict):
+                if isinstance(val.get("title"), str) and val["title"].strip():
+                    title = val["title"].strip()
+                if isinstance(val.get("content"), str):
+                    return val["content"], title
+
+        comp_file = inst_dir / "updateComponents.json"
+        if comp_file.is_file():
+            comp_payload = json.loads(comp_file.read_text(encoding="utf-8"))
+            comps = comp_payload.get("updateComponents", {}).get("components", [])
+            for comp in comps:
+                if isinstance(comp, dict) and comp.get("id") == "plan_markdown":
+                    return str(comp.get("text", "")), title
+
+        return "", title
+
+    @classmethod
+    def update_plan(cls, artifacts_dir: Path, plan_id: str, content: str) -> Path:
+        """Overwrite the Markdown content of an existing plan artifact."""
+        _, title = cls.read_plan(artifacts_dir, plan_id)
+        inst_dir = artifacts_dir / "plans" / plan_id
+        (inst_dir / "updateDataModel.json").write_text(
+            json.dumps(cls.build_update_data_model(content, title, approved=False), indent=2),
+            encoding="utf-8",
+        )
+        (inst_dir / "updateComponents.json").write_text(
+            json.dumps(cls.build_update_components(content, include_proceed=True), indent=2),
+            encoding="utf-8",
+        )
+        return inst_dir
+
+    @classmethod
+    def edit_plan(
+        cls,
+        artifacts_dir: Path,
+        plan_id: str,
+        old_string: str,
+        new_string: str,
+    ) -> Path:
+        """Perform an exact string replacement on the active plan's Markdown content."""
+        if not old_string:
+            raise ValueError("old_string must be non-empty.")
+        content, _ = cls.read_plan(artifacts_dir, plan_id)
+        occurrences = content.count(old_string)
+        if occurrences == 0:
+            raise ValueError("old_string not found in active plan content.")
+        if occurrences > 1:
+            raise ValueError(
+                f"old_string appears {occurrences} times in active plan content; "
+                "include more surrounding context so it matches uniquely."
+            )
+        updated_content = content.replace(old_string, new_string, 1)
+        return cls.update_plan(artifacts_dir, plan_id, updated_content)
+
+    @classmethod
+    def approve_plan(cls, artifacts_dir: Path, plan_id: str) -> Path:
+        """Mark the plan as approved for Execute phase and strip the Proceed button."""
+        content, title = cls.read_plan(artifacts_dir, plan_id)
+        inst_dir = artifacts_dir / "plans" / plan_id
+        (inst_dir / "updateDataModel.json").write_text(
+            json.dumps(cls.build_update_data_model(content, title, approved=True), indent=2),
+            encoding="utf-8",
+        )
+        (inst_dir / "updateComponents.json").write_text(
+            json.dumps(cls.build_update_components(content, include_proceed=False), indent=2),
+            encoding="utf-8",
+        )
+        return inst_dir
+
+    @classmethod
+    def close_plan(cls, artifacts_dir: Path, plan_id: str) -> bool:
+        """Write deleteSurface.json to close/discard a plan artifact."""
+        inst_dir = artifacts_dir / "plans" / plan_id
+        if not inst_dir.is_dir():
+            return False
+        delete_file = inst_dir / "deleteSurface.json"
+        if delete_file.is_file():
+            return False
+        delete_payload = {
+            "version": "v0.9",
+            "deleteSurface": {"surfaceId": STANDARD_SURFACE_ID},
+        }
+        delete_file.write_text(json.dumps(delete_payload, indent=2), encoding="utf-8")
+        return True
+
+
 class ArtifactResolver:
     """Resolves and loads artifact files across the 3-tier directory hierarchy."""
 
@@ -290,15 +536,24 @@ class ArtifactResolver:
     def load_manifest(self, kind: str, name: str) -> ArtifactManifest:
         """Load and validate manifest.json following class validation rules."""
         if kind not in SUPPORTED_ARTIFACT_KINDS:
-            msg = f"Unsupported artifact kind: '{kind}'. Only questionnaires are supported."
+            msg = (
+                f"Unsupported artifact kind: '{kind}'. "
+                "Supported kinds are questionnaires, forms, and plans."
+            )
             raise ValueError(msg)
+
+        default_manifest = (
+            ArtifactManifest(exposition=ExpositionMode.TABBED, cadence=CadenceMode.NONBLOCKING)
+            if kind in {"forms", "plans"}
+            else ArtifactManifest(exposition=ExpositionMode.EMBEDDED, cadence=CadenceMode.BLOCKING)
+        )
 
         # Check class manifest
         class_manifest_path = self.artifacts_dir / kind / "manifest.json"
         class_manifest = (
             ArtifactManifest.model_validate_json(class_manifest_path.read_text(encoding="utf-8"))
             if class_manifest_path.is_file()
-            else ArtifactManifest(exposition=ExpositionMode.EMBEDDED, cadence=CadenceMode.BLOCKING)
+            else default_manifest
         )
 
         # Check instance manifest if customized
@@ -307,13 +562,21 @@ class ArtifactResolver:
             instance_manifest = ArtifactManifest.model_validate_json(
                 instance_manifest_path.read_text(encoding="utf-8")
             )
-            # Questionnaire customization must match class-level manifest
-            if instance_manifest != class_manifest:
-                msg = (
-                    f"Instance manifest at {instance_manifest_path} ({instance_manifest}) "
-                    f"does not match class-level manifest ({class_manifest})."
-                )
-                raise ValueError(msg)
+            if kind in {"questionnaires", "questionaires"}:
+                if instance_manifest != class_manifest:
+                    msg = (
+                        f"Instance manifest at {instance_manifest_path} ({instance_manifest}) "
+                        f"does not match class-level manifest ({class_manifest})."
+                    )
+                    raise ValueError(msg)
+            else:
+                if instance_manifest.exposition != class_manifest.exposition:
+                    msg = (
+                        f"Instance manifest exposition at {instance_manifest_path} "
+                        f"({instance_manifest.exposition}) does not match class-level "
+                        f"exposition ({class_manifest.exposition})."
+                    )
+                    raise ValueError(msg)
             return instance_manifest
 
         return class_manifest
@@ -353,9 +616,21 @@ class ArtifactResolver:
                 "deleteSurface": {"surfaceId": STANDARD_SURFACE_ID},
             }
 
+        resolved_title = manifest.title
+        if resolved_title is None and isinstance(data, dict):
+            val = data.get("updateDataModel", {}).get("value", {})
+            if isinstance(val, dict) and isinstance(val.get("title"), str) and val["title"].strip():
+                resolved_title = val["title"].strip()
+        if resolved_title is None:
+            if kind == "plans":
+                resolved_title = "Plan"
+            elif kind == "forms":
+                resolved_title = "Form"
+
         return ArtifactInfo(
             kind=kind,
             name=name,
+            title=resolved_title,
             manifest=manifest,
             is_closed=is_closed,
             surface=surface,

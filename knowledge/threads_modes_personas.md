@@ -73,7 +73,7 @@ A **Persona** defines an agent's enduring identity, domain background, and avail
 
 An **Operational Mode** dictates the agent's immediate interaction posture, prompt framing, and the role of the operational workspace (`/workspace`).
 
-Modes are **open and creatable**—the core list below is an illustrative set, not a closed enumeration. New modes can be registered as the harness evolves.
+Modes are **open and creatable**—the core list below is an illustrative set, not a closed enumeration. New modes can be registered as the harness evolves. For detailed mode-by-mode and persona-by-persona customization (prompt framing, tool gating, and mount policies), see [modes_and_personas_breakdown.md](./modes_and_personas_breakdown.md).
 
 ```
 +--------------------------------------------------------------------------------+
@@ -92,24 +92,25 @@ Modes are **open and creatable**—the core list below is an illustrative set, n
 ### Detailed Mode Semantics
 
 #### `plan`
-- **Objective**: Formulate a structured, verified plan before making any code modifications.
+- **Objective**: Formulate a structured, verified plan across three sequential phases (**Discuss** -> **Make** -> **Execute**) before modifying production deliverables.
 - **Workflow**:
-  1. *Planning Phase*: The agent explores existing files, analyzes requirements, and drafts a step-by-step plan. Write operations are restricted or confined to scratchpad planning files.
-  2. *Plan Alignment*: The user reviews the plan and approves execution.
-  3. *Execution Phase*: The mode transitions to execution (or `act`), which **spawns a new thread** to carry out the implementation steps.
-- **Workspace Role**: Initially inspected in read-only fashion; during execution, becomes the target of verified changes.
+  1. *Discuss Phase* (`plan/discuss`): The agent explores `/workspace` (mounted read-only) and clarifies requirements with the user (via `ask`, `form`, or conversation), recording all findings in `/workspace/notes` (mounted read-write). Calling `plan()` spawns a fresh `plan/make` thread.
+  2. *Make Phase* (`plan/make`): Synthesizes requirements into a session-local Markdown Plan artifact (`exposition="tabbed"`, `cadence="nonblocking"`) via `make_plan`, `update_plan`, and `edit_plan` with `/workspace` and `/workspace/notes` mounted read-only. Clicking the "Proceed" button advances the session to Execute.
+  3. *Execute Phase* (`plan/execute`): Spawns a fresh execution thread with `/workspace` mounted read-write and `/workspace/notes` mounted read-only to implement and test the approved plan.
+  4. *Discarding*: Calling `discard()` in any phase discards active plans and returns the session to a fresh `plan/discuss` thread.
+- **Workspace Role**: Inspected in read-only mode during Discuss and Make (with `/workspace/notes` read-write in Discuss); becomes the target of verified changes in Execute.
 
 #### `chat`
 - **Objective**: Conversational discussion, brainstorming, high-level guidance, or explaining concepts without modifying project deliverables.
 - **Workspace Role**: The workspace is not the primary deliverable; it serves strictly as an agent scratchpad for scratch scripts or quick calculations.
 - **Git Impact**: Does not generate production code changes intended for the `main` branch.
 
-#### `act`
+#### `act` (Planned)
 - **Objective**: Direct, prompt task execution.
 - **Workflow**: The agent immediately follows instructions, reads relevant files, authors surgical diffs, and runs verification checks. Best suited for well-defined bug fixes, minor additions, or following a pre-established plan.
 - **Workspace Role**: Active production codebase. Changes directly stage for the session's Sync PR.
 
-#### `analyse`
+#### `analyse` (Planned)
 - **Objective**: Answer questions, trace call graphs, review diffs, or audit security and architecture without changing files.
 - **Workflow**: The agent has full access to search and inspection tools (`read_file`, `grep`, `glob`, `ls`), but file modification tools (`write_file`, `edit_file`, `delete`) are disabled or rejected by middleware.
 - **Workspace Role**: Immutable reference directory.
@@ -127,7 +128,9 @@ In Seamus, **Threads are the deterministic execution boundaries** for modes and 
 
 ### Mode Transitions Spawn Threads
 
-Whenever a session switches modes, Seamus closes the active thread and spawns a fresh thread:
+Whenever a session switches modes or advances phases, Seamus opens a fresh thread if the current open thread was non-empty. If the current thread is empty (contains no recorded events, such as immediately upon creating a new agent session), the empty thread is reused and updated in place with the new mode and phase rather than stacking orphaned empty threads in the navigation tree.
+
+When the active thread contains conversational history:
 
 ```mermaid
 stateDiagram-v2
@@ -167,6 +170,7 @@ Modes define distinct triggers that spawn new threads:
 
 ## 6. Cross-References
 
+- [modes_and_personas_breakdown.md](./modes_and_personas_breakdown.md)
 - [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md)
 - [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md)
 - [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md)
