@@ -112,7 +112,7 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
         self.session_id = session_id
         self.data_dir = data_dir
         self.artifacts_dir = artifacts_dir or (data_dir.parent / "artifacts")
-        self.notes_dir = notes_dir or (data_dir.parent / "notes")
+        self.notes_dir = notes_dir or (data_dir / "notes")
         self.workspace_readonly = workspace_readonly
         self.notes_mounted = notes_mounted
         self.notes_readonly = notes_readonly
@@ -187,18 +187,18 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
         if self.settings.workspace_volume:
             return Volume(
                 name="notes",
-                mountPath="/notes",
+                mountPath="/workspace/notes",
                 readOnly=self.notes_readonly,
                 pvc=PVC(
                     claimName=self.settings.workspace_volume,
                     createIfNotExists=True,
                     deleteOnSandboxTermination=False,
                 ),
-                subPath=f"{self.agent_id}/{self.session_id}/notes",
+                subPath=f"{self.agent_id}/{self.session_id}/data/notes",
             )
         return Volume(
             name="notes",
-            mountPath="/notes",
+            mountPath="/workspace/notes",
             readOnly=self.notes_readonly,
             host=Host(path=str(self.notes_dir.resolve())),
         )

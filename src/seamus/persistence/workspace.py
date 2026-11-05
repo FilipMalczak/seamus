@@ -134,8 +134,8 @@ class GitWorkspaceManager:
         return self.get_session_workspace_path(agent_id, session_id) / "artifacts"
 
     def get_session_notes_dir(self, agent_id: UUID, session_id: UUID) -> Path:
-        """Return path to the session's notes/ directory."""
-        return self.get_session_workspace_path(agent_id, session_id) / "notes"
+        """Return path to the session's notes/ directory under data/."""
+        return self.get_session_workspace_path(agent_id, session_id) / "data" / "notes"
 
     def get_thread_state_dir(self, agent_id: UUID, session_id: UUID, thread_id: UUID) -> Path:
         """Return path to a specific thread's state directory within the session workspace."""
@@ -400,7 +400,7 @@ class GitWorkspaceManager:
             (session_dir / "data").mkdir(parents=True, exist_ok=True)
             (session_dir / "data" / "skills").mkdir(parents=True, exist_ok=True)
             (session_dir / "data" / ".skills").mkdir(parents=True, exist_ok=True)
-            (session_dir / "notes").mkdir(parents=True, exist_ok=True)
+            (session_dir / "data" / "notes").mkdir(parents=True, exist_ok=True)
             artifacts_dir = self.get_session_artifacts_dir(session.agent_id, session.id)
             artifacts_dir.mkdir(parents=True, exist_ok=True)
             from seamus.harness.artifacts import seed_default_artifacts
@@ -439,7 +439,7 @@ class GitWorkspaceManager:
         (session_dir / "data").mkdir(exist_ok=True)
         (session_dir / "data" / "skills").mkdir(parents=True, exist_ok=True)
         (session_dir / "data" / ".skills").mkdir(parents=True, exist_ok=True)
-        (session_dir / "notes").mkdir(parents=True, exist_ok=True)
+        (session_dir / "data" / "notes").mkdir(parents=True, exist_ok=True)
         (session_dir / "agent" / "state").mkdir(parents=True, exist_ok=True)
         artifacts_dir = self.get_session_artifacts_dir(session.agent_id, session.id)
         artifacts_dir.mkdir(parents=True, exist_ok=True)

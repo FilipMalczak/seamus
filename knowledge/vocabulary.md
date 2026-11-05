@@ -36,11 +36,11 @@ The mechanism and lineage metadata tracking the creation of a child session from
 
 ### Operational Mode
 The active execution posture and behavioral style governing an agent during a thread turn within an open, extensible set of modes:
-- `chat`: Conversational dialogue and direct code editing posture; `/workspace` is mounted read-write and `/notes` is not mounted. Exposes `ask` and `read_artifact_submission`.
+- `chat`: Conversational dialogue and direct code editing posture; `/workspace` is mounted read-write and notes is an unconstrained directory. Exposes `ask` and `read_artifact_submission`.
 - `plan`: Multi-phase planning mode comprising three distinct execution phases, each operating in an isolated thread boundary:
-  - `discuss`: Read-only exploration of `/workspace` with `/notes` mounted read-write. Exposes `ask`, `form`, `plan()`, `read_artifact_submission`, and `discard()`. Calling `plan()` transitions to Make.
-  - `make`: Synthesizes notes into a session-local Plan artifact (`exposition="tabbed"`, `cadence="nonblocking"`) with `/workspace` and `/notes` mounted read-only. Exposes `make_plan` (replaced dynamically by `update_plan` and `edit_plan` once created), `read_artifact_submission`, and `discard()`. Advancing to Execute is driven by user clicking the "Proceed" button on the Plan tab.
-  - `execute`: Implements and verifies the approved plan with `/workspace` mounted read-write and `/notes` mounted read-only. Exposes `discard()`.
+  - `discuss`: Read-only exploration of `/workspace` with `/workspace/notes` mounted read-write. Exposes `ask`, `form`, `plan()`, `read_artifact_submission`, and `discard()`. Calling `plan()` transitions to Make.
+  - `make`: Synthesizes notes into a session-local Plan artifact (`exposition="tabbed"`, `cadence="nonblocking"`) with `/workspace` and `/workspace/notes` mounted read-only. Exposes `make_plan` (replaced dynamically by `update_plan` and `edit_plan` once created), `read_artifact_submission`, and `discard()`. Advancing to Execute is driven by user clicking the "Proceed" button on the Plan tab.
+  - `execute`: Implements and verifies the approved plan with `/workspace` mounted read-write and `/workspace/notes` mounted read-only. Exposes `discard()`.
 - `act`: Direct task execution; follows commands and performs edits immediately without upfront planning cycles.
 - `analyse`: Read-only workspace investigation; inspects code, runs queries, and answers questions without mutating persistent files.
 - `routing` (planned): Uses a classifier model or tool-wrapped LLM to triage user input and dispatch to an appropriate operational mode.

@@ -49,7 +49,7 @@ class ActivePlanPromptContext(BaseModel):
     plan_title: str
     plan_artifact_directory: str
     plan_data_model_path: str
-    notes_directory: str = "/notes"
+    notes_directory: str = "/workspace/notes"
     instructions: str
 
 
@@ -123,7 +123,7 @@ def build_operating_environment(
     resolved_mode, resolved_phase = normalize_mode_and_phase(mode, phase)
     mount_policy = resolve_mount_policy(resolved_mode, resolved_phase)
     workspace_access = "read-only" if mount_policy.workspace_readonly else "read-write"
-    notes_dir = "/notes" if mount_policy.notes_mounted else None
+    notes_dir = "/workspace/notes" if mount_policy.notes_mounted else None
     notes_access = (
         ("read-only" if mount_policy.notes_readonly else "read-write")
         if mount_policy.notes_mounted
@@ -134,19 +134,22 @@ def build_operating_environment(
         persistence = (
             "You run inside an isolated sandbox container.\n"
             f"Your Git-tracked operational directory at `{workdir}` is currently mounted "
-            "READ-ONLY for this phase. Do NOT attempt to write, edit, or delete files inside "
-            f"`{workdir}` during this phase.\n"
+            "READ-ONLY for this phase, with the exception of `/workspace/notes`.\n"
             + (
-                "Your persistent session notes directory at `/notes` is mounted READ-WRITE. "
-                "Record and organize all requirements, architectural findings, and user decisions "
-                "inside `/notes` so subsequent phases can read them.\n"
+                (
+                    "Your persistent session notes directory at `/workspace/notes` is mounted "
+                    "READ-WRITE. Record and organize all requirements, architectural findings, "
+                    "and user decisions inside `/workspace/notes` so subsequent phases can "
+                    "read them.\n"
+                )
                 if notes_access == "read-write"
                 else (
-                    "Your session notes directory at `/notes` is mounted READ-ONLY for reference.\n"
+                    "Your session notes directory at `/workspace/notes` is mounted READ-ONLY "
+                    "for reference.\n"
                 )
             )
             + "Renderable A2UI artifacts are mounted READ-ONLY at `/artifacts`.\n"
-            f"Anything outside `{workdir}`, `/notes`, and `/artifacts` (such as `/tmp` or `/root`) "
+            f"Anything outside `{workdir}` and `/artifacts` (such as `/tmp` or `/root`) "
             "is transient and ephemeral, and will be discarded when the sandbox restarts."
         )
     else:
@@ -156,7 +159,7 @@ def build_operating_environment(
             "All persistent project work, repositories, created files, and deliverables "
             f"MUST be located within `{workdir}`.\n"
             + (
-                "Your session notes from earlier planning phases are mounted READ-ONLY at `/notes` "
+                "Your session notes from earlier planning phases are located at `/workspace/notes` "
                 "and approved plan artifacts are mounted READ-ONLY at `/artifacts/plans/`.\n"
                 if notes_dir
                 else ""
@@ -194,7 +197,7 @@ def build_plan_document_specification() -> PlanDocumentSpec:
         required_sections=[
             (
                 "Context & Goal: Concisely state the problem being solved, user requirements "
-                "synthesized from `/notes`, and the intended outcome."
+                "synthesized from `/workspace/notes`, and the intended outcome."
             ),
             (
                 "Key Decisions & Constraints: Document resolved architectural choices, agreed "
@@ -213,7 +216,7 @@ def build_plan_document_specification() -> PlanDocumentSpec:
         authoring_rules=[
             (
                 "Ground every file path, symbol name, and data flow in actual inspection of "
-                "`/workspace` and the requirement notes in `/notes`."
+                "`/workspace` and the requirement notes in `/workspace/notes`."
             ),
             (
                 "Keep the plan surgical and high-signal: describe interfaces, contracts, and "
@@ -270,9 +273,10 @@ def build_operational_mode_section(
             "(zero prior chat messages carry over across phases)."
         ),
         (
-            "Cross-phase continuity relies strictly on disk state: `/notes` (written in Discuss, "
-            "read-only in Make and Execute) and the session-local Plan artifact under "
-            "`/artifacts/plans/<plan_id>/` (authored in Make, executed in Execute)."
+            "Cross-phase continuity relies strictly on disk state: `/workspace/notes` "
+            "(written in Discuss, read-only in Make and Execute) and the session-local "
+            "Plan artifact under `/artifacts/plans/<plan_id>/` "
+            "(authored in Make, executed in Execute)."
         ),
     ]
 
@@ -286,10 +290,10 @@ def build_operational_mode_section(
             plan_title=title_str,
             plan_artifact_directory=plan_dir,
             plan_data_model_path=data_path,
-            notes_directory="/notes",
+            notes_directory="/workspace/notes",
             instructions=(
                 f"Active session plan '{title_str}' (id: `{active_plan_id}`) is stored at "
-                f"`{data_path}` (under `/plan/content`). Read `{data_path}` and `/notes` "
+                f"`{data_path}` (under `/plan/content`). Read `{data_path}` and `/workspace/notes` "
                 "to inspect the full plan and background notes."
             ),
         )
@@ -315,7 +319,7 @@ def build_operational_mode_section(
                 ),
                 (
                     "Continuously record and organize structured requirement notes, codebase "
-                    "findings, and user decisions inside `/notes` (mounted read-write)."
+                    "findings, and user decisions inside `/workspace/notes` (mounted read-write)."
                 ),
             ],
             phase_workflow=[
@@ -330,21 +334,21 @@ def build_operational_mode_section(
                     "or conversational prose."
                 ),
                 (
-                    "3. Before transitioning, ensure `/notes` contains well-organized Markdown "
-                    "notes capturing the full goal, user answers, affected file paths, and "
-                    "agreed design decisions—because the Make phase will wake up in a new thread "
-                    "with NO chat history and will rely entirely on `/notes`."
+                    "3. Before transitioning, ensure `/workspace/notes` contains well-organized "
+                    "Markdown notes capturing the full goal, user answers, affected file paths, "
+                    "and agreed design decisions—because the Make phase will wake up in a new "
+                    "thread with NO chat history and will rely entirely on `/workspace/notes`."
                 ),
                 (
-                    "4. Once requirements are clear and `/notes` is organized, call `plan()` to "
-                    "transition the session into the Make phase."
+                    "4. Once requirements are clear and `/workspace/notes` is organized, "
+                    "call `plan()` to transition the session into the Make phase."
                 ),
             ],
             transition_and_discard_rules=[
                 (
                     "Call `plan()` ONLY after you have gathered sufficient context and written "
-                    "organized notes to `/notes`. Calling `plan()` opens a new Make phase thread "
-                    "and wakes the agent automatically."
+                    "organized notes to `/workspace/notes`. Calling `plan()` opens a new Make "
+                    "phase thread and wakes the agent automatically."
                 ),
                 (
                     "Call `discard()` ONLY when explicitly instructed by the user to abandon or "
@@ -364,8 +368,9 @@ def build_operational_mode_section(
             architecture_and_continuity=architecture_and_continuity,
             phase_objectives=[
                 (
-                    "Read the organized requirement notes in `/notes` (mounted read-only) and "
-                    "verify any remaining technical details in `/workspace` (mounted read-only)."
+                    "Read the organized requirement notes in `/workspace/notes` (mounted "
+                    "read-only) and verify any remaining technical details in `/workspace` "
+                    "(mounted read-only)."
                 ),
                 (
                     "Author a comprehensive, surgical Markdown implementation plan using "
@@ -375,8 +380,8 @@ def build_operational_mode_section(
             ],
             phase_workflow=[
                 (
-                    "1. Start by listing and reading `/notes` to recover all requirements, "
-                    "decisions, and context gathered during Discuss."
+                    "1. Start by listing and reading `/workspace/notes` to recover all "
+                    "requirements, decisions, and context gathered during Discuss."
                 ),
                 (
                     "2. Inspect `/workspace` as needed to confirm exact file paths, signatures, "
@@ -424,7 +429,7 @@ def build_operational_mode_section(
         phase_objectives=[
             (
                 "Read the approved implementation plan from `/artifacts/plans/` and supporting "
-                "notes in `/notes`."
+                "notes in `/workspace/notes`."
             ),
             (
                 "Execute the plan systematically in `/workspace` (now mounted read-write) and "
@@ -434,8 +439,8 @@ def build_operational_mode_section(
         phase_workflow=[
             (
                 "1. Immediately read the active plan artifact (pointed to in "
-                "`active_plan_context` or under `/artifacts/plans/`) and inspect `/notes` "
-                "if additional context is needed."
+                "`active_plan_context` or under `/artifacts/plans/`) and inspect "
+                "`/workspace/notes` if additional context is needed."
             ),
             (
                 "2. Implement each planned change surgically in `/workspace`, following existing "

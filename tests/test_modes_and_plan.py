@@ -1,6 +1,7 @@
 """Comprehensive tests for operational modes, plan mode phases, and artifacts tools."""
 
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
@@ -258,3 +259,62 @@ async def test_session_mode_switch_and_phase_transitions() -> None:
     runner._pending_phase_transition = None
     disc_thread = await runner.transition_to_phase(mode, phase, auto_wake=auto_wake)
     assert disc_thread.phase == "discuss"
+
+
+def test_notes_directory_and_sandbox_mount_policy(tmp_path: Path) -> None:
+    """Verify notes live under data/notes, appear in diff, and mount at /workspace/notes."""
+    from seamus.harness.sandbox import SeamusOpenSandboxBackend
+    from seamus.persistence.workspace import filter_sync_pr_diff, get_workspace_manager
+
+    ws_mgr = get_workspace_manager()
+    agent_id = uuid4()
+    session_id = uuid4()
+    notes_dir = ws_mgr.get_session_notes_dir(agent_id, session_id)
+
+    # 1. Path must be inside data/notes
+    assert notes_dir.name == "notes"
+    assert notes_dir.parent.name == "data"
+
+    # 2. Files in data/notes/ must be captured by filter_sync_pr_diff for the Changes tab
+    mock_diff = (
+        "diff --git a/data/notes/architecture.md b/data/notes/architecture.md\n"
+        "new file mode 100644\n"
+        "--- /dev/null\n"
+        "+++ b/data/notes/architecture.md\n"
+        "@@ -0,0 +1,5 @@\n"
+        "+# Architecture Notes\n"
+        "diff --git a/agent/state/checkpoint.json b/agent/state/checkpoint.json\n"
+        "--- a/agent/state/checkpoint.json\n"
+        "+++ b/agent/state/checkpoint.json\n"
+        "@@ -1 +1 @@\n"
+    )
+    kept_diff = filter_sync_pr_diff(mock_diff)
+    assert "data/notes/architecture.md" in kept_diff
+    assert "agent/state/checkpoint.json" not in kept_diff
+
+    # 3. Sandbox volume mount configuration: /workspace/notes
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(parents=True)
+    backend = SeamusOpenSandboxBackend(
+        agent_id=agent_id,
+        session_id=session_id,
+        data_dir=data_dir,
+        workspace_readonly=True,
+        notes_mounted=True,
+        notes_readonly=False,  # Plan/Discuss phase
+    )
+    vol = backend.build_notes_volume()
+    assert vol is not None
+    assert vol.mount_path == "/workspace/notes"
+    assert vol.read_only is False
+
+    # In Plan/Make phase, notes become read-only
+    backend.reconfigure_mounts(
+        workspace_readonly=True,
+        notes_mounted=True,
+        notes_readonly=True,
+    )
+    vol_ro = backend.build_notes_volume()
+    assert vol_ro is not None
+    assert vol_ro.mount_path == "/workspace/notes"
+    assert vol_ro.read_only is True

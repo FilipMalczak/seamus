@@ -138,9 +138,9 @@ export function ChatArea({
         const priorAssistant =
           currentIdx > 0
             ? messages
-                .slice(0, currentIdx)
-                .reverse()
-                .find((m) => m.role === "assistant")
+              .slice(0, currentIdx)
+              .reverse()
+              .find((m) => m.role === "assistant")
             : undefined;
 
         if (priorAssistant) {
@@ -548,7 +548,7 @@ export function ChatArea({
                   type="button"
                   className="suggestion-pill"
                   onClick={() =>
-                    setInputText("Put the iris dataset in your workspace. Dont use external libraries - either use python to fetch it or write it from memory.")
+                    setInputText("Put the iris dataset in your workspace. Dont use external libraries - either use python to fetch it or write it from memory. Add a simple (no-dependency) python script that performs rudimentary analysis of dataset (counts examples, counts classes, etc; again - no deps). Skip automated verification, verify manually, by running the script and checking the output.")
                   }
                 >
                   Fetch iris dataset &rarr;

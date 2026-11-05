@@ -625,7 +625,8 @@ class SessionAgentRunner:
             name="plan",
             description=(
                 "Transition the session from the Discuss phase to the Make phase in a new "
-                "thread. Call only after recording organized requirement notes in `/notes`."
+                "thread. Call only after recording organized requirement notes in "
+                "`/workspace/notes`."
             ),
             func=self.handle_plan,
             args_schema=PlanTransitionInput,

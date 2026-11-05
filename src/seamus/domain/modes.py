@@ -107,7 +107,7 @@ PLAN_DISCUSS_PHASE = PhaseDescriptor(
     description=(
         "Explore the read-only workspace, clarify requirements and trade-offs with the user "
         "via conversation, blocking questionnaires (`ask`), or non-blocking forms (`form`), "
-        "and organize structured requirement notes in `/notes` before calling `plan()`."
+        "and organize structured requirement notes in `/workspace/notes` before calling `plan()`."
     ),
     mount_policy=MountPolicy(
         workspace_readonly=True,
@@ -121,8 +121,8 @@ PLAN_MAKE_PHASE = PhaseDescriptor(
     name=PlanPhase.MAKE.value,
     title="Make",
     description=(
-        "Synthesize the organized notes in `/notes` and inspect the read-only `/workspace` "
-        "to author and refine the session's Markdown implementation plan artifact via "
+        "Synthesize the organized notes in `/workspace/notes` and inspect the read-only "
+        "`/workspace` to author and refine the session's Markdown implementation plan artifact via "
         "`make_plan`, `update_plan`, and `edit_plan`, then await user approval via the "
         "plan's Proceed action."
     ),
@@ -138,7 +138,7 @@ PLAN_EXECUTE_PHASE = PhaseDescriptor(
     name=PlanPhase.EXECUTE.value,
     title="Execute",
     description=(
-        "Implement and verify the approved plan from `/artifacts/plans/` and `/notes` "
+        "Implement and verify the approved plan from `/artifacts/plans/` and `/workspace/notes` "
         "with full read-write access to `/workspace`."
     ),
     mount_policy=MountPolicy(
@@ -155,7 +155,7 @@ PLAN_MODE = ModeDescriptor(
     description=(
         "Structured three-phase planning and execution workflow (Discuss -> Make -> Execute) "
         "with phase-isolated threads, read-only exploration and plan authoring, and dedicated "
-        "`/notes` and Plan artifact handoffs."
+        "`/workspace/notes` and Plan artifact handoffs."
     ),
     mount_policy=PLAN_DISCUSS_PHASE.mount_policy,
     tools=(),

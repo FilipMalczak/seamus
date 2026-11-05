@@ -14,32 +14,32 @@ Each mode and phase governs:
 1. **Name and Short Description**: For UI presentation (`<mode>` or `<mode>/<phase>` thread labels) and future routing/dispatch.
 2. **System Prompt Composition**: Structured LM-XML sections (`<operational_mode>`, `<plan_document_specification>`, `<active_plan_context>`) injected into `SystemPromptDocument` and serialized via `lmxml` without raw string concatenation.
 3. **Dynamic Tool Availability**: Exposing only the tools appropriate to the active mode, phase, and session plan state, with `read_artifact_submission` exposed if and only if at least one artifact-producing tool (`ask`, `form`, `make_plan`, `update_plan`, `edit_plan`) is available.
-4. **Filesystem Mount Policies**: Read-write vs. read-only access to the operational workspace (`/workspace`) and persistent session notes directory (`/notes`).
-5. **Thread-per-Phase Boundaries**: Every mode switch and phase transition closes the current thread and spawns a new thread with a clean checkpoint history, using `/notes` and `/artifacts` for cross-phase state handoff.
+4. **Filesystem Mount Policies**: Read-write vs. read-only access to the operational workspace (`/workspace`) and persistent session notes directory (`/workspace/notes`).
+5. **Thread-per-Phase Boundaries**: Every mode switch and phase transition closes the current thread and spawns a new thread with a clean checkpoint history, using `/workspace/notes` and `/artifacts` for cross-phase state handoff.
 
 ## Decisions
 
 ### 1. Mode and Phase Descriptors (`seamus.domain.modes`)
 - **`ModeDescriptor` and `PhaseDescriptor`**: Declarative descriptors specifying `name`, `description`, `mount_policy` (`MountPolicy`), and `tools`.
-- **`chat` Mode**: Single-phase mode where `/workspace` (`<session_workspace>/data/`) is mounted `RW` and `/notes` is not mounted. Exposes `ask` (and consequently `read_artifact_submission`).
+- **`chat` Mode**: Single-phase mode where `/workspace` (`<session_workspace>/data/`) is mounted `RW` and notes is an unconstrained directory. Exposes `ask` (and consequently `read_artifact_submission`).
 - **`plan` Mode**: Multi-phase mode comprising three sequential phases, each executing in its own dedicated thread:
   1. **`discuss` (`plan/discuss`)**:
-     - **Mounts**: `/workspace` = `RO`, `/notes` = `RW`.
+     - **Mounts**: `/workspace` = `RO`, `/workspace/notes` = `RW`.
      - **Tools**: `ask` (embedded + blocking questionnaire), `form` (tabbed + non-blocking questionnaire), `read_artifact_submission`, `plan()`, and `discard()`.
-     - **Behavior**: The agent explores `/workspace` in read-only mode, clarifies ambiguities with the user (via `ask`, `form`, or conversational prose), and records durable notes/requirements in `/notes`. Calling `plan()` closes the `discuss` thread, opens a new `plan/make` thread, and automatically wakes the agent.
+     - **Behavior**: The agent explores `/workspace` in read-only mode, clarifies ambiguities with the user (via `ask`, `form`, or conversational prose), and records durable notes/requirements in `/workspace/notes`. Calling `plan()` closes the `discuss` thread, opens a new `plan/make` thread, and automatically wakes the agent.
   2. **`make` (`plan/make`)**:
-     - **Mounts**: `/workspace` = `RO`, `/notes` = `RO`.
+     - **Mounts**: `/workspace` = `RO`, `/workspace/notes` = `RO`.
      - **Tools**: Initially exposes `make_plan(content: str, name: str = "Plan")`. Once a plan is created for the session (`session.active_plan_id`), `make_plan` disappears and `update_plan(content: str)` + `edit_plan(old_string: str, new_string: str)` appear; plus `read_artifact_submission` and `discard()`.
-     - **Behavior**: Synthesizes `/notes` and `/workspace` findings into a comprehensive Markdown implementation plan artifact (`exposition="tabbed"`, `cadence="nonblocking"`). There is no agent tool to advance to `execute`; instead, the user reviews the rendered Markdown plan in its dedicated tab and clicks the **Proceed** button, which closes the `make` thread, opens a new `plan/execute` thread, and automatically wakes the agent.
+     - **Behavior**: Synthesizes `/workspace/notes` and `/workspace` findings into a comprehensive Markdown implementation plan artifact (`exposition="tabbed"`, `cadence="nonblocking"`). There is no agent tool to advance to `execute`; instead, the user reviews the rendered Markdown plan in its dedicated tab and clicks the **Proceed** button, which closes the `make` thread, opens a new `plan/execute` thread, and automatically wakes the agent.
   3. **`execute` (`plan/execute`)**:
-     - **Mounts**: `/workspace` = `RW`, `/notes` = `RO`.
+     - **Mounts**: `/workspace` = `RW`, `/workspace/notes` = `RO`.
      - **Tools**: Standard workspace coding/shell tools plus `discard()` (no inquiry or plan-authoring tools, and therefore no `read_artifact_submission`).
-     - **Behavior**: Reads the approved plan artifact under `/artifacts/plans/<active_plan_id>/` and `/notes`, and implements and verifies the changes in `/workspace`.
+     - **Behavior**: Reads the approved plan artifact under `/artifacts/plans/<active_plan_id>/` and `/workspace/notes`, and implements and verifies the changes in `/workspace`.
 - **`discard()` Tool**: Available across all three `plan` phases (`discuss`, `make`, `execute`). Must only be invoked on explicit user command. When called, it closes/discards any active session plan (`deleteSurface.json`), clears `session.active_plan_id`, closes the current thread, and opens a fresh thread back in `plan/discuss` awaiting user input.
 
-### 2. Persistent Session Notes (`/notes`) and Sandbox Mount Reconfiguration
-- Each session workspace on `session/{session_id}` initializes a Git-tracked `notes/` directory alongside `data/` and `artifacts/`.
-- `GitCheckpointSaver` / `commit_checkpoint_changes` stages `notes/` alongside `data/`, `artifacts/`, and `agent/state/`, while `merge_sync_pr` excludes `notes/` and `artifacts/` from `main` so only `data/` deliverables merge into `main`.
+### 2. Persistent Session Notes (`/workspace/notes`) and Sandbox Mount Reconfiguration
+- Each session workspace on `session/{session_id}` initializes a Git-tracked `data/notes/` directory inside `data/` (`/workspace/notes`), making all notes changes directly visible in the Changes tab and diff viewer.
+- In `plan/discuss`, `/workspace` is mounted `RO` while `/workspace/notes` is mounted `RW` on top of it, ensuring the codebase cannot be accidentally mutated while requirements are recorded.
 - `SeamusOpenSandboxBackend.reconfigure_mounts(...)` compares the desired `(workspace_readonly, notes_mounted, notes_readonly)` policy against the active container's mounts on every mode/phase transition and recreates the container if the mount policy changes.
 
 ### 3. Tabbed and Non-Blocking Artifacts (`forms` and `plans`)

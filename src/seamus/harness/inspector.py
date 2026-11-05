@@ -914,7 +914,7 @@ def build_agent_inspect_report(
                     files.append(f"notes/{p.relative_to(notes_dir)}")
                 except ValueError:
                     files.append(f"notes/{p.name}")
-    files.sort()
+    files = sorted(set(files))
 
     workspace_info = WorkspaceInspectInfo(
         operational_dir=sandbox_settings.workdir,
