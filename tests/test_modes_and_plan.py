@@ -140,7 +140,7 @@ def test_plan_builder_lifecycle(tmp_path: Path) -> None:
     )
     assert plan_path.exists()
     assert (plan_path / "manifest.json").exists()
-    assert (plan_path / "updateDataModel.json").exists()
+    assert (plan_path / "card.json").exists()
 
     # Read plan
     read_content, title = PlanBuilder.read_plan(artifacts_dir, "test-plan")
@@ -159,12 +159,13 @@ def test_plan_builder_lifecycle(tmp_path: Path) -> None:
 
     # Approve plan (strips proceed button)
     PlanBuilder.approve_plan(artifacts_dir, "test-plan")
-    data_content = (plan_path / "updateDataModel.json").read_text(encoding="utf-8")
-    assert '"approved": true' in data_content
+    closed_content = (plan_path / "closed.json").read_text(encoding="utf-8")
+    assert '"approved": true' in closed_content
 
-    # Close plan (writes deleteSurface.json)
-    assert PlanBuilder.close_plan(artifacts_dir, "test-plan") is True
-    assert (plan_path / "deleteSurface.json").exists()
+    # Close plan (writes closed.json)
+    # Plan is already closed by approve_plan, so close_plan returns False
+    assert PlanBuilder.close_plan(artifacts_dir, "test-plan") is False
+    assert (plan_path / "closed.json").exists()
 
 
 def test_system_prompt_lmxml_composition() -> None:

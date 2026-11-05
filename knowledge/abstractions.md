@@ -86,20 +86,20 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `ChangesViewer`: Tabbed session changes view rendering the active Sync PR unified diff using `@pierre/diffs` with unified/split mode toggle, hierarchical Tree and flat List file navigation sidebar with status badges and diff stats, per-file collapsible diff cards, external Gitea PR link, manual and automatic live turn-transition/polling refresh, and the relocated "Accept" button.
 - `ConfigModal`: Modal editor for agent and session configuration supporting both a structured Form view (model presets + custom identifier, inference format, base URL presets, API key toggle/clear, middleware implementation selectors, and system prompt) and a Raw JSON editor with syntax validation and formatting.
 - `SettingsModal`: Modal editor for system settings (managing `skill_directories` via path list and raw JSON with a prominent warning against system-level skills).
-- `A2uiArtifactRenderer`: Front-end component rendering A2UI v0.9 surfaces (`@a2ui/react` and `@a2ui/web_core`) within chat message bubbles and Changes viewer panels, handling form action dispatching and disabled state for closed/read-only artifacts.
+- `AdaptiveCardArtifactRenderer`: Front-end component rendering Microsoft Adaptive Cards v1.5 surfaces (`adaptivecards` and `markdown-it`) within chat message bubbles and Changes viewer panels, handling form action dispatching and disabled state for closed/read-only artifacts.
 
 ### Artifacts Subsystem (`seamus.domain.artifacts`, `seamus.harness.artifacts`)
 - `ArtifactManifest`: Pydantic model (`exposition: Literal["embedded", "tabbed"]`, `cadence: Literal["blocking", "nonblocking"]`).
-- `ArtifactInfo`: Pydantic model describing an artifact instance (`kind`, `name`, `manifest`, `is_closed`, `surface`, `components`, `data`, `delete_surface`).
-- `ArtifactResolver`: File resolver traversing the 3-tier directory hierarchy (`/artifacts/<kind>/<name>/<file>` -> `/artifacts/<kind>/<file>` -> `/artifacts/<file>`) and checking instance-scoped `deleteSurface.json` for closure.
-- `QuestionnaireBuilder`: Builder constructing A2UI v0.9 `updateComponents` structures from batched `QuestionItem` inputs with a clean sequence of question cards and a submit button (omitting redundant titles, subtitles, and dividers) and rejecting duplicate question IDs.
-- `PlanBuilder`: Builder constructing and managing session-local Markdown Plan artifacts under `/artifacts/plans/<plan_id>/` with tabbed exposition (`exposition="tabbed"`), non-blocking cadence (`cadence="nonblocking"`), and a primary "Proceed" action button.
+- `ArtifactInfo`: Pydantic model describing an artifact instance (`kind`, `name`, `manifest`, `is_closed`, `card`, `data`).
+- `ArtifactResolver`: File resolver traversing the 3-tier directory hierarchy (`/artifacts/<kind>/<name>/<file>` -> `/artifacts/<kind>/<file>` -> `/artifacts/<file>`) and checking instance-scoped `closed.json` (or `submission.json`) for closure.
+- `QuestionnaireBuilder`: Builder constructing Microsoft Adaptive Card (schema v1.5) structures from batched `QuestionItem` inputs with clean container cards and an `Action.Submit` action (omitting redundant titles, subtitles, and dividers) and rejecting duplicate question IDs.
+- `PlanBuilder`: Builder constructing and managing session-local Markdown Plan artifacts under `/artifacts/plans/<plan_id>/` with structured document containers (`plan_header`, `plan_content`, `plan_comments`, `plan_actions`), tabbed exposition (`exposition="tabbed"`), non-blocking cadence (`cadence="nonblocking"`), and a primary "Proceed to Execution" action button.
 - `ask`: Agent tool batching questionnaire questions during an inference turn with multi-select (`multiple: bool`), write-in (`writein: bool`), cardinality checks, and immediate duplicate ID rejection.
 - `form`: Agent tool batching non-blocking questionnaire forms rendered in dedicated UI tabs.
 - `plan`: Agent tool transitioning session from Discuss phase to Make phase in a fresh thread.
 - `make_plan` / `update_plan` / `edit_plan`: Agent tools in Make phase creating and surgically editing the session-local Plan artifact.
 - `discard`: Agent tool available across all Plan phases resetting session to Discuss and clearing active plans.
-- `read_artifact_submission`: Agent tool and synthetic tool call returning `{data: ...}` from canonical `updateDataModel.json`, with same-turn re-read prevention.
+- `read_artifact_submission`: Agent tool and synthetic tool call returning `{data: ...}` from canonical `submission.json`, with same-turn re-read prevention.
 
 ## Design Principles
 - **Explicit over Implicit**: Prefer concrete, simple classes and protocols rather than speculative abstraction layers.
@@ -129,8 +129,9 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md)
 - [0027-skills-config-project-rules-and-inspector.md](../decisions/0027-skills-config-project-rules-and-inspector.md)
 - [0028-ui-ux-ergonomics-and-url-state.md](../decisions/0028-ui-ux-ergonomics-and-url-state.md)
-- [0029-a2ui-questionnaire-artifacts.md](../decisions/0029-a2ui-questionnaire-artifacts.md)
 - [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md)
+- [0031-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-migrate-a2ui-to-adaptive-cards.md)
+- [adaptive_cards.md](./adaptive_cards.md)
 - [architecture.md](./architecture.md)
 - [backlog.md](./backlog.md)
 - [conventions.md](./conventions.md)

@@ -1,4 +1,4 @@
-"""Artifact storage, hierarchical resolution, and specialized questionnaire/form/plan generation."""
+"""Artifact storage, resolution, and questionnaire/form/plan generation with Adaptive Cards."""
 
 import json
 import logging
@@ -18,17 +18,8 @@ from seamus.domain.artifacts import (
 
 logger = logging.getLogger(__name__)
 
-STANDARD_SURFACE_ID = "surface"
-BASIC_CATALOG_ID = "https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json"
-
-DEFAULT_CREATE_SURFACE: dict[str, Any] = {
-    "version": "v0.9",
-    "createSurface": {
-        "surfaceId": STANDARD_SURFACE_ID,
-        "catalogId": BASIC_CATALOG_ID,
-        "sendDataModel": True,
-    },
-}
+ADAPTIVE_CARD_SCHEMA = "http://adaptivecards.io/schemas/adaptive-card.json"
+ADAPTIVE_CARD_VERSION = "1.5"
 
 DEFAULT_QUESTIONNAIRE_MANIFEST: dict[str, Any] = {
     "exposition": "embedded",
@@ -49,11 +40,8 @@ SUPPORTED_ARTIFACT_KINDS = {"questionnaires", "questionaires", "forms", "plans"}
 
 
 def seed_default_artifacts(artifacts_dir: Path) -> None:
-    """Seed default root and class-level artifact files in the artifacts directory."""
+    """Seed default class-level artifact files in the artifacts directory."""
     artifacts_dir.mkdir(parents=True, exist_ok=True)
-    root_surface = artifacts_dir / "createSurface.json"
-    if not root_surface.exists():
-        root_surface.write_text(json.dumps(DEFAULT_CREATE_SURFACE, indent=2), encoding="utf-8")
 
     class_defaults: dict[str, dict[str, Any]] = {
         "questionnaires": DEFAULT_QUESTIONNAIRE_MANIFEST,
@@ -131,26 +119,16 @@ class QuestionItem(BaseModel):
 
 
 class QuestionnaireBuilder:
-    """Compiles a batch of questions into an A2UI v0.9 updateComponents structure."""
+    """Compiles a batch of questions into a Microsoft Adaptive Card (schema v1.5)."""
 
     @staticmethod
-    def build_update_components(
+    def build_card(
         questions: list[QuestionItem],
         title: str = "Questionnaire",
         subtitle: str = "Please provide your answers below.",
-        surface_id: str = STANDARD_SURFACE_ID,
     ) -> dict[str, Any]:
-        """Construct A2UI v0.9 updateComponents payload for the questionnaire."""
-        components: list[dict[str, Any]] = [
-            {
-                "id": "root",
-                "component": "Card",
-                "child": "main",
-            }
-        ]
-
-        main_children: list[str] = []
-        submit_context: dict[str, Any] = {}
+        """Construct Microsoft Adaptive Card JSON payload for the questionnaire."""
+        body: list[dict[str, Any]] = []
         seen_ids: set[str] = set()
 
         for idx, q in enumerate(questions, start=1):
@@ -160,200 +138,202 @@ class QuestionnaireBuilder:
                     f"Duplicate question id '{q_id}' in questionnaire. Question IDs must be unique."
                 )
             seen_ids.add(q_id)
-            card_id = f"{q_id}_card"
-            content_id = f"{q_id}_content"
-            question_id = f"{q_id}_question"
-            options_id = f"{q_id}_options"
-            other_id = f"{q_id}_other"
 
-            main_children.append(card_id)
-
-            card_children = [question_id, options_id]
-            if q.writein:
-                card_children.append(other_id)
-
-            components.append(
+            container_items: list[dict[str, Any]] = [
                 {
-                    "id": card_id,
-                    "component": "Card",
-                    "child": content_id,
-                }
-            )
-            components.append(
-                {
-                    "id": content_id,
-                    "component": "Column",
-                    "children": card_children,
-                    "align": "stretch",
-                }
-            )
-            components.append(
-                {
-                    "id": question_id,
-                    "component": "Text",
+                    "type": "TextBlock",
                     "text": q.question,
-                    "variant": "h3",
+                    "weight": "Bolder",
+                    "size": "Medium",
+                    "wrap": True,
                 }
-            )
-
-            options: list[dict[str, str]] = [
-                {"label": ans, "value": _to_option_value(ans)} for ans in q.answers
             ]
-            if q.writein and not any(opt["value"] == "other" for opt in options):
-                options.append({"label": "Other", "value": "other"})
 
-            components.append(
+            choices = [{"title": ans, "value": _to_option_value(ans)} for ans in q.answers]
+            if q.writein and not any(opt["value"] == "other" for opt in choices):
+                choices.append({"title": "Other", "value": "other"})
+
+            container_items.append(
                 {
-                    "id": options_id,
-                    "component": "ChoicePicker",
-                    "variant": "multipleSelection" if q.multiple else "mutuallyExclusive",
-                    "displayStyle": "chips",
-                    "options": options,
-                    "value": {"path": f"/answers/{q_id}"},
+                    "type": "Input.ChoiceSet",
+                    "id": q_id,
+                    "isMultiSelect": q.multiple,
+                    "style": "expanded",
+                    "choices": choices,
                 }
             )
-            submit_context[q_id] = {"path": f"/answers/{q_id}"}
 
             if q.writein:
-                components.append(
+                container_items.append(
                     {
-                        "id": other_id,
-                        "component": "TextField",
-                        "label": "If other, specify details",
-                        "value": {"path": f"/answers/{q_id}Other"},
-                        "variant": "shortText",
+                        "type": "Input.Text",
+                        "id": f"{q_id}Other",
+                        "placeholder": "If other, specify details",
                     }
                 )
-                submit_context[f"{q_id}Other"] = {"path": f"/answers/{q_id}Other"}
 
-        main_children.append("submit_button")
-        components.append(
+            body.append(
+                {
+                    "type": "Container",
+                    "id": f"{q_id}_container",
+                    "style": "emphasis",
+                    "items": container_items,
+                    "separator": idx > 1,
+                }
+            )
+
+        actions = [
             {
-                "id": "submit_label",
-                "component": "Text",
-                "text": "Submit",
-            }
-        )
-        components.append(
-            {
-                "id": "submit_button",
-                "component": "Button",
-                "child": "submit_label",
-                "variant": "primary",
-                "action": {
-                    "event": {
-                        "name": "submit_questionnaire",
-                        "context": submit_context,
-                    }
+                "type": "Action.Submit",
+                "title": "Submit",
+                "style": "positive",
+                "data": {
+                    "action": "submit_questionnaire",
                 },
             }
-        )
-
-        components.insert(
-            1,
-            {
-                "id": "main",
-                "component": "Column",
-                "children": main_children,
-                "align": "stretch",
-            },
-        )
+        ]
 
         return {
-            "version": "v0.9",
-            "updateComponents": {
-                "surfaceId": surface_id,
-                "components": components,
-            },
+            "$schema": ADAPTIVE_CARD_SCHEMA,
+            "type": "AdaptiveCard",
+            "version": ADAPTIVE_CARD_VERSION,
+            "body": body,
+            "actions": actions,
         }
+
+    @classmethod
+    def save_questionnaire(
+        cls,
+        artifacts_dir: Path,
+        questions: list[QuestionItem],
+        kind: str = "questionnaires",
+        name: str | None = None,
+        title: str | None = None,
+    ) -> str:
+        """Create a new questionnaire or form artifact instance and return its name."""
+        seed_default_artifacts(artifacts_dir)
+        inst_name = name or str(uuid4())
+        inst_dir = artifacts_dir / kind / inst_name
+        inst_dir.mkdir(parents=True, exist_ok=True)
+
+        card_payload = cls.build_card(questions, title=title or "Questionnaire")
+        card_path = inst_dir / "card.json"
+        card_path.write_text(json.dumps(card_payload, indent=2), encoding="utf-8")
+
+        if title or kind in {"forms", "plans"}:
+            manifest = ArtifactManifest(
+                exposition=(
+                    ExpositionMode.TABBED if kind in {"forms", "plans"} else ExpositionMode.EMBEDDED
+                ),
+                cadence=(
+                    CadenceMode.NONBLOCKING if kind in {"forms", "plans"} else CadenceMode.BLOCKING
+                ),
+                title=title or ("Form" if kind == "forms" else "Questionnaire"),
+            )
+            manifest_path = inst_dir / "manifest.json"
+            manifest_path.write_text(
+                manifest.model_dump_json(indent=2, exclude_none=True),
+                encoding="utf-8",
+            )
+
+        return inst_name
 
 
 class PlanBuilder:
-    """Compiles and manages a Markdown Plan artifact as an A2UI v0.9 surface."""
+    """Compiles and manages a Markdown Plan artifact as a Microsoft Adaptive Card (schema v1.5)."""
 
     @staticmethod
-    def build_update_components(
-        content: str,
-        *,
-        include_proceed: bool = True,
-        surface_id: str = STANDARD_SURFACE_ID,
-    ) -> dict[str, Any]:
-        """Construct A2UI v0.9 updateComponents payload for a Markdown plan."""
-        main_children = ["plan_markdown"]
-        if include_proceed:
-            main_children.append("proceed_button")
-
-        components: list[dict[str, Any]] = [
-            {
-                "id": "root",
-                "component": "Card",
-                "child": "main",
-            },
-            {
-                "id": "main",
-                "component": "Column",
-                "children": main_children,
-                "align": "stretch",
-            },
-            {
-                "id": "plan_markdown",
-                "component": "Text",
-                "text": content,
-                "variant": "body",
-            },
-        ]
-
-        if include_proceed:
-            components.extend(
-                [
-                    {
-                        "id": "proceed_label",
-                        "component": "Text",
-                        "text": "Proceed",
-                    },
-                    {
-                        "id": "proceed_button",
-                        "component": "Button",
-                        "child": "proceed_label",
-                        "variant": "primary",
-                        "action": {
-                            "event": {
-                                "name": "proceed_plan",
-                                "context": {"approved": True},
-                            }
-                        },
-                    },
-                ]
-            )
-
-        return {
-            "version": "v0.9",
-            "updateComponents": {
-                "surfaceId": surface_id,
-                "components": components,
-            },
-        }
-
-    @staticmethod
-    def build_update_data_model(
+    def build_card(
         content: str,
         title: str = "Plan",
         *,
-        approved: bool = False,
-        surface_id: str = STANDARD_SURFACE_ID,
+        include_proceed: bool = True,
+        comments: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        """Construct A2UI v0.9 updateDataModel payload for a plan."""
-        return {
-            "version": "v0.9",
-            "updateDataModel": {
-                "surfaceId": surface_id,
-                "path": "/plan",
-                "value": {
-                    "title": title,
-                    "content": content,
-                    "approved": approved,
-                },
+        """Construct Microsoft Adaptive Card JSON payload for a Markdown plan."""
+        body: list[dict[str, Any]] = [
+            {
+                "type": "Container",
+                "id": "plan_header",
+                "items": [
+                    {
+                        "type": "ColumnSet",
+                        "columns": [
+                            {
+                                "type": "Column",
+                                "width": "stretch",
+                                "items": [
+                                    {
+                                        "type": "TextBlock",
+                                        "text": title,
+                                        "weight": "Bolder",
+                                        "size": "Large",
+                                        "wrap": True,
+                                    }
+                                ],
+                            },
+                            {
+                                "type": "Column",
+                                "width": "auto",
+                                "items": [
+                                    {
+                                        "type": "TextBlock",
+                                        "text": (
+                                            "Ready to Execute"
+                                            if not include_proceed
+                                            else "Draft Plan"
+                                        ),
+                                        "isSubtle": True,
+                                        "weight": "Bolder",
+                                        "size": "Small",
+                                    }
+                                ],
+                            },
+                        ],
+                    }
+                ],
+                "separator": False,
             },
+            {
+                "type": "Container",
+                "id": "plan_content",
+                "items": [
+                    {
+                        "type": "TextBlock",
+                        "text": content,
+                        "wrap": True,
+                    }
+                ],
+                "separator": True,
+            },
+            {
+                "type": "Container",
+                "id": "plan_comments",
+                "items": comments or [],
+                "separator": True,
+            },
+        ]
+
+        actions: list[dict[str, Any]] = []
+        if include_proceed:
+            actions.append(
+                {
+                    "type": "Action.Submit",
+                    "title": "Proceed to Execution",
+                    "style": "positive",
+                    "data": {
+                        "action": "proceed_plan",
+                        "approved": True,
+                    },
+                }
+            )
+
+        return {
+            "$schema": ADAPTIVE_CARD_SCHEMA,
+            "type": "AdaptiveCard",
+            "version": ADAPTIVE_CARD_VERSION,
+            "body": body,
+            "actions": actions,
         }
 
     @classmethod
@@ -364,7 +344,7 @@ class PlanBuilder:
         content: str,
         title: str = "Plan",
     ) -> Path:
-        """Create a new plan artifact instance directory and write manifest and data."""
+        """Create a new plan artifact instance directory and write manifest and card."""
         seed_default_artifacts(artifacts_dir)
         clean_title = title.strip() or "Plan"
         inst_dir = artifacts_dir / "plans" / plan_id
@@ -379,12 +359,10 @@ class PlanBuilder:
             json.dumps(manifest_payload, indent=2),
             encoding="utf-8",
         )
-        (inst_dir / "updateDataModel.json").write_text(
-            json.dumps(cls.build_update_data_model(content, clean_title, approved=False), indent=2),
-            encoding="utf-8",
-        )
-        (inst_dir / "updateComponents.json").write_text(
-            json.dumps(cls.build_update_components(content, include_proceed=True), indent=2),
+
+        card_payload = cls.build_card(content, title=clean_title, include_proceed=True)
+        (inst_dir / "card.json").write_text(
+            json.dumps(card_payload, indent=2),
             encoding="utf-8",
         )
         return inst_dir
@@ -407,23 +385,19 @@ class PlanBuilder:
             except Exception:
                 pass
 
-        data_file = inst_dir / "updateDataModel.json"
-        if data_file.is_file():
-            data_payload = json.loads(data_file.read_text(encoding="utf-8"))
-            val = data_payload.get("updateDataModel", {}).get("value", {})
-            if isinstance(val, dict):
-                if isinstance(val.get("title"), str) and val["title"].strip():
-                    title = val["title"].strip()
-                if isinstance(val.get("content"), str):
-                    return val["content"], title
-
-        comp_file = inst_dir / "updateComponents.json"
-        if comp_file.is_file():
-            comp_payload = json.loads(comp_file.read_text(encoding="utf-8"))
-            comps = comp_payload.get("updateComponents", {}).get("components", [])
-            for comp in comps:
-                if isinstance(comp, dict) and comp.get("id") == "plan_markdown":
-                    return str(comp.get("text", "")), title
+        card_file = inst_dir / "card.json"
+        if card_file.is_file():
+            try:
+                card = json.loads(card_file.read_text(encoding="utf-8"))
+                for item in card.get("body", []):
+                    if item.get("id") == "plan_content":
+                        for sub_item in item.get("items", []):
+                            if sub_item.get("type") == "TextBlock":
+                                return str(sub_item.get("text", "")), title
+                    elif item.get("type") == "TextBlock":
+                        return str(item.get("text", "")), title
+            except Exception:
+                pass
 
         return "", title
 
@@ -432,12 +406,9 @@ class PlanBuilder:
         """Overwrite the Markdown content of an existing plan artifact."""
         _, title = cls.read_plan(artifacts_dir, plan_id)
         inst_dir = artifacts_dir / "plans" / plan_id
-        (inst_dir / "updateDataModel.json").write_text(
-            json.dumps(cls.build_update_data_model(content, title, approved=False), indent=2),
-            encoding="utf-8",
-        )
-        (inst_dir / "updateComponents.json").write_text(
-            json.dumps(cls.build_update_components(content, include_proceed=True), indent=2),
+        card_payload = cls.build_card(content, title=title, include_proceed=True)
+        (inst_dir / "card.json").write_text(
+            json.dumps(card_payload, indent=2),
             encoding="utf-8",
         )
         return inst_dir
@@ -470,31 +441,45 @@ class PlanBuilder:
         """Mark the plan as approved for Execute phase and strip the Proceed button."""
         content, title = cls.read_plan(artifacts_dir, plan_id)
         inst_dir = artifacts_dir / "plans" / plan_id
-        (inst_dir / "updateDataModel.json").write_text(
-            json.dumps(cls.build_update_data_model(content, title, approved=True), indent=2),
+        card_payload = cls.build_card(content, title=title, include_proceed=False)
+        (inst_dir / "card.json").write_text(
+            json.dumps(card_payload, indent=2),
             encoding="utf-8",
         )
-        (inst_dir / "updateComponents.json").write_text(
-            json.dumps(cls.build_update_components(content, include_proceed=False), indent=2),
+        closed_marker = {"closed": True, "approved": True}
+        (inst_dir / "closed.json").write_text(
+            json.dumps(closed_marker, indent=2),
             encoding="utf-8",
         )
         return inst_dir
 
     @classmethod
     def close_plan(cls, artifacts_dir: Path, plan_id: str) -> bool:
-        """Write deleteSurface.json to close/discard a plan artifact."""
+        """Write closed.json to close/discard a plan artifact."""
         inst_dir = artifacts_dir / "plans" / plan_id
         if not inst_dir.is_dir():
             return False
-        delete_file = inst_dir / "deleteSurface.json"
-        if delete_file.is_file():
+        closed_file = inst_dir / "closed.json"
+        if closed_file.is_file():
             return False
-        delete_payload = {
-            "version": "v0.9",
-            "deleteSurface": {"surfaceId": STANDARD_SURFACE_ID},
-        }
-        delete_file.write_text(json.dumps(delete_payload, indent=2), encoding="utf-8")
+        closed_marker = {"closed": True}
+        closed_file.write_text(json.dumps(closed_marker, indent=2), encoding="utf-8")
         return True
+
+
+def save_submission(artifacts_dir: Path, kind: str, name: str, data: dict[str, Any]) -> None:
+    """Save user submission payload and write closed.json marker."""
+    inst_dir = artifacts_dir / kind / name
+    inst_dir.mkdir(parents=True, exist_ok=True)
+    (inst_dir / "submission.json").write_text(
+        json.dumps(data, indent=2),
+        encoding="utf-8",
+    )
+    closed_marker = {"closed": True}
+    (inst_dir / "closed.json").write_text(
+        json.dumps(closed_marker, indent=2),
+        encoding="utf-8",
+    )
 
 
 class ArtifactResolver:
@@ -523,15 +508,18 @@ class ArtifactResolver:
         return None
 
     def is_closed(self, kind: str, name: str) -> bool:
-        """Check if artifact is closed via deleteSurface.json strictly at the instance level."""
-        instance_delete = self.artifacts_dir / kind / name / "deleteSurface.json"
-        if not instance_delete.is_file():
-            return False
-        try:
-            data = json.loads(instance_delete.read_text(encoding="utf-8"))
-            return "deleteSurface" in data
-        except Exception:
-            return False
+        """Check if artifact is closed via closed.json or submission.json at instance level."""
+        inst_dir = self.artifacts_dir / kind / name
+        closed_file = inst_dir / "closed.json"
+        if closed_file.is_file():
+            return True
+        submission_file = inst_dir / "submission.json"
+        if submission_file.is_file():
+            return True
+        legacy_delete = inst_dir / "deleteSurface.json"
+        if legacy_delete.is_file():
+            return True
+        return False
 
     def load_manifest(self, kind: str, name: str) -> ArtifactManifest:
         """Load and validate manifest.json following class validation rules."""
@@ -582,45 +570,38 @@ class ArtifactResolver:
         return class_manifest
 
     def load_artifact(self, kind: str, name: str) -> ArtifactInfo:
-        """Load all 4 components (manifest, surface, components, data) and closed status."""
+        """Load artifact manifest, card specification, submission data, and closed status."""
         manifest = self.load_manifest(kind, name)
         is_closed = self.is_closed(kind, name)
 
-        surface_path = self.resolve_file(kind, name, "createSurface.json")
-        surface: dict[str, Any] = (
-            json.loads(surface_path.read_text(encoding="utf-8"))
-            if surface_path
-            else DEFAULT_CREATE_SURFACE
-        )
-
-        comp_path = self.resolve_file(kind, name, "updateComponents.json")
-        components: dict[str, Any] | None = (
-            json.loads(comp_path.read_text(encoding="utf-8")) if comp_path else None
-        )
-
-        data_path = self.resolve_file(kind, name, "updateDataModel.json")
-        data: dict[str, Any] | None = (
-            json.loads(data_path.read_text(encoding="utf-8")) if data_path else None
-        )
-
-        del_path = self.resolve_file(kind, name, "deleteSurface.json")
-        delete_surface: dict[str, Any] | None = None
-        if del_path and del_path.is_file():
+        card_path = self.resolve_file(kind, name, "card.json")
+        card: dict[str, Any] = {}
+        if card_path and card_path.is_file():
             try:
-                delete_surface = json.loads(del_path.read_text(encoding="utf-8"))
+                card = json.loads(card_path.read_text(encoding="utf-8"))
             except Exception:
-                delete_surface = None
-        elif is_closed:
-            delete_surface = {
-                "version": "v0.9",
-                "deleteSurface": {"surfaceId": STANDARD_SURFACE_ID},
-            }
+                card = {}
+
+        data_path = self.resolve_file(kind, name, "submission.json")
+        data: dict[str, Any] | None = None
+        if data_path and data_path.is_file():
+            try:
+                data = json.loads(data_path.read_text(encoding="utf-8"))
+            except Exception:
+                data = None
+        else:
+            legacy_data_path = self.resolve_file(kind, name, "updateDataModel.json")
+            if legacy_data_path and legacy_data_path.is_file():
+                try:
+                    loaded = json.loads(legacy_data_path.read_text(encoding="utf-8"))
+                    data = loaded.get("updateDataModel", {}).get("value", loaded)
+                except Exception:
+                    data = None
 
         resolved_title = manifest.title
         if resolved_title is None and isinstance(data, dict):
-            val = data.get("updateDataModel", {}).get("value", {})
-            if isinstance(val, dict) and isinstance(val.get("title"), str) and val["title"].strip():
-                resolved_title = val["title"].strip()
+            if isinstance(data.get("title"), str) and data["title"].strip():
+                resolved_title = data["title"].strip()
         if resolved_title is None:
             if kind == "plans":
                 resolved_title = "Plan"
@@ -633,10 +614,8 @@ class ArtifactResolver:
             title=resolved_title,
             manifest=manifest,
             is_closed=is_closed,
-            surface=surface,
-            components=components,
+            card=card,
             data=data,
-            delete_surface=delete_surface,
         )
 
     def list_artifacts(self) -> list[ArtifactInfo]:

@@ -81,7 +81,7 @@ flowchart LR
   - `/workspace`: Mounted **read-only**.
   - `/workspace/notes`: Mounted **read-only** (notes are finalized reference material).
 - **Artifacts & Surfaces**:
-  - A2UI non-blocking tabbed plan surface rendered in a dedicated tab to the right of Changes, displaying formatted Markdown and an interactive "Proceed" action button.
+  - Adaptive Card non-blocking tabbed plan surface rendered in a dedicated tab to the right of Changes, displaying formatted Markdown and an interactive "Proceed to Execution" action button.
 
 #### Phase 3: `execute` (`plan/execute`)
 - **Primary Objective**: Faithfully execute, test, and verify the user-approved plan.
@@ -210,8 +210,8 @@ A **Persona** represents an agent's enduring identity, operational philosophy, d
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`chat`** | General advisor / brainstorming | Read-Write (scratchpad) | N/A | `ask`, `read_artifact_submission` | `plan`, `make_plan`, `update_plan`, `edit_plan`, `discard` | Conversation stream |
 | **`plan/discuss`** | Exploratory investigator | **Read-Only** | **Read-Write** | `ask`, `read_artifact_submission`, `plan()`, `discard()` | `make_plan`, `update_plan`, `edit_plan`, `write_file`, `edit_file` | Stream + Notes |
-| **`plan/make`** | Methodical plan author | **Read-Only** | **Read-Only** | `make_plan`, `update_plan`, `edit_plan`, `discard()` | `plan()`, `ask`, `write_file`, `edit_file` | A2UI Tabbed Plan |
-| **`plan/execute`** | Disciplined implementer | **Read-Write** | **Read-Only** | `discard()`, full engineering suite | `plan()`, `make_plan`, `update_plan`, `edit_plan`, `ask` | A2UI Tabbed Plan + Changes Diff |
+| **`plan/make`** | Methodical plan author | **Read-Only** | **Read-Only** | `make_plan`, `update_plan`, `edit_plan`, `discard()` | `plan()`, `ask`, `write_file`, `edit_file` | Adaptive Card Tabbed Plan |
+| **`plan/execute`** | Disciplined implementer | **Read-Write** | **Read-Only** | `discard()`, full engineering suite | `plan()`, `make_plan`, `update_plan`, `edit_plan`, `ask` | Adaptive Card Tabbed Plan + Changes Diff |
 | **`act`** *(planned)* | Direct, prompt implementer | **Read-Write** | N/A | Full engineering suite | `plan`, `make_plan`, `update_plan`, `edit_plan`, `ask` | Changes Diff |
 | **`analyse`** *(planned)* | Diagnostic auditor / reviewer | **Read-Only** | N/A | Search, call graphs, inspection | All mutation tools (`write_file`, `edit_file`, shell writes) | Diagnostic Report |
 | **`routing`** *(planned)* | Intent classifier | None | N/A | Intent dispatch tool | All workspace and file tools | Internal Dispatch |

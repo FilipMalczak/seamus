@@ -3710,10 +3710,10 @@ a.changes-pr-badge:hover {
 }
 
 /* ==========================================================================
-   A2UI Artifact Components
+   Adaptive Cards Artifact Components
    ========================================================================== */
 
-.a2ui-artifact-card {
+.artifact-card {
   margin: 0.75rem 0;
   border-radius: 0.6rem;
   background: #0f172a;
@@ -3723,17 +3723,17 @@ a.changes-pr-badge:hover {
   position: relative;
 }
 
-.a2ui-artifact-card.a2ui-open {
+.artifact-card.artifact-open {
   border-color: rgba(56, 189, 248, 0.4);
   box-shadow: 0 0 15px rgba(56, 189, 248, 0.08);
 }
 
-.a2ui-artifact-card.a2ui-closed {
+.artifact-card.artifact-closed {
   border-color: #1e293b;
   opacity: 0.9;
 }
 
-.a2ui-card-header {
+.artifact-card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -3742,14 +3742,14 @@ a.changes-pr-badge:hover {
   border-bottom: 1px solid #334155;
 }
 
-.a2ui-header-title {
+.artifact-header-title {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   font-size: 0.85rem;
 }
 
-.a2ui-status-badge {
+.artifact-status-badge {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
@@ -3759,24 +3759,24 @@ a.changes-pr-badge:hover {
   font-weight: 500;
 }
 
-.a2ui-status-badge.active {
+.artifact-status-badge.active {
   background: rgba(56, 189, 248, 0.15);
   color: #38bdf8;
   border: 1px solid rgba(56, 189, 248, 0.3);
 }
 
-.a2ui-status-badge.closed {
+.artifact-status-badge.closed {
   background: rgba(52, 211, 153, 0.15);
   color: #34d399;
   border: 1px solid rgba(52, 211, 153, 0.3);
 }
 
-.a2ui-card-content {
+.artifact-card-content {
   padding: 1rem;
   color: #f1f5f9;
 }
 
-.a2ui-loading {
+.artifact-loading {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -3786,7 +3786,7 @@ a.changes-pr-badge:hover {
   justify-content: center;
 }
 
-.a2ui-submitting-overlay {
+.artifact-submitting-overlay {
   position: absolute;
   inset: 0;
   background: rgba(15, 23, 42, 0.75);
@@ -3800,7 +3800,7 @@ a.changes-pr-badge:hover {
   backdrop-filter: blur(2px);
 }
 
-.a2ui-error-notice {
+.artifact-error-notice {
   margin: 0.5rem;
   padding: 0.5rem 0.75rem;
   border-radius: 0.375rem;
@@ -3823,7 +3823,7 @@ a.changes-pr-badge:hover {
   font-size: 0.82rem;
 }
 
-.a2ui-collapse-toggle-btn {
+.artifact-collapse-toggle-btn {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -3837,35 +3837,317 @@ a.changes-pr-badge:hover {
   transition: all 0.15s ease;
 }
 
-.a2ui-collapse-toggle-btn:hover {
+.artifact-collapse-toggle-btn:hover {
   background: #334155;
   color: #f1f5f9;
   border-color: rgba(148, 163, 184, 0.45);
 }
 
-.a2ui-artifact-card.a2ui-collapsed {
+.artifact-card.artifact-collapsed {
   margin: 0.4rem 0;
 }
 
-.a2ui-artifact-card.a2ui-collapsed .a2ui-card-header {
+.artifact-card.artifact-collapsed .artifact-card-header {
   border-bottom: none;
 }
 
-.a2ui-surface-disabled {
+.artifact-surface-disabled {
   opacity: 0.82;
   user-select: text;
 }
 
-.a2ui-surface-disabled button,
-.a2ui-surface-disabled [role="button"],
-.a2ui-surface-disabled input,
-.a2ui-surface-disabled textarea {
+.artifact-surface-disabled button,
+.artifact-surface-disabled [role="button"],
+.artifact-surface-disabled input,
+.artifact-surface-disabled textarea {
   pointer-events: none !important;
   cursor: not-allowed !important;
 }
 
-.a2ui-surface-disabled button {
+.artifact-surface-disabled button {
   display: none !important;
+}
+
+/* ==========================================================================
+   Adaptive Card Primitives & Typography
+   ========================================================================== */
+
+.adaptive-card-host {
+  width: 100%;
+}
+
+.adaptive-card-host .ac-adaptiveCard {
+  background: transparent !important;
+  color: #f4f4f5 !important;
+  padding: 0 !important;
+}
+
+.adaptive-card-host .ac-container {
+  border-radius: 0.5rem;
+  background-color: rgba(39, 39, 42, 0.45) !important;
+  border: 1px solid #27272a;
+  padding: 0.85rem 1rem !important;
+  margin-bottom: 0.85rem;
+}
+
+/* Dedicated styling for Plan document container */
+.artifact-plan-card {
+  background: #09090b;
+  border-color: #27272a;
+}
+
+.artifact-plan-card.artifact-open {
+  border-color: rgba(56, 189, 248, 0.35);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
+}
+
+.artifact-plan-card .artifact-card-header {
+  background: #18181b;
+  border-bottom: 1px solid #27272a;
+}
+
+.artifact-plan-content .ac-container#plan_header {
+  background-color: transparent !important;
+  border: none !important;
+  padding: 0.25rem 0 0.75rem 0 !important;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid #27272a !important;
+  border-radius: 0;
+}
+
+.artifact-plan-content .ac-container#plan_content {
+  background-color: #121215 !important;
+  border: 1px solid #27272a;
+  border-radius: 0.625rem;
+  padding: 1.25rem 1.5rem !important;
+  margin-bottom: 1rem;
+}
+
+.artifact-plan-content .ac-container#plan_comments {
+  background-color: rgba(24, 24, 27, 0.5) !important;
+  border: 1px dashed #3f3f46;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem !important;
+  margin-bottom: 1rem;
+}
+
+/* Adaptive Card Typography matching Seamus Markdown */
+.adaptive-card-host .ac-textBlock {
+  color: #f4f4f5 !important;
+  line-height: 1.6;
+}
+
+.adaptive-card-host .ac-textBlock h1,
+.adaptive-card-host .ac-textBlock h2,
+.adaptive-card-host .ac-textBlock h3,
+.adaptive-card-host .ac-textBlock h4,
+.adaptive-card-host .ac-textBlock h5,
+.adaptive-card-host .ac-textBlock h6 {
+  font-weight: 600;
+  line-height: 1.25;
+  color: #f4f4f5;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.adaptive-card-host .ac-textBlock h1 {
+  font-size: 1.35rem;
+  border-bottom: 1px solid #27272a;
+  padding-bottom: 0.4rem;
+}
+
+.adaptive-card-host .ac-textBlock h2 {
+  font-size: 1.15rem;
+  border-bottom: 1px solid #27272a;
+  padding-bottom: 0.3rem;
+}
+
+.adaptive-card-host .ac-textBlock h3 {
+  font-size: 1.05rem;
+}
+
+.adaptive-card-host .ac-textBlock h4,
+.adaptive-card-host .ac-textBlock h5,
+.adaptive-card-host .ac-textBlock h6 {
+  font-size: 0.95rem;
+}
+
+.adaptive-card-host .ac-textBlock p {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+  color: #e4e4e7;
+}
+
+.adaptive-card-host .ac-textBlock p:last-child {
+  margin-bottom: 0;
+}
+
+.adaptive-card-host .ac-textBlock ul,
+.adaptive-card-host .ac-textBlock ol {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+  padding-left: 1.5rem;
+  color: #e4e4e7;
+}
+
+.adaptive-card-host .ac-textBlock li {
+  margin-bottom: 0.25rem;
+}
+
+.adaptive-card-host .ac-textBlock pre {
+  background-color: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 0.375rem;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  margin: 0.75rem 0;
+}
+
+.adaptive-card-host .ac-textBlock code {
+  font-family: var(--font-mono, "JetBrains Mono", Menlo, monospace);
+  font-size: 0.85em;
+  background-color: rgba(39, 39, 42, 0.7);
+  padding: 0.15rem 0.35rem;
+  border-radius: 0.25rem;
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.15);
+}
+
+.adaptive-card-host .ac-textBlock pre code {
+  background-color: transparent;
+  padding: 0;
+  border: none;
+  color: #f4f4f5;
+}
+
+.adaptive-card-host .ac-textBlock blockquote {
+  border-left: 3px solid #38bdf8;
+  background-color: rgba(56, 189, 248, 0.05);
+  margin: 0.75rem 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0 0.375rem 0.375rem 0;
+  color: #cbd5e1;
+}
+
+.adaptive-card-host .ac-textBlock hr {
+  height: 1px;
+  background-color: #27272a;
+  border: none;
+  margin: 1.25rem 0;
+}
+
+.adaptive-card-host .ac-textBlock table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+  font-size: 0.85rem;
+}
+
+.adaptive-card-host .ac-textBlock th,
+.adaptive-card-host .ac-textBlock td {
+  border: 1px solid #27272a;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+
+.adaptive-card-host .ac-textBlock th {
+  background-color: #18181b;
+  font-weight: 600;
+  color: #f4f4f5;
+}
+
+.adaptive-card-host .ac-textBlock tr:nth-child(even) {
+  background-color: rgba(24, 24, 27, 0.4);
+}
+
+/* Adaptive Card Inputs */
+.adaptive-card-host .ac-input.ac-textInput {
+  background-color: #18181b !important;
+  border: 1px solid #3f3f46 !important;
+  color: #f4f4f5 !important;
+  border-radius: 0.375rem;
+  padding: 0.5rem 0.75rem !important;
+  font-size: 0.85rem;
+  width: 100%;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.adaptive-card-host .ac-input.ac-textInput:focus {
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+}
+
+.adaptive-card-host .ac-choiceSetInput-expanded {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.adaptive-card-host .ac-choiceSetInput-expanded label {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: #d4d4d8;
+  font-size: 0.875rem;
+  cursor: pointer;
+  user-select: none;
+  padding: 0.25rem 0.4rem;
+  border-radius: 0.25rem;
+  transition: background-color 0.1s ease;
+}
+
+.adaptive-card-host .ac-choiceSetInput-expanded label:hover {
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+.adaptive-card-host .ac-choiceSetInput-expanded input[type="radio"],
+.adaptive-card-host .ac-choiceSetInput-expanded input[type="checkbox"] {
+  accent-color: #38bdf8;
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+}
+
+/* Adaptive Card Actions & Buttons */
+.adaptive-card-host .ac-actionSet {
+  margin-top: 1.25rem;
+}
+
+.adaptive-card-host .ac-pushButton {
+  background-color: #0284c7 !important;
+  border: 1px solid #38bdf8 !important;
+  color: #ffffff !important;
+  border-radius: 0.375rem;
+  padding: 0.6rem 1.5rem !important;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.01em;
+  transition: background-color 0.15s ease, transform 0.05s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.adaptive-card-host .ac-pushButton:hover {
+  background-color: #0369a1 !important;
+}
+
+.adaptive-card-host .ac-pushButton:active {
+  background-color: #075985 !important;
+  transform: translateY(1px);
+}
+
+.artifact-surface-disabled .adaptive-card-host .ac-pushButton {
+  display: none !important;
+}
+
+.artifact-surface-disabled .adaptive-card-host input,
+.artifact-surface-disabled .adaptive-card-host select,
+.artifact-surface-disabled .adaptive-card-host textarea {
+  pointer-events: none !important;
+  opacity: 0.7;
 }
 
 /* Changes Viewer Deliverables vs Artifacts Grouping */
@@ -4006,7 +4288,7 @@ a.changes-pr-badge:hover {
   margin: 0 auto;
 }
 
-.changes-artifact-rendered-ro-wrapper .a2ui-card-content {
+.changes-artifact-rendered-ro-wrapper .artifact-card-content {
   pointer-events: none;
 }
 

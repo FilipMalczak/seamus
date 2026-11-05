@@ -25,7 +25,7 @@ from seamus.domain.resolution import (
     resolve_session,
     resolve_thread,
 )
-from seamus.harness.artifacts import STANDARD_SURFACE_ID, ArtifactResolver, PlanBuilder
+from seamus.harness.artifacts import ArtifactResolver, PlanBuilder
 from seamus.persistence import get_workspace_manager, parse_stored_event
 
 logger = logging.getLogger(__name__)
@@ -854,15 +854,9 @@ class HarnessStore:
             resolver = ArtifactResolver(artifacts_dir)
             for art in resolver.list_artifacts():
                 if not art.is_closed:
-                    del_file = artifacts_dir / art.kind / art.name / "deleteSurface.json"
+                    del_file = artifacts_dir / art.kind / art.name / "closed.json"
                     del_file.write_text(
-                        json.dumps(
-                            {
-                                "version": "v0.9",
-                                "deleteSurface": {"surfaceId": STANDARD_SURFACE_ID},
-                            },
-                            indent=2,
-                        ),
+                        json.dumps({"closed": True}, indent=2),
                         encoding="utf-8",
                     )
                     if runner is not None:

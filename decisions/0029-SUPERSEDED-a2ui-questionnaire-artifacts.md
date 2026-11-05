@@ -1,3 +1,5 @@
+> Superseded by [0031-migrate-a2ui-to-adaptive-cards](./0031-migrate-a2ui-to-adaptive-cards.md).
+
 # 0029. A2UI Questionnaire Artifacts, Read-Only Sandboxing, and Bundled Platform Skills
 
 Date: 2026-11-04

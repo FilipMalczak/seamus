@@ -29,7 +29,7 @@ import { parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
 import { getSessionDiff, listArtifacts } from "../api/client";
 import type { AgentStatus, ArtifactInfo, SessionDiffResponse, ThreadInfo } from "../api/types";
-import { A2uiArtifactRenderer } from "./A2uiArtifactRenderer";
+import { ArtifactRenderer } from "./ArtifactRenderer";
 
 interface ChangesViewerProps {
   agentId: string | null;
@@ -252,27 +252,10 @@ export function ChangesViewer({
 
   const artifactItems = useMemo<RenderableArtifactItem[]>(() => {
     if (!artifactsList || artifactsList.length === 0) return [];
-    return artifactsList.map((artifact, idx) => {
-      const events: Record<string, unknown>[] = [artifact.surface];
-      if (artifact.components) {
-        events.push(artifact.components);
-      }
-      if (artifact.data) {
-        events.push(artifact.data);
-      }
-      if (artifact.delete_surface) {
-        events.push(artifact.delete_surface);
-      } else if (artifact.is_closed) {
-        events.push({
-          version: "v0.9",
-          deleteSurface: { surfaceId: "surface" },
-        });
-      }
-      const lines = events
-        .map((ev) => JSON.stringify(ev, null, 2))
-        .join("\n\n")
-        .split("\n");
-      const rawPath = `artifacts/${artifact.kind}/${artifact.name}.jsonl`;
+    const items: RenderableArtifactItem[] = [];
+    artifactsList.forEach((artifact) => {
+      const rawPath = `artifacts/${artifact.kind}/${artifact.name}/card.json`;
+      const lines = JSON.stringify(artifact.card || {}, null, 2).split("\n");
       const patch = [
         `diff --git a/${rawPath} b/${rawPath}`,
         `new file mode 100644`,
@@ -303,13 +286,55 @@ export function ChangesViewer({
         } as any;
       }
 
-      return {
+      items.push({
         artifact,
         rawPath,
         fileDiff,
-        originalIndex: deliverableDiffs.length + idx,
-      };
+        originalIndex: deliverableDiffs.length + items.length,
+      });
+
+      if (artifact.data && Object.keys(artifact.data).length > 0) {
+        const subPath = `artifacts/${artifact.kind}/${artifact.name}/submission.json`;
+        const subLines = JSON.stringify(artifact.data, null, 2).split("\n");
+        const subPatch = [
+          `diff --git a/${subPath} b/${subPath}`,
+          `new file mode 100644`,
+          `--- /dev/null`,
+          `+++ b/${subPath}`,
+          `@@ -0,0 +1,${subLines.length} @@`,
+          ...subLines.map((l) => `+${l}`),
+          "",
+        ].join("\n");
+
+        let subFileDiff: FileDiffMetadata;
+        try {
+          const parsedSub = parsePatchFiles(subPatch);
+          subFileDiff = parsedSub[0]?.files[0] || ({
+            name: subPath,
+            type: "new",
+            additionLines: subLines,
+            deletionLines: [],
+            hunks: [],
+          } as any);
+        } catch {
+          subFileDiff = {
+            name: subPath,
+            type: "new",
+            additionLines: subLines,
+            deletionLines: [],
+            hunks: [],
+          } as any;
+        }
+
+        items.push({
+          artifact,
+          rawPath: subPath,
+          fileDiff: subFileDiff,
+          originalIndex: deliverableDiffs.length + items.length,
+        });
+      }
     });
+    return items;
   }, [artifactsList, deliverableDiffs.length]);
 
   const filteredDeliverables = useMemo<IndexedFileDiff[]>(() => {
@@ -711,7 +736,7 @@ export function ChangesViewer({
                   type="button"
                   className={`changes-artifact-toggle-btn ${mode === "diff" ? "active" : ""}`}
                   onClick={() => toggleArtifactViewMode(item.artifact.name, "diff")}
-                  title="View A2UI JSONL stream"
+                  title="View Card JSON diff"
                 >
                   <Code2 className="size-3.5" />
                   <span>Diff</span>
@@ -720,7 +745,7 @@ export function ChangesViewer({
                   type="button"
                   className={`changes-artifact-toggle-btn ${mode === "rendered" ? "active" : ""}`}
                   onClick={() => toggleArtifactViewMode(item.artifact.name, "rendered")}
-                  title="Render interactive A2UI surface (read-only)"
+                  title="Render Adaptive Card (read-only)"
                 >
                   <Eye className="size-3.5" />
                   <span>Rendered</span>
@@ -769,7 +794,7 @@ export function ChangesViewer({
             ) : (
               <div className="changes-artifact-rendered-body">
                 <div className="changes-artifact-rendered-ro-wrapper">
-                  <A2uiArtifactRenderer artifact={item.artifact} />
+                  <ArtifactRenderer artifact={item.artifact} />
                 </div>
               </div>
             )

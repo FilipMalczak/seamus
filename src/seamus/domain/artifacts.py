@@ -35,14 +35,8 @@ class ArtifactInfo(BaseModel):
     name: str = Field(description="Artifact instance identifier (e.g. UUID)")
     title: str | None = Field(default=None, description="Display title for tabbed artifacts")
     manifest: ArtifactManifest
-    is_closed: bool = Field(description="True if deleteSurface.json is present at instance level")
-    surface: dict[str, Any] = Field(description="A2UI createSurface message")
-    components: dict[str, Any] | None = Field(
-        default=None, description="A2UI updateComponents message if present"
-    )
+    is_closed: bool = Field(description="True if closed.json is present at instance level")
+    card: dict[str, Any] = Field(description="Microsoft Adaptive Card JSON specification")
     data: dict[str, Any] | None = Field(
-        default=None, description="A2UI updateDataModel message if present"
-    )
-    delete_surface: dict[str, Any] | None = Field(
-        default=None, description="A2UI deleteSurface message if present or closed"
+        default=None, description="User submitted values or state data if present"
     )

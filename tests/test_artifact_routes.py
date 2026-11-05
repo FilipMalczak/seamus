@@ -43,7 +43,7 @@ async def test_artifact_rest_routes(tmp_path: Any, monkeypatch: Any) -> None:
     # Create an artifact directory for testing
     q_dir = artifacts_dir / "questionnaires" / "q-123"
     q_dir.mkdir(parents=True, exist_ok=True)
-    (q_dir / "updateComponents.json").write_text('{"components": []}', encoding="utf-8")
+    (q_dir / "card.json").write_text('{"type": "AdaptiveCard", "body": []}', encoding="utf-8")
 
     app = create_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -106,7 +106,7 @@ async def test_artifact_submit_closes_and_synthesizes_tool_call(
 
     q_dir = artifacts_dir / "questionnaires" / "q-456"
     q_dir.mkdir(parents=True, exist_ok=True)
-    (q_dir / "updateComponents.json").write_text('{"components": []}', encoding="utf-8")
+    (q_dir / "card.json").write_text('{"type": "AdaptiveCard", "body": []}', encoding="utf-8")
 
     from seamus.harness.runner import get_runner_registry
 
@@ -129,17 +129,17 @@ async def test_artifact_submit_closes_and_synthesizes_tool_call(
         assert body["status"] == "accepted"
         assert body["artifact_id"] == "q-456"
 
-        # Check canonical data model was written
-        data_model_file = q_dir / "updateDataModel.json"
-        assert data_model_file.is_file()
+        # Check submission was written
+        submission_file = q_dir / "submission.json"
+        assert submission_file.is_file()
         import json
 
-        data_content = json.loads(data_model_file.read_text())
-        assert data_content["updateDataModel"]["value"]["backgroundColor"] == "blue"
+        data_content = json.loads(submission_file.read_text())
+        assert data_content["backgroundColor"] == "blue"
 
-        # Check deleteSurface was written
-        delete_file = q_dir / "deleteSurface.json"
-        assert delete_file.is_file()
+        # Check closed marker was written
+        closed_file = q_dir / "closed.json"
+        assert closed_file.is_file()
 
         # Check tool call events were recorded in thread
         tool_call_starts = [

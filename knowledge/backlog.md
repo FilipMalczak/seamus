@@ -4,35 +4,35 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 > Current high-level trajectory is: skills -> artifacts -> modes (plan as the first new mode)
 > The idea is that for plan mode I need to present plan somehow; 
-> to do so I can use a2ui artifacts, which I already planned, as they can  be used for closed questions or any kind of user survey - and then to any other custom use case the agent might find; maybe researcher will have some use here?
-> anyway, a2ui is nontrivial, so we'll need to explain how to build these; no point in sending an explanation longer than the system prompt with every inference, so we'll want to offload a2ui as a skill
+> to do so I can use Adaptive Cards artifacts, which I already planned, as they can be used for closed questions or any kind of user survey - and then to any other custom use case the agent might find; maybe researcher will have some use here?
+> anyway, Adaptive Cards is nontrivial, so we'll need to explain how to build these; no point in sending an explanation longer than the system prompt with every inference, so we'll want to offload Adaptive Cards as a skill
 
 
 ## Deferred
 
 ### Rich Plan Presentation, Inline Commenting, and Section-Level Editing
-- **Description**: Enhance the Plan artifact tab presentation in the Web UI: provide structured section folding, side-by-side split comparison with requirements, and rich inline commenting allowing users to select plan text segments or steps and provide targeted feedback directly into the A2UI surface before clicking "Proceed".
+- **Description**: Enhance the Plan artifact tab presentation in the Web UI: provide structured section folding, side-by-side split comparison with requirements, and rich inline commenting allowing users to select plan text segments or steps and provide targeted feedback directly into the Adaptive Card surface before clicking "Proceed".
 - **Why Deferred**: Focused initially on establishing operational modes, multi-phase thread lifecycles, and standard Markdown rendering with the "Proceed" action in the dedicated tab.
 - **Revisit Trigger**: When complex, multi-component planning workflows require fine-grained human-in-the-loop review on individual plan sections.
-- **Provenance**: [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md).
+- **Provenance**: [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), [0031-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-migrate-a2ui-to-adaptive-cards.md).
 
 ### Fine-Grained Arity Controls for Questionnaire Inquiry Tools
 - **Description**: Expand selection constraints for `ask` (and future inquiry tools) from boolean `multiple: bool` to fine-grained arity bounds: `arity: int | tuple[int, int | Literal["*"]]` (e.g. `1` for single choice, `(1, "*")` for at least one choice, `(0, "*")` for optional multiple selection, `(2, 4)` for a bounded range).
-- **Why Deferred**: Boolean `multiple` matches current A2UI ChoicePicker primitives (`mutuallyExclusive` vs `multipleSelection`) cleanly without requiring custom client-side validation logic or un-standardized A2UI catalog validation schemas.
-- **Revisit Trigger**: When A2UI catalog selection validators support custom min/max arity bounds or when complex survey forms require mandatory zero-or-more / range constraints.
-- **Provenance**: [0029-a2ui-questionnaire-artifacts.md](../decisions/0029-a2ui-questionnaire-artifacts.md).
+- **Why Deferred**: Boolean `multiple` matches current Adaptive Card `Input.ChoiceSet` primitives (`isMultiSelect: false` vs `isMultiSelect: true`) cleanly without requiring custom client-side validation logic or complex card input validators.
+- **Revisit Trigger**: When Adaptive Card input validators support custom min/max arity bounds or when complex survey forms require mandatory zero-or-more / range constraints.
+- **Provenance**: [0031-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-migrate-a2ui-to-adaptive-cards.md).
 
 ### Tabbed Artifact Exposition and Non-Blocking Cadence Lifecycles
 - **Description**: Expand artifact exposition support from `exposition=embedded` to include `exposition=tabbed` (rendering artifacts in dedicated inspector-like tabs rather than inline in chat bubbles). Formalize the lifecycle and closing rules for non-blocking artifacts (`cadence=nonblocking`) upon submission or timeout. In particular, when `read_artifact_submission` is called for a non-blocking artifact, that particular artifact instance becomes blocking.
-- **Why Deferred**: Focused initially on embedded questionnaires with blocking cadence to validate the core A2UI v0.9 pipeline and synthetic tool dispatch.
+- **Why Deferred**: Focused initially on embedded questionnaires with blocking cadence to validate the core Adaptive Cards pipeline and synthetic tool dispatch.
 - **Revisit Trigger**: When introducing planning or multi-view artifacts that require dedicated panel real estate or optional non-blocking surveys.
-- **Provenance**: [0029-a2ui-questionnaire-artifacts.md](../decisions/0029-a2ui-questionnaire-artifacts.md).
+- **Provenance**: [0031-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-migrate-a2ui-to-adaptive-cards.md).
 
 ### Read-Write Custom Artifacts (`/artifacts/custom`)
-- **Description**: Support custom, user/agent-authored A2UI artifacts under `/artifacts/custom` where the directory is mounted read-write (`readOnly=False`) in OpenSandbox, allowing agents to author arbitrary A2UI surface, component, and data definitions directly with per-instance manifests.
-- **Why Deferred**: Prioritized specialized, validated artifact families (questionnaires) to establish disk structure and rendering contracts before opening raw A2UI creation.
+- **Description**: Support custom, user/agent-authored Adaptive Card artifacts under `/artifacts/custom` where the directory is mounted read-write (`readOnly=False`) in OpenSandbox, allowing agents to author arbitrary Adaptive Card definitions directly with per-instance manifests.
+- **Why Deferred**: Prioritized specialized, validated artifact families (questionnaires, plans) to establish disk structure and rendering contracts before opening raw card creation.
 - **Revisit Trigger**: When introducing custom agent generative UI authoring workflows.
-- **Provenance**: [0029-a2ui-questionnaire-artifacts.md](../decisions/0029-a2ui-questionnaire-artifacts.md).
+- **Provenance**: [0031-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-migrate-a2ui-to-adaptive-cards.md).
 
 ### Multi-Mount Repository Support and Dynamic Skill Discovery
 - **Description**: When Seamus introduces support for mounting multiple repositories/projects (e.g., existing user codebases) into the agent's sandbox container, dynamically discover and track both `<mount>/skills` and `<mount>/.skills` directories present across all mounted workspaces as project-level skill sources. In accordance with the established skill precedence hierarchy, non-dotted `skills` takes precedence over dotted `.skills`, and project mounts take precedence after the operational `/workspace` but before ambient system-wide skills.
@@ -118,14 +118,14 @@ Persistent record of work intentionally left outstanding across the project, mai
 ### Review and Rethink Error Reporting Architecture and Semantics
 - **Current Problem**: Error reporting across the harness stack is unclear and fragmented. Errors originating from tool execution (e.g. argument validation or duplicate question IDs in `ask`), sandbox execution, runner loops, and SSE event streaming (`RUN_ERROR` vs `TOOL_CALL_RESULT` with `is_error=True`) lack a clear taxonomy, consistent propagation rules, and transparent visibility in both agent reasoning context and frontend user feedback.
 - **Improvement**: Review and redesign error reporting systematically: define distinct error categories (recoverable tool feedback intended for model correction vs fatal harness/system faults), establish consistent propagation through SSE events and thread status, and provide clear, actionable error indicators in the web UI.
-- **Provenance**: `src/seamus/harness/runner.py`, [0029-a2ui-questionnaire-artifacts.md](../decisions/0029-a2ui-questionnaire-artifacts.md), [architecture.md](./architecture.md).
+- **Provenance**: `src/seamus/harness/runner.py`, [0031-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-migrate-a2ui-to-adaptive-cards.md), [architecture.md](./architecture.md).
 
 ## TODO
 
 ### Steerable Model Implementation for Local Manual Testing
-- **Description**: Introduce a steerable model provider for local development and manual testing. The steerable model allows developers to script, step through, or interactively inject specific model responses, text chunks, and tool calls (such as `ask` inquiries, custom A2UI artifacts, or specific error states) into active sessions without incurring live LLM API costs or dealing with non-deterministic completions.
-- **Rationale**: Greatly streamlines local manual verification of UI features (like interactive A2UI questionnaires, diff viewers, and error handling) and reduces turnaround time for frontend and harness developers.
-- **Provenance**: `src/seamus/harness/runner.py`, `tests/test_runner.py`, [0029-a2ui-questionnaire-artifacts.md](../decisions/0029-a2ui-questionnaire-artifacts.md).
+- **Description**: Introduce a steerable model provider for local development and manual testing. The steerable model allows developers to script, step through, or interactively inject specific model responses, text chunks, and tool calls (such as `ask` inquiries, custom Adaptive Card artifacts, or specific error states) into active sessions without incurring live LLM API costs or dealing with non-deterministic completions.
+- **Rationale**: Greatly streamlines local manual verification of UI features (like interactive Adaptive Card questionnaires, diff viewers, and error handling) and reduces turnaround time for frontend and harness developers.
+- **Provenance**: `src/seamus/harness/runner.py`, `tests/test_runner.py`, [0031-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-migrate-a2ui-to-adaptive-cards.md).
 
 ### Native LM-XML Skills System with Load/Unload Skill Tools
 - **Description**: Replace the reliance on LangChain DeepAgents' built-in `SkillsMiddleware` with a first-party, native Seamus skills implementation. The native system will be built directly on `lmxml` dynamic prompt structures (integrating seamlessly with `DynamicSystemPromptMiddleware`) and explicit `load_skill` / `unload_skill` agent tools to disclose, activate, and deactivate skill instructions and associated tools on demand rather than relying on automatic middleware inspection and implicit prompt appending.
@@ -227,6 +227,7 @@ Persistent record of work intentionally left outstanding across the project, mai
 ## Not formalized
 
 - add comments to plans (maybe to all the artifacts?) [CRITICAL]
+- once the plan is accepted, when we try to look it up in Changes tab, it takes a moment to load
 - switch default model to 120b
 - once the harness opens a new thread, we should auto-switch there (if we're in the thread from which we switched)
 - session view (its already above, but it has high prio)

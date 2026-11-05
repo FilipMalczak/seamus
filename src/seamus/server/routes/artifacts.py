@@ -1,4 +1,4 @@
-"""Routes for inspecting and submitting A2UI renderable artifacts."""
+"""Routes for inspecting and submitting Microsoft Adaptive Card renderable artifacts."""
 
 import logging
 from typing import Any
@@ -24,7 +24,7 @@ class ArtifactSubmitRequest(BaseModel):
     """Payload for submitting data into an active artifact surface."""
 
     data: dict[str, Any] = Field(
-        default_factory=dict, description="Filled values/answers from A2UI data model"
+        default_factory=dict, description="Filled values/answers from artifact submission"
     )
 
 
@@ -33,7 +33,7 @@ async def list_session_artifacts(
     agent_identifier: str,
     session_identifier: str,
 ) -> list[ArtifactInfo]:
-    """List all A2UI artifacts associated with this session."""
+    """List all Adaptive Card artifacts associated with this session."""
     store = get_harness_store()
     try:
         agent = store.resolve_agent(agent_identifier)

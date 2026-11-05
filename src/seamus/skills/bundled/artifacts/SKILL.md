@@ -1,19 +1,20 @@
 ---
 name: artifacts
-description: Comprehensive operational guide for A2UI v0.9 renderable artifacts, questionnaires, forms, plans, and synthetic submission tool calls in Seamus.
+description: Comprehensive operational guide for Microsoft Adaptive Cards renderable artifacts, questionnaires, forms, plans, and synthetic submission tool calls in Seamus.
 ---
 
-# Seamus Renderable Artifacts & A2UI v0.9 Guide
+# Seamus Renderable Artifacts & Adaptive Cards Guide
 
-Seamus provides renderable artifacts allowing agents to present rich, interactive user interfaces directly in the chat or in dedicated workspace tabs. All artifacts are formatted using the **A2UI v0.9** protocol and persisted on disk under `/artifacts/`.
+Seamus provides renderable artifacts allowing agents to present rich, interactive user interfaces directly in the chat or in dedicated workspace tabs. All artifacts are formatted using the **Microsoft Adaptive Cards (v1.5)** specification and persisted on disk under `/artifacts/`.
 
-## A2UI v0.9 Protocol Foundations
+## Adaptive Cards Protocol Foundations
 
-A2UI represents user interfaces as an event stream:
-- `createSurface`: Declares a surface with `surfaceId: "surface"`, basic catalog URL, and data model dispatch configuration.
-- `updateComponents`: Composes the UI hierarchy from widgets (additive across events).
-- `updateDataModel`: Fills or updates data values bound to component paths (additive and overwriting by path).
-- `deleteSurface`: Declares that a surface is deleted/closed.
+Adaptive Cards represent user interfaces declaratively as structured JSON cards:
+- **Card Root**: Includes `$schema: "http://adaptivecards.io/schemas/adaptive-card.json"`, `type: "AdaptiveCard"`, and `version: "1.5"`.
+- **Containers**: Structural elements (`Container`, `ColumnSet`, `Column`) that group and lay out content.
+- **Visual Elements**: Rich text blocks (`TextBlock`) supporting Markdown formatting, lists, code spans, headings, and tables.
+- **Input Elements**: Interactive fields such as `Input.ChoiceSet` (for single-choice radio buttons or multi-choice checkboxes) and `Input.Text` (for single-line or multi-line text input).
+- **Actions**: Interactive actions such as `Action.Submit` configured with descriptive action payloads (`submit_questionnaire`, `proceed_plan`).
 
 ## Filesystem Structure & Hierarchical Resolution
 
@@ -22,27 +23,25 @@ Inside your sandbox, `/artifacts/` is mounted **read-only**. You can read existi
 Artifact files are organized by family and instance:
 ```
 /artifacts/
-├── createSurface.json              # Shared root default surface configuration
 ├── questionnaires/
-│   ├── manifest.json               # Family manifest (exposition=embedded, cadence=blocking)
+│   ├── manifest.json              # Family manifest (exposition=embedded, cadence=blocking)
 │   └── <artifact_uuid>/
-│       ├── updateComponents.json   # Generated A2UI component tree
-│       ├── updateDataModel.json    # Canonical user-submitted data model
-│       └── deleteSurface.json      # Present if and only if artifact is closed
+│       ├── card.json              # Canonical Adaptive Card schema
+│       ├── submission.json        # User-submitted response values
+│       └── closed.json            # Present if and only if artifact is closed
 ├── forms/
-│   ├── manifest.json               # Family manifest (exposition=tabbed, cadence=nonblocking)
+│   ├── manifest.json              # Family manifest (exposition=tabbed, cadence=nonblocking)
 │   └── <artifact_uuid>/
-│       ├── manifest.json           # Instance manifest (custom tab title)
-│       ├── updateComponents.json   # Generated A2UI component tree
-│       ├── updateDataModel.json    # Canonical user-submitted data model
-│       └── deleteSurface.json      # Present if and only if artifact is closed
+│       ├── manifest.json          # Instance manifest (custom tab title)
+│       ├── card.json              # Canonical Adaptive Card schema
+│       ├── submission.json        # User-submitted response values
+│       └── closed.json            # Present if and only if artifact is closed
 └── plans/
-    ├── manifest.json               # Family manifest (exposition=tabbed, cadence=nonblocking)
+    ├── manifest.json              # Family manifest (exposition=tabbed, cadence=nonblocking)
     └── <plan_uuid>/
-        ├── manifest.json           # Instance manifest (plan tab title)
-        ├── updateComponents.json   # Rendered Markdown plan + Proceed button (in Make phase)
-        ├── updateDataModel.json    # Canonical Markdown content, title, and approval state
-        └── deleteSurface.json      # Present when plan is closed or discarded
+        ├── manifest.json          # Instance manifest (plan tab title)
+        ├── card.json              # Structured document card with Proceed action
+        └── closed.json            # Present when plan is closed, approved, or discarded
 ```
 
 ### Hierarchical Resolution
@@ -51,7 +50,7 @@ When loading artifact files, the system checks:
 2. `/artifacts/<family>/<file>`
 3. `/artifacts/<file>`
 
-*Exception*: `deleteSurface.json` is checked strictly at the instance level (`/artifacts/<family>/<name>/deleteSurface.json`). An artifact is open until this file exists, and closed once it is created.
+*Exception*: `closed.json` (and `submission.json`) is checked strictly at the instance level (`/artifacts/<family>/<name>/closed.json`). An artifact is open until this file exists, and closed once it is created.
 
 ## Specialized Questionnaire & Form Artifacts
 
@@ -67,7 +66,7 @@ ask(
 ) -> str
 ```
 - Creates an inline `questionnaires` artifact (`exposition=embedded`, `cadence=blocking`).
-- Multiple calls in the same turn are batched into a single questionnaire.
+- Multiple calls in the same turn are batched into a single questionnaire card.
 - While open, the chat composer is disabled until the user submits the questionnaire.
 
 ### The `form` Tool (Tabbed + Non-Blocking)
@@ -99,11 +98,11 @@ In `Plan` mode (`Make` phase):
   - `update_plan(content: str) -> str`: Overwrites the full Markdown content of the active session plan.
   - `edit_plan(old_string: str, new_string: str) -> str`: Performs an exact substring replacement on the active session plan.
 - Clicking **Proceed** on the Plan tab approves the plan and transitions the session into a new `Plan/Execute` thread.
-- Accepting the Sync PR in `Plan/Execute` (or calling `discard()` on explicit user command) writes `deleteSurface.json` to close the plan artifact and removes its tab.
+- Accepting the Sync PR in `Plan/Execute` (or calling `discard()` on explicit user command) writes `closed.json` to close the plan artifact and removes its tab.
 
 ## Receiving User Submissions & `read_artifact_submission`
 
-When the user submits a `questionnaires` or `forms` artifact, the system saves `updateDataModel.json`, writes `deleteSurface.json`, and synthesizes `read_artifact_submission(artifact_id="<UUID>")` to resume inference.
+When the user submits a `questionnaires` or `forms` artifact, the system saves `submission.json`, writes `closed.json`, and synthesizes `read_artifact_submission(artifact_id="<UUID>")` to resume inference.
 
 ### Calling Constraints for `read_artifact_submission`
 - **Same-turn prohibition**: You MUST NOT call `read_artifact_submission` in the same turn that you invoke `ask`, `form`, or `make_plan`.

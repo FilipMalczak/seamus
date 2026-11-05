@@ -16,7 +16,7 @@ def test_bundled_skills_directory_exists() -> None:
     assert artifact_skill.is_file()
     content = artifact_skill.read_text(encoding="utf-8")
     assert "name: artifacts" in content
-    assert "A2UI v0.9" in content
+    assert "Adaptive Cards" in content
 
 
 def test_sandbox_backend_mounts_bundled_skill_and_artifacts(tmp_path: Path) -> None:

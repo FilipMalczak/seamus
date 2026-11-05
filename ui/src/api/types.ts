@@ -119,10 +119,8 @@ export interface ArtifactInfo {
   title?: string | null;
   manifest: ArtifactManifest;
   is_closed: boolean;
-  surface: Record<string, unknown>;
-  components?: Record<string, unknown> | null;
+  card: Record<string, unknown>;
   data?: Record<string, unknown> | null;
-  delete_surface?: Record<string, unknown> | null;
 }
 
 export type MessagePart =

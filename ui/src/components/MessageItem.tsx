@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Bot, Brain, ChevronDown, ChevronRight, GitFork, RotateCcw, User } from "lucide-react";
 import type { ArtifactInfo, ChatMessage } from "../api/types";
-import { A2uiArtifactRenderer } from "./A2uiArtifactRenderer";
+import { ArtifactRenderer } from "./ArtifactRenderer";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { ToolCallItem } from "./ToolCallItem";
 
@@ -109,7 +109,7 @@ export function MessageItem({
               }
               if (part.type === "artifact") {
                 return (
-                  <A2uiArtifactRenderer
+                  <ArtifactRenderer
                     key={part.id}
                     artifact={part.artifact}
                     onSubmit={(data) => onSubmitArtifact?.(part.artifact, data)}

@@ -148,7 +148,7 @@ def build_operating_environment(
                     "for reference.\n"
                 )
             )
-            + "Renderable A2UI artifacts are mounted READ-ONLY at `/artifacts`.\n"
+            + "Renderable Adaptive Cards artifacts are mounted READ-ONLY at `/artifacts`.\n"
             f"Anything outside `{workdir}` and `/artifacts` (such as `/tmp` or `/root`) "
             "is transient and ephemeral, and will be discarded when the sandbox restarts."
         )
@@ -593,7 +593,7 @@ def build_user_inquiry(
             ),
             (
                 "Consult the 'artifacts' skill at `/skills/bundled/artifacts/SKILL.md` for "
-                "complete guidance on A2UI artifacts, data models, and submission handling."
+                "guidance on Adaptive Cards artifacts, schemas, and submission handling."
             ),
             (
                 "Never call 'read_artifact_submission' in the same turn you call 'ask' or 'form'. "

@@ -48,7 +48,6 @@ from seamus.domain.modes import (
     resolve_mount_policy,
 )
 from seamus.harness.artifacts import (
-    STANDARD_SURFACE_ID,
     ArtifactResolver,
     PlanBuilder,
     QuestionItem,
@@ -947,10 +946,8 @@ class SessionAgentRunner:
         target_dir = artifacts_dir / "questionnaires" / self._current_questionnaire_id
         target_dir.mkdir(parents=True, exist_ok=True)
 
-        components_dict = QuestionnaireBuilder.build_update_components(self._pending_questions)
-        (target_dir / "updateComponents.json").write_text(
-            json.dumps(components_dict, indent=2), encoding="utf-8"
-        )
+        card_dict = QuestionnaireBuilder.build_card(self._pending_questions)
+        (target_dir / "card.json").write_text(json.dumps(card_dict, indent=2), encoding="utf-8")
 
         art_event = {
             "type": "ARTIFACT_CREATED",
@@ -1009,12 +1006,12 @@ class SessionAgentRunner:
             json.dumps(manifest_payload, indent=2),
             encoding="utf-8",
         )
-        components_dict = QuestionnaireBuilder.build_update_components(
+        card_dict = QuestionnaireBuilder.build_card(
             self._pending_form_questions,
             title=self._current_form_title,
         )
-        (target_dir / "updateComponents.json").write_text(
-            json.dumps(components_dict, indent=2),
+        (target_dir / "card.json").write_text(
+            json.dumps(card_dict, indent=2),
             encoding="utf-8",
         )
 
@@ -1159,15 +1156,9 @@ class SessionAgentRunner:
         resolver = ArtifactResolver(artifacts_dir)
         for art in resolver.list_artifacts():
             if not art.is_closed:
-                del_file = artifacts_dir / art.kind / art.name / "deleteSurface.json"
+                del_file = artifacts_dir / art.kind / art.name / "closed.json"
                 del_file.write_text(
-                    json.dumps(
-                        {
-                            "version": "v0.9",
-                            "deleteSurface": {"surfaceId": STANDARD_SURFACE_ID},
-                        },
-                        indent=2,
-                    ),
+                    json.dumps({"closed": True}, indent=2),
                     encoding="utf-8",
                 )
                 close_ev = {
@@ -1284,13 +1275,20 @@ class SessionAgentRunner:
                     artifact_id,
                 )
 
-        data_path = resolver.resolve_file(matched_kind, artifact_id, "updateDataModel.json")
+        data_path = resolver.resolve_file(matched_kind, artifact_id, "submission.json")
         if not data_path or not data_path.is_file():
+            legacy_path = resolver.resolve_file(matched_kind, artifact_id, "updateDataModel.json")
+            if legacy_path and legacy_path.is_file():
+                try:
+                    loaded = json.loads(legacy_path.read_text(encoding="utf-8"))
+                    data_val = loaded.get("updateDataModel", {}).get("value", loaded)
+                    return json.dumps({"data": data_val})
+                except Exception:
+                    pass
             return json.dumps({"data": {}, "status": "pending"})
         try:
             loaded = json.loads(data_path.read_text(encoding="utf-8"))
-            data_val = loaded.get("updateDataModel", {}).get("value", {})
-            return json.dumps({"data": data_val})
+            return json.dumps({"data": loaded})
         except Exception as exc:
             return json.dumps({"error": str(exc), "data": {}})
 
@@ -1369,28 +1367,14 @@ class SessionAgentRunner:
                 )
                 return f"proceed_{name}"
 
-            # 1. Write updateDataModel.json
-            data_model = {
-                "version": "v0.9",
-                "updateDataModel": {
-                    "surfaceId": STANDARD_SURFACE_ID,
-                    "path": "/answers",
-                    "value": data,
-                },
-            }
-            (target_dir / "updateDataModel.json").write_text(
-                json.dumps(data_model, indent=2), encoding="utf-8"
+            # 1. Write submission.json
+            (target_dir / "submission.json").write_text(
+                json.dumps(data, indent=2), encoding="utf-8"
             )
 
-            # 2. Write deleteSurface.json to mark it closed
-            delete_surface = {
-                "version": "v0.9",
-                "deleteSurface": {
-                    "surfaceId": STANDARD_SURFACE_ID,
-                },
-            }
-            (target_dir / "deleteSurface.json").write_text(
-                json.dumps(delete_surface, indent=2), encoding="utf-8"
+            # 2. Write closed.json to mark it closed
+            (target_dir / "closed.json").write_text(
+                json.dumps({"closed": True}, indent=2), encoding="utf-8"
             )
 
             # 3. Create synthetic tool call

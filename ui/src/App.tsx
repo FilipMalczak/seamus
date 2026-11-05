@@ -15,7 +15,7 @@ import type {
   SystemInfoResponse,
   SystemSettings,
 } from "./api/types";
-import { A2uiArtifactRenderer } from "./components/A2uiArtifactRenderer";
+import { ArtifactRenderer } from "./components/ArtifactRenderer";
 import { AgentInspector } from "./components/AgentInspector";
 import { ChangesViewer } from "./components/ChangesViewer";
 import { ChatArea } from "./components/ChatArea";
@@ -550,7 +550,7 @@ export function App() {
               return (
                 <div key={tabKey} className="artifact-tab-panel">
                   <div className="artifact-tab-container">
-                    <A2uiArtifactRenderer
+                    <ArtifactRenderer
                       artifact={art}
                       isSubmitting={submittingArtifactId === art.name}
                       onSubmit={async (data) => {
