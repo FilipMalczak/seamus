@@ -105,12 +105,12 @@ Modes are **open and creatable**—the core list below is an illustrative set, n
 - **Workspace Role**: The workspace is not the primary deliverable; it serves strictly as an agent scratchpad for scratch scripts or quick calculations.
 - **Git Impact**: Does not generate production code changes intended for the `main` branch.
 
-#### `act`
+#### `act` (Planned)
 - **Objective**: Direct, prompt task execution.
 - **Workflow**: The agent immediately follows instructions, reads relevant files, authors surgical diffs, and runs verification checks. Best suited for well-defined bug fixes, minor additions, or following a pre-established plan.
 - **Workspace Role**: Active production codebase. Changes directly stage for the session's Sync PR.
 
-#### `analyse`
+#### `analyse` (Planned)
 - **Objective**: Answer questions, trace call graphs, review diffs, or audit security and architecture without changing files.
 - **Workflow**: The agent has full access to search and inspection tools (`read_file`, `grep`, `glob`, `ls`), but file modification tools (`write_file`, `edit_file`, `delete`) are disabled or rejected by middleware.
 - **Workspace Role**: Immutable reference directory.

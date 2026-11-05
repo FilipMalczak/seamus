@@ -228,3 +228,4 @@ A **Persona** represents an agent's enduring identity, operational philosophy, d
 - [vocabulary.md](./vocabulary.md)
 - [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md)
 - [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md)
+

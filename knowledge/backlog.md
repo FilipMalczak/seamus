@@ -203,7 +203,7 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Ensures the automated Sync PR merge, thread closure, and branch synchronization are robust under realistic usage before full operational release.
 - **Provenance**: [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md), [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md).
 
-### Session-Level UI View and Unified Thread Feed
+### Session-Level UI View and Unified Thread Feed [HIGH PRIO]
 - **Description**: Evolve the UI navigation model so that selecting or creating an agent lands on a primary Session view rather than requiring selection of individual threads. The session view will present an aggregated, continuous chronological feed of all past threads in the session, with the composer input serving as a direct proxy to the current active open thread.
 - **Rationale**: Treating the session as the primary unit of conversational context provides a unified conversational history across sequential thread boundaries (e.g. plan -> execute transitions) while preserving threads as clean checkpoint/execution isolation boundaries.
 - **Provenance**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [threads_modes_personas.md](./threads_modes_personas.md).
@@ -226,11 +226,23 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## Not formalized
 
+- add comments to plans (maybe to all the artifacts?) [CRITICAL]
+- switch default model to 120b
+- once the harness opens a new thread, we should auto-switch there (if we're in the thread from which we switched)
+- session view (its already above, but it has high prio)
+- "branch" icon should be more granular and to the right of bubbles (instead of below)
+- if there is more than 1 artifact and we wanna look it up in inspector renderer, it will fail because surface name is shared ("Surface 'surface' already exists") [MID/HIGH]
+- review and rethink what should happen with artifacts on accept
+- when sending messages is disabled, it should only disable the button and Enter handler; the text field should still be editable (for the sake of preparing a message while agent works)
+- in prompt operating_environment -> filesystem_persistence/execution_sandbox it sounds like the installed stuff is also ephemeric (it is, but its a bug)
+
 - user input variations (actively being designed):
   - user-accepted tool calls
   - artifact-based forms that the user can open and fill
   - in-message UI pieces?
   - specialized messages?
+
+
 - default implementation selection: decide on system-wide defaults for `todo_implementation` and `skills_implementation` once alternative/native implementations are stabilized
 
 - custom artifacts
