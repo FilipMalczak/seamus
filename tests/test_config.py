@@ -30,6 +30,7 @@ def test_inference_config_defaults() -> None:
 def test_agent_config_completeness() -> None:
     incomplete = AgentConfig()
     assert incomplete.is_complete() is False
+    assert incomplete.mode == "plan"
     with pytest.raises(ValueError, match="incomplete"):
         incomplete.validate_complete()
 
@@ -50,6 +51,7 @@ def test_agent_config_copy_with_overrides() -> None:
     base = AgentConfig(
         inference=InferenceConfig(api_key="base-key"),
         model_name="openai/gpt-oss-120b",
+        mode="plan",
         system_prompt="Base prompt",
         todo_implementation=TodoImplementation.NONE,
         skills_implementation=SkillsImplementation.NONE,
@@ -57,6 +59,7 @@ def test_agent_config_copy_with_overrides() -> None:
     overrides = AgentConfig(
         inference=InferenceConfig(api_key="overridden-key"),
         model_name="custom/model",
+        mode="chat",
         system_prompt="Overridden prompt",
         todo_implementation=TodoImplementation.DEEPAGENTS,
         skills_implementation=SkillsImplementation.DEEPAGENTS,
@@ -65,12 +68,14 @@ def test_agent_config_copy_with_overrides() -> None:
 
     assert derived.inference.api_key == "overridden-key"
     assert derived.model_name == "custom/model"
+    assert derived.mode == "chat"
     assert derived.system_prompt == "Overridden prompt"
     assert derived.todo_implementation == TodoImplementation.DEEPAGENTS
     assert derived.skills_implementation == SkillsImplementation.DEEPAGENTS
     # Ensure original base was not mutated
     assert base.inference.api_key == "base-key"
     assert base.model_name == "openai/gpt-oss-120b"
+    assert base.mode == "plan"
     assert base.system_prompt == "Base prompt"
     assert base.todo_implementation == TodoImplementation.NONE
     assert base.skills_implementation == SkillsImplementation.NONE

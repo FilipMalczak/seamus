@@ -130,7 +130,7 @@ async def test_session_agent_runner_execution_and_status() -> None:
 
 def test_reasoning_chat_openai_extracts_reasoning_fields() -> None:
     llm = ReasoningChatOpenAI(
-        model="openai/gpt-oss-20b",
+        model="openai/gpt-oss-120b",
         api_key=SecretStr("mock-key"),
         base_url="https://openrouter.ai/api/v1",
     )
@@ -190,7 +190,7 @@ def test_reasoning_chat_openai_extracts_reasoning_fields() -> None:
     # 4. Non-streaming response extraction
     response_dict = {
         "id": "chatcmpl-4",
-        "model": "openai/gpt-oss-20b",
+        "model": "openai/gpt-oss-120b",
         "choices": [
             {
                 "index": 0,

@@ -4,6 +4,7 @@ from seamus.config.models import (
     AgentConfig,
     InferenceConfig,
     InferenceFormat,
+    OperationalMode,
     SkillsImplementation,
     TodoImplementation,
 )
@@ -27,6 +28,7 @@ __all__ = [
     "DEFAULT_SKILL_DIRECTORIES",
     "InferenceConfig",
     "InferenceFormat",
+    "OperationalMode",
     "SkillsImplementation",
     "SystemSettings",
     "SystemSettingsStore",

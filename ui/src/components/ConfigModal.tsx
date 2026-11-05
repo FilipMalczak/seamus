@@ -159,6 +159,8 @@ export function ConfigModal({
     parsedDraft?.todo_implementation ?? initialConfig.todo_implementation ?? "deepagents";
   const currentSkillsImpl: SkillsImplementation =
     parsedDraft?.skills_implementation ?? initialConfig.skills_implementation ?? "deepagents";
+  const currentOperationalMode =
+    parsedDraft?.mode ?? initialConfig.mode ?? "plan";
   const currentSystemPrompt =
     parsedDraft?.system_prompt !== undefined
       ? parsedDraft.system_prompt
@@ -372,6 +374,24 @@ export function ConfigModal({
                   >
                     <option value="deepagents">deepagents (SkillsMiddleware)</option>
                     <option value="none">none (Disabled)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="config-form-row">
+                <div className="config-field">
+                  <label className="config-label">Default Operational Mode</label>
+                  <select
+                    className="config-select"
+                    value={currentOperationalMode}
+                    onChange={(e) =>
+                      updateDraft((d) => {
+                        d.mode = e.target.value;
+                      })
+                    }
+                  >
+                    <option value="plan">plan (3-phase Discuss &gt; Make &gt; Execute workflow)</option>
+                    <option value="chat">chat (Direct conversational/coding mode)</option>
                   </select>
                 </div>
               </div>

@@ -151,9 +151,9 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [threads_modes_personas.md](./threads_modes_personas.md).
 
 ### REQ-025: Operational Modes and Thread Transition Triggers
-- **Description**: The harness must support an open, extensible set of operational execution modes (such as `plan`, `chat`, `act`, `analyse`, and a planned classifier-based `routing` mode) that dictate interaction posture, prompt framing, and workspace mutability. Switching operational modes within a session must deterministically close the active thread and open a fresh thread. Modes must also define internal thread-opening triggers (e.g. transitioning from plan formulation to execution in `plan` mode).
-- **Rationale**: Cleanly isolates exploratory planning and conversational scratchpads from execution trajectories and Git Sync PR diffs.
-- **Provenance**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), [threads_modes_personas.md](./threads_modes_personas.md).
+- **Description**: The harness must support an open, extensible set of operational execution modes (such as `plan`, `chat`, `act`, `analyse`, and a planned classifier-based `routing` mode) that dictate interaction posture, prompt framing, and workspace mutability. Operational mode is a first-class property of `AgentConfig` (`AgentConfig.mode`), defaulting to `plan` (discuss phase), inherited from configuration templates to agents and down to sessions, and configurable on the session level. Switching operational modes within a session must deterministically update `session.config.mode`, persist the configuration to Git, and close the active thread to open a fresh thread (reusing an empty open thread in place). Modes also define internal thread-opening triggers (e.g. transitioning across `discuss` -> `make` -> `execute` phases in `plan` mode).
+- **Rationale**: Cleanly isolates exploratory planning and conversational scratchpads from execution trajectories and Git Sync PR diffs, while allowing purpose-built agents and sessions to configure their operational posture upfront.
+- **Provenance**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), [0032-operational-mode-in-agent-config-and-defaults.md](../decisions/0032-operational-mode-in-agent-config-and-defaults.md), [threads_modes_personas.md](./threads_modes_personas.md).
 - **Linked Invariants**: [INV-028](./invariants.md#inv-028-mode-transition-thread-spawning-boundary).
 
 ### REQ-026: Exact Turn-Level Session Branching and Lineage Provenance
@@ -231,3 +231,4 @@ Requirements, rationale, provenance, and stable IDs.
 - [0028-ui-ux-ergonomics-and-url-state.md](../decisions/0028-ui-ux-ergonomics-and-url-state.md)
 - [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md)
 - [0031-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-migrate-a2ui-to-adaptive-cards.md)
+- [0032-operational-mode-in-agent-config-and-defaults.md](../decisions/0032-operational-mode-in-agent-config-and-defaults.md)

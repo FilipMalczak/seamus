@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, Field, field_validator
 
 from seamus.config.models import AgentConfig
-from seamus.domain.modes import ModeName, normalize_mode_and_phase
+from seamus.domain.modes import ModeName, PlanPhase, normalize_mode_and_phase
 
 SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -65,8 +65,8 @@ class Thread(BaseModel):
     last_touched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     is_open: bool = True
     status: AgentStatus = AgentStatus.AWAITING_USER
-    mode: str = ModeName.CHAT.value
-    phase: str | None = None
+    mode: str = ModeName.PLAN.value
+    phase: str | None = PlanPhase.DISCUSS.value
     events: list[Any] = Field(default_factory=list)
 
     @property
@@ -162,6 +162,8 @@ class Session(BaseModel):
         if inherited_mode is None and self.threads:
             last_thread = list(self.threads.values())[-1]
             inherited_mode = last_thread.mode
+        elif inherited_mode is None:
+            inherited_mode = getattr(self.config, "mode", None)
 
         resolved_mode, resolved_phase = normalize_mode_and_phase(inherited_mode, phase)
 

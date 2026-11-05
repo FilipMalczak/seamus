@@ -53,6 +53,9 @@ def test_session_single_open_thread_invariant() -> None:
     t1 = session.get_open_thread()
     assert t1.is_open is True
     assert t1.is_empty is True
+    assert session.config.mode == "plan"
+    assert t1.mode == "plan"
+    assert t1.phase == "discuss"
 
     # When open thread is empty, creating a thread reuses it
     t_reused = session.create_thread(name="second-thread")
@@ -68,3 +71,34 @@ def test_session_single_open_thread_invariant() -> None:
     assert t1.is_open is False
     assert t2.is_open is True
     assert session.get_open_thread().id == t2.id
+
+
+def test_agent_session_mode_propagation() -> None:
+    # 1. Agent configured with mode='chat' propagates to session and initial thread
+    chat_agent = Agent(
+        config=AgentConfig(
+            inference=InferenceConfig(api_key="test-key"),
+            model_name="test-model",
+            mode="chat",
+        ),
+        name="chat-agent",
+    )
+    chat_session = chat_agent.create_session(name="chat-session")
+    assert chat_session.config.mode == "chat"
+    open_thread = chat_session.get_open_thread()
+    assert open_thread.mode == "chat"
+    assert open_thread.phase is None
+
+    # 2. Session created with explicit mode override in session config
+    plan_override_session = chat_agent.create_session(
+        config=AgentConfig(
+            inference=InferenceConfig(api_key="test-key"),
+            model_name="test-model",
+            mode="plan",
+        ),
+        name="plan-session",
+    )
+    assert plan_override_session.config.mode == "plan"
+    plan_thread = plan_override_session.get_open_thread()
+    assert plan_thread.mode == "plan"
+    assert plan_thread.phase == "discuss"

@@ -452,6 +452,7 @@ export function App() {
                 agentName={activeAgent?.name || null}
                 sessionId={selectedSessionId}
                 sessionName={activeSession?.name || null}
+                sessionMode={activeSession?.config?.mode}
                 sessionStatus={activeSession?.status || "ACTIVE"}
                 sessionProvenance={activeSession?.provenance || null}
                 sessionLineage={activeSession?.lineage}
