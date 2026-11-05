@@ -73,7 +73,7 @@ A **Persona** defines an agent's enduring identity, domain background, and avail
 
 An **Operational Mode** dictates the agent's immediate interaction posture, prompt framing, and the role of the operational workspace (`/workspace`).
 
-Modes are **open and creatable**—the core list below is an illustrative set, not a closed enumeration. New modes can be registered as the harness evolves.
+Modes are **open and creatable**—the core list below is an illustrative set, not a closed enumeration. New modes can be registered as the harness evolves. For detailed mode-by-mode and persona-by-persona customization (prompt framing, tool gating, and mount policies), see [modes_and_personas_breakdown.md](./modes_and_personas_breakdown.md).
 
 ```
 +--------------------------------------------------------------------------------+
@@ -170,6 +170,7 @@ Modes define distinct triggers that spawn new threads:
 
 ## 6. Cross-References
 
+- [modes_and_personas_breakdown.md](./modes_and_personas_breakdown.md)
 - [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md)
 - [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md)
 - [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md)
