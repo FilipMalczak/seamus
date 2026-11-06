@@ -179,32 +179,47 @@ class QuestionnaireBuilder:
                 for i, ans in enumerate(q.answers, start=1)
             ]
 
-            components.append(
-                {
-                    "id": q_choice_id,
-                    "component": "ChoiceSet",
-                    "isMultiSelect": q.multiple_choice,
-                    "choices": choices,
-                    "value": {"path": f"/{q_id}"},
-                }
-            )
-
-            root_children.extend([q_text_id, q_choice_id])
-            submit_context[q_id] = {"path": f"/{q_id}"}
-
+            options_map = {_to_option_value(ans): ans for ans in q.answers}
             writein_id = None
             if q.write_in:
                 writein_id = f"{q_id}_writein"
+                if "other" not in options_map:
+                    choices.append({"id": f"{q_id}_opt_other", "label": "Other", "value": "other"})
+                    options_map["other"] = "Other"
+
+                components.append(
+                    {
+                        "id": q_choice_id,
+                        "component": "ChoiceSet",
+                        "isMultiSelect": q.multiple_choice,
+                        "choices": choices,
+                        "value": {"path": f"/{q_id}"},
+                    }
+                )
                 components.append(
                     {
                         "id": writein_id,
                         "component": "TextField",
-                        "label": "Other / Write-in:",
+                        "label": "",
+                        "placeholder": "Specify other...",
                         "value": {"path": f"/{writein_id}"},
                     }
                 )
-                root_children.append(writein_id)
+                root_children.extend([q_text_id, q_choice_id, writein_id])
+                submit_context[q_id] = {"path": f"/{q_id}"}
                 submit_context[writein_id] = {"path": f"/{writein_id}"}
+            else:
+                components.append(
+                    {
+                        "id": q_choice_id,
+                        "component": "ChoiceSet",
+                        "isMultiSelect": q.multiple_choice,
+                        "choices": choices,
+                        "value": {"path": f"/{q_id}"},
+                    }
+                )
+                root_children.extend([q_text_id, q_choice_id])
+                submit_context[q_id] = {"path": f"/{q_id}"}
 
             schema_questions.append(
                 {
@@ -213,7 +228,7 @@ class QuestionnaireBuilder:
                     "multiple_choice": q.multiple_choice,
                     "write_in": q.write_in,
                     "writein_id": writein_id,
-                    "options": {_to_option_value(ans): ans for ans in q.answers},
+                    "options": options_map,
                 }
             )
 
@@ -664,12 +679,18 @@ def dispatch_button_click(
                 options_map = q_info.get("options", {})
                 writein_id = q_info.get("writein_id")
 
+                is_multi = q_info.get("multiple_choice", False)
                 raw_choice = context.get(q_id)
                 choice_translated = None
                 if isinstance(raw_choice, list):
                     choice_translated = [options_map.get(v, v) for v in raw_choice if v]
+                    if not is_multi:
+                        choice_translated = choice_translated[0] if choice_translated else None
+                        raw_context[q_id] = raw_choice[0] if raw_choice else ""
                 elif raw_choice is not None and str(raw_choice).strip():
-                    choice_translated = options_map.get(str(raw_choice), str(raw_choice))
+                    raw_str = str(raw_choice)
+                    choice_translated = options_map.get(raw_str, raw_str)
+                    raw_context[q_id] = raw_str
 
                 writein_val = context.get(writein_id) if writein_id else None
                 if writein_val is not None:
@@ -721,9 +742,8 @@ def dispatch_button_click(
     else:
         clicks_left[button_id] = current_clicks
 
-    # 6. Accumulate into dataModel
+    # 6. Accumulate into dataModel (component paths only, avoiding duplicate text keys)
     data_model.update(raw_context)
-    data_model.update(translated_context)
 
     # 7. Save updated state.json
     new_state = ArtifactState(dataModel=data_model, clicksLeft=clicks_left)

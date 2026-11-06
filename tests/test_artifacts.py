@@ -441,8 +441,12 @@ def test_questionnaire_write_in_and_schema_translation(tmp_path: Path) -> None:
     assert len(choice_sets) == 2
     assert len(text_fields) == 1
     assert choice_sets[0]["value"] == {"path": "/q_1_primary_language"}
+    # Write-in choice set has "Other" as last choice
+    assert choice_sets[0]["choices"][-1]["label"] == "Other"
+    assert choice_sets[0]["choices"][-1]["value"] == "other"
+    # Write-in text field is labelless
     assert text_fields[0]["value"] == {"path": "/q_1_primary_language_writein"}
-    assert text_fields[0]["label"] == "Other / Write-in:"
+    assert text_fields[0]["label"] == ""
 
     # Action context binds to data model paths
     ctx = button["action"]["event"]["context"]
@@ -450,9 +454,9 @@ def test_questionnaire_write_in_and_schema_translation(tmp_path: Path) -> None:
     assert ctx["q_1_primary_language_writein"] == {"path": "/q_1_primary_language_writein"}
     assert ctx["q_2_target_platforms"] == {"path": "/q_2_target_platforms"}
 
-    # Simulate client submitting raw values
+    # Simulate client submitting raw values (including single-select passed as list)
     raw_submission = {
-        "q_1_primary_language": "python",
+        "q_1_primary_language": ["python"],
         "q_1_primary_language_writein": "With PyPy support",
         "q_2_target_platforms": ["linux", "macos"],
     }
@@ -465,12 +469,20 @@ def test_questionnaire_write_in_and_schema_translation(tmp_path: Path) -> None:
         context=raw_submission,
     )
 
-    # raw_context has original IDs
-    assert result.raw_context == raw_submission
+    # raw_context has single-select unrolled to scalar string
+    assert result.raw_context["q_1_primary_language"] == "python"
+    assert result.raw_context["q_2_target_platforms"] == ["linux", "macos"]
 
-    # context has translated human-readable text and labels
+    # context has translated human-readable text and scalar unrolled labels
     assert result.context["Primary language?"] == {
         "selection": "Python",
         "write_in": "With PyPy support",
     }
     assert result.context["Target platforms?"] == ["Linux", "macOS"]
+
+    # state.json strictly contains component data paths and NOT duplicate translated questions
+    state_data = json.loads((art_dir / "state.json").read_text(encoding="utf-8"))
+    assert "Primary language?" not in state_data["dataModel"]
+    assert "Target platforms?" not in state_data["dataModel"]
+    assert state_data["dataModel"]["q_1_primary_language"] == "python"
+    assert state_data["dataModel"]["q_2_target_platforms"] == ["linux", "macos"]
