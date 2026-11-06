@@ -337,8 +337,8 @@ def build_operational_mode_section(
                 ),
                 (
                     "2. Proactively ask questions and clarify requirements whenever details or "
-                    "trade-offs are uncertain. Use `ask` for blocking choices, `form` for "
-                    "multi-question surveys, or conversational prose."
+                    "trade-offs are uncertain. Use `make_questionnaire` for blocking choices, "
+                    "`make_form` for multi-question surveys, or conversational prose."
                 ),
                 (
                     "3. Document all collected requirements, user decisions, affected file paths, "
@@ -561,28 +561,42 @@ def build_user_inquiry(
     resolved_mode, resolved_phase = normalize_mode_and_phase(mode, phase)
     available = resolve_available_harness_tools(resolved_mode, resolved_phase)
 
-    if "ask" not in available and "form" not in available:
+    if (
+        "make_questionnaire" not in available
+        and "make_form" not in available
+        and "make_artifact" not in available
+    ):
         return None
 
     tools_list: list[str] = []
-    if "ask" in available:
+    if "make_questionnaire" in available:
         tools_list.append(
-            "ask: Presents an embedded, blocking closed-choice questionnaire directly in the "
-            "chat stream (`exposition=embedded`, `cadence=blocking`). Best for 1-4 focused "
-            "questions that must be answered before proceeding."
+            "make_questionnaire: Creates an embedded, blocking closed-choice questionnaire "
+            "directly in the chat stream (`exposition=embedded`, `blocking=True`). Best for "
+            "focused questions that must be answered before proceeding."
         )
-    if "form" in available:
+    if "make_form" in available:
         tools_list.append(
-            "form: Presents a tabbed, non-blocking questionnaire in a dedicated tab to the "
-            "right of Changes (`exposition=tabbed`, `cadence=nonblocking`). Best in Discuss "
+            "make_form: Creates a tabbed, non-blocking questionnaire form in a dedicated tab "
+            "to the right of Changes (`exposition=tabbed`, `blocking=False`). Best in Discuss "
             "phase when offering a structured multi-question survey while allowing the user to "
             "continue freestyle chat before or alongside submitting the form."
+        )
+    if "make_artifact" in available:
+        tools_list.append(
+            "make_artifact: Core atomic artifact builder creating custom A2UI components under "
+            "`/artifacts/<family>/<uuid>/` with custom manifest and body definitions."
+        )
+    if "wait_for_click" in available:
+        tools_list.append(
+            "wait_for_click: Suspends agent execution within the current turn until the user "
+            "clicks a button on the specified artifact."
         )
 
     guidelines = (
         "When gathering requirements, design decisions, or clarifying choices from the user, "
-        "use the available inquiry tools (`ask`"
-        + (" or `form`, or freestyle conversation" if "form" in available else "")
+        "use the available inquiry tools (`make_questionnaire`"
+        + (" or `make_form`, or freestyle conversation" if "make_form" in available else "")
         + ")."
     )
 
@@ -596,22 +610,20 @@ def build_user_inquiry(
                 "inquiry tool."
             ),
             (
-                "When calling `ask`, output at most a single concise introductory sentence "
-                "(e.g. 'Please select your preferred options below.') or emit no text at all, "
-                "then immediately halt to await user submission."
+                "When calling `make_questionnaire`, output at most a single concise introductory "
+                "sentence (e.g. 'Please select your preferred options below.') or emit no text at "
+                "all, then immediately call `wait_for_click` or halt to await user submission."
             ),
             (
-                "Multiple `ask` calls or multiple `form` calls in the same turn are automatically "
-                "batched into a single questionnaire or form artifact."
+                "Consult the 'artifacts' skill at `/skills/bundled/artifacts/SKILL.md` and "
+                "'a2ui_components' skill at `/skills/bundled/a2ui_components/SKILL.md` for "
+                "guidance on A2UI basic catalog components, manifest schemas, and button "
+                "interactions."
             ),
             (
-                "Consult the 'artifacts' skill at `/skills/bundled/artifacts/SKILL.md` for "
-                "guidance on Adaptive Cards artifacts, schemas, and submission handling."
-            ),
-            (
-                "Never call 'read_artifact_submission' in the same turn you call 'ask' or 'form'. "
-                "The artifact must first be answered and submitted by the user before its "
-                "submission data can be read."
+                "When an interaction event unblocks the conversation or notifies an idle agent "
+                "after a turn completes, Seamus injects a synthetic user turn beginning with "
+                "`<SYNTHETIC MESSAGE INDICATOR>`. Treat the content as an event notification."
             ),
         ],
     )

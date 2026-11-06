@@ -251,91 +251,53 @@ export function ChangesViewer({
   }, [diffData?.diff]);
 
   const artifactItems = useMemo<RenderableArtifactItem[]>(() => {
-    if (!artifactsList || artifactsList.length === 0) return [];
-    const items: RenderableArtifactItem[] = [];
-    artifactsList.forEach((artifact) => {
-      const rawPath = `artifacts/${artifact.kind}/${artifact.name}/card.json`;
-      const lines = JSON.stringify(artifact.card || {}, null, 2).split("\n");
-      const patch = [
-        `diff --git a/${rawPath} b/${rawPath}`,
-        `new file mode 100644`,
-        `--- /dev/null`,
-        `+++ b/${rawPath}`,
-        `@@ -0,0 +1,${lines.length} @@`,
-        ...lines.map((l) => `+${l}`),
-        "",
-      ].join("\n");
+    if (!diffData?.diff || diffData.diff.trim().length === 0) return [];
+    try {
+      const patches = parsePatchFiles(diffData.diff);
+      const files = patches.flatMap((p) => p.files);
+      const artifactFiles = files.filter((f) => (f.name || "").startsWith("artifacts/"));
 
-      let fileDiff: FileDiffMetadata;
-      try {
-        const parsed = parsePatchFiles(patch);
-        fileDiff = parsed[0]?.files[0] || ({
-          name: rawPath,
-          type: "new",
-          additionLines: lines,
-          deletionLines: [],
-          hunks: [],
-        } as any);
-      } catch {
-        fileDiff = {
-          name: rawPath,
-          type: "new",
-          additionLines: lines,
-          deletionLines: [],
-          hunks: [],
-        } as any;
-      }
+      return artifactFiles.map((fileDiff, idx) => {
+        const rawPath = fileDiff.name || `artifacts/item-${idx}`;
+        const parts = rawPath.split("/").filter(Boolean);
+        const family = parts[1];
+        const uuid = parts[2];
 
-      items.push({
-        artifact,
-        rawPath,
-        fileDiff,
-        originalIndex: deliverableDiffs.length + items.length,
+        const matchedArtifact = (artifactsList || []).find(
+          (a) =>
+            (a.uuid === uuid || a.name === uuid) &&
+            (!family || a.family === family || a.kind === family)
+        );
+
+        return {
+          artifact:
+            matchedArtifact ||
+            ({
+              name: uuid || rawPath,
+              uuid: uuid || rawPath,
+              kind: family || "artifacts",
+              family: family || "artifacts",
+              title: rawPath,
+              manifest: {
+                name: rawPath,
+                exposition: "embedded",
+                blocking: false,
+                commentable: false,
+                buttons: [],
+              },
+              body: [],
+              is_closed: false,
+            } as unknown as ArtifactInfo),
+          rawPath,
+          fileDiff,
+          originalIndex: deliverableDiffs.length + idx,
+        };
       });
-
-      if (artifact.data && Object.keys(artifact.data).length > 0) {
-        const subPath = `artifacts/${artifact.kind}/${artifact.name}/submission.json`;
-        const subLines = JSON.stringify(artifact.data, null, 2).split("\n");
-        const subPatch = [
-          `diff --git a/${subPath} b/${subPath}`,
-          `new file mode 100644`,
-          `--- /dev/null`,
-          `+++ b/${subPath}`,
-          `@@ -0,0 +1,${subLines.length} @@`,
-          ...subLines.map((l) => `+${l}`),
-          "",
-        ].join("\n");
-
-        let subFileDiff: FileDiffMetadata;
-        try {
-          const parsedSub = parsePatchFiles(subPatch);
-          subFileDiff = parsedSub[0]?.files[0] || ({
-            name: subPath,
-            type: "new",
-            additionLines: subLines,
-            deletionLines: [],
-            hunks: [],
-          } as any);
-        } catch {
-          subFileDiff = {
-            name: subPath,
-            type: "new",
-            additionLines: subLines,
-            deletionLines: [],
-            hunks: [],
-          } as any;
-        }
-
-        items.push({
-          artifact,
-          rawPath: subPath,
-          fileDiff: subFileDiff,
-          originalIndex: deliverableDiffs.length + items.length,
-        });
-      }
-    });
-    return items;
-  }, [artifactsList, deliverableDiffs.length]);
+    } catch (err) {
+      console.error("Failed to parse artifact diff patch:", err);
+      return [];
+    }
+  }, [diffData?.diff, artifactsList, deliverableDiffs.length]);
 
   const filteredDeliverables = useMemo<IndexedFileDiff[]>(() => {
     const list = deliverableDiffs.map((fileDiff, originalIndex) => ({
@@ -684,7 +646,7 @@ export function ChangesViewer({
       const status = getChangeStatus(item.fileDiff.type || "new");
       const stats = getFileStats(item.fileDiff);
       const isCopied = copiedPath === fileName;
-      const mode = artifactViewModes[item.artifact.name] || "diff";
+      const mode = artifactViewModes[fileName] || artifactViewModes[item.artifact?.name] || "diff";
 
       return (
         <article
@@ -735,8 +697,8 @@ export function ChangesViewer({
                 <button
                   type="button"
                   className={`changes-artifact-toggle-btn ${mode === "diff" ? "active" : ""}`}
-                  onClick={() => toggleArtifactViewMode(item.artifact.name, "diff")}
-                  title="View Card JSON diff"
+                  onClick={() => toggleArtifactViewMode(fileName, "diff")}
+                  title="View file diff"
                 >
                   <Code2 className="size-3.5" />
                   <span>Diff</span>
@@ -744,8 +706,8 @@ export function ChangesViewer({
                 <button
                   type="button"
                   className={`changes-artifact-toggle-btn ${mode === "rendered" ? "active" : ""}`}
-                  onClick={() => toggleArtifactViewMode(item.artifact.name, "rendered")}
-                  title="Render Adaptive Card (read-only)"
+                  onClick={() => toggleArtifactViewMode(fileName, "rendered")}
+                  title="Render Artifact (read-only)"
                 >
                   <Eye className="size-3.5" />
                   <span>Rendered</span>
@@ -794,7 +756,7 @@ export function ChangesViewer({
             ) : (
               <div className="changes-artifact-rendered-body">
                 <div className="changes-artifact-rendered-ro-wrapper">
-                  <ArtifactRenderer artifact={item.artifact} />
+                  <ArtifactRenderer artifact={item.artifact} readOnly={true} />
                 </div>
               </div>
             )

@@ -16,7 +16,12 @@ def test_bundled_skills_directory_exists() -> None:
     assert artifact_skill.is_file()
     content = artifact_skill.read_text(encoding="utf-8")
     assert "name: artifacts" in content
-    assert "Adaptive Cards" in content
+    assert "A2UI" in content
+
+    a2ui_skill = BUNDLED_SKILLS_DIR / "a2ui_components" / "SKILL.md"
+    assert a2ui_skill.is_file()
+    a2ui_content = a2ui_skill.read_text(encoding="utf-8")
+    assert "name: a2ui_components" in a2ui_content
 
 
 def test_sandbox_backend_mounts_bundled_skill_and_artifacts(tmp_path: Path) -> None:
@@ -96,11 +101,13 @@ def test_bundled_skills_and_tools_in_inspector() -> None:
     assert artifact_skill.origin_layer == "Bundled"
     assert artifact_skill.sandbox_path == "/skills/bundled/artifacts/SKILL.md"
 
-    # Verify default tools inspect info includes ask and read_artifact_submission
+    # Verify default tools inspect info includes make_questionnaire and wait_for_click
     default_tools = get_default_tools_inspect_info()
     tool_names = [t.name for t in default_tools]
-    assert "ask" in tool_names
-    assert "read_artifact_submission" in tool_names
+    assert "make_questionnaire" in tool_names
+    assert "wait_for_click" in tool_names
+    assert "ask" not in tool_names
+    assert "read_artifact_submission" not in tool_names
 
     # Verify report includes skills and prompt mentions
     report = build_agent_inspect_report(str(agent.id), str(session.id))

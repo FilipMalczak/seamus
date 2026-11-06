@@ -21,18 +21,19 @@ class PlanPhase(StrEnum):
 
 
 ARTIFACT_RELATED_TOOLS: frozenset[str] = frozenset(
-    {"ask", "form", "make_plan", "update_plan", "edit_plan"}
+    {"make_artifact", "make_questionnaire", "make_form", "make_plan", "update_plan", "edit_plan"}
 )
 
 ALL_HARNESS_TOOLS: frozenset[str] = frozenset(
     {
-        "ask",
-        "form",
-        "read_artifact_submission",
-        "plan",
+        "make_artifact",
+        "make_questionnaire",
+        "make_form",
         "make_plan",
         "update_plan",
         "edit_plan",
+        "wait_for_click",
+        "plan",
         "discard",
     }
 )
@@ -96,7 +97,7 @@ CHAT_MODE = ModeDescriptor(
         notes_mounted=False,
         notes_readonly=True,
     ),
-    tools=("ask",),
+    tools=("make_artifact", "make_questionnaire", "wait_for_click"),
     phases=(),
     default_phase=None,
 )
@@ -106,16 +107,16 @@ PLAN_DISCUSS_PHASE = PhaseDescriptor(
     title="Discuss",
     description=(
         "Explore the workspace with read-write access, clarify requirements and trade-offs "
-        "with the user via conversation, blocking questionnaires (`ask`), or non-blocking "
-        "forms (`form`), and record findings and notes across the workspace before "
-        "calling `plan()`."
+        "with the user via conversation, blocking questionnaires (`make_questionnaire`), or "
+        "non-blocking forms (`make_form`), and record findings and notes across the workspace "
+        "before calling `plan()`."
     ),
     mount_policy=MountPolicy(
         workspace_readonly=False,
         notes_mounted=False,
         notes_readonly=True,
     ),
-    tools=("ask", "form", "plan", "discard"),
+    tools=("make_artifact", "make_questionnaire", "make_form", "plan", "discard", "wait_for_click"),
 )
 
 PLAN_MAKE_PHASE = PhaseDescriptor(
@@ -215,8 +216,8 @@ def resolve_available_harness_tools(
                 raw_tools.discard("edit_plan")
 
     if raw_tools & ARTIFACT_RELATED_TOOLS:
-        raw_tools.add("read_artifact_submission")
+        raw_tools.add("wait_for_click")
     else:
-        raw_tools.discard("read_artifact_submission")
+        raw_tools.discard("wait_for_click")
 
     return raw_tools

@@ -406,9 +406,10 @@ def test_inspector_skills_discovery_and_project_rules(
     assert "write_todos" in report.prompts.composite
     assert "write_todos" in report.prompts.scaffold
 
-    # Report includes bundled platform skill (artifacts) plus the test skills
-    assert len(report.skills) == 4
+    # Report includes bundled platform skills (artifacts, a2ui_components) plus the test skills
+    assert len(report.skills) == 5
     assert any(s.name == "artifacts" and s.origin_layer == "Bundled" for s in report.skills)
+    assert any(s.name == "a2ui_components" and s.origin_layer == "Bundled" for s in report.skills)
 
     # Workspace skill-a is active (mounted skill -> host_path is None)
     active_ws_a = next(s for s in report.skills if s.name == "skill-a" and s.active)

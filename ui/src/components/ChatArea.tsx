@@ -18,14 +18,15 @@ import {
   Square,
   Wrench,
 } from "lucide-react";
-import type {
-  AgentStatus,
-  ArtifactInfo,
-  ChatMessage,
-  MessagePart,
-  SessionBranchProvenance,
-  SessionStatus,
-  ThreadInfo,
+import {
+  SYNTHETIC_MESSAGE_INDICATOR,
+  type AgentStatus,
+  type ArtifactInfo,
+  type ChatMessage,
+  type MessagePart,
+  type SessionBranchProvenance,
+  type SessionStatus,
+  type ThreadInfo,
 } from "../api/types";
 import { useThreadStream } from "../hooks/useThreadStream";
 import { MessageItem } from "./MessageItem";
@@ -333,7 +334,11 @@ export function ChatArea({
   }, [thread?.id, isOpen, isBusy, sending]);
 
   const handleSend = async () => {
-    if (!inputText.trim() || isBusy || !isOpen || sending) return;
+    if (!inputText.trim() || isBusy || !isOpen || sending || hasOpenBlockingArtifact) return;
+    if (inputText.startsWith(SYNTHETIC_MESSAGE_INDICATOR)) {
+      alert("Messages starting with the reserved platform indicator cannot be sent directly.");
+      return;
+    }
     const textToSend = inputText;
     setInputText("");
     setIsAtBottom(true);

@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@pierre/diffs": "^1.6.2",
-    "adaptivecards": "^3.0.6",
     "lucide-react": "^1.16.0",
     "markdown-it": "^15.0.3",
     "react": "^19.0.0",
