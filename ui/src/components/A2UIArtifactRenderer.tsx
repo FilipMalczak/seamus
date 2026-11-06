@@ -271,7 +271,7 @@ export function A2UIArtifactRenderer({
 
   return (
     <div
-      className={`artifact-card ${
+      className={`artifact-card a2ui-dark ${
         artifact.is_closed ? "artifact-closed" : "artifact-open"
       } ${artifact.is_closed && !expanded ? "artifact-collapsed" : ""}`}
     >
@@ -379,7 +379,7 @@ export function A2UIArtifactRenderer({
             <div
               ref={surfaceContainerRef}
               onMouseUp={handleMouseUp}
-              className={`a2ui-surface-host select-text ${
+              className={`a2ui-surface-host a2ui-dark select-text ${
                 isClosed ? "pointer-events-none opacity-80" : ""
               }`}
             >
