@@ -132,6 +132,26 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Improvement**: Review and redesign error reporting systematically: define distinct error categories (recoverable tool feedback intended for model correction vs fatal harness/system faults), establish consistent propagation through SSE events and thread status, and provide clear, actionable error indicators in the web UI.
 - **Provenance**: `src/seamus/harness/runner.py`, [0031-SUPERSEDED-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-SUPERSEDED-migrate-a2ui-to-adaptive-cards.md), [architecture.md](./architecture.md).
 
+### Button Retention and Disabled Presentation on Closed Artifacts
+- **Current Problem**: In `make_questionnaire` and `make_plan`, proceed and submit buttons are configured with `clicks=1`. Once clicked, `clicksLeft` reaches 0, which causes the buttons to disappear from the rendered card view in the web UI when the artifact closes, rather than remaining visible in a disabled state. This prevents users from inspecting past submission actions and causes visual layout shifts.
+- **Improvement**: Allow these buttons to retain the default `clicks="*"` (unlimited click count) instead of custom `clicks=1`, and rely on artifact closing / disabled status to prevent further interaction while preserving the button elements in the UI.
+- **Provenance**: `src/seamus/harness/artifacts.py`, `ui/src/components/A2UIArtifactRenderer.tsx`.
+
+### Artifact Lifecycle and Retention During Thread Acceptance
+- **Current Problem**: Accepting a thread (`accept_thread`) explicitly closes `session.active_plan_id`, but other artifacts (questionnaires, forms, custom artifacts) and their interaction states lack a defined lifecycle: it is unclear whether unclosed artifacts should be forcibly closed, preserved, archived, or carried over into the new thread's workspace view.
+- **Improvement**: Review and define formal closing, retention, and archiving rules for all artifact families upon Sync PR acceptance and thread transition.
+- **Provenance**: `src/seamus/harness/store.py`, [artifacts.md](./artifacts.md), `src/seamus/domain/artifacts.py`.
+
+### Logfire Telemetry Span Hierarchy and HTTP Polling Noise Reduction
+- **Current Problem**: Logfire telemetry traces do not properly reflect the nested hierarchy of agents, sessions, and threads as intended. Additionally, frequent HTTP GET polling requests (e.g. fetching agents trees, status, and health checks) pollute the trace view, and inspecting traces requires navigating to external SaaS dashboards rather than having an integrated local trace inspection experience.
+- **Improvement**: Refine OpenTelemetry/Logfire context propagation to ensure child runner and tool spans cleanly nest under thread and session spans; exclude high-frequency polling GET endpoints in `instrument_fastapi(app, excluded_urls=...)`; and evaluate embedding a lightweight local trace/span viewer (e.g. Jaeger or OpenTelemetry UI) into the local `docker-compose` stack.
+- **Provenance**: `src/seamus/telemetry.py`, `src/seamus/server/app.py`, `docker-compose.yml`.
+
+### Persistence of Installed Sandbox Tooling and Environment State
+- **Current Problem**: System packages, libraries, and tools installed by the agent during sandbox execution (e.g. via `apt`, `pip`, or `npm`) are ephemeral and discarded across container restarts. While the operational workspace files are persisted via Git, the execution environment state itself resets, breaking multi-turn agent workflows that depend on installed dependencies.
+- **Improvement**: Ensure sandbox environment state and installed tooling persist across session turns and container restarts, rather than resetting to a clean base image.
+- **Provenance**: `src/seamus/harness/sandbox.py`, `src/seamus/harness/prompt.py`, `opensandbox/`.
+
 ## TODO
 
 ### Polymorphic Input Request Specification for Predefined Artifact Builders
@@ -238,29 +258,58 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Accommodates both lightweight conversational workflows focused on getting tasks done and deep engineering/debugging sessions requiring full inspectability.
 - **Provenance**: [0003-react-web-ui.md](../decisions/0003-react-web-ui.md), [architecture.md](./architecture.md#system-overview).
 
+### Editable Composer Text Area During Processing and Artifact Blocking
+- **Description**: Keep the message composer textarea editable when message sending is disabled due to agent processing or open blocking artifacts. Only disable the Send button and Enter key submit handler, allowing users to type and prepare their subsequent message while waiting for the agent turn or artifact interaction to conclude.
+- **Rationale**: Disabling the entire input field prevents drafting follow-up responses and disrupts conversational fluidity.
+- **Provenance**: `ui/src/components/ChatArea.tsx`.
+
+### Automatic UI Navigation to Newly Spawned Threads
+- **Description**: When the harness server transitions or spawns a new thread in an active session (e.g. following mode changes, thread acceptance, or unblocking triggers), automatically update the UI selection to view the newly opened thread if the user is currently viewing the originating thread.
+- **Rationale**: Prevents users from being left viewing an inactive or closed historical thread when a new conversational turn has already begun in a child thread.
+- **Provenance**: `ui/src/App.tsx`, `ui/src/components/ChatArea.tsx`, `ui/src/hooks/useAgentsTree.ts`.
+
+### Default Workspace .gitignore Seeding and Prompt Persistence Guidance
+- **Description**: Seed a sensible default `.gitignore` (ignoring virtual environments, `__pycache__`, temporary build artifacts, and node modules) during agent repository and workspace initialization in `GitWorkspaceManager`. Update the `<operating_environment>` prompt composition in `src/seamus/harness/prompt.py` to explicitly explain to the agent that `.gitignore` determines which files are tracked by Git persistence versus which files remain untracked and ephemeral in the container sandbox.
+- **Rationale**: Prevents ephemeral build artifacts from polluting the Git persistence history and clarifies to the agent how Git tracking interacts with the sandbox boundary.
+- **Provenance**: `src/seamus/persistence/workspace.py`, `src/seamus/harness/prompt.py`.
+
+### Configurable Conversational Message Overlap Across Thread Transitions
+- **Description**: When opening a new thread from an existing thread (such as during mode transitions, plan execution handoffs, or thread rollover), seed the new thread's checkpoint/message trajectory with a sliding window of the last $N$ messages from the preceding thread. Expose the overlap message count in configuration (`AgentConfig.thread_message_overlap: int = 5` or similar).
+- **Rationale**: Newly opened threads currently start with an empty conversational history, requiring the model to infer context exclusively from session notes or system prompt. Seeding a configurable window of recent messages provides seamless conversational continuity across thread execution boundaries.
+- **Provenance**: `src/seamus/harness/runner.py`, `src/seamus/config/models.py`, `src/seamus/harness/store.py`.
+
+### Configurable Sandbox Container Image, Bundled Dev Image, and Environment Inspection
+- **Description**: Add `sandbox_image: str | None = None` to `AgentConfig` (and `ConfigTemplate`), allowing custom container images to be configured per agent/session (falling back to environment variable `OPENSANDBOX_IMAGE` or default). Bundle a dedicated Seamus development sandbox image pre-installed with standard developer tooling (Git, uv, Node, build tools) rather than relying on bare `python:3.12-slim`. In addition, explain the sandbox image's capabilities in the system prompt and/or expose the Dockerfile within the image itself (e.g. at `/etc/Dockerfile`) so the agent can inspect what tools and libraries are installed in its environment.
+- **Rationale**: The minimal `python:3.12-slim` base image lacks standard tools required by coding agents, and the agent needs clear self-knowledge of its container environment and available binaries.
+- **Provenance**: `src/seamus/config/models.py`, `src/seamus/harness/sandbox.py`, `src/seamus/harness/prompt.py`, `Dockerfile.sandbox`.
+
+### Granular Branch Action Placement in Chat Bubble UI
+- **Description**: Redesign the message branch action layout in `MessageItem.tsx`. Move the branch action icon/button to the right of message bubbles (e.g., in a hover/action gutter) rather than placing it in the bottom footer below the bubble content, and review branch point indicators to ensure they are visually intuitive and unambiguous.
+- **Rationale**: Footer placement below the bubble text is visually misleading and occupies unnecessary vertical space across conversational streams.
+- **Provenance**: `ui/src/components/MessageItem.tsx`, `ui/src/components/ChatArea.tsx`.
+
+### Complete Removal of gpt-oss-20b References and Presets
+- **Description**: Purge all references to `openai/gpt-oss-20b` across the entire codebase, configuration templates, environment files (`.env`, `.env.template`), frontend presets (`MODEL_PRESETS` in `ConfigModal.tsx`), and tests. Standardize everywhere on `openai/gpt-oss-120b` (or other capable frontier models) so clean setup scripts (`./run.sh --clean`) never seed or point to 20b.
+- **Rationale**: The 20b model is insufficiently capable for reliable autonomous tool usage and complex harness orchestration; eliminating it avoids stale template initialization when resetting state.
+- **Provenance**: [0032-operational-mode-in-agent-config-and-defaults.md](../decisions/0032-operational-mode-in-agent-config-and-defaults.md), `ui/src/components/ConfigModal.tsx`, `.env`, `.env.template`.
+
+### Full Auto-Restart and Execution Recovery on System Startup
+- **Description**: Automatically detect in-flight or interrupted agent sessions upon harness server restart/startup, recovering execution from the latest checkpoint and auto-resuming the agent's run loop.
+- **Rationale**: If the host or server container is restarted or killed mid-turn, active runs currently stall without resuming, requiring manual user intervention.
+- **Provenance**: `src/seamus/harness/store.py`, `src/seamus/harness/runner.py`, `src/seamus/server/app.py`.
+
+### Ollama Local Model Provider Support
+- **Description**: Add first-class support for Ollama as a local model provider in Seamus, allowing agents to run against locally hosted models without requiring external API keys. Configure base URLs, model selection presets, and streaming adapters compatible with Ollama's API.
+- **Rationale**: Expands Seamus to support fully offline, private, and zero-cost local LLM development workflows.
+- **Provenance**: `src/seamus/config/models.py`, `src/seamus/harness/runner.py`, `ui/src/components/ConfigModal.tsx`.
+
 ## Not formalized
 
 - a way to attach to button (in artifact) both data from inputs and comments [low]
 - comments need to be saved in artifact state, not just "review" append log [low]
-- Workspace needs .gitignore; we need to explain to the agent that that file controls what is persistent and what might disappear at any moment
-- proceed/submit buttons disappear from render after closing the artifact [low]
-- test that if we kill the system during run, then agent auto-restarts after system restart [mid/high]
-- once the harness opens a new thread, we should auto-switch there (if we're in the thread from which we switched)
-- session view (its already above, but it has high prio)
-- "branch" icon should be more granular and to the right of bubbles (instead of below); review branching in general - icons placement is bit misleading
-- review and rethink what should happen with artifacts on accept
-- when sending messages is disabled (due to artifact blocking or just agent processing), it should only disable the button and Enter handler; the text field should still be editable (for the sake of preparing a message while agent works)
-- in prompt operating_environment -> filesystem_persistence/execution_sandbox it sounds like the installed stuff is also ephemeric (it is, but its a bug)
-- when we open new thread, we should include a bunch of messages from previous thread [mid/high] [I expect a lot out of this]; make the overlap numbers configurable
-- "sync config" (template -> agent <-> session)
-- for the hundreth time, remove 20b default
-- custom sandbox images as part of config; bundle dedicated one w/ seamus [mid/high]
 - multiple mounted repos; this will require us to figure out squashing strategies and how to track which commit corresponds to which across repos [high, but complicated]
-- logfire spans are not grouping agents/sessions/threads as I hoped; besides, GETs pollute the view a lot; besides #2, maybe we could go for embedded span viewer in compse stack?
-
 
 - default implementation selection: decide on system-wide defaults for `todo_implementation` and `skills_implementation` once alternative/native implementations are stabilized
-
 
 - way, waaaaay forward: disablability of more layers and components; 
   - for sure context compaction, I dont like it
