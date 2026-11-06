@@ -10,11 +10,23 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## Deferred
 
-### Rich Plan Presentation, Inline Commenting, and Section-Level Editing
-- **Description**: Enhance the Plan artifact tab presentation in the Web UI: provide structured section folding, side-by-side split comparison with requirements, and rich inline commenting allowing users to select plan text segments or steps and provide targeted feedback directly into the Adaptive Card surface before clicking "Proceed".
-- **Why Deferred**: Focused initially on establishing operational modes, multi-phase thread lifecycles, and standard Markdown rendering with the "Proceed" action in the dedicated tab.
-- **Revisit Trigger**: When complex, multi-component planning workflows require fine-grained human-in-the-loop review on individual plan sections.
-- **Provenance**: [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), [0031-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-migrate-a2ui-to-adaptive-cards.md).
+### Alternative Button Action Level Notations in Artifact Manifests
+- **Description**: Experiment with consolidated or level-based notations for manifest button configurations (e.g. `someLevelName = data | unblocking | closing`) rather than discrete orthogonal boolean flags (`unblocking: bool`, `closing: bool`).
+- **Why Deferred**: Independent boolean flags (`unblocking: bool = False`, `closing: bool = False`) are explicit, orthogonal, and simple to validate in early iterations.
+- **Revisit Trigger**: When authoring experience reveals repetitive button configuration patterns across custom artifacts.
+- **Provenance**: [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [artifacts.md](./artifacts.md).
+
+### Surface Event Name in `wait_for_click` Output and Context Dispatch
+- **Description**: Incorporate the declarative action event name (e.g. `action.event.name` from `body.json`) into the `ClickResult` returned by `wait_for_click`, persisted interaction files, and synthetic unblocking messages.
+- **Why Deferred**: Interaction dispatch currently relies on button ID and evaluated context payload; event name is ignored in initial persistence to keep state transitions minimal.
+- **Revisit Trigger**: When multiple buttons dispatch distinct event names sharing identical IDs or when backend event routing requires semantic event classification.
+- **Provenance**: [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [artifacts.md](./artifacts.md).
+
+### Synthetic Tool Call Injection for Blocking Artifact Unblocks
+- **Description**: Investigate synthetic tool call injection (e.g. injecting a synthetic `wait_for_click` tool call and tool result pair) into the model's message trajectory instead of injecting a synthetic user message (`<SYNTHETIC MESSAGE INDICATOR>`) when an agent finishes a blocking turn without calling `wait_for_click`.
+- **Why Deferred**: Synthetic user messages avoid manipulating tool call history in provider-specific LLM adapters, but synthetic tool call injection might feel more natural to the model's tool-use reasoning loop.
+- **Revisit Trigger**: When evaluating model adherence and conversational flow across various LLM providers (Anthropic, OpenAI, Gemini) during blocking artifact unblocks.
+- **Provenance**: [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [artifacts.md](./artifacts.md).
 
 ### Fine-Grained Arity Controls for Questionnaire Inquiry Tools
 - **Description**: Expand selection constraints for `ask` (and future inquiry tools) from boolean `multiple: bool` to fine-grained arity bounds: `arity: int | tuple[int, int | Literal["*"]]` (e.g. `1` for single choice, `(1, "*")` for at least one choice, `(0, "*")` for optional multiple selection, `(2, 4)` for a bounded range).
@@ -121,6 +133,11 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Provenance**: `src/seamus/harness/runner.py`, [0031-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-migrate-a2ui-to-adaptive-cards.md), [architecture.md](./architecture.md).
 
 ## TODO
+
+### Polymorphic Input Request Specification for Predefined Artifact Builders
+- **Description**: Rephrase atomic inquiry builders from `make_questionnaire(questions: list[Question])` to generalized polymorphic builders `make_...(items: list[InputRequest]) -> ...`, where `InputRequest = SingleChoiceQuestion | MultipleChoiceQuestion | OpenQuestion | ColorChoice | DateChoice | ...` (or alternatively modeling the `answers` property of `Question` as an extensible enum/union of input widgets).
+- **Rationale**: Predefined artifact builders should accommodate a broader palette of input widgets (color pickers, date pickers, freeform text boxes, file uploads) beyond simple single/multiple-choice questions while preserving atomic generation.
+- **Provenance**: [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [artifacts.md](./artifacts.md).
 
 ### Review and Audit Plan Mode Implementation
 - **Description**: Conduct a thorough review and audit of the Plan mode and planner implementation (`PlanBuilder`, prompt composition, `make_plan`/`update_plan`/`edit_plan` tool lifecycle, phase transitions, and UI presentation). In particular, evaluate whether the current Adaptive Card structure and tool mechanics provide optimal model steerability, assess how user comments and section-level revisions should be incorporated, and review whether the prompt instructions and sandbox handoff (`/artifacts/plans/<id>/plan.md`) cleanly support execution across long tasks.
