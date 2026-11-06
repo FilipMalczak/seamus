@@ -87,6 +87,9 @@ export function ChatArea({
   const viewportEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isAtBottom, setIsAtBottom] = useState<boolean>(true);
+  const isAtBottomRef = useRef<boolean>(true);
+  const prevMessagesCountRef = useRef<number>(0);
+  const prevLastMessageContentRef = useRef<string>("");
   const [errorExpanded, setErrorExpanded] = useState<boolean>(false);
   const [copiedError, setCopiedError] = useState<boolean>(false);
   const [submittingArtifactId, setSubmittingArtifactId] = useState<string | null>(null);
@@ -307,18 +310,35 @@ export function ChatArea({
     if (!el) return;
     // Consider pinned to bottom if within 60px of the bottom edge
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 60;
+    isAtBottomRef.current = atBottom;
     setIsAtBottom(atBottom);
   }, []);
 
-  // Auto-scroll to bottom as new messages/tokens arrive ONLY if user was already at bottom
+  // Auto-scroll to bottom ONLY when new messages or new tokens arrive, AND user was already at bottom
   useEffect(() => {
-    if (isAtBottom) {
-      scrollToBottom("smooth");
+    const lastMsg = messages[messages.length - 1];
+    const lastContent = lastMsg
+      ? `${lastMsg.id}:${lastMsg.text || ""}:${lastMsg.parts?.length || 0}`
+      : "";
+
+    const hasNewContent =
+      messages.length !== prevMessagesCountRef.current ||
+      lastContent !== prevLastMessageContentRef.current;
+
+    if (hasNewContent) {
+      prevMessagesCountRef.current = messages.length;
+      prevLastMessageContentRef.current = lastContent;
+
+      if (isAtBottomRef.current) {
+        scrollToBottom("smooth");
+      }
     }
-  }, [messages, isAtBottom, scrollToBottom]);
+  }, [messages, scrollToBottom]);
 
   // When active thread changes, reset scroll pin to bottom
   useEffect(() => {
+    isAtBottomRef.current = true;
+    isAtBottomRef.current = true;
     setIsAtBottom(true);
     scrollToBottom("auto");
   }, [thread?.id, scrollToBottom]);
@@ -341,6 +361,7 @@ export function ChatArea({
     }
     const textToSend = inputText;
     setInputText("");
+    isAtBottomRef.current = true;
     setIsAtBottom(true);
     scrollToBottom("smooth");
     try {
@@ -620,7 +641,8 @@ export function ChatArea({
           type="button"
           className="scroll-to-bottom-btn"
           onClick={() => {
-            setIsAtBottom(true);
+            isAtBottomRef.current = true;
+    setIsAtBottom(true);
             scrollToBottom("smooth");
           }}
           title="Scroll to bottom"

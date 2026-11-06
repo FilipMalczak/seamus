@@ -92,7 +92,11 @@ class ClickResult(BaseModel):
     button_id: str = Field(description="ID of the button that was clicked")
     context: dict[str, Any] = Field(
         default_factory=dict,
-        description="Evaluated context payload from the button click event",
+        description="Evaluated context payload from click event (translated for human/agent)",
+    )
+    raw_context: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Raw context payload with component and choice identifiers",
     )
     timestamp: float = Field(description="Timestamp of the interaction (file mtime)")
 

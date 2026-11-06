@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 from seamus.domain.artifacts import (
     ArtifactInfo,
@@ -55,6 +55,13 @@ class Question(BaseModel):
     body: str = Field(description="Question prompt or inquiry body")
     answers: list[str] = Field(description="List of available answer options")
     multiple_choice: bool = Field(default=False, description="Allow selecting multiple answers")
+    write_in: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("write_in", "writein"),
+        description="Allow a freeform write-in text response",
+    )
+
+    model_config = {"populate_by_name": True}
 
 
 # Backward compatibility alias for QuestionItem
@@ -68,10 +75,12 @@ class QuestionItem(BaseModel):
     id: str = Field(default="")
 
     def to_question(self) -> Question:
-        ans = list(self.answers)
-        if self.writein and "Other" not in ans:
-            ans.append("Other")
-        return Question(body=self.question, answers=ans, multiple_choice=self.multiple)
+        return Question(
+            body=self.question,
+            answers=list(self.answers),
+            multiple_choice=self.multiple,
+            write_in=self.writein,
+        )
 
 
 class ArtifactBuilder:
@@ -84,6 +93,7 @@ class ArtifactBuilder:
         manifest: ArtifactManifest | dict[str, Any],
         components: list[dict[str, Any]],
         uuid: str | None = None,
+        initial_data: dict[str, Any] | None = None,
     ) -> str:
         """Create a new artifact instance directory and write body, manifest, and state."""
         instance_uuid = uuid or str(uuid4())
@@ -111,7 +121,7 @@ class ArtifactBuilder:
         for btn in manifest_obj.buttons:
             clicks_left[btn.id] = btn.clicks
 
-        initial_state = ArtifactState(dataModel={}, clicksLeft=clicks_left)
+        initial_state = ArtifactState(dataModel=initial_data or {}, clicksLeft=clicks_left)
         state_file = inst_dir / "state.json"
         state_file.write_text(
             initial_state.model_dump_json(indent=2),
@@ -125,21 +135,12 @@ class QuestionnaireBuilder:
     """Compiles a batch of questions into an atomic embedded blocking questionnaire."""
 
     @classmethod
-    def build_card(
+    def _build_components_and_schema(
         cls,
         questions: Sequence[Question | QuestionItem],
         title: str = "Questionnaire",
-    ) -> dict[str, Any]:
-        """Transitional bridge returning components card dict for legacy callers."""
-        components = cls._build_components(questions, title)
-        return {"components": components}
-
-    @classmethod
-    def _build_components(
-        cls,
-        questions: Sequence[Question | QuestionItem],
-        title: str = "Questionnaire",
-    ) -> list[dict[str, Any]]:
+        prefix: str = "q",
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         components: list[dict[str, Any]] = [
             {
                 "id": "root",
@@ -156,10 +157,11 @@ class QuestionnaireBuilder:
 
         root_children = ["title_text"]
         submit_context: dict[str, Any] = {}
+        schema_questions: list[dict[str, Any]] = []
 
         for idx, item in enumerate(questions, start=1):
             q = item.to_question() if isinstance(item, QuestionItem) else item
-            q_id = f"q_{idx}_{_to_snake_id(q.body)[:24]}"
+            q_id = f"{prefix}_{idx}_{_to_snake_id(q.body)[:24]}"
             q_text_id = f"{q_id}_text"
             q_choice_id = f"{q_id}_choices"
 
@@ -183,17 +185,43 @@ class QuestionnaireBuilder:
                     "component": "ChoiceSet",
                     "isMultiSelect": q.multiple_choice,
                     "choices": choices,
-                    "value": [] if q.multiple_choice else "",
+                    "value": {"path": f"/{q_id}"},
                 }
             )
 
             root_children.extend([q_text_id, q_choice_id])
-            submit_context[q_id] = {"path": f"/components/{q_choice_id}/value"}
+            submit_context[q_id] = {"path": f"/{q_id}"}
+
+            writein_id = None
+            if q.write_in:
+                writein_id = f"{q_id}_writein"
+                components.append(
+                    {
+                        "id": writein_id,
+                        "component": "TextField",
+                        "label": "Other / Write-in:",
+                        "value": {"path": f"/{writein_id}"},
+                    }
+                )
+                root_children.append(writein_id)
+                submit_context[writein_id] = {"path": f"/{writein_id}"}
+
+            schema_questions.append(
+                {
+                    "id": q_id,
+                    "body": q.body,
+                    "multiple_choice": q.multiple_choice,
+                    "write_in": q.write_in,
+                    "writein_id": writein_id,
+                    "options": {_to_option_value(ans): ans for ans in q.answers},
+                }
+            )
 
         submit_btn_id = "submit-btn"
         submit_label_id = "submit-label"
         root_children.append(submit_btn_id)
 
+        action_name = "submit_questionnaire" if prefix == "q" else "submit_form"
         components.append(
             {
                 "id": submit_btn_id,
@@ -202,7 +230,7 @@ class QuestionnaireBuilder:
                 "variant": "primary",
                 "action": {
                     "event": {
-                        "name": "submit_questionnaire",
+                        "name": action_name,
                         "context": submit_context,
                     }
                 },
@@ -217,6 +245,25 @@ class QuestionnaireBuilder:
         )
 
         components[0]["children"] = root_children
+        return components, schema_questions
+
+    @classmethod
+    def build_card(
+        cls,
+        questions: Sequence[Question | QuestionItem],
+        title: str = "Questionnaire",
+    ) -> dict[str, Any]:
+        """Transitional bridge returning components card dict for legacy callers."""
+        components, _ = cls._build_components_and_schema(questions, title, prefix="q")
+        return {"components": components}
+
+    @classmethod
+    def _build_components(
+        cls,
+        questions: Sequence[Question | QuestionItem],
+        title: str = "Questionnaire",
+    ) -> list[dict[str, Any]]:
+        components, _ = cls._build_components_and_schema(questions, title, prefix="q")
         return components
 
     @classmethod
@@ -230,7 +277,9 @@ class QuestionnaireBuilder:
         exposition: Literal["tabbed", "embedded"] = "embedded",
     ) -> str:
         """Create an atomic questionnaire artifact instance."""
-        components = cls._build_components(questions, title)
+        components, schema_questions = cls._build_components_and_schema(
+            questions, title, prefix="q"
+        )
         manifest = ArtifactManifest(
             name=title,
             exposition=exposition,
@@ -247,13 +296,25 @@ class QuestionnaireBuilder:
             ],
         )
 
-        return ArtifactBuilder.create_artifact(
+        inst_uuid = ArtifactBuilder.create_artifact(
             artifacts_dir=artifacts_dir,
             family="questionnaires",
             manifest=manifest,
             components=components,
             uuid=uuid,
+            initial_data={
+                q_info["id"]: [] if q_info["multiple_choice"] else "" for q_info in schema_questions
+            },
         )
+
+        # Persist schema.json for translating IDs back to question text and option labels
+        schema_file = artifacts_dir / "questionnaires" / inst_uuid / "schema.json"
+        schema_file.write_text(
+            json.dumps({"family": "questionnaires", "questions": schema_questions}, indent=2),
+            encoding="utf-8",
+        )
+
+        return inst_uuid
 
 
 class FormBuilder:
@@ -273,84 +334,11 @@ class FormBuilder:
     ) -> str:
         """Create an atomic tabbed form artifact instance."""
         items = fields if fields is not None else (questions or [])
-        components: list[dict[str, Any]] = [
-            {
-                "id": "root",
-                "component": "Column",
-                "children": ["title_text"],
-            },
-            {
-                "id": "title_text",
-                "component": "Text",
-                "text": title,
-                "variant": "h2",
-            },
-        ]
-
-        root_children = ["title_text"]
-        submit_context: dict[str, Any] = {}
-
-        for idx, item in enumerate(items, start=1):
-            q = item.to_question() if isinstance(item, QuestionItem) else item
-            q_id = f"f_{idx}_{_to_snake_id(q.body)[:24]}"
-            q_text_id = f"{q_id}_text"
-            q_choice_id = f"{q_id}_choices"
-
-            components.append(
-                {
-                    "id": q_text_id,
-                    "component": "Text",
-                    "text": q.body,
-                    "variant": "bold",
-                }
-            )
-
-            choices = [
-                {"id": f"{q_id}_opt_{i}", "label": ans, "value": _to_option_value(ans)}
-                for i, ans in enumerate(q.answers, start=1)
-            ]
-
-            components.append(
-                {
-                    "id": q_choice_id,
-                    "component": "ChoiceSet",
-                    "isMultiSelect": q.multiple_choice,
-                    "choices": choices,
-                    "value": [] if q.multiple_choice else "",
-                }
-            )
-
-            root_children.extend([q_text_id, q_choice_id])
-            submit_context[q_id] = {"path": f"/components/{q_choice_id}/value"}
+        components, schema_questions = QuestionnaireBuilder._build_components_and_schema(
+            items, title, prefix="f"
+        )
 
         submit_btn_id = "submit-btn"
-        submit_label_id = "submit-label"
-        root_children.append(submit_btn_id)
-
-        components.append(
-            {
-                "id": submit_btn_id,
-                "component": "Button",
-                "child": submit_label_id,
-                "variant": "primary",
-                "action": {
-                    "event": {
-                        "name": "submit_form",
-                        "context": submit_context,
-                    }
-                },
-            }
-        )
-        components.append(
-            {
-                "id": submit_label_id,
-                "component": "Text",
-                "text": "Submit",
-            }
-        )
-
-        components[0]["children"] = root_children
-
         manifest = ArtifactManifest(
             name=title,
             exposition=exposition,
@@ -367,13 +355,25 @@ class FormBuilder:
             ],
         )
 
-        return ArtifactBuilder.create_artifact(
+        inst_uuid = ArtifactBuilder.create_artifact(
             artifacts_dir=artifacts_dir,
             family="forms",
             manifest=manifest,
             components=components,
             uuid=uuid,
+            initial_data={
+                q_info["id"]: [] if q_info["multiple_choice"] else "" for q_info in schema_questions
+            },
         )
+
+        # Persist schema.json for translating IDs back to field text and option labels
+        schema_file = artifacts_dir / "forms" / inst_uuid / "schema.json"
+        schema_file.write_text(
+            json.dumps({"family": "forms", "questions": schema_questions}, indent=2),
+            encoding="utf-8",
+        )
+
+        return inst_uuid
 
 
 class PlanBuilder:
@@ -648,31 +648,88 @@ def dispatch_button_click(
         msg = f"Button '{button_id}' has exhausted its remaining clicks."
         raise ValueError(msg)
 
-    # 3. Persist interaction payload
+    # 3. Translate context if schema.json exists
+    raw_context = dict(context)
+    translated_context = dict(context)
+
+    schema_file = inst_dir / "schema.json"
+    if schema_file.is_file():
+        try:
+            schema_data = json.loads(schema_file.read_text(encoding="utf-8"))
+            translated_context = {}
+            questions_list = schema_data.get("questions", [])
+            for q_info in questions_list:
+                q_id = q_info.get("id")
+                q_body = q_info.get("body") or q_id
+                options_map = q_info.get("options", {})
+                writein_id = q_info.get("writein_id")
+
+                raw_choice = context.get(q_id)
+                choice_translated = None
+                if isinstance(raw_choice, list):
+                    choice_translated = [options_map.get(v, v) for v in raw_choice if v]
+                elif raw_choice is not None and str(raw_choice).strip():
+                    choice_translated = options_map.get(str(raw_choice), str(raw_choice))
+
+                writein_val = context.get(writein_id) if writein_id else None
+                if writein_val is not None:
+                    writein_val = str(writein_val).strip()
+
+                if writein_val:
+                    if choice_translated:
+                        translated_context[q_body] = {
+                            "selection": choice_translated,
+                            "write_in": writein_val,
+                        }
+                    else:
+                        translated_context[q_body] = {"write_in": writein_val}
+                elif choice_translated is not None:
+                    translated_context[q_body] = choice_translated
+
+            # Include any remaining keys not mapped to questions
+            all_known = {
+                k
+                for q_info in questions_list
+                for k in (q_info.get("id"), q_info.get("writein_id"))
+                if k
+            }
+            for k, v in context.items():
+                if k not in all_known:
+                    translated_context[k] = v
+        except Exception:
+            logger.exception("Failed to translate click context using schema.json")
+            translated_context = dict(context)
+
+    # 4. Persist interaction payload
     interactions_dir = inst_dir / "interactions"
     interactions_dir.mkdir(parents=True, exist_ok=True)
     interaction_file = interactions_dir / f"{button_id}.json"
 
+    saved_payload = {
+        **translated_context,
+    }
+
     if btn_config.mode == "append":
         with interaction_file.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(context) + "\n")
+            f.write(json.dumps(saved_payload) + "\n")
     else:
-        interaction_file.write_text(json.dumps(context, indent=2), encoding="utf-8")
+        interaction_file.write_text(json.dumps(saved_payload, indent=2), encoding="utf-8")
 
-    # 4. Decrement quota if integer
+    # 5. Decrement quota if integer
     if isinstance(current_clicks, int):
         clicks_left[button_id] = current_clicks - 1
     else:
         clicks_left[button_id] = current_clicks
 
-    # 5. Accumulate into dataModel
-    data_model.update(context)
+    # 6. Accumulate into dataModel
+    data_model.update(raw_context)
+    data_model.update(translated_context)
 
-    # 6. Save updated state.json
+    # 7. Save updated state.json
     new_state = ArtifactState(dataModel=data_model, clicksLeft=clicks_left)
     state_file.write_text(new_state.model_dump_json(indent=2), encoding="utf-8")
 
-    # 7. Check closing
+    # 8. Check closing
     if btn_config.closing:
         (inst_dir / "closed.marker").touch(exist_ok=True)
 
@@ -680,7 +737,8 @@ def dispatch_button_click(
     return ClickResult(
         artifact_id=uuid,
         button_id=button_id,
-        context=context,
+        context=translated_context,
+        raw_context=raw_context,
         timestamp=mtime,
     )
 

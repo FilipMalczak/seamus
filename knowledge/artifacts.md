@@ -36,11 +36,17 @@ All artifacts are persisted within the session workspace under `<session_dir>/ar
         ├── manifest.json         # Presentation, blocking cadence, and button rules
         ├── body.json             # Declarative A2UI component list
         ├── state.json            # Accumulated dataModel and remaining click counters
+        ├── schema.json           # (Optional) Domain schema mapping IDs to original text/labels
         ├── closed.marker         # Marker file indicating artifact is closed (empty or non-empty)
         └── interactions/         # Evaluated button click payloads
             ├── <button_id_1>.json
             └── <button_id_2>.json
 ```
+
+### Specialized Family Extensions
+
+The artifact filesystem layout is intentionally open to family-specific extensions rather than forcing family metadata into runtime state or ad-hoc data models. Specialized artifact families may store supplementary read-only definition files alongside the core files:
+- `schema.json`: In `questionnaires` and `forms`, stores the original prompts, option label dictionaries, and write-in specifications. The harness uses `schema.json` upon button dispatch to translate submitted component keys and choice slugs back into human-readable question text and user-facing labels for agent consumption, cleanly separating presentation mapping from runtime `dataModel`.
 
 ### Persistence Invariants
 

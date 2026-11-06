@@ -403,3 +403,74 @@ def test_system_prompt_user_inquiry_section() -> None:
     assert "make_form" in prompt_plan
     assert "make_questionnaire" in prompt_plan
     assert "make_artifact" in prompt_plan
+
+
+def test_questionnaire_write_in_and_schema_translation(tmp_path: Path) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    questions = [
+        Question(
+            body="Primary language?",
+            answers=["Python", "TypeScript", "Rust"],
+            multiple_choice=False,
+            write_in=True,
+        ),
+        Question(
+            body="Target platforms?",
+            answers=["Linux", "macOS", "Windows"],
+            multiple_choice=True,
+            write_in=False,
+        ),
+    ]
+
+    q_uuid = QuestionnaireBuilder.create_questionnaire(
+        artifacts_dir=artifacts_dir,
+        questions=questions,
+        title="Stack Questionnaire",
+    )
+
+    art_dir = artifacts_dir / "questionnaires" / q_uuid
+    assert (art_dir / "schema.json").is_file()
+    assert (art_dir / "body.json").is_file()
+
+    # Check body components: ChoiceSet value bound to path, TextField for write-in
+    components = json.loads((art_dir / "body.json").read_text(encoding="utf-8"))
+    choice_sets = [c for c in components if c.get("component") == "ChoiceSet"]
+    text_fields = [c for c in components if c.get("component") == "TextField"]
+    button = next(c for c in components if c.get("component") == "Button")
+
+    assert len(choice_sets) == 2
+    assert len(text_fields) == 1
+    assert choice_sets[0]["value"] == {"path": "/q_1_primary_language"}
+    assert text_fields[0]["value"] == {"path": "/q_1_primary_language_writein"}
+    assert text_fields[0]["label"] == "Other / Write-in:"
+
+    # Action context binds to data model paths
+    ctx = button["action"]["event"]["context"]
+    assert ctx["q_1_primary_language"] == {"path": "/q_1_primary_language"}
+    assert ctx["q_1_primary_language_writein"] == {"path": "/q_1_primary_language_writein"}
+    assert ctx["q_2_target_platforms"] == {"path": "/q_2_target_platforms"}
+
+    # Simulate client submitting raw values
+    raw_submission = {
+        "q_1_primary_language": "python",
+        "q_1_primary_language_writein": "With PyPy support",
+        "q_2_target_platforms": ["linux", "macos"],
+    }
+
+    result = dispatch_button_click(
+        artifacts_dir=artifacts_dir,
+        family="questionnaires",
+        uuid=q_uuid,
+        button_id="submit-btn",
+        context=raw_submission,
+    )
+
+    # raw_context has original IDs
+    assert result.raw_context == raw_submission
+
+    # context has translated human-readable text and labels
+    assert result.context["Primary language?"] == {
+        "selection": "Python",
+        "write_in": "With PyPy support",
+    }
+    assert result.context["Target platforms?"] == ["Linux", "macOS"]

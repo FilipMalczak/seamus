@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { A2uiSurface } from "@a2ui/react/v0_9";
+import { A2uiSurface, MarkdownContext } from "@a2ui/react/v0_9";
 import { MessageProcessor } from "@a2ui/web_core/v0_9";
-import { basicCatalog } from "@a2ui/web_core/v0_9/basic_catalog";
+import { basicCatalog, setMarkdownRenderer } from "@a2ui/web_core/v0_9/basic_catalog";
 import { injectStyles } from "@a2ui/react/styles";
+import MarkdownIt from "markdown-it";
 import {
   AlertCircle,
   CheckCircle2,
@@ -13,6 +14,15 @@ import {
   Trash2,
 } from "lucide-react";
 import type { ArtifactInfo } from "../api/types";
+
+const md = new MarkdownIt({
+  html: false,
+  linkify: true,
+  breaks: true,
+});
+
+const defaultMarkdownRenderer = async (text: string) => md.render(text);
+setMarkdownRenderer(defaultMarkdownRenderer);
 
 interface ActionPayload {
   name: string;
@@ -60,17 +70,22 @@ function normalizeComponents(components: Array<Record<string, any>>): Array<Reco
       return { ...comp, variant, text };
     }
 
-    if (comp.component === "ChoiceSet") {
-      const isMulti = Boolean(comp.isMultiSelect);
+    if (comp.component === "ChoiceSet" || comp.component === "ChoicePicker") {
+      const isMulti = Boolean(comp.isMultiSelect || comp.variant === "multipleSelection");
       const options = (comp.choices || comp.options || []).map((opt: any) => ({
         label: opt.label || opt.text || opt.value || opt.id || "",
         value: String(opt.value || opt.id || ""),
       }));
-      const val = Array.isArray(comp.value)
-        ? comp.value.map(String)
-        : comp.value
-          ? [String(comp.value)]
-          : [];
+      let val = comp.value;
+      if (val && typeof val === "object" && "path" in val) {
+        // Data model pointer: preserve { path: "..." }
+      } else if (Array.isArray(val)) {
+        val = val.map(String);
+      } else if (val !== undefined && val !== null && val !== "") {
+        val = [String(val)];
+      } else {
+        val = [];
+      }
       return {
         id: comp.id,
         component: "ChoicePicker",
@@ -80,12 +95,18 @@ function normalizeComponents(components: Array<Record<string, any>>): Array<Reco
       };
     }
 
-    if (comp.component === "TextInput") {
+    if (comp.component === "TextInput" || comp.component === "TextField") {
+      let val = comp.value;
+      if (val && typeof val === "object" && "path" in val) {
+        // Data model pointer: preserve { path: "..." }
+      } else if (val === undefined || val === null) {
+        val = "";
+      }
       return {
         id: comp.id,
         component: "TextField",
         label: comp.label || comp.placeholder || "",
-        value: comp.value || "",
+        value: val,
       };
     }
 
@@ -162,29 +183,62 @@ export function A2UIArtifactRenderer({
     setComments((prev) => prev.filter((c) => c.id !== id));
   };
 
-  // Initialize and update A2UI MessageProcessor surface
+  const procRef = useRef<MessageProcessor | null>(null);
+  const callbacksRef = useRef({
+    artifact,
+    onSubmit,
+    onClickButton,
+    isSubmitting,
+    isClosed,
+    isCommentable,
+    comments,
+  });
+
+  useEffect(() => {
+    callbacksRef.current = {
+      artifact,
+      onSubmit,
+      onClickButton,
+      isSubmitting,
+      isClosed,
+      isCommentable,
+      comments,
+    };
+  });
+
+  // Initialize A2UI MessageProcessor surface
   useEffect(() => {
     injectStyles();
 
     const proc = new MessageProcessor([basicCatalog], (action: ActionPayload) => {
-      if (isClosed || isSubmitting) return;
+      const {
+        artifact: curArtifact,
+        onSubmit: curOnSubmit,
+        onClickButton: curOnClickButton,
+        isSubmitting: curIsSubmitting,
+        isClosed: curIsClosed,
+        isCommentable: curIsCommentable,
+        comments: curComments,
+      } = callbacksRef.current;
+
+      if (curIsClosed || curIsSubmitting) return;
 
       const buttonId = action.sourceComponentId;
-      const manifestBtn = (artifact.manifest?.buttons || []).find((b) => b.id === buttonId);
+      const manifestBtn = (curArtifact.manifest?.buttons || []).find((b) => b.id === buttonId);
       if (!manifestBtn) {
         console.warn(`[A2UI] Button "${buttonId}" clicked but not declared in manifest.`);
         return;
       }
 
-      const clicksLeft = artifact.state?.clicksLeft?.[buttonId];
+      const clicksLeft = curArtifact.state?.clicksLeft?.[buttonId];
       if (typeof clicksLeft === "number" && clicksLeft <= 0) {
         console.warn(`[A2UI] Button "${buttonId}" has exhausted clicks.`);
         return;
       }
 
       const evaluatedContext: Record<string, unknown> = { ...(action.context || {}) };
-      if (isCommentable && comments.length > 0) {
-        evaluatedContext.comments = comments.map((c) => ({
+      if (curIsCommentable && curComments.length > 0) {
+        evaluatedContext.comments = curComments.map((c) => ({
           location: c.location,
           selectedText: c.selectedText,
           comment: c.comment,
@@ -192,8 +246,8 @@ export function A2UIArtifactRenderer({
       }
 
       try {
-        onClickButton?.(buttonId, evaluatedContext);
-        onSubmit?.({
+        curOnClickButton?.(buttonId, evaluatedContext);
+        curOnSubmit?.({
           button_id: buttonId,
           ...evaluatedContext,
         });
@@ -201,6 +255,8 @@ export function A2UIArtifactRenderer({
         setSubmitError(err?.message || "Failed to process button click.");
       }
     });
+
+    procRef.current = proc;
 
     try {
       const rawComponents = (artifact.body || (artifact.card as any)?.components || []) as Array<
@@ -242,21 +298,36 @@ export function A2UIArtifactRenderer({
 
     return () => {
       proc.dispose();
+      if (procRef.current === proc) {
+        procRef.current = null;
+      }
     };
-  }, [
-    surfaceId,
-    artifact.body,
-    artifact.card,
-    artifact.state,
-    artifact.data,
-    artifact.manifest,
-    isClosed,
-    isSubmitting,
-    isCommentable,
-    comments,
-    onClickButton,
-    onSubmit,
-  ]);
+  }, [surfaceId, artifact.uuid, artifact.name]);
+
+  // Synchronize server-side dataModel updates if state changes externally
+  const lastStateModelRef = useRef<string>("");
+  useEffect(() => {
+    const proc = procRef.current;
+    if (!proc || !artifact.state?.dataModel) return;
+    const modelStr = JSON.stringify(artifact.state.dataModel);
+    if (modelStr !== lastStateModelRef.current) {
+      lastStateModelRef.current = modelStr;
+      try {
+        proc.processMessages([
+          {
+            version: "v0.9",
+            updateDataModel: {
+              surfaceId,
+              path: "/",
+              value: artifact.state.dataModel,
+            },
+          },
+        ]);
+      } catch (err) {
+        console.warn("[A2UI] Failed to update external dataModel:", err);
+      }
+    }
+  }, [surfaceId, artifact.state?.dataModel]);
 
   const displayTitle =
     artifact.manifest?.name ||
@@ -383,7 +454,9 @@ export function A2UIArtifactRenderer({
                 isClosed ? "pointer-events-none opacity-80" : ""
               }`}
             >
-              <A2uiSurface surface={surface} />
+              <MarkdownContext.Provider value={defaultMarkdownRenderer}>
+                <A2uiSurface surface={surface} />
+              </MarkdownContext.Provider>
             </div>
           ) : (
             <p className="artifact-loading">Initializing A2UI surface...</p>
