@@ -40,6 +40,14 @@ interface CommentRecord {
   timestamp: string;
 }
 
+interface PendingCommentState {
+  location: string;
+  selectedText: string;
+  comment: string;
+  top: number;
+  left: number;
+}
+
 interface A2UIArtifactRendererProps {
   artifact: ArtifactInfo;
   onSubmit?: (data: Record<string, unknown>) => Promise<void> | void;
@@ -130,19 +138,27 @@ export function A2UIArtifactRenderer({
 
   // Inline comments state
   const [comments, setComments] = useState<CommentRecord[]>([]);
-  const [pendingComment, setPendingComment] = useState<{
-    location: string;
-    selectedText: string;
-    comment: string;
-  } | null>(null);
+  const [pendingComment, setPendingComment] = useState<PendingCommentState | null>(null);
 
   const surfaceContainerRef = useRef<HTMLDivElement>(null);
+  const contentContainerRef = useRef<HTMLDivElement>(null);
+  const commentTextareaRef = useRef<HTMLTextAreaElement>(null);
   const surfaceId = useMemo(
     () => artifact.uuid || artifact.name || "artifact-surface",
     [artifact.uuid, artifact.name]
   );
 
   const [surface, setSurface] = useState<any>(null);
+
+  // Auto-focus comment input when opened
+  useEffect(() => {
+    if (pendingComment) {
+      const timer = setTimeout(() => {
+        commentTextareaRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [pendingComment?.location]);
 
   // Text selection handler for inline commenting
   const handleMouseUp = useCallback(() => {
@@ -154,15 +170,37 @@ export function A2UIArtifactRenderer({
     if (selectedText.length < 2) return;
 
     const range = sel.getRangeAt(0);
+    const container = surfaceContainerRef.current;
+    if (!container || !container.contains(range.commonAncestorContainer)) return;
+
+    const contentEl = contentContainerRef.current;
+    if (!contentEl) return;
+
     const startNode = range.startContainer;
     const parentEl = startNode.parentElement;
     const lineIndex = parentEl ? Array.from(parentEl.parentElement?.children || []).indexOf(parentEl) + 1 : 1;
     const location = `L${Math.max(1, lineIndex)}:${range.startOffset + 1}`;
 
+    const contentRect = contentEl.getBoundingClientRect();
+    const rangeRect = range.getBoundingClientRect();
+
+    const popoverWidth = 360;
+    const popoverHeight = 160;
+
+    let top = rangeRect.bottom - contentRect.top + contentEl.scrollTop + 8;
+    if (top + popoverHeight > contentEl.scrollHeight && rangeRect.top - contentRect.top - popoverHeight - 8 > 0) {
+      top = rangeRect.top - contentRect.top + contentEl.scrollTop - popoverHeight - 8;
+    }
+
+    let left = rangeRect.left - contentRect.left + (rangeRect.width / 2) - (popoverWidth / 2);
+    left = Math.max(12, Math.min(left, contentRect.width - popoverWidth - 12));
+
     setPendingComment({
       location,
       selectedText,
       comment: "",
+      top: Math.round(top),
+      left: Math.round(left),
     });
   }, [isCommentable]);
 
@@ -398,6 +436,7 @@ export function A2UIArtifactRenderer({
       {/* Main body area */}
       {(!isEmbedded || expanded) && (
         <div
+          ref={contentContainerRef}
           className={`artifact-card-content ${
             artifact.is_closed ? "artifact-surface-disabled" : ""
           }`}
@@ -409,27 +448,48 @@ export function A2UIArtifactRenderer({
             </div>
           )}
 
-          {/* Pending inline comment editor popover */}
+          {/* Floating inline comment popover */}
           {pendingComment && isCommentable && (
-            <div className="p-3 rounded-xl border border-sky-500/40 bg-zinc-950/95 shadow-xl flex flex-col gap-2.5 z-20 mb-3">
-              <div className="flex items-center justify-between text-xs text-zinc-400">
-                <span className="font-medium text-sky-400">Comment on &quot;{pendingComment.selectedText}&quot;</span>
-                <span className="font-mono text-[11px]">{pendingComment.location}</span>
+            <div
+              className="artifact-comment-popover"
+              style={{
+                top: `${pendingComment.top}px`,
+                left: `${pendingComment.left}px`,
+              }}
+            >
+              <div className="artifact-comment-popover-header">
+                <span className="artifact-comment-target-quote" title={pendingComment.selectedText}>
+                  Comment on &ldquo;{pendingComment.selectedText}&rdquo;
+                </span>
+                <span className="artifact-comment-loc-badge">{pendingComment.location}</span>
               </div>
               <textarea
+                ref={commentTextareaRef}
                 value={pendingComment.comment}
                 onChange={(e) =>
                   setPendingComment((prev) => (prev ? { ...prev, comment: e.target.value } : null))
                 }
-                placeholder="Type your comment or instruction here..."
-                rows={2}
-                className="w-full px-3 py-2 text-sm bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-sky-500 resize-none"
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setPendingComment(null);
+                  } else if (
+                    e.key === "Enter" &&
+                    (e.ctrlKey || e.metaKey) &&
+                    pendingComment.comment.trim()
+                  ) {
+                    e.preventDefault();
+                    handleAddComment();
+                  }
+                }}
+                placeholder="Type your comment... (Ctrl+Enter to save, Esc to cancel)"
+                rows={3}
+                className="artifact-comment-textarea"
               />
-              <div className="flex items-center justify-end gap-2">
+              <div className="artifact-comment-popover-actions">
                 <button
                   type="button"
                   onClick={() => setPendingComment(null)}
-                  className="px-2.5 py-1 text-xs text-zinc-400 hover:text-zinc-200"
+                  className="artifact-comment-cancel-btn"
                 >
                   Cancel
                 </button>
@@ -437,7 +497,7 @@ export function A2UIArtifactRenderer({
                   type="button"
                   disabled={!pendingComment.comment.trim()}
                   onClick={handleAddComment}
-                  className="px-3 py-1 text-xs bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white rounded-md font-medium"
+                  className="artifact-comment-submit-btn"
                 >
                   Add Comment
                 </button>
@@ -470,30 +530,40 @@ export function A2UIArtifactRenderer({
 
           {/* Review comments list */}
           {isCommentable && comments.length > 0 && (
-            <div className="flex flex-col gap-2 pt-3 border-t border-zinc-800">
-              <span className="text-xs font-semibold text-zinc-400">Comments for Agent ({comments.length}):</span>
-              {comments.map((comm) => (
-                <div
-                  key={comm.id}
-                  className="p-2.5 rounded-lg bg-zinc-950/60 border border-zinc-800/80 flex items-start justify-between gap-3 text-xs"
-                >
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[11px] font-mono text-sky-400">
-                      {comm.location}: &quot;{comm.selectedText}&quot;
-                    </span>
-                    <span className="text-zinc-200">{comm.comment}</span>
+            <div className="artifact-comments-section">
+              <div className="artifact-comments-header">
+                <span className="artifact-comments-title">
+                  Attached Comments ({comments.length})
+                </span>
+                <span className="artifact-comments-subtitle">
+                  Will be submitted with your next action
+                </span>
+              </div>
+              <div className="artifact-comments-list">
+                {comments.map((comm) => (
+                  <div key={comm.id} className="artifact-comment-card">
+                    <div className="artifact-comment-card-content">
+                      <div className="artifact-comment-card-meta">
+                        <span className="artifact-comment-card-loc">{comm.location}</span>
+                        <span className="artifact-comment-card-quote">
+                          &ldquo;{comm.selectedText}&rdquo;
+                        </span>
+                      </div>
+                      <div className="artifact-comment-card-body">{comm.comment}</div>
+                    </div>
+                    {!isClosed && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveComment(comm.id)}
+                        className="artifact-comment-remove-btn"
+                        title="Remove comment"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    )}
                   </div>
-                  {!isClosed && (
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveComment(comm.id)}
-                      className="text-zinc-500 hover:text-rose-400 transition-colors p-1"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
-                  )}
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           )}
         </div>

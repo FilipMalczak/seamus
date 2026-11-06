@@ -3859,6 +3859,7 @@ a.changes-pr-badge:hover {
 }
 
 .artifact-card-content {
+  position: relative;
   padding: 1.25rem 1.4rem;
   background: #131c2d;
   color: #f1f5f9;
@@ -3900,6 +3901,231 @@ a.changes-pr-badge:hover {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+/* Floating Inline Comment Popover */
+.artifact-comment-popover {
+  position: absolute;
+  width: 360px;
+  max-width: calc(100% - 24px);
+  z-index: 50;
+  background: #0f172a;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 12px 36px -4px rgba(0, 0, 0, 0.75), 0 4px 12px rgba(0, 0, 0, 0.5);
+  animation: commentPopoverFadeIn 0.15s ease-out;
+}
+
+@keyframes commentPopoverFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.artifact-comment-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.75rem;
+}
+
+.artifact-comment-target-quote {
+  font-weight: 500;
+  color: #38bdf8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 250px;
+}
+
+.artifact-comment-loc-badge {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.7rem;
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.artifact-comment-textarea {
+  width: 100%;
+  background: #080d1a;
+  border: 1px solid #29384e;
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: #f1f5f9;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  resize: none;
+  font-family: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  box-sizing: border-box;
+}
+
+.artifact-comment-textarea::placeholder {
+  color: #64748b;
+}
+
+.artifact-comment-textarea:focus {
+  outline: none;
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
+}
+
+.artifact-comment-popover-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.artifact-comment-cancel-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.artifact-comment-cancel-btn:hover {
+  color: #f1f5f9;
+}
+
+.artifact-comment-submit-btn {
+  background: #0284c7;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.artifact-comment-submit-btn:hover:not(:disabled) {
+  background: #0369a1;
+}
+
+.artifact-comment-submit-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Attached Review Comments Section */
+.artifact-comments-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid #223044;
+}
+
+.artifact-comments-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.artifact-comments-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.artifact-comments-subtitle {
+  font-size: 0.7rem;
+  color: #64748b;
+}
+
+.artifact-comments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.artifact-comment-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(8, 13, 26, 0.6);
+  border: 1px solid #202d40;
+}
+
+.artifact-comment-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.artifact-comment-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+}
+
+.artifact-comment-card-loc {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.68rem;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.1);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.artifact-comment-card-quote {
+  color: #94a3b8;
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artifact-comment-card-body {
+  color: #e2e8f0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.artifact-comment-remove-btn {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  padding: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.artifact-comment-remove-btn:hover {
+  color: #f43f5e;
 }
 
 .blocking-artifact-notice {
