@@ -227,6 +227,68 @@ def test_plan_builder_lifecycle(tmp_path: Path) -> None:
     assert plan_info.state.clicksLeft.get("proceed-btn") == 0
 
 
+def test_plan_review_button_and_unlimited_clicks(tmp_path: Path) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    plan_uuid = "plan-review-test"
+    content = "# Architecture\n\n- Component A\n- Component B"
+
+    PlanBuilder.create_plan(artifacts_dir, plan_uuid, content=content, title="Arch Plan")
+    plan_dir = artifacts_dir / "plans" / plan_uuid
+
+    # Verify body.json has a valid Button component for review-btn with label Review
+    body_data = json.loads((plan_dir / "body.json").read_text(encoding="utf-8"))
+    components_by_id = {c["id"]: c for c in body_data}
+    assert "review-btn" in components_by_id
+    assert components_by_id["review-btn"]["component"] == "Button"
+    assert components_by_id["review-btn"]["variant"] == "default"
+    assert components_by_id["review-btn"]["child"] == "review-label"
+    assert components_by_id["review-label"]["component"] == "Text"
+    assert components_by_id["review-label"]["text"] == "Review"
+
+    # Verify manifest.json declares review-btn with clicks="*" and mode="append"
+    manifest_data = json.loads((plan_dir / "manifest.json").read_text(encoding="utf-8"))
+    btns = {b["id"]: b for b in manifest_data["buttons"]}
+    assert "review-btn" in btns
+    assert btns["review-btn"]["clicks"] == "*"
+    assert btns["review-btn"]["mode"] == "append"
+    assert btns["review-btn"]["closing"] is False
+
+    # Dispatch multiple review clicks with comments payload
+    for i in range(3):
+        res = dispatch_button_click(
+            artifacts_dir=artifacts_dir,
+            family="plans",
+            uuid=plan_uuid,
+            button_id="review-btn",
+            context={
+                "comments": [
+                    {
+                        "location": "p:0",
+                        "selectedText": "Component A",
+                        "comment": f"Feedback {i + 1}",
+                    }
+                ]
+            },
+        )
+        assert res.button_id == "review-btn"
+        assert len(res.context["comments"]) == 1
+        assert res.context["comments"][0]["comment"] == f"Feedback {i + 1}"
+
+    # Verify interactions/review-btn.json has 3 appended records
+    int_file = plan_dir / "interactions" / "review-btn.json"
+    assert int_file.is_file()
+    lines = [line for line in int_file.read_text(encoding="utf-8").strip().splitlines() if line]
+    assert len(lines) == 3
+    assert json.loads(lines[0])["comments"][0]["comment"] == "Feedback 1"
+    assert json.loads(lines[1])["comments"][0]["comment"] == "Feedback 2"
+    assert json.loads(lines[2])["comments"][0]["comment"] == "Feedback 3"
+
+    # Verify state.json retains clicks="*" and artifact is not closed
+    state_data = json.loads((plan_dir / "state.json").read_text(encoding="utf-8"))
+    assert state_data["clicksLeft"]["review-btn"] == "*"
+    assert not (plan_dir / "closed.marker").exists()
+
+
 def test_dispatch_button_click_modes_and_quotas(tmp_path: Path) -> None:
     artifacts_dir = tmp_path / "artifacts"
     manifest = ArtifactManifest(

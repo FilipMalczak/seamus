@@ -76,7 +76,7 @@ Clickable button initiating an action event.
 ```
 - `id`: Button ID. **Must be listed in `manifest.json` under `buttons`**, or clicks will be ignored!
 - `child`: ID of child `Text` component providing the label.
-- `variant`: `"primary" | "secondary" | "danger"`
+- `variant`: `"default" | "primary" | "borderless"` (A2UI basicCatalog standard: `primary` for main CTA, `default` for neutral/secondary action, `borderless` for text-link style).
 - `action.event.context`: Dictionary mapping output keys to JSON pointers (e.g. `/components/<component_id>/value`). Evaluated when the button is clicked.
 
 ### 5. Layout Containers: `Column`, `Row`, `Container`, `Card`

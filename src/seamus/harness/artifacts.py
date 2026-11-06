@@ -411,7 +411,7 @@ class PlanBuilder:
             {
                 "id": "root",
                 "component": "Column",
-                "children": ["plan_header", "plan_content", "review_actions", "plan_actions"],
+                "children": ["plan_header", "plan_content", "plan_actions"],
             },
             {
                 "id": "plan_header",
@@ -425,28 +425,26 @@ class PlanBuilder:
                 "text": content,
             },
             {
-                "id": "review_actions",
+                "id": "plan_actions",
                 "component": "Row",
-                "children": ["review-btn"],
+                "children": ["review-btn", "proceed-btn"],
             },
             {
                 "id": "review-btn",
-                "component": "Review",
+                "component": "Button",
                 "child": "review-label",
-                "variant": "secondary",
+                "variant": "default",
                 "action": {
-                    "comments": "push",
+                    "event": {
+                        "name": "review_plan",
+                        "context": {},
+                    }
                 },
             },
             {
                 "id": "review-label",
                 "component": "Text",
-                "text": "Submit Review Comments",
-            },
-            {
-                "id": "plan_actions",
-                "component": "Row",
-                "children": ["proceed-btn"],
+                "text": "Review",
             },
             {
                 "id": "proceed-btn",
@@ -476,18 +474,18 @@ class PlanBuilder:
             commentable=True,
             buttons=[
                 ManifestButton(
-                    id="proceed-btn",
-                    mode="set",
-                    clicks=1,
-                    unblocking=True,
-                    closing=True,
-                ),
-                ManifestButton(
                     id="review-btn",
                     mode="append",
                     clicks="*",
                     unblocking=False,
                     closing=False,
+                ),
+                ManifestButton(
+                    id="proceed-btn",
+                    mode="set",
+                    clicks=1,
+                    unblocking=True,
+                    closing=True,
                 ),
             ],
         )

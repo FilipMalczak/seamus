@@ -240,29 +240,31 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## Not formalized
 
-- add comments to plans (maybe to all the artifacts?) [CRITICAL]
-- once the plan is accepted, when we try to look it up in Changes tab, it takes a moment to load
+- a way to attach to button (in artifact) both data from inputs and comments [low]
+- comments need to be saved in artifact state, not just "review" append log [low]
+- Workspace needs .gitignore; we need to explain to the agent that that file controls what is persistent and what might disappear at any moment
+- proceed/submit buttons disappear from render after closing the artifact [low]
+- test that if we kill the system during run, then agent auto-restarts after system restart [mid/high]
 - once the harness opens a new thread, we should auto-switch there (if we're in the thread from which we switched)
 - session view (its already above, but it has high prio)
-- "branch" icon should be more granular and to the right of bubbles (instead of below)
-- if there is more than 1 artifact and we wanna look it up in inspector renderer, it will fail because surface name is shared ("Surface 'surface' already exists") [MID/HIGH]
+- "branch" icon should be more granular and to the right of bubbles (instead of below); review branching in general - icons placement is bit misleading
 - review and rethink what should happen with artifacts on accept
-- when sending messages is disabled, it should only disable the button and Enter handler; the text field should still be editable (for the sake of preparing a message while agent works)
+- when sending messages is disabled (due to artifact blocking or just agent processing), it should only disable the button and Enter handler; the text field should still be editable (for the sake of preparing a message while agent works)
 - in prompt operating_environment -> filesystem_persistence/execution_sandbox it sounds like the installed stuff is also ephemeric (it is, but its a bug)
-
-- user input variations (actively being designed):
-  - user-accepted tool calls
-  - artifact-based forms that the user can open and fill
-  - in-message UI pieces?
-  - specialized messages?
+- when we open new thread, we should include a bunch of messages from previous thread [mid/high] [I expect a lot out of this]; make the overlap numbers configurable
+- "sync config" (template -> agent <-> session)
+- for the hundreth time, remove 20b default
+- custom sandbox images as part of config; bundle dedicated one w/ seamus [mid/high]
+- multiple mounted repos; this will require us to figure out squashing strategies and how to track which commit corresponds to which across repos [high, but complicated]
+- logfire spans are not grouping agents/sessions/threads as I hoped; besides, GETs pollute the view a lot; besides #2, maybe we could go for embedded span viewer in compse stack?
 
 
 - default implementation selection: decide on system-wide defaults for `todo_implementation` and `skills_implementation` once alternative/native implementations are stabilized
 
-- custom artifacts: see [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md) and [artifacts.md](./artifacts.md) for the atomic `make_artifact` model under `/artifacts/<family>/<uuid>/`.
 
-
-- way forward: disablability of more layers and components; 
+- way, waaaaay forward: disablability of more layers and components; 
   - for sure context compaction, I dont like it
   - disabling specific artifacts (generic are always allowed, in which case we need to mount custom examples directory, which might be a good idea anyway)
+
+- rethink styling and generally UI colors and shapes
   

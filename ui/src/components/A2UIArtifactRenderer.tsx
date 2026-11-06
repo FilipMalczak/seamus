@@ -118,6 +118,17 @@ function normalizeComponents(components: Array<Record<string, any>>): Array<Reco
       };
     }
 
+    if (comp.component === "Button") {
+      let variant = comp.variant;
+      if (variant && !["default", "primary", "borderless"].includes(variant)) {
+        variant = "default";
+      }
+      return {
+        ...comp,
+        ...(variant ? { variant } : {}),
+      };
+    }
+
     return comp;
   });
 }
@@ -275,7 +286,7 @@ export function A2UIArtifactRenderer({
       }
 
       const evaluatedContext: Record<string, unknown> = { ...(action.context || {}) };
-      if (curIsCommentable && curComments.length > 0) {
+      if (curIsCommentable && (curComments.length > 0 || buttonId === "review-btn")) {
         evaluatedContext.comments = curComments.map((c) => ({
           location: c.location,
           selectedText: c.selectedText,
@@ -285,10 +296,18 @@ export function A2UIArtifactRenderer({
 
       try {
         curOnClickButton?.(buttonId, evaluatedContext);
-        curOnSubmit?.({
+        const submitPromise = curOnSubmit?.({
           button_id: buttonId,
           ...evaluatedContext,
         });
+        if (buttonId === "review-btn") {
+          setComments([]);
+        }
+        if (submitPromise && typeof (submitPromise as any).catch === "function") {
+          (submitPromise as Promise<void>).catch((err: any) => {
+            setSubmitError(err?.message || "Failed to process button click.");
+          });
+        }
       } catch (err: any) {
         setSubmitError(err?.message || "Failed to process button click.");
       }
