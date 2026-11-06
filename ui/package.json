@@ -9,6 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@a2ui/react": "^0.15.0",
+    "@a2ui/web_core": "^0.15.0",
     "@pierre/diffs": "^1.6.2",
     "lucide-react": "^1.16.0",
     "markdown-it": "^15.0.3",

@@ -4399,6 +4399,93 @@ a.changes-pr-badge:hover {
   margin: 0 auto;
 }
 
+/* A2UI Official Renderer Host Styles */
+.a2ui-surface-host {
+  color: #f4f4f5;
+  font-family: inherit;
+}
+
+.a2ui-surface-host .a2ui-surface {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.a2ui-surface-host h1,
+.a2ui-surface-host h2,
+.a2ui-surface-host h3 {
+  color: #fafafa;
+  font-weight: 600;
+  margin: 0;
+}
+
+.a2ui-surface-host p {
+  color: #d4d4d8;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.a2ui-surface-host button {
+  background-color: #0284c7;
+  color: #ffffff;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  font-size: 0.875rem;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.a2ui-surface-host button:hover:not(:disabled) {
+  background-color: #0369a1;
+}
+
+.a2ui-surface-host button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.a2ui-surface-host input[type="text"],
+.a2ui-surface-host input[type="number"],
+.a2ui-surface-host textarea {
+  background-color: rgba(9, 9, 11, 0.8);
+  border: 1px solid #27272a;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  color: #f4f4f5;
+  font-size: 0.875rem;
+  width: 100%;
+  outline: none;
+}
+
+.a2ui-surface-host input[type="text"]:focus,
+.a2ui-surface-host textarea:focus {
+  border-color: #38bdf8;
+}
+
+.a2ui-surface-host label {
+  color: #e4e4e7;
+  font-size: 0.875rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.a2ui-surface-host input[type="radio"],
+.a2ui-surface-host input[type="checkbox"] {
+  accent-color: #0ea5e9;
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+}
+
 
 
 

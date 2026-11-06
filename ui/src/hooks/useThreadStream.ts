@@ -42,6 +42,12 @@ export interface StreamErrorDetails {
   traceback?: string;
 }
 
+function getToolArg(args: unknown, key: string): string | undefined {
+  if (!args || typeof args !== "object") return undefined;
+  const val = (args as Record<string, unknown>)[key];
+  return typeof val === "string" ? val : undefined;
+}
+
 export function useThreadStream(
   agentId: string | null,
   sessionId: string | null,
@@ -81,6 +87,8 @@ export function useThreadStream(
         id: `artifact-${artId}`,
         artifact: art,
       };
+
+      // 1. If artifact is already in a message, update it in place
       const msgWithArtIdx = findLastIndex(prev, (m) =>
         Boolean(
           m.parts?.some(
@@ -107,43 +115,75 @@ export function useThreadStream(
         return copy;
       }
 
-      const askMsgIdx = findLastIndex(
+      // 2. Find the assistant message with the tool call that created this artifact
+      const toolCallMsgIdx = findLastIndex(
         prev,
         (m) =>
           m.role === "assistant" &&
           Boolean(
             m.toolCalls?.some(
               (c) =>
-                c.name === "make_questionnaire" ||
-                c.name === "make_form" ||
-                c.name === "make_artifact" ||
-                c.name === "wait_for_click" ||
-                c.name === "ask" ||
-                c.name === "read_artifact_submission"
+                (c.name === "make_questionnaire" ||
+                  c.name === "make_form" ||
+                  c.name === "make_artifact") &&
+                (c.result === artId ||
+                  String(c.result).includes(artId) ||
+                  getToolArg(c.args, "id") === artId ||
+                  getToolArg(c.args, "artifact_id") === artId)
             )
           )
       );
-      const targetIdx = askMsgIdx >= 0 ? askMsgIdx : prev.length - 1;
-      if (targetIdx >= 0 && prev[targetIdx].role === "assistant") {
-        const target = prev[targetIdx];
-        const copy = [...prev];
-        copy[targetIdx] = {
-          ...target,
-          parts: [...(target.parts || []), artPart],
-        };
-        return copy;
-      } else {
-        return [
-          ...prev,
-          {
-            id: `asst-${Date.now()}`,
-            role: "assistant",
-            text: "",
-            parts: [artPart],
-            timestamp: new Date().toISOString(),
-          },
-        ];
+
+      // 3. Fallback: find any assistant message waiting for this artifact, or with artifact tool calls
+      const fallbackMsgIdx = findLastIndex(
+        prev,
+        (m) =>
+          m.role === "assistant" &&
+          Boolean(
+            m.toolCalls?.some(
+              (c) =>
+                (c.name === "wait_for_click" &&
+                  (getToolArg(c.args, "artifact_id") === artId || !getToolArg(c.args, "artifact_id"))) ||
+                c.name === "make_questionnaire" ||
+                c.name === "make_form" ||
+                c.name === "make_artifact" ||
+                c.name === "ask"
+            )
+          )
+      );
+
+      const targetIdx = toolCallMsgIdx >= 0 ? toolCallMsgIdx : fallbackMsgIdx;
+
+      // If messages haven't loaded yet, do NOT create a fake message at the top!
+      if (targetIdx < 0 || !prev[targetIdx] || prev[targetIdx].role !== "assistant") {
+        return prev;
       }
+
+      const target = prev[targetIdx];
+      const parts = target.parts || [];
+      // Insert right after make_questionnaire if present
+      const tcPartIdx = parts.findIndex(
+        (p) =>
+          p.type === "tool_call" &&
+          (p.toolCall?.name === "make_questionnaire" ||
+            p.toolCall?.name === "make_form" ||
+            p.toolCall?.name === "make_artifact") &&
+          (p.toolCall?.result === artId ||
+            String(p.toolCall?.result).includes(artId) ||
+            getToolArg(p.toolCall?.args, "id") === artId ||
+            getToolArg(p.toolCall?.args, "artifact_id") === artId)
+      );
+
+      const newParts = [...parts];
+      if (tcPartIdx >= 0) {
+        newParts.splice(tcPartIdx + 1, 0, artPart);
+      } else {
+        newParts.push(artPart);
+      }
+
+      const copy = [...prev];
+      copy[targetIdx] = { ...target, parts: newParts };
+      return copy;
     });
   }, []);
 
@@ -1072,6 +1112,27 @@ export function useThreadStream(
                       id: tc.id,
                       toolCall: tc,
                     });
+
+                    // Insert matching artifact immediately following its creation tool call
+                    const matchedArt = artifactsRef.current.find(
+                      (a) =>
+                        a.manifest?.exposition !== "tabbed" &&
+                        (a.uuid === tc.result ||
+                          a.name === tc.result ||
+                          String(tc.result).includes(a.uuid) ||
+                          a.uuid === getToolArg(tc.args, "artifact_id") ||
+                          a.name === getToolArg(tc.args, "artifact_id") ||
+                          a.uuid === getToolArg(tc.args, "id") ||
+                          a.name === getToolArg(tc.args, "id"))
+                    );
+                    if (matchedArt) {
+                      const matchedId = matchedArt.uuid || matchedArt.name;
+                      parts.push({
+                        type: "artifact",
+                        id: `artifact-${matchedId}`,
+                        artifact: matchedArt,
+                      });
+                    }
                   }
                   if (text) {
                     parts.push({
@@ -1091,51 +1152,6 @@ export function useThreadStream(
                     parts: parts.length > 0 ? parts : undefined,
                     timestamp: new Date().toISOString(),
                   });
-                }
-              }
-
-              // Ensure any already loaded embedded artifacts are attached to rebuilt messages
-              for (const art of artifactsRef.current) {
-                if (art.manifest?.exposition !== "tabbed") {
-                  const artId = art.uuid || art.name;
-                  const artPart: MessagePart = {
-                    type: "artifact",
-                    id: `artifact-${artId}`,
-                    artifact: art,
-                  };
-                  const askMsgIdx = findLastIndex(
-                    rebuilt,
-                    (m) =>
-                      m.role === "assistant" &&
-                      Boolean(
-                        m.toolCalls?.some(
-                          (c) =>
-                            c.name === "make_questionnaire" ||
-                            c.name === "make_form" ||
-                            c.name === "make_artifact" ||
-                            c.name === "wait_for_click" ||
-                            c.name === "ask"
-                        )
-                      )
-                  );
-                  const targetIdx = askMsgIdx >= 0 ? askMsgIdx : rebuilt.length - 1;
-                  if (targetIdx >= 0 && rebuilt[targetIdx].role === "assistant") {
-                    const currentParts = rebuilt[targetIdx].parts || [];
-                    if (
-                      !currentParts.some(
-                        (p) =>
-                          p.type === "artifact" &&
-                          (p.artifact?.uuid === artId ||
-                            p.artifact?.name === artId ||
-                            p.id === `artifact-${artId}`)
-                      )
-                    ) {
-                      rebuilt[targetIdx] = {
-                        ...rebuilt[targetIdx],
-                        parts: [...currentParts, artPart],
-                      };
-                    }
-                  }
                 }
               }
 
