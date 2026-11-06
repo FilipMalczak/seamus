@@ -28,7 +28,7 @@ from langchain.agents.middleware.todo import (
 )
 from langchain.agents.middleware.types import ContextT, ResponseT
 from langchain.tools import ToolRuntime
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_core.outputs import ChatGenerationChunk, ChatResult
 from langchain_core.tools import StructuredTool
 from langchain_openai import ChatOpenAI
@@ -37,7 +37,11 @@ from pydantic import BaseModel, Field, SecretStr, model_validator
 
 from seamus.config.models import SkillsImplementation, TodoImplementation
 from seamus.config.settings import get_system_settings_store
-from seamus.domain.artifacts import CadenceMode
+from seamus.domain.artifacts import (
+    SYNTHETIC_MESSAGE_INDICATOR,
+    ArtifactManifest,
+    ClickResult,
+)
 from seamus.domain.entities import Agent, AgentStatus, Session, Thread
 from seamus.domain.modes import (
     ALL_HARNESS_TOOLS,
@@ -48,10 +52,14 @@ from seamus.domain.modes import (
     resolve_mount_policy,
 )
 from seamus.harness.artifacts import (
+    ArtifactBuilder,
     ArtifactResolver,
+    FormBuilder,
     PlanBuilder,
+    Question,
     QuestionItem,
     QuestionnaireBuilder,
+    dispatch_button_click,
     seed_default_artifacts,
 )
 from seamus.harness.prompt import (
@@ -388,8 +396,87 @@ class ResilientFormInput(ResilientAskInput):
     )
 
 
+class MakeArtifactInput(BaseModel):
+    """Input schema for make_artifact tool."""
+
+    family: str = Field(
+        description=(
+            "Artifact family directory under /artifacts/ "
+            "(e.g. 'questionnaires', 'forms', 'plans', 'custom')"
+        ),
+    )
+    manifest: ArtifactManifest = Field(
+        description="Behavioral and exposition manifest for the artifact",
+    )
+    components: list[dict[str, Any]] = Field(
+        description="A2UI basic catalog components sequence for body.json",
+    )
+    uuid: str | None = Field(
+        default=None,
+        description="Optional custom UUID for the artifact instance",
+    )
+
+
+class MakeQuestionnaireInput(BaseModel):
+    """Input schema for make_questionnaire tool."""
+
+    title: str = Field(
+        default="Questionnaire",
+        description="Display title for the questionnaire",
+    )
+    questions: list[Question] = Field(
+        description="List of questions (body, answers, multiple_choice)",
+    )
+    blocking: bool = Field(
+        default=True,
+        description="Whether user text input is blocked until the questionnaire is submitted",
+    )
+    exposition: Literal["tabbed", "embedded"] = Field(
+        default="embedded",
+        description="Whether to expose questionnaire embedded in chat or in a tab",
+    )
+
+
+class MakeFormInput(BaseModel):
+    """Input schema for make_form tool."""
+
+    title: str = Field(
+        default="Form",
+        description="Display title for the form tab",
+    )
+    fields: list[Question] = Field(
+        description="List of fields (body, answers, multiple_choice)",
+    )
+    blocking: bool = Field(
+        default=False,
+        description="Whether user text input is blocked until the form is submitted",
+    )
+    exposition: Literal["tabbed", "embedded"] = Field(
+        default="tabbed",
+        description="Whether to expose form in a dedicated tab or embedded in chat",
+    )
+
+
+class WaitForClickInput(BaseModel):
+    """Input schema for wait_for_click tool."""
+
+    artifact_id: str = Field(description="UUID of the artifact to observe.")
+    button_id: str | None = Field(
+        default=None,
+        description="Optional button ID to filter on; if omitted, resumes on any button click.",
+    )
+    fresh: bool = Field(
+        default=True,
+        description="If True, ignores past interactions and suspends until a new click occurs.",
+    )
+    timeout: float | None = Field(
+        default=None,
+        description="Optional timeout in seconds to wait before unblocking.",
+    )
+
+
 class ReadArtifactSubmissionInput(BaseModel):
-    """Input schema for read_artifact_submission tool."""
+    """Input schema for read_artifact_submission tool (deprecated)."""
 
     artifact_id: str = Field(description="UUID of the questionnaire, form, or plan artifact.")
 
@@ -401,10 +488,29 @@ class PlanTransitionInput(BaseModel):
 class MakePlanInput(BaseModel):
     """Input schema for the make_plan tool in Plan/Make phase."""
 
-    content: str = Field(description="Full GitHub-Flavored Markdown content of the plan.")
-    name: str = Field(
+    title: str = Field(
         default="Plan",
         description="Display title for the Plan tab (defaults to 'Plan').",
+    )
+    steps: list[str] = Field(
+        default_factory=list,
+        description="List of markdown steps or section texts.",
+    )
+    content: str | None = Field(
+        default=None,
+        description="Full markdown plan body (overrides steps if provided).",
+    )
+    name: str | None = Field(
+        default=None,
+        description="Optional alias for title.",
+    )
+    blocking: bool = Field(
+        default=False,
+        description="Whether user text input is blocked until the plan is approved",
+    )
+    exposition: Literal["tabbed", "embedded"] = Field(
+        default="tabbed",
+        description="Exposition mode (defaults to 'tabbed')",
     )
 
 
@@ -478,6 +584,7 @@ class SessionAgentRunner:
         self._current_form_title: str = "Form"
         self._turn_created_artifact_ids: set[str] = set()
         self._pending_phase_transition: tuple[str, str | None, bool] | None = None
+        self._pending_clicks: dict[tuple[str, str | None], asyncio.Future[str]] = {}
 
         if agent is not None:
             self._agent = agent
@@ -588,6 +695,47 @@ class SessionAgentRunner:
         if self.session.config.todo_implementation == TodoImplementation.DEEPAGENTS:
             runner_middleware.append(SeamusTodoListMiddleware())
 
+        make_artifact_tool = StructuredTool.from_function(
+            name="make_artifact",
+            description=(
+                "Create a new atomic A2UI renderable artifact under `/artifacts/<family>/<uuid>/` "
+                "with a custom manifest and basic catalog components."
+            ),
+            func=self.handle_make_artifact,
+            args_schema=MakeArtifactInput,
+        )
+
+        make_questionnaire_tool = StructuredTool.from_function(
+            name="make_questionnaire",
+            description=(
+                "Create an atomic questionnaire artifact with a list of questions, whitelisted "
+                "submit button, and optional blocking behavior."
+            ),
+            func=self.handle_make_questionnaire,
+            args_schema=MakeQuestionnaireInput,
+        )
+
+        make_form_tool = StructuredTool.from_function(
+            name="make_form",
+            description=(
+                "Create an atomic non-blocking form artifact in a dedicated tab with fields "
+                "and whitelisted submit button."
+            ),
+            func=self.handle_make_form,
+            args_schema=MakeFormInput,
+        )
+
+        wait_for_click_tool = StructuredTool.from_function(
+            name="wait_for_click",
+            description=(
+                "Suspend agent execution within the current turn until the user clicks a button "
+                "on an artifact. Returns the clicked button ID and context payload."
+            ),
+            func=lambda *args, **kwargs: "Suspended waiting for user click",
+            coroutine=self.handle_wait_for_click,
+            args_schema=WaitForClickInput,
+        )
+
         ask_tool = StructuredTool.from_function(
             name="ask",
             description=(
@@ -672,6 +820,10 @@ class SessionAgentRunner:
         )
 
         artifact_tools = [
+            make_artifact_tool,
+            make_questionnaire_tool,
+            make_form_tool,
+            wait_for_click_tool,
             ask_tool,
             form_tool,
             read_sub_tool,
@@ -915,6 +1067,236 @@ class SessionAgentRunner:
                 self._run_loop(target_thread, user_message=None)
             )
 
+    def handle_make_artifact(
+        self,
+        family: str,
+        manifest: ArtifactManifest | dict[str, Any],
+        components: list[dict[str, Any]],
+        uuid: str | None = None,
+    ) -> str:
+        """Create an atomic A2UI renderable artifact in /artifacts/<family>/<uuid>/."""
+        manifest_obj = (
+            manifest
+            if isinstance(manifest, ArtifactManifest)
+            else ArtifactManifest.model_validate(manifest)
+        )
+        ws_mgr = get_workspace_manager()
+        artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
+        inst_uuid = ArtifactBuilder.create_artifact(
+            artifacts_dir=artifacts_dir,
+            family=family,
+            manifest=manifest_obj,
+            components=components,
+            uuid=uuid,
+        )
+        art_event = {
+            "type": "ARTIFACT_CREATED",
+            "artifact_id": inst_uuid,
+            "kind": family,
+            "uuid": inst_uuid,
+            "title": manifest_obj.name,
+        }
+        self.broadcaster.broadcast_sync(art_event)
+        thread = self.session.get_open_thread()
+        if thread is not None:
+            thread.append_event(art_event)
+        return inst_uuid
+
+    def handle_make_questionnaire(
+        self,
+        title: str = "Questionnaire",
+        questions: list[Question | dict[str, Any]] | None = None,
+        blocking: bool = True,
+        exposition: Literal["tabbed", "embedded"] = "embedded",
+    ) -> str:
+        """Create an atomic questionnaire artifact."""
+        q_objs: list[Question] = []
+        for q in questions or []:
+            if isinstance(q, Question):
+                q_objs.append(q)
+            elif isinstance(q, QuestionItem):
+                q_objs.append(q.to_question())
+            elif isinstance(q, dict):
+                q_objs.append(Question.model_validate(q))
+        ws_mgr = get_workspace_manager()
+        artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
+        inst_uuid = QuestionnaireBuilder.create_questionnaire(
+            artifacts_dir=artifacts_dir,
+            title=title,
+            questions=q_objs,
+            blocking=blocking,
+            exposition=exposition,
+        )
+        art_event = {
+            "type": "ARTIFACT_CREATED",
+            "artifact_id": inst_uuid,
+            "kind": "questionnaires",
+            "uuid": inst_uuid,
+            "title": title,
+        }
+        self.broadcaster.broadcast_sync(art_event)
+        thread = self.session.get_open_thread()
+        if thread is not None:
+            thread.append_event(art_event)
+        return inst_uuid
+
+    def handle_make_form(
+        self,
+        title: str = "Form",
+        fields: list[Question | dict[str, Any]] | None = None,
+        blocking: bool = False,
+        exposition: Literal["tabbed", "embedded"] = "tabbed",
+    ) -> str:
+        """Create an atomic form artifact."""
+        f_objs: list[Question] = []
+        for f in fields or []:
+            if isinstance(f, Question):
+                f_objs.append(f)
+            elif isinstance(f, QuestionItem):
+                f_objs.append(f.to_question())
+            elif isinstance(f, dict):
+                f_objs.append(Question.model_validate(f))
+        ws_mgr = get_workspace_manager()
+        artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
+        inst_uuid = FormBuilder.create_form(
+            artifacts_dir=artifacts_dir,
+            title=title,
+            fields=f_objs,
+            blocking=blocking,
+            exposition=exposition,
+        )
+        art_event = {
+            "type": "ARTIFACT_CREATED",
+            "artifact_id": inst_uuid,
+            "kind": "forms",
+            "uuid": inst_uuid,
+            "title": title,
+        }
+        self.broadcaster.broadcast_sync(art_event)
+        thread = self.session.get_open_thread()
+        if thread is not None:
+            thread.append_event(art_event)
+        return inst_uuid
+
+    async def handle_wait_for_click(
+        self,
+        artifact_id: str,
+        button_id: str | None = None,
+        fresh: bool = True,
+        timeout: float | None = None,
+    ) -> str:
+        """Suspend execution until the user clicks a button on the specified artifact."""
+        ws_mgr = get_workspace_manager()
+        artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
+        resolver = ArtifactResolver(artifacts_dir)
+        matched = resolver.resolve_artifact(artifact_id)
+        if matched is None:
+            raise ValueError(f"Artifact '{artifact_id}' does not exist.")
+
+        family = matched.family
+        inst_dir = artifacts_dir / family / artifact_id
+        interactions_dir = inst_dir / "interactions"
+
+        # Check existing clicks if fresh=False
+        if not fresh and interactions_dir.is_dir():
+            if button_id:
+                btn_file = interactions_dir / f"{button_id}.json"
+                if btn_file.is_file():
+                    try:
+                        ctx = json.loads(btn_file.read_text(encoding="utf-8"))
+                        mtime = btn_file.stat().st_mtime
+                        return ClickResult(
+                            artifact_id=artifact_id,
+                            button_id=button_id,
+                            context=ctx if isinstance(ctx, dict) else {},
+                            timestamp=mtime,
+                        ).model_dump_json()
+                    except Exception:
+                        pass
+            else:
+                json_files = sorted(
+                    interactions_dir.glob("*.json"),
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True,
+                )
+                if json_files:
+                    latest = json_files[0]
+                    try:
+                        ctx = json.loads(latest.read_text(encoding="utf-8"))
+                        return ClickResult(
+                            artifact_id=artifact_id,
+                            button_id=latest.stem,
+                            context=ctx if isinstance(ctx, dict) else {},
+                            timestamp=latest.stat().st_mtime,
+                        ).model_dump_json()
+                    except Exception:
+                        pass
+
+        # We must suspend waiting for a user click
+        thread = self.session.get_open_thread()
+        tool_call_id: str | None = None
+        for ev in reversed(thread.events):
+            ev_type = getattr(ev, "type", None) or (
+                ev.get("type") if isinstance(ev, dict) else None
+            )
+            if ev_type in ("TOOL_CALL_START", "tool_call_start"):
+                name = getattr(ev, "tool_call_name", None) or (
+                    ev.get("tool_call_name") if isinstance(ev, dict) else None
+                )
+                if name == "wait_for_click":
+                    tool_call_id = getattr(ev, "tool_call_id", None) or (
+                        ev.get("tool_call_id") if isinstance(ev, dict) else None
+                    )
+                    break
+        if not tool_call_id:
+            tool_call_id = f"call_{uuid4().hex[:12]}"
+
+        session_dir = ws_mgr.get_session_workspace_path(self.session.agent_id, self.session.id)
+        state_dir = session_dir / "agent" / "state" / "threads" / str(thread.id)
+        state_dir.mkdir(parents=True, exist_ok=True)
+        pending_wait_file = state_dir / "pending_wait.json"
+
+        wait_payload = {
+            "artifact_id": artifact_id,
+            "button_id": button_id,
+            "tool_call_id": tool_call_id,
+            "thread_id": str(thread.id),
+        }
+        pending_wait_file.write_text(json.dumps(wait_payload, indent=2), encoding="utf-8")
+
+        thread.status = AgentStatus.AWAITING_USER
+        thread.touch()
+        self.session.touch()
+        ws_mgr.save_thread_events(self.session.agent_id, self.session.id, thread.id, thread.events)
+        ws_mgr.commit_checkpoint_changes(self.session.agent_id, self.session.id, thread.id)
+
+        # Broadcast status change to AWAITING_USER so frontend knows execution
+        # is suspended waiting for user interaction
+        await self.broadcaster.broadcast(
+            {
+                "type": "STATUS_CHANGED",
+                "status": AgentStatus.AWAITING_USER.value,
+            }
+        )
+
+        fut: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+        key = (artifact_id, button_id)
+        self._pending_clicks[key] = fut
+
+        try:
+            if timeout is not None:
+                res = await asyncio.wait_for(fut, timeout=timeout)
+            else:
+                res = await fut
+            return res
+        finally:
+            self._pending_clicks.pop(key, None)
+            if pending_wait_file.exists():
+                try:
+                    pending_wait_file.unlink()
+                except OSError:
+                    pass
+
     def handle_ask(
         self,
         question: str,
@@ -1035,7 +1417,15 @@ class SessionAgentRunner:
         self._pending_phase_transition = (ModeName.PLAN.value, PlanPhase.MAKE.value, True)
         return "Transitioning session to Plan/Make phase in a new thread."
 
-    def handle_make_plan(self, content: str, name: str = "Plan") -> str:
+    def handle_make_plan(
+        self,
+        content: str | None = None,
+        name: str = "Plan",
+        title: str | None = None,
+        steps: list[str] | None = None,
+        blocking: bool = False,
+        exposition: Literal["tabbed", "embedded"] = "tabbed",
+    ) -> str:
         """Create the session-local Plan artifact in Plan/Make phase."""
         open_thread = self.session.get_open_thread()
         if open_thread.mode != ModeName.PLAN.value or open_thread.phase != PlanPhase.MAKE.value:
@@ -1054,8 +1444,9 @@ class SessionAgentRunner:
             )
 
         plan_id = uuid4().hex
-        clean_title = name.strip() or "Plan"
-        PlanBuilder.create_plan(artifacts_dir, plan_id, content, title=clean_title)
+        clean_title = (title or name or "Plan").strip() or "Plan"
+        plan_text = content if content is not None else ("\n\n".join(steps) if steps else "")
+        PlanBuilder.create_plan(artifacts_dir, plan_id, plan_text, title=clean_title)
         self.session.active_plan_id = plan_id
         self.session.touch()
         self._turn_created_artifact_ids.add(plan_id)
@@ -1156,15 +1547,14 @@ class SessionAgentRunner:
         resolver = ArtifactResolver(artifacts_dir)
         for art in resolver.list_artifacts():
             if not art.is_closed:
-                del_file = artifacts_dir / art.kind / art.name / "closed.json"
-                del_file.write_text(
-                    json.dumps({"closed": True}, indent=2),
-                    encoding="utf-8",
-                )
+                del_file = artifacts_dir / art.family / art.uuid / "closed.marker"
+                del_file.touch(exist_ok=True)
                 close_ev = {
                     "type": "ARTIFACT_CLOSED",
-                    "artifact_id": art.name,
-                    "kind": art.kind,
+                    "artifact_id": art.uuid,
+                    "kind": art.family,
+                    "family": art.family,
+                    "uuid": art.uuid,
                 }
                 self.broadcaster.broadcast_sync(close_ev)
                 open_thread.append_event(close_ev)
@@ -1250,15 +1640,15 @@ class SessionAgentRunner:
                 matched_kind = candidate_kind
                 break
 
-        # If open and nonblocking, promote instance manifest to blocking
+        # If open and non-blocking, promote instance manifest to blocking
         inst_dir = artifacts_dir / matched_kind / artifact_id
         if inst_dir.is_dir() and not resolver.is_closed(matched_kind, artifact_id):
             try:
                 manifest = resolver.load_manifest(matched_kind, artifact_id)
-                if manifest.cadence == CadenceMode.NONBLOCKING:
-                    promoted = manifest.model_copy(update={"cadence": CadenceMode.BLOCKING})
+                if not manifest.blocking:
+                    promoted = manifest.model_copy(update={"blocking": True})
                     (inst_dir / "manifest.json").write_text(
-                        promoted.model_dump_json(indent=2, exclude_none=True),
+                        promoted.model_dump_json(indent=2),
                         encoding="utf-8",
                     )
                     self.broadcaster.broadcast_sync(
@@ -1285,7 +1675,7 @@ class SessionAgentRunner:
             return json.dumps({"error": str(exc), "data": {}})
 
     def has_open_blocking_artifact(self) -> bool:
-        """Check if the session currently has any open artifact with cadence=blocking."""
+        """Check if the session currently has any open artifact with blocking=True."""
         try:
             ws_mgr = get_workspace_manager()
             artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
@@ -1294,13 +1684,14 @@ class SessionAgentRunner:
         except Exception:
             return False
 
-    async def dispatch_artifact_submission(
+    async def dispatch_artifact_click(
         self,
-        kind: str,
-        name: str,
-        data: dict[str, Any],
-    ) -> str:
-        """Process artifact submission, persist data, and resume agent with synthetic tool call."""
+        family: str,
+        uuid: str,
+        button_id: str,
+        context: dict[str, Any],
+    ) -> ClickResult:
+        """Process an artifact button click, update state/interactions, and handle resumption."""
         async with self._lock:
             if not self.session.is_active:
                 msg = (
@@ -1311,37 +1702,46 @@ class SessionAgentRunner:
 
             ws_mgr = get_workspace_manager()
             artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
-            target_dir = artifacts_dir / kind / name
+            target_dir = artifacts_dir / family / uuid
             if not target_dir.is_dir():
-                msg = f"Artifact '{kind}/{name}' does not exist."
+                msg = f"Artifact '{family}/{uuid}' does not exist."
                 raise ValueError(msg)
 
             resolver = ArtifactResolver(artifacts_dir)
-            if resolver.is_closed(kind, name):
-                msg = f"Artifact '{kind}/{name}' is already closed."
+            if resolver.is_closed(family, uuid):
+                msg = f"Artifact '{family}/{uuid}' is already closed."
                 raise ValueError(msg)
 
+            # Record click and update state.json
+            click_res = dispatch_button_click(artifacts_dir, family, uuid, button_id, context)
+
             thread = self.session.get_open_thread()
+            art_click = {
+                "type": "ARTIFACT_INTERACTION",
+                "family": family,
+                "uuid": uuid,
+                "button_id": button_id,
+                "context": context,
+            }
+            thread.append_event(art_click)
+            await self.broadcaster.broadcast(art_click)
 
-            if kind == "plans":
-                # User clicked Proceed on the Plan tab -> approve plan and transition to Execute
-                PlanBuilder.approve_plan(artifacts_dir, name)
-                self.session.active_plan_id = name
-                art_sub = {
-                    "type": "ARTIFACT_SUBMITTED",
-                    "kind": kind,
-                    "name": name,
+            # Check if artifact closed after click
+            if resolver.is_closed(family, uuid):
+                art_closed = {
+                    "type": "ARTIFACT_CLOSED",
+                    "artifact_id": uuid,
+                    "kind": family,
+                    "family": family,
+                    "uuid": uuid,
                 }
-                art_upd = {
-                    "type": "ARTIFACT_UPDATED",
-                    "artifact_id": name,
-                    "kind": "plans",
-                }
-                thread.append_event(art_sub)
-                thread.append_event(art_upd)
-                await self.broadcaster.broadcast(art_sub)
-                await self.broadcaster.broadcast(art_upd)
+                thread.append_event(art_closed)
+                await self.broadcaster.broadcast(art_closed)
 
+            # Handle plan proceed transition
+            if family == "plans" and button_id in ("proceed-btn", "proceed"):
+                PlanBuilder.approve_plan(artifacts_dir, uuid)
+                self.session.active_plan_id = uuid
                 try:
                     ws_mgr.save_thread_events(
                         self.session.agent_id, self.session.id, thread.id, thread.events
@@ -1357,117 +1757,104 @@ class SessionAgentRunner:
                     PlanPhase.EXECUTE.value,
                     auto_wake=True,
                 )
-                return f"proceed_{name}"
+                return click_res
 
-            # 1. Write submission.json
-            (target_dir / "submission.json").write_text(
-                json.dumps(data, indent=2), encoding="utf-8"
+            # Check in-memory pending click future
+            fut = self._pending_clicks.get((uuid, button_id)) or self._pending_clicks.get(
+                (uuid, None)
             )
+            if fut is not None and not fut.done():
+                fut.set_result(click_res.model_dump_json())
+                return click_res
 
-            # 2. Write closed.json to mark it closed
-            (target_dir / "closed.json").write_text(
-                json.dumps({"closed": True}, indent=2), encoding="utf-8"
+            # Check on-disk pending_wait.json for restart-safe resumption
+            session_dir = ws_mgr.get_session_workspace_path(self.session.agent_id, self.session.id)
+            pending_wait_file = (
+                session_dir / "agent" / "state" / "threads" / str(thread.id) / "pending_wait.json"
             )
+            if pending_wait_file.is_file():
+                try:
+                    wait_record = json.loads(pending_wait_file.read_text(encoding="utf-8"))
+                    if wait_record.get("artifact_id") == uuid and (
+                        wait_record.get("button_id") is None
+                        or wait_record.get("button_id") == button_id
+                    ):
+                        try:
+                            pending_wait_file.unlink()
+                        except OSError:
+                            pass
+                        call_id = wait_record.get("tool_call_id") or f"call_{uuid4().hex[:12]}"
+                        tc_result = {
+                            "type": "TOOL_CALL_RESULT",
+                            "tool_call_id": call_id,
+                            "content": click_res.model_dump_json(),
+                            "role": "tool",
+                        }
+                        thread.append_event(tc_result)
+                        await self.broadcaster.broadcast(tc_result)
 
-            # 3. Create synthetic tool call
-            call_id = f"call_{uuid4().hex[:12]}"
-            submission_payload = {"data": data}
+                        tool_msg = ToolMessage(
+                            content=click_res.model_dump_json(),
+                            tool_call_id=call_id,
+                            name="wait_for_click",
+                        )
+                        try:
+                            self._agent.graph.update_state(
+                                {"configurable": {"thread_id": thread.id.hex}},
+                                {"messages": [tool_msg]},
+                                as_node="tools",
+                            )
+                        except Exception:
+                            logger.exception(
+                                "Failed to update graph state with synthetic tool message"
+                            )
 
-            art_sub = {
-                "type": "ARTIFACT_SUBMITTED",
-                "kind": kind,
-                "name": name,
-            }
-            art_closed = {
-                "type": "ARTIFACT_CLOSED",
-                "artifact_id": name,
-                "kind": kind,
-            }
-            thread.append_event(art_sub)
-            thread.append_event(art_closed)
-            await self.broadcaster.broadcast(art_sub)
-            await self.broadcaster.broadcast(art_closed)
+                        thread.status = AgentStatus.AWAITING_LLM
+                        thread.touch()
+                        self.session.touch()
+                        try:
+                            ws_mgr.save_thread_events(
+                                self.session.agent_id, self.session.id, thread.id, thread.events
+                            )
+                            ws_mgr.commit_checkpoint_changes(
+                                self.session.agent_id, self.session.id, thread.id
+                            )
+                        except Exception:
+                            logger.exception("Failed to save thread events or commit checkpoint")
 
-            tc_start = {
-                "type": "TOOL_CALL_START",
-                "tool_call_id": call_id,
-                "tool_call_name": "read_artifact_submission",
-            }
-            tc_args = {
-                "type": "TOOL_CALL_ARGS",
-                "tool_call_id": call_id,
-                "args": {"artifact_id": name},
-            }
-            tc_end = {
-                "type": "TOOL_CALL_END",
-                "tool_call_id": call_id,
-            }
-            tc_result = {
-                "type": "TOOL_CALL_RESULT",
-                "tool_call_id": call_id,
-                "content": json.dumps(submission_payload),
-                "role": "tool",
-            }
+                        self._active_task = asyncio.create_task(
+                            self._run_loop(thread=thread, user_message=None)
+                        )
+                        return click_res
+                except Exception:
+                    logger.exception("Failed to process pending_wait.json on click")
 
-            thread.append_event(tc_start)
-            thread.append_event(tc_args)
-            thread.append_event(tc_end)
-            thread.append_event(tc_result)
-
-            await self.broadcaster.broadcast(tc_start)
-            await self.broadcaster.broadcast(tc_args)
-            await self.broadcaster.broadcast(tc_end)
-            await self.broadcaster.broadcast(tc_result)
-
-            # 4. Inject into checkpointer state for thread
-            ai_msg = AIMessage(
-                content="",
-                tool_calls=[
-                    {
-                        "name": "read_artifact_submission",
-                        "args": {"artifact_id": name},
-                        "id": call_id,
-                    }
-                ],
-            )
-            tool_msg = ToolMessage(
-                content=json.dumps(submission_payload),
-                tool_call_id=call_id,
-                name="read_artifact_submission",
-            )
-
-            try:
-                self._agent.graph.update_state(
-                    {"configurable": {"thread_id": thread.id.hex}},
-                    {"messages": [ai_msg, tool_msg]},
-                    as_node="tools",
+            # If agent is idle / turn completed, notify agent with synthetic message
+            if self.is_awaiting_user():
+                payload_str = json.dumps(context)
+                synthetic_msg = (
+                    f"{SYNTHETIC_MESSAGE_INDICATOR} User clicked '{button_id}' on artifact "
+                    f"'{uuid}' with payload: {payload_str}"
                 )
-            except Exception:
-                logger.exception("Failed to update graph state with synthetic tool messages")
+                asyncio.create_task(self.dispatch_user_input(synthetic_msg, is_synthetic=True))
 
-            thread.status = AgentStatus.AWAITING_LLM
-            thread.touch()
-            self.session.touch()
+            return click_res
 
-            try:
-                ws_mgr.save_thread_events(
-                    self.session.agent_id, self.session.id, thread.id, thread.events
-                )
-                ws_mgr.commit_checkpoint_changes(self.session.agent_id, self.session.id, thread.id)
-            except Exception:
-                logger.exception("Failed to save thread events or commit state on submission")
-
-            # 5. Start background execution turn to resume agent
-            self._active_task = asyncio.create_task(
-                self._run_loop(thread=thread, user_message=None)
-            )
-
-            return call_id
+    async def dispatch_artifact_submission(
+        self,
+        kind: str,
+        name: str,
+        data: dict[str, Any],
+    ) -> str:
+        """Transitional bridge for dispatch_artifact_submission to dispatch_artifact_click."""
+        click_res = await self.dispatch_artifact_click(kind, name, "submit", data)
+        return str(click_res.button_id)
 
     async def dispatch_user_input(
         self,
         text: str,
         message_id: str | None = None,
+        is_synthetic: bool = False,
     ) -> str:
         """Dispatch a user message to the active thread and start execution."""
         async with self._lock:
@@ -1478,10 +1865,15 @@ class SessionAgentRunner:
                 )
                 raise SessionBusyError(msg)
 
-            if self.has_open_blocking_artifact():
+            if text.startswith(SYNTHETIC_MESSAGE_INDICATOR) and not is_synthetic:
+                raise ValueError(
+                    "Synthetic message indicator prefix is reserved for platform notifications."
+                )
+
+            if self.has_open_blocking_artifact() and not is_synthetic:
                 msg = (
-                    f"Session '{self.session.id}' has an open blocking questionnaire. "
-                    "User must submit the questionnaire before sending messages."
+                    f"Session '{self.session.id}' has an open blocking artifact. "
+                    "User must interact with the blocking artifact before sending messages."
                 )
                 raise SessionBusyError(msg)
 

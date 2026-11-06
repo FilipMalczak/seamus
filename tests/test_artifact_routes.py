@@ -41,9 +41,32 @@ async def test_artifact_rest_routes(tmp_path: Any, monkeypatch: Any) -> None:
     seed_default_artifacts(artifacts_dir)
 
     # Create an artifact directory for testing
-    q_dir = artifacts_dir / "questionnaires" / "q-123"
-    q_dir.mkdir(parents=True, exist_ok=True)
-    (q_dir / "card.json").write_text('{"type": "AdaptiveCard", "body": []}', encoding="utf-8")
+    from seamus.harness.artifacts import ArtifactBuilder
+
+    ArtifactBuilder.create_artifact(
+        artifacts_dir=artifacts_dir,
+        family="questionnaires",
+        uuid="q-123",
+        manifest={
+            "name": "q-123",
+            "exposition": "embedded",
+            "blocking": True,
+            "commentable": False,
+            "buttons": [
+                {
+                    "id": "submit",
+                    "mode": "set",
+                    "clicks": 1,
+                    "unblocking": True,
+                    "closing": True,
+                }
+            ],
+        },
+        components=[
+            {"id": "col", "component": "Column", "children": ["submit"]},
+            {"id": "submit", "component": "Button", "title": "Submit"},
+        ],
+    )
 
     app = create_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -54,7 +77,7 @@ async def test_artifact_rest_routes(tmp_path: Any, monkeypatch: Any) -> None:
         assert len(arts) == 1
         assert arts[0]["name"] == "q-123"
         assert arts[0]["is_closed"] is False
-        assert arts[0]["manifest"]["cadence"] == "blocking"
+        assert arts[0]["manifest"]["blocking"] is True
 
         # 2. Get artifact detail
         get_res = await client.get(
@@ -63,19 +86,17 @@ async def test_artifact_rest_routes(tmp_path: Any, monkeypatch: Any) -> None:
         assert get_res.status_code == 200
         assert get_res.json()["name"] == "q-123"
 
-        # 3. Sending chat input should return 409 Conflict due to blocking questionnaire!
+        # 3. Sending chat input should return 409 Conflict due to blocking artifact!
         input_res = await client.post(
             f"/api/v-alpha/agent/{agent_id}/session/{session_id}/input",
             json={"text": "Hello agent!"},
         )
         assert input_res.status_code == 409
-        assert "open blocking questionnaire" in input_res.json()["detail"]
+        assert "open blocking" in input_res.json()["detail"]
 
 
 @pytest.mark.asyncio
-async def test_artifact_submit_closes_and_synthesizes_tool_call(
-    tmp_path: Any, monkeypatch: Any
-) -> None:
+async def test_artifact_click_closes_and_updates_state(tmp_path: Any, monkeypatch: Any) -> None:
     monkeypatch.setenv("SEAMUS_PERSISTENCE_ENABLED", "false")
     ws_mgr = GitWorkspaceManager()
     ws_mgr.workspace_root = tmp_path
@@ -96,17 +117,37 @@ async def test_artifact_submit_closes_and_synthesizes_tool_call(
     )
     agent_id = agent.id
     session_id = session.id
-    thread = session.get_open_thread()
 
     artifacts_dir = ws_mgr.get_session_artifacts_dir(agent_id, session_id)
     artifacts_dir.mkdir(parents=True, exist_ok=True)
-    from seamus.harness.artifacts import seed_default_artifacts
+    from seamus.harness.artifacts import ArtifactBuilder, seed_default_artifacts
 
     seed_default_artifacts(artifacts_dir)
 
-    q_dir = artifacts_dir / "questionnaires" / "q-456"
-    q_dir.mkdir(parents=True, exist_ok=True)
-    (q_dir / "card.json").write_text('{"type": "AdaptiveCard", "body": []}', encoding="utf-8")
+    ArtifactBuilder.create_artifact(
+        artifacts_dir=artifacts_dir,
+        family="questionnaires",
+        uuid="q-456",
+        manifest={
+            "name": "q-456",
+            "exposition": "embedded",
+            "blocking": True,
+            "commentable": False,
+            "buttons": [
+                {
+                    "id": "submit",
+                    "mode": "set",
+                    "clicks": 1,
+                    "unblocking": True,
+                    "closing": True,
+                }
+            ],
+        },
+        components=[
+            {"id": "col", "component": "Column", "children": ["submit"]},
+            {"id": "submit", "component": "Button", "title": "Submit"},
+        ],
+    )
 
     from seamus.harness.runner import get_runner_registry
 
@@ -120,37 +161,36 @@ async def test_artifact_submit_closes_and_synthesizes_tool_call(
 
     app = create_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        submit_res = await client.post(
-            f"/api/v-alpha/agent/{agent_id}/session/{session_id}/artifact/questionnaires/q-456/submit",
-            json={"data": {"backgroundColor": "blue", "headerStyle": "bold"}},
+        # Test click via family/uuid route
+        click_res = await client.post(
+            f"/api/v-alpha/agent/{agent_id}/session/{session_id}/artifact/questionnaires/q-456/click",
+            json={
+                "button_id": "submit",
+                "context": {"backgroundColor": "blue", "headerStyle": "bold"},
+            },
         )
-        assert submit_res.status_code == 202
-        body = submit_res.json()
-        assert body["status"] == "accepted"
+        assert click_res.status_code == 200
+        body = click_res.json()
         assert body["artifact_id"] == "q-456"
+        assert body["button_id"] == "submit"
+        assert body["context"] == {"backgroundColor": "blue", "headerStyle": "bold"}
+        assert "timestamp" in body
 
-        # Check submission was written
-        submission_file = q_dir / "submission.json"
-        assert submission_file.is_file()
+        # Check interaction file was written
+        q_dir = artifacts_dir / "questionnaires" / "q-456"
+        interaction_file = q_dir / "interactions" / "submit.json"
+        assert interaction_file.is_file()
         import json
 
-        data_content = json.loads(submission_file.read_text())
+        data_content = json.loads(interaction_file.read_text())
         assert data_content["backgroundColor"] == "blue"
 
         # Check closed marker was written
-        closed_file = q_dir / "closed.json"
-        assert closed_file.is_file()
+        marker_file = q_dir / "closed.marker"
+        assert marker_file.is_file()
 
-        # Check tool call events were recorded in thread
-        tool_call_starts = [
-            e
-            for e in thread.events
-            if getattr(e, "type", None) == "TOOL_CALL_START"
-            or (isinstance(e, dict) and e.get("type") == "TOOL_CALL_START")
-        ]
-        assert len(tool_call_starts) >= 1
-        assert (
-            tool_call_starts[-1].get("tool_call_name") == "read_artifact_submission"
-            if isinstance(tool_call_starts[-1], dict)
-            else tool_call_starts[-1].tool_call_name == "read_artifact_submission"
-        )
+        # Check state file was updated
+        state_file = q_dir / "state.json"
+        state_data = json.loads(state_file.read_text())
+        assert state_data["clicksLeft"]["submit"] == 0
+        assert state_data["dataModel"]["backgroundColor"] == "blue"

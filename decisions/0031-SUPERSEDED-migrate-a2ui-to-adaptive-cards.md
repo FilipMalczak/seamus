@@ -1,3 +1,5 @@
+> Superseded by [0034-mature-a2ui-artifacts-model](./0034-mature-a2ui-artifacts-model.md).
+
 # 0031. Full Migration from A2UI to Microsoft Adaptive Cards
 
 Date: 2026-11-05

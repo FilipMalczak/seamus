@@ -4,35 +4,47 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 > Current high-level trajectory is: skills -> artifacts -> modes (plan as the first new mode)
 > The idea is that for plan mode I need to present plan somehow; 
-> to do so I can use Adaptive Cards artifacts, which I already planned, as they can be used for closed questions or any kind of user survey - and then to any other custom use case the agent might find; maybe researcher will have some use here?
-> anyway, Adaptive Cards is nontrivial, so we'll need to explain how to build these; no point in sending an explanation longer than the system prompt with every inference, so we'll want to offload Adaptive Cards as a skill
+> to do so I can use A2UI artifacts, which I already planned, as they can be used for closed questions or any kind of user survey - and then to any other custom use case the agent might find; maybe researcher will have some use here?
+> anyway, A2UI components are nontrivial, so we'll need to explain how to build these; no point in sending an explanation longer than the system prompt with every inference, so we'll want to offload A2UI components as a skill
 
 
 ## Deferred
 
-### Rich Plan Presentation, Inline Commenting, and Section-Level Editing
-- **Description**: Enhance the Plan artifact tab presentation in the Web UI: provide structured section folding, side-by-side split comparison with requirements, and rich inline commenting allowing users to select plan text segments or steps and provide targeted feedback directly into the Adaptive Card surface before clicking "Proceed".
-- **Why Deferred**: Focused initially on establishing operational modes, multi-phase thread lifecycles, and standard Markdown rendering with the "Proceed" action in the dedicated tab.
-- **Revisit Trigger**: When complex, multi-component planning workflows require fine-grained human-in-the-loop review on individual plan sections.
-- **Provenance**: [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), [0031-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-migrate-a2ui-to-adaptive-cards.md).
+### Alternative Button Action Level Notations in Artifact Manifests
+- **Description**: Experiment with consolidated or level-based notations for manifest button configurations (e.g. `someLevelName = data | unblocking | closing`) rather than discrete orthogonal boolean flags (`unblocking: bool`, `closing: bool`).
+- **Why Deferred**: Independent boolean flags (`unblocking: bool = False`, `closing: bool = False`) are explicit, orthogonal, and simple to validate in early iterations.
+- **Revisit Trigger**: When authoring experience reveals repetitive button configuration patterns across custom artifacts.
+- **Provenance**: [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [artifacts.md](./artifacts.md).
+
+### Surface Event Name in `wait_for_click` Output and Context Dispatch
+- **Description**: Incorporate the declarative action event name (e.g. `action.event.name` from `body.json`) into the `ClickResult` returned by `wait_for_click`, persisted interaction files, and synthetic unblocking messages.
+- **Why Deferred**: Interaction dispatch currently relies on button ID and evaluated context payload; event name is ignored in initial persistence to keep state transitions minimal.
+- **Revisit Trigger**: When multiple buttons dispatch distinct event names sharing identical IDs or when backend event routing requires semantic event classification.
+- **Provenance**: [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [artifacts.md](./artifacts.md).
+
+### Synthetic Tool Call Injection for Blocking Artifact Unblocks
+- **Description**: Investigate synthetic tool call injection (e.g. injecting a synthetic `wait_for_click` tool call and tool result pair) into the model's message trajectory instead of injecting a synthetic user message (`<SYNTHETIC MESSAGE INDICATOR>`) when an agent finishes a blocking turn without calling `wait_for_click`.
+- **Why Deferred**: Synthetic user messages avoid manipulating tool call history in provider-specific LLM adapters, but synthetic tool call injection might feel more natural to the model's tool-use reasoning loop.
+- **Revisit Trigger**: When evaluating model adherence and conversational flow across various LLM providers (Anthropic, OpenAI, Gemini) during blocking artifact unblocks.
+- **Provenance**: [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [artifacts.md](./artifacts.md).
 
 ### Fine-Grained Arity Controls for Questionnaire Inquiry Tools
-- **Description**: Expand selection constraints for `ask` (and future inquiry tools) from boolean `multiple: bool` to fine-grained arity bounds: `arity: int | tuple[int, int | Literal["*"]]` (e.g. `1` for single choice, `(1, "*")` for at least one choice, `(0, "*")` for optional multiple selection, `(2, 4)` for a bounded range).
-- **Why Deferred**: Boolean `multiple` matches current Adaptive Card `Input.ChoiceSet` primitives (`isMultiSelect: false` vs `isMultiSelect: true`) cleanly without requiring custom client-side validation logic or complex card input validators.
-- **Revisit Trigger**: When Adaptive Card input validators support custom min/max arity bounds or when complex survey forms require mandatory zero-or-more / range constraints.
-- **Provenance**: [0031-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-migrate-a2ui-to-adaptive-cards.md).
+- **Description**: Expand selection constraints for `make_questionnaire` (and future inquiry tools) from boolean `multiple_choice: bool` to fine-grained arity bounds: `arity: int | tuple[int, int | Literal["*"]]` (e.g. `1` for single choice, `(1, "*")` for at least one choice, `(0, "*")` for optional multiple selection, `(2, 4)` for a bounded range).
+- **Why Deferred**: Boolean `multiple_choice` matches standard `ChoiceSet` primitives cleanly without requiring custom client-side validation logic or complex input validators.
+- **Revisit Trigger**: When UI input validators support custom min/max arity bounds or when complex survey forms require mandatory zero-or-more / range constraints.
+- **Provenance**: [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [artifacts.md](./artifacts.md).
 
 ### Tabbed Artifact Exposition and Non-Blocking Cadence Lifecycles
-- **Description**: Expand artifact exposition support from `exposition=embedded` to include `exposition=tabbed` (rendering artifacts in dedicated inspector-like tabs rather than inline in chat bubbles). Formalize the lifecycle and closing rules for non-blocking artifacts (`cadence=nonblocking`) upon submission or timeout. In particular, when `read_artifact_submission` is called for a non-blocking artifact, that particular artifact instance becomes blocking.
-- **Why Deferred**: Focused initially on embedded questionnaires with blocking cadence to validate the core Adaptive Cards pipeline and synthetic tool dispatch.
+- **Description**: Expand artifact exposition support from `exposition=embedded` to include `exposition=tabbed` (rendering artifacts in dedicated inspector-like tabs rather than inline in chat bubbles). Formalize the lifecycle and closing rules for non-blocking artifacts (`blocking=false`) upon submission or timeout.
+- **Why Deferred**: Focused initially on embedded questionnaires with blocking cadence to validate the core pipeline and synthetic tool dispatch before expanding tabbed workflows.
 - **Revisit Trigger**: When introducing planning or multi-view artifacts that require dedicated panel real estate or optional non-blocking surveys.
-- **Provenance**: [0031-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-migrate-a2ui-to-adaptive-cards.md).
+- **Provenance**: [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [artifacts.md](./artifacts.md).
 
-### Read-Write Custom Artifacts (`/artifacts/custom`)
-- **Description**: Support custom, user/agent-authored Adaptive Card artifacts under `/artifacts/custom` where the directory is mounted read-write (`readOnly=False`) in OpenSandbox, allowing agents to author arbitrary Adaptive Card definitions directly with per-instance manifests.
-- **Why Deferred**: Prioritized specialized, validated artifact families (questionnaires, plans) to establish disk structure and rendering contracts before opening raw card creation.
+### Custom Interactive Artifact Authoring
+- **Description**: Provide advanced agent workflows and templates for authoring custom multi-surface A2UI interactive artifacts via `make_artifact` with arbitrary button hierarchies and state models under `/artifacts/custom/`.
+- **Why Deferred**: Prioritized specialized, validated artifact families (questionnaires, forms, plans) to establish disk structure and rendering contracts before opening raw artifact creation.
 - **Revisit Trigger**: When introducing custom agent generative UI authoring workflows.
-- **Provenance**: [0031-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-migrate-a2ui-to-adaptive-cards.md).
+- **Provenance**: [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [artifacts.md](./artifacts.md).
 
 ### Multi-Mount Repository Support and Dynamic Skill Discovery
 - **Description**: When Seamus introduces support for mounting multiple repositories/projects (e.g., existing user codebases) into the agent's sandbox container, dynamically discover and track both `<mount>/skills` and `<mount>/.skills` directories present across all mounted workspaces as project-level skill sources. In accordance with the established skill precedence hierarchy, non-dotted `skills` takes precedence over dotted `.skills`, and project mounts take precedence after the operational `/workspace` but before ambient system-wide skills.
@@ -118,19 +130,24 @@ Persistent record of work intentionally left outstanding across the project, mai
 ### Review and Rethink Error Reporting Architecture and Semantics
 - **Current Problem**: Error reporting across the harness stack is unclear and fragmented. Errors originating from tool execution (e.g. argument validation or duplicate question IDs in `ask`), sandbox execution, runner loops, and SSE event streaming (`RUN_ERROR` vs `TOOL_CALL_RESULT` with `is_error=True`) lack a clear taxonomy, consistent propagation rules, and transparent visibility in both agent reasoning context and frontend user feedback.
 - **Improvement**: Review and redesign error reporting systematically: define distinct error categories (recoverable tool feedback intended for model correction vs fatal harness/system faults), establish consistent propagation through SSE events and thread status, and provide clear, actionable error indicators in the web UI.
-- **Provenance**: `src/seamus/harness/runner.py`, [0031-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-migrate-a2ui-to-adaptive-cards.md), [architecture.md](./architecture.md).
+- **Provenance**: `src/seamus/harness/runner.py`, [0031-SUPERSEDED-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-SUPERSEDED-migrate-a2ui-to-adaptive-cards.md), [architecture.md](./architecture.md).
 
 ## TODO
 
+### Polymorphic Input Request Specification for Predefined Artifact Builders
+- **Description**: Rephrase atomic inquiry builders from `make_questionnaire(questions: list[Question])` to generalized polymorphic builders `make_...(items: list[InputRequest]) -> ...`, where `InputRequest = SingleChoiceQuestion | MultipleChoiceQuestion | OpenQuestion | ColorChoice | DateChoice | ...` (or alternatively modeling the `answers` property of `Question` as an extensible enum/union of input widgets).
+- **Rationale**: Predefined artifact builders should accommodate a broader palette of input widgets (color pickers, date pickers, freeform text boxes, file uploads) beyond simple single/multiple-choice questions while preserving atomic generation.
+- **Provenance**: [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [artifacts.md](./artifacts.md).
+
 ### Review and Audit Plan Mode Implementation
-- **Description**: Conduct a thorough review and audit of the Plan mode and planner implementation (`PlanBuilder`, prompt composition, `make_plan`/`update_plan`/`edit_plan` tool lifecycle, phase transitions, and UI presentation). In particular, evaluate whether the current Adaptive Card structure and tool mechanics provide optimal model steerability, assess how user comments and section-level revisions should be incorporated, and review whether the prompt instructions and sandbox handoff (`/artifacts/plans/<id>/plan.md`) cleanly support execution across long tasks.
+- **Description**: Conduct a thorough review and audit of the Plan mode and planner implementation (`PlanBuilder`, prompt composition, `make_plan` tool lifecycle, phase transitions, and UI presentation). In particular, evaluate whether the current A2UI structure and tool mechanics provide optimal model steerability, assess how user comments and section-level revisions should be incorporated, and review whether the prompt instructions and sandbox handoff (`/artifacts/plans/<id>/plan.md`) cleanly support execution across long tasks.
 - **Rationale**: Plan mode was quickly composed across multiple iterations (initial mode scaffolding, Adaptive Cards migration, and A2UI decoupling). A dedicated review pass will consolidate lessons learned, eliminate residual rough edges, and prepare the foundation for rich plan commenting and section-level revisions.
-- **Provenance**: [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), [0031-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-migrate-a2ui-to-adaptive-cards.md), [0033-decouple-plans-and-submissions-from-a2ui.md](../decisions/0033-decouple-plans-and-submissions-from-a2ui.md), `src/seamus/harness/artifacts.py`, `src/seamus/harness/prompt.py`.
+- **Provenance**: [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [0033-decouple-plans-and-submissions-from-a2ui.md](../decisions/0033-decouple-plans-and-submissions-from-a2ui.md), `src/seamus/harness/artifacts.py`, `src/seamus/harness/prompt.py`.
 
 ### Steerable Model Implementation for Local Manual Testing
-- **Description**: Introduce a steerable model provider for local development and manual testing. The steerable model allows developers to script, step through, or interactively inject specific model responses, text chunks, and tool calls (such as `ask` inquiries, custom Adaptive Card artifacts, or specific error states) into active sessions without incurring live LLM API costs or dealing with non-deterministic completions.
-- **Rationale**: Greatly streamlines local manual verification of UI features (like interactive Adaptive Card questionnaires, diff viewers, and error handling) and reduces turnaround time for frontend and harness developers.
-- **Provenance**: `src/seamus/harness/runner.py`, `tests/test_runner.py`, [0031-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-migrate-a2ui-to-adaptive-cards.md).
+- **Description**: Introduce a steerable model provider for local development and manual testing. The steerable model allows developers to script, step through, or interactively inject specific model responses, text chunks, and tool calls (such as `make_questionnaire` inquiries, custom A2UI artifacts, or specific error states) into active sessions without incurring live LLM API costs or dealing with non-deterministic completions.
+- **Rationale**: Greatly streamlines local manual verification of UI features (like interactive A2UI questionnaires, diff viewers, and error handling) and reduces turnaround time for frontend and harness developers.
+- **Provenance**: `src/seamus/harness/runner.py`, `tests/test_runner.py`, [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md).
 
 ### Native LM-XML Skills System with Load/Unload Skill Tools
 - **Description**: Replace the reliance on LangChain DeepAgents' built-in `SkillsMiddleware` with a first-party, native Seamus skills implementation. The native system will be built directly on `lmxml` dynamic prompt structures (integrating seamlessly with `DynamicSystemPromptMiddleware`) and explicit `load_skill` / `unload_skill` agent tools to disclose, activate, and deactivate skill instructions and associated tools on demand rather than relying on automatic middleware inspection and implicit prompt appending.
@@ -223,30 +240,31 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## Not formalized
 
-- add comments to plans (maybe to all the artifacts?) [CRITICAL]
-- once the plan is accepted, when we try to look it up in Changes tab, it takes a moment to load
+- a way to attach to button (in artifact) both data from inputs and comments [low]
+- comments need to be saved in artifact state, not just "review" append log [low]
+- Workspace needs .gitignore; we need to explain to the agent that that file controls what is persistent and what might disappear at any moment
+- proceed/submit buttons disappear from render after closing the artifact [low]
+- test that if we kill the system during run, then agent auto-restarts after system restart [mid/high]
 - once the harness opens a new thread, we should auto-switch there (if we're in the thread from which we switched)
 - session view (its already above, but it has high prio)
-- "branch" icon should be more granular and to the right of bubbles (instead of below)
-- if there is more than 1 artifact and we wanna look it up in inspector renderer, it will fail because surface name is shared ("Surface 'surface' already exists") [MID/HIGH]
+- "branch" icon should be more granular and to the right of bubbles (instead of below); review branching in general - icons placement is bit misleading
 - review and rethink what should happen with artifacts on accept
-- when sending messages is disabled, it should only disable the button and Enter handler; the text field should still be editable (for the sake of preparing a message while agent works)
+- when sending messages is disabled (due to artifact blocking or just agent processing), it should only disable the button and Enter handler; the text field should still be editable (for the sake of preparing a message while agent works)
 - in prompt operating_environment -> filesystem_persistence/execution_sandbox it sounds like the installed stuff is also ephemeric (it is, but its a bug)
-
-- user input variations (actively being designed):
-  - user-accepted tool calls
-  - artifact-based forms that the user can open and fill
-  - in-message UI pieces?
-  - specialized messages?
+- when we open new thread, we should include a bunch of messages from previous thread [mid/high] [I expect a lot out of this]; make the overlap numbers configurable
+- "sync config" (template -> agent <-> session)
+- for the hundreth time, remove 20b default
+- custom sandbox images as part of config; bundle dedicated one w/ seamus [mid/high]
+- multiple mounted repos; this will require us to figure out squashing strategies and how to track which commit corresponds to which across repos [high, but complicated]
+- logfire spans are not grouping agents/sessions/threads as I hoped; besides, GETs pollute the view a lot; besides #2, maybe we could go for embedded span viewer in compse stack?
 
 
 - default implementation selection: decide on system-wide defaults for `todo_implementation` and `skills_implementation` once alternative/native implementations are stabilized
 
-- custom artifacts
-- changes to questions: `create_questionaire` return uuid, but more importantly, `ask` doesnt take the uuid, runs on open one (mentioned in prompt); `ask`, `publish_-` and `discard_questionaire` tools become available once create is called; we remove createSurface from `/artifact/questionnaire`; we change the rule to show the artifact only when create is present; if create is present and `deleteSurface` is present -> questionnaire is closed; if create isnt present, but delete is, it means it was discarded; publish creates `createSurface` file, discard -> `deleteSurface`
 
-
-- way forward: disablability of more layers and components; 
+- way, waaaaay forward: disablability of more layers and components; 
   - for sure context compaction, I dont like it
   - disabling specific artifacts (generic are always allowed, in which case we need to mount custom examples directory, which might be a good idea anyway)
+
+- rethink styling and generally UI colors and shapes
   

@@ -35,7 +35,9 @@ def make_config() -> AgentConfig:
 def test_modes_domain_registration_and_normalization() -> None:
     chat_desc = get_mode_descriptor("chat")
     assert chat_desc.name == "chat"
-    assert "ask" in chat_desc.tools
+    assert "make_artifact" in chat_desc.tools
+    assert "make_questionnaire" in chat_desc.tools
+    assert "wait_for_click" in chat_desc.tools
 
     plan_desc = get_mode_descriptor("plan")
     assert plan_desc.name == "plan"
@@ -86,19 +88,21 @@ def test_mount_policy_resolution() -> None:
 def test_available_harness_tools_resolution() -> None:
     # Chat
     chat_tools = resolve_available_harness_tools("chat")
-    assert "ask" in chat_tools
-    assert "read_artifact_submission" in chat_tools
+    assert "make_artifact" in chat_tools
+    assert "make_questionnaire" in chat_tools
+    assert "wait_for_click" in chat_tools
     assert "plan" not in chat_tools
     assert "make_plan" not in chat_tools
     assert "discard" not in chat_tools
 
     # Plan/Discuss
     disc_tools = resolve_available_harness_tools("plan", "discuss")
-    assert "ask" in disc_tools
-    assert "form" in disc_tools
+    assert "make_artifact" in disc_tools
+    assert "make_questionnaire" in disc_tools
+    assert "make_form" in disc_tools
     assert "plan" in disc_tools
     assert "discard" in disc_tools
-    assert "read_artifact_submission" in disc_tools
+    assert "wait_for_click" in disc_tools
     assert "make_plan" not in disc_tools
 
     # Plan/Make without active plan: make_plan is exposed, update/edit are not
@@ -107,7 +111,7 @@ def test_available_harness_tools_resolution() -> None:
     assert "update_plan" not in make_no_plan
     assert "edit_plan" not in make_no_plan
     assert "discard" in make_no_plan
-    assert "read_artifact_submission" in make_no_plan
+    assert "wait_for_click" in make_no_plan
 
     # Plan/Make with active plan: make_plan disappears, update/edit appear
     make_with_plan = resolve_available_harness_tools("plan", "make", has_active_plan=True)
@@ -119,11 +123,12 @@ def test_available_harness_tools_resolution() -> None:
     # Plan/Execute: no special inquiry or plan authoring tools, only discard
     exec_tools = resolve_available_harness_tools("plan", "execute")
     assert "discard" in exec_tools
-    assert "ask" not in exec_tools
-    assert "form" not in exec_tools
+    assert "make_artifact" not in exec_tools
+    assert "make_questionnaire" not in exec_tools
+    assert "make_form" not in exec_tools
     assert "plan" not in exec_tools
     assert "make_plan" not in exec_tools
-    assert "read_artifact_submission" not in exec_tools
+    assert "wait_for_click" not in exec_tools
 
 
 def test_plan_builder_lifecycle(tmp_path: Path) -> None:
@@ -139,7 +144,8 @@ def test_plan_builder_lifecycle(tmp_path: Path) -> None:
     )
     assert plan_path.exists()
     assert (plan_path / "manifest.json").exists()
-    assert (plan_path / "card.json").exists()
+    assert (plan_path / "body.json").exists()
+    assert (plan_path / "state.json").exists()
     assert (plan_path / "plan.md").exists()
     assert (plan_path / "plan.md").read_text(encoding="utf-8") == "# Initial Plan\n\n- Step 1"
 
@@ -158,15 +164,14 @@ def test_plan_builder_lifecycle(tmp_path: Path) -> None:
     edited_content, _ = PlanBuilder.read_plan(artifacts_dir, "test-plan")
     assert "- Step 2 (verified)" in edited_content
 
-    # Approve plan (strips proceed button)
+    # Approve plan (touches closed.marker)
     PlanBuilder.approve_plan(artifacts_dir, "test-plan")
-    closed_content = (plan_path / "closed.json").read_text(encoding="utf-8")
-    assert '"approved": true' in closed_content
+    assert (plan_path / "closed.marker").exists()
 
-    # Close plan (writes closed.json)
+    # Close plan (writes closed.marker)
     # Plan is already closed by approve_plan, so close_plan returns False
     assert PlanBuilder.close_plan(artifacts_dir, "test-plan") is False
-    assert (plan_path / "closed.json").exists()
+    assert (plan_path / "closed.marker").exists()
 
 
 def test_system_prompt_lmxml_composition() -> None:

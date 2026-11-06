@@ -5,6 +5,7 @@ import type {
   AgentSummary,
   AgentStatus,
   ArtifactInfo,
+  ClickResult,
   ConfigTemplateResponse,
   SessionDetail,
   SessionDiffResponse,
@@ -401,6 +402,25 @@ export async function submitArtifact(
     }
   );
   return handleResponse<{ status: string; artifact_id: string; tool_call_id: string }>(res);
+}
+
+export async function clickArtifact(
+  agentId: string,
+  sessionId: string,
+  family: string,
+  uuid: string,
+  buttonId: string,
+  context: Record<string, unknown> = {}
+): Promise<ClickResult> {
+  const res = await fetch(
+    `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/artifact/${encodeURIComponent(family)}/${encodeURIComponent(uuid)}/click`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ button_id: buttonId, context }),
+    }
+  );
+  return handleResponse<ClickResult>(res);
 }
 
 

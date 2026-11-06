@@ -1,308 +1,415 @@
-"""Unit tests for artifact storage, resolution, and questionnaire generation."""
+"""Unit tests for A2UI subset artifact storage, builders, dispatch, and resolver."""
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from seamus.domain.artifacts import CadenceMode, ExpositionMode
+from seamus.domain.artifacts import (
+    ArtifactManifest,
+    ArtifactState,
+    ManifestButton,
+)
 from seamus.harness.artifacts import (
-    ADAPTIVE_CARD_SCHEMA,
-    ADAPTIVE_CARD_VERSION,
+    ArtifactBuilder,
+    ArtifactCorruptedError,
     ArtifactResolver,
+    FormBuilder,
     PlanBuilder,
-    QuestionItem,
+    Question,
     QuestionnaireBuilder,
+    dispatch_button_click,
     seed_default_artifacts,
 )
 
 
 def test_seed_default_artifacts(tmp_path: Path) -> None:
     seed_default_artifacts(tmp_path)
-
-    # createSurface.json should NOT be created
-    surface_file = tmp_path / "createSurface.json"
-    assert not surface_file.exists()
-
-    manifest_file = tmp_path / "questionnaires" / "manifest.json"
-    assert manifest_file.is_file()
-    manifest_data = json.loads(manifest_file.read_text())
-    assert manifest_data["exposition"] == ExpositionMode.EMBEDDED
-    assert manifest_data["cadence"] == CadenceMode.BLOCKING
+    # createSurface.json or legacy adaptive card files should NOT be created
+    assert not (tmp_path / "createSurface.json").exists()
+    assert not (tmp_path / "questionnaires" / "card.json").exists()
 
 
-def test_questionnaire_builder_single_question() -> None:
+def test_manifest_button_click_validation() -> None:
+    # Positive integer allowed
+    b1 = ManifestButton(id="btn1", mode="set", clicks=3)
+    assert b1.clicks == 3
+
+    # Star '*' allowed
+    b2 = ManifestButton(id="btn2", mode="append", clicks="*")
+    assert b2.clicks == "*"
+
+    # 0 or negative integers disallowed in manifest schema
+    with pytest.raises(ValueError, match="positive integer"):
+        ManifestButton(id="btn3", mode="set", clicks=0)
+
+    with pytest.raises(ValueError, match="positive integer"):
+        ManifestButton(id="btn4", mode="set", clicks=-1)
+
+    # 0 or negative integers ARE allowed in ArtifactState (e.g. when quota exhausted)
+    st = ArtifactState(clicksLeft={"btn1": 0, "btn2": -1})
+    assert st.clicksLeft["btn1"] == 0
+    assert st.clicksLeft["btn2"] == -1
+
+
+def test_artifact_builder_create_artifact(tmp_path: Path) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    manifest = ArtifactManifest(
+        name="Custom UI",
+        exposition="embedded",
+        blocking=True,
+        commentable=False,
+        buttons=[
+            ManifestButton(id="btn_ok", mode="set", clicks=2, unblocking=True),
+            ManifestButton(id="btn_log", mode="append", clicks="*"),
+        ],
+    )
+    components: list[dict[str, Any]] = [
+        {"id": "col", "component": "Column", "children": ["btn_ok", "btn_log"]},
+        {"id": "btn_ok", "component": "Button", "title": "OK"},
+        {"id": "btn_log", "component": "Button", "title": "Log"},
+    ]
+
+    art_uuid = ArtifactBuilder.create_artifact(
+        artifacts_dir=artifacts_dir,
+        family="custom",
+        manifest=manifest,
+        components=components,
+    )
+
+    art_dir = artifacts_dir / "custom" / art_uuid
+    assert art_dir.is_dir()
+    assert (art_dir / "manifest.json").is_file()
+    assert (art_dir / "body.json").is_file()
+    assert (art_dir / "state.json").is_file()
+    assert not (art_dir / "closed.marker").exists()
+
+    state = json.loads((art_dir / "state.json").read_text(encoding="utf-8"))
+    assert state["dataModel"] == {}
+    assert state["clicksLeft"]["btn_ok"] == 2
+    assert state["clicksLeft"]["btn_log"] == "*"
+
+
+def test_inv_art_003_body_manifest_coexistence(tmp_path: Path) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    corrupt_dir = artifacts_dir / "custom" / "corrupt-uuid"
+    corrupt_dir.mkdir(parents=True, exist_ok=True)
+
+    # manifest exists but body.json is missing
+    (corrupt_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "name": "Bad",
+                "exposition": "embedded",
+                "blocking": False,
+                "commentable": False,
+                "buttons": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    resolver = ArtifactResolver(artifacts_dir)
+    with pytest.raises(ArtifactCorruptedError, match="manifest.json exists without body.json"):
+        resolver.load_artifact("custom", "corrupt-uuid")
+
+
+def test_questionnaire_builder_lifecycle(tmp_path: Path) -> None:
+    artifacts_dir = tmp_path / "artifacts"
     questions = [
-        QuestionItem(
-            question="What color is the background?",
-            answers=["white", "blue"],
-            writein=True,
-            id="backgroundColor",
+        Question(
+            body="What is your favorite color?",
+            answers=["Red", "Green", "Blue"],
+            multiple_choice=False,
+        ),
+        Question(
+            body="Select accessories",
+            answers=["Case", "Charger"],
+            multiple_choice=True,
+        ),
+    ]
+
+    uuid = QuestionnaireBuilder.create_questionnaire(
+        artifacts_dir=artifacts_dir,
+        questions=questions,
+        title="Color Survey",
+    )
+
+    resolver = ArtifactResolver(artifacts_dir)
+    info = resolver.load_artifact("questionnaires", uuid)
+    assert info.manifest.name == "Color Survey"
+    assert info.manifest.exposition == "embedded"
+    assert info.manifest.blocking is True
+    assert info.manifest.commentable is False
+    assert len(info.manifest.buttons) == 1
+    assert info.manifest.buttons[0].id == "submit-btn"
+    assert info.manifest.buttons[0].unblocking is True
+    assert info.manifest.buttons[0].closing is True
+    assert not info.is_closed
+
+    # Body validation
+    assert len(info.body) > 0
+    choice_sets = [c for c in info.body if c.get("component") == "ChoiceSet"]
+    assert len(choice_sets) == 2
+    assert choice_sets[0]["isMultiSelect"] is False
+    assert choice_sets[1]["isMultiSelect"] is True
+
+
+def test_form_builder_lifecycle(tmp_path: Path) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    questions = [
+        Question(
+            body="Deployment environment?",
+            answers=["Staging", "Production"],
+            multiple_choice=False,
         )
     ]
-    card = QuestionnaireBuilder.build_card(questions)
-    assert card["$schema"] == ADAPTIVE_CARD_SCHEMA
-    assert card["type"] == "AdaptiveCard"
-    assert card["version"] == ADAPTIVE_CARD_VERSION
 
-    body = card["body"]
-    assert len(body) == 1
-    container = body[0]
-    assert container["type"] == "Container"
-    assert container["id"] == "backgroundColor_container"
+    uuid = FormBuilder.create_form(
+        artifacts_dir=artifacts_dir,
+        questions=questions,
+        title="Deploy Form",
+    )
 
-    items = container["items"]
-    assert items[0]["type"] == "TextBlock"
-    assert items[0]["text"] == "What color is the background?"
-    assert items[0]["weight"] == "Bolder"
-
-    assert items[1]["type"] == "Input.ChoiceSet"
-    assert items[1]["id"] == "backgroundColor"
-    assert items[1]["isMultiSelect"] is False
-    assert len(items[1]["choices"]) == 3  # white, blue, other
-
-    assert items[2]["type"] == "Input.Text"
-    assert items[2]["id"] == "backgroundColorOther"
-
-    actions = card["actions"]
-    assert len(actions) == 1
-    assert actions[0]["type"] == "Action.Submit"
-    assert actions[0]["title"] == "Submit"
-    assert actions[0]["data"]["action"] == "submit_questionnaire"
-
-
-def test_questionnaire_builder_multiple_questions_auto_ids() -> None:
-    questions = [
-        QuestionItem(
-            question="What is the layout?",
-            answers=["grid", "list"],
-            writein=False,
-        ),
-        QuestionItem(
-            question="Are headers bold and caps, or just bold?",
-            answers=["bold+CAPS", "just bold"],
-            writein=False,
-        ),
-    ]
-    card = QuestionnaireBuilder.build_card(questions)
-    body = card["body"]
-    assert len(body) == 2
-    assert body[0]["id"] == "whatIsTheLayout_container"
-    assert body[1]["id"] == "areHeadersBoldAndCapsOrJustBold_container"
-    assert body[1]["separator"] is True
-
-
-def test_questionnaire_builder_formatting_and_multi_select() -> None:
-    questions = [
-        QuestionItem(
-            question="Select features",
-            answers=["auth", "logging", "metrics"],
-            multiple=True,
-            id="features",
-        ),
-        QuestionItem(
-            question="Primary database",
-            answers=["postgres", "sqlite"],
-            multiple=False,
-            id="db",
-        ),
-    ]
-    card = QuestionnaireBuilder.build_card(questions, title="Survey")
-    body = card["body"]
-
-    c1 = body[0]
-    picker1 = next(item for item in c1["items"] if item["type"] == "Input.ChoiceSet")
-    assert picker1["isMultiSelect"] is True
-
-    c2 = body[1]
-    picker2 = next(item for item in c2["items"] if item["type"] == "Input.ChoiceSet")
-    assert picker2["isMultiSelect"] is False
+    resolver = ArtifactResolver(artifacts_dir)
+    info = resolver.load_artifact("forms", uuid)
+    assert info.manifest.name == "Deploy Form"
+    assert info.manifest.exposition == "tabbed"
+    assert info.manifest.blocking is False
+    assert info.manifest.commentable is False
+    assert len(info.manifest.buttons) == 1
+    assert info.manifest.buttons[0].id == "submit-btn"
+    assert info.manifest.buttons[0].unblocking is False
+    assert info.manifest.buttons[0].closing is True
 
 
 def test_plan_builder_lifecycle(tmp_path: Path) -> None:
     artifacts_dir = tmp_path / "artifacts"
-    plan_id = "test-plan"
-    initial_content = "# Architecture\n\nStep 1: Install packages\nStep 2: Run tests"
+    plan_uuid = "plan-xyz"
+    content = "# Phase 1\n\nSetup DB\nSetup Auth"
 
     # 1. Create plan
-    PlanBuilder.create_plan(artifacts_dir, plan_id, initial_content, title="Migration Plan")
-    card_path = artifacts_dir / "plans" / plan_id / "card.json"
-    plan_md_path = artifacts_dir / "plans" / plan_id / "plan.md"
-    assert card_path.is_file()
-    assert plan_md_path.is_file()
-    assert plan_md_path.read_text(encoding="utf-8") == initial_content
+    PlanBuilder.create_plan(artifacts_dir, plan_uuid, content=content, title="Release Plan")
+    plan_dir = artifacts_dir / "plans" / plan_uuid
+    assert plan_dir.is_dir()
+    assert (plan_dir / "manifest.json").is_file()
+    assert (plan_dir / "body.json").is_file()
+    assert (plan_dir / "state.json").is_file()
+    assert (plan_dir / "plan.md").is_file()
+    assert (plan_dir / "plan.md").read_text(encoding="utf-8") == content
 
-    content, title = PlanBuilder.read_plan(artifacts_dir, plan_id)
-    assert content == initial_content
-    assert title == "Migration Plan"
+    # 2. Read plan
+    read_c, read_t = PlanBuilder.read_plan(artifacts_dir, plan_uuid)
+    assert read_c == content
+    assert read_t == "Release Plan"
 
-    # Verify structured containers in card
-    card_data = json.loads(card_path.read_text(encoding="utf-8"))
-    assert card_data["type"] == "AdaptiveCard"
-    body = card_data["body"]
-    container_ids = [c.get("id") for c in body if isinstance(c, dict)]
-    assert "plan_header" in container_ids
-    assert "plan_content" in container_ids
-    assert "plan_comments" in container_ids
-    assert len(card_data["actions"]) == 1
-    assert card_data["actions"][0]["data"]["action"] == "proceed_plan"
+    # 3. Update plan
+    updated = content + "\nSetup API"
+    PlanBuilder.update_plan(artifacts_dir, plan_uuid, updated)
+    assert (plan_dir / "plan.md").read_text(encoding="utf-8") == updated
 
-    # 2. Update plan
-    updated_content = initial_content + "\nStep 3: Deploy"
-    PlanBuilder.update_plan(artifacts_dir, plan_id, updated_content)
-    content, _ = PlanBuilder.read_plan(artifacts_dir, plan_id)
-    assert content == updated_content
-    assert plan_md_path.read_text(encoding="utf-8") == updated_content
+    # 4. Edit plan with substring replacement
+    PlanBuilder.edit_plan(artifacts_dir, plan_uuid, "Setup Auth", "Setup OAuth2")
+    edited_c, _ = PlanBuilder.read_plan(artifacts_dir, plan_uuid)
+    assert "Setup OAuth2" in edited_c
+    assert "Setup Auth" not in edited_c
 
-    # 3. Edit plan with substring replacement
-    PlanBuilder.edit_plan(artifacts_dir, plan_id, "Step 2: Run tests", "Step 2: Run all tests")
-    content, _ = PlanBuilder.read_plan(artifacts_dir, plan_id)
-    assert "Step 2: Run all tests" in content
-    assert "Step 2: Run all tests" in plan_md_path.read_text(encoding="utf-8")
+    # 5. Approve plan
+    assert not (plan_dir / "closed.marker").exists()
+    PlanBuilder.approve_plan(artifacts_dir, plan_uuid)
+    assert (plan_dir / "closed.marker").exists()
 
-    # 4. Approve plan
-    PlanBuilder.approve_plan(artifacts_dir, plan_id)
-    closed_file = artifacts_dir / "plans" / plan_id / "closed.json"
-    assert closed_file.is_file()
-    approved_card = json.loads(card_path.read_text(encoding="utf-8"))
-    assert len(approved_card["actions"]) == 0  # Proceed button stripped
+    # Re-reading via resolver confirms closed
+    resolver = ArtifactResolver(artifacts_dir)
+    plan_info = resolver.load_artifact("plans", plan_uuid)
+    assert plan_info.is_closed is True
+    assert plan_info.state.clicksLeft.get("proceed-btn") == 0
 
 
-def test_artifact_resolver_hierarchy(tmp_path: Path) -> None:
-    seed_default_artifacts(tmp_path)
-    resolver = ArtifactResolver(tmp_path)
+def test_plan_review_button_and_unlimited_clicks(tmp_path: Path) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    plan_uuid = "plan-review-test"
+    content = "# Architecture\n\n- Component A\n- Component B"
 
-    # 1. Class level manifest resolves
-    resolved_manifest = resolver.resolve_file("questionnaires", "inst-1", "manifest.json")
-    assert resolved_manifest == tmp_path / "questionnaires" / "manifest.json"
+    PlanBuilder.create_plan(artifacts_dir, plan_uuid, content=content, title="Arch Plan")
+    plan_dir = artifacts_dir / "plans" / plan_uuid
 
-    # 2. Instance level card resolves
-    inst_dir = tmp_path / "questionnaires" / "inst-1"
-    inst_dir.mkdir(parents=True, exist_ok=True)
-    custom_card = inst_dir / "card.json"
-    custom_card.write_text('{"type": "AdaptiveCard", "body": []}')
+    # Verify body.json has a valid Button component for review-btn with label Review
+    body_data = json.loads((plan_dir / "body.json").read_text(encoding="utf-8"))
+    components_by_id = {c["id"]: c for c in body_data}
+    assert "review-btn" in components_by_id
+    assert components_by_id["review-btn"]["component"] == "Button"
+    assert components_by_id["review-btn"]["variant"] == "default"
+    assert components_by_id["review-btn"]["child"] == "review-label"
+    assert components_by_id["review-label"]["component"] == "Text"
+    assert components_by_id["review-label"]["text"] == "Review"
 
-    resolved_card = resolver.resolve_file("questionnaires", "inst-1", "card.json")
-    assert resolved_card == custom_card
+    # Verify manifest.json declares review-btn with clicks="*" and mode="append"
+    manifest_data = json.loads((plan_dir / "manifest.json").read_text(encoding="utf-8"))
+    btns = {b["id"]: b for b in manifest_data["buttons"]}
+    assert "review-btn" in btns
+    assert btns["review-btn"]["clicks"] == "*"
+    assert btns["review-btn"]["mode"] == "append"
+    assert btns["review-btn"]["closing"] is False
+
+    # Dispatch multiple review clicks with comments payload
+    for i in range(3):
+        res = dispatch_button_click(
+            artifacts_dir=artifacts_dir,
+            family="plans",
+            uuid=plan_uuid,
+            button_id="review-btn",
+            context={
+                "comments": [
+                    {
+                        "location": "p:0",
+                        "selectedText": "Component A",
+                        "comment": f"Feedback {i + 1}",
+                    }
+                ]
+            },
+        )
+        assert res.button_id == "review-btn"
+        assert len(res.context["comments"]) == 1
+        assert res.context["comments"][0]["comment"] == f"Feedback {i + 1}"
+
+    # Verify interactions/review-btn.json has 3 appended records
+    int_file = plan_dir / "interactions" / "review-btn.json"
+    assert int_file.is_file()
+    lines = [line for line in int_file.read_text(encoding="utf-8").strip().splitlines() if line]
+    assert len(lines) == 3
+    assert json.loads(lines[0])["comments"][0]["comment"] == "Feedback 1"
+    assert json.loads(lines[1])["comments"][0]["comment"] == "Feedback 2"
+    assert json.loads(lines[2])["comments"][0]["comment"] == "Feedback 3"
+
+    # Verify state.json retains clicks="*" and artifact is not closed
+    state_data = json.loads((plan_dir / "state.json").read_text(encoding="utf-8"))
+    assert state_data["clicksLeft"]["review-btn"] == "*"
+    assert not (plan_dir / "closed.marker").exists()
 
 
-def test_artifact_resolver_closed_status(tmp_path: Path) -> None:
-    seed_default_artifacts(tmp_path)
-    resolver = ArtifactResolver(tmp_path)
-    inst_dir = tmp_path / "questionnaires" / "q1"
-    inst_dir.mkdir(parents=True, exist_ok=True)
+def test_dispatch_button_click_modes_and_quotas(tmp_path: Path) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    manifest = ArtifactManifest(
+        name="Counter Test",
+        exposition="embedded",
+        blocking=False,
+        commentable=False,
+        buttons=[
+            ManifestButton(id="set_btn", mode="set", clicks=2, unblocking=False, closing=False),
+            ManifestButton(id="app_btn", mode="append", clicks=1, unblocking=True, closing=True),
+        ],
+    )
+    components: list[dict[str, Any]] = [
+        {"id": "col", "component": "Column", "children": ["set_btn", "app_btn"]},
+        {"id": "set_btn", "component": "Button", "title": "Set"},
+        {"id": "app_btn", "component": "Button", "title": "App"},
+    ]
+    uuid = ArtifactBuilder.create_artifact(
+        artifacts_dir=artifacts_dir,
+        family="test_family",
+        manifest=manifest,
+        components=components,
+    )
 
-    assert not resolver.is_closed("questionnaires", "q1")
+    art_dir = artifacts_dir / "test_family" / uuid
 
-    # Instance level closed.json marks it closed
-    inst_closed = inst_dir / "closed.json"
-    inst_closed.write_text('{"closed": true}')
-    assert resolver.is_closed("questionnaires", "q1")
+    # 1. Click set_btn first time
+    res1 = dispatch_button_click(
+        artifacts_dir=artifacts_dir,
+        family="test_family",
+        uuid=uuid,
+        button_id="set_btn",
+        context={"val": "first"},
+    )
+    assert res1.button_id == "set_btn"
+    assert res1.context == {"val": "first"}
 
-    art = resolver.load_artifact("questionnaires", "q1")
-    assert art.is_closed
+    # interactions/set_btn.json should be formatted JSON
+    int_file = art_dir / "interactions" / "set_btn.json"
+    assert int_file.is_file()
+    assert json.loads(int_file.read_text(encoding="utf-8")) == {"val": "first"}
 
+    # state.json dataModel updated, clicks left decremented to 1
+    state1 = json.loads((art_dir / "state.json").read_text(encoding="utf-8"))
+    assert state1["dataModel"] == {"val": "first"}
+    assert state1["clicksLeft"]["set_btn"] == 1
 
-def test_artifact_resolver_instance_manifest_validation(tmp_path: Path) -> None:
-    seed_default_artifacts(tmp_path)
-    resolver = ArtifactResolver(tmp_path)
-    inst_dir = tmp_path / "questionnaires" / "q2"
-    inst_dir.mkdir(parents=True, exist_ok=True)
+    # 2. Click set_btn second time (quota reaches 0)
+    res2 = dispatch_button_click(
+        artifacts_dir=artifacts_dir,
+        family="test_family",
+        uuid=uuid,
+        button_id="set_btn",
+        context={"val": "second"},
+    )
+    assert res2.button_id == "set_btn"
+    state2 = json.loads((art_dir / "state.json").read_text(encoding="utf-8"))
+    assert state2["dataModel"] == {"val": "second"}
+    assert state2["clicksLeft"]["set_btn"] == 0
 
-    # Mismatched instance manifest raises error for questionnaires
-    (inst_dir / "manifest.json").write_text('{"exposition": "tabbed", "cadence": "nonblocking"}')
-    with pytest.raises(ValueError, match="does not match class-level manifest"):
-        resolver.load_manifest("questionnaires", "q2")
+    # 3. Third click on set_btn fails with ValueError (inactive)
+    with pytest.raises(ValueError, match="exhausted its remaining clicks"):
+        dispatch_button_click(
+            artifacts_dir=artifacts_dir,
+            family="test_family",
+            uuid=uuid,
+            button_id="set_btn",
+            context={"val": "third"},
+        )
 
-    # Unsupported artifact family raises error
-    with pytest.raises(ValueError, match="Unsupported artifact kind"):
-        resolver.load_manifest("magic_reports", "rep1")
+    # 4. Click unlisted button raises ValueError
+    with pytest.raises(ValueError, match="not configured in artifact manifest"):
+        dispatch_button_click(
+            artifacts_dir=artifacts_dir,
+            family="test_family",
+            uuid=uuid,
+            button_id="rogue_btn",
+            context={},
+        )
+
+    # 5. Click app_btn (mode=append, closing=True)
+    res_app = dispatch_button_click(
+        artifacts_dir=artifacts_dir,
+        family="test_family",
+        uuid=uuid,
+        button_id="app_btn",
+        context={"note": "done"},
+    )
+    assert res_app.button_id == "app_btn"
+    app_file = art_dir / "interactions" / "app_btn.json"
+    assert app_file.is_file()
+    assert '{"note": "done"}\n' in app_file.read_text(encoding="utf-8")
+    assert (art_dir / "closed.marker").exists()
 
 
 def test_artifact_resolver_list_and_blocking(tmp_path: Path) -> None:
-    seed_default_artifacts(tmp_path)
-    resolver = ArtifactResolver(tmp_path)
+    artifacts_dir = tmp_path / "artifacts"
+    resolver = ArtifactResolver(artifacts_dir)
 
-    q_dir = tmp_path / "questionnaires" / "test-q"
-    q_dir.mkdir(parents=True, exist_ok=True)
-    (q_dir / "card.json").write_text('{"type": "AdaptiveCard", "body": []}')
+    assert not resolver.has_open_blocking_artifact()
+    assert resolver.list_artifacts() == []
+
+    # Create blocking questionnaire
+    q_uuid = QuestionnaireBuilder.create_questionnaire(
+        artifacts_dir=artifacts_dir,
+        questions=[Question(body="Favorite editor?", answers=["vim", "emacs", "vscode"])],
+        title="Editor survey",
+    )
 
     assert resolver.has_open_blocking_artifact()
-    artifacts = resolver.list_artifacts()
-    assert len(artifacts) == 1
-    assert artifacts[0].name == "test-q"
-    assert not artifacts[0].is_closed
+    arts = resolver.list_artifacts()
+    assert len(arts) == 1
+    assert arts[0].uuid == q_uuid
+    assert arts[0].is_closed is False
 
-    # Close artifact
-    (q_dir / "closed.json").write_text('{"closed": true}')
+    # Close the questionnaire
+    q_dir = artifacts_dir / "questionnaires" / q_uuid
+    (q_dir / "closed.marker").touch()
+
     assert not resolver.has_open_blocking_artifact()
-    assert resolver.list_artifacts()[0].is_closed
-
-
-def test_question_answers_cardinality_validation() -> None:
-    from pydantic import ValidationError
-
-    from seamus.harness.runner import ResilientAskInput
-
-    # QuestionItem validation
-    with pytest.raises(ValueError, match="requires at least 2 choices"):
-        QuestionItem(question="Choose color", answers=["red"], writein=False)
-
-    with pytest.raises(ValueError, match="requires at least 1 choice"):
-        QuestionItem(question="Choose color", answers=[], writein=True)
-
-    # Valid QuestionItems
-    q1 = QuestionItem(question="Choose color", answers=["red", "blue"], writein=False)
-    assert len(q1.answers) == 2
-
-    q2 = QuestionItem(question="Choose color", answers=["red"], writein=True)
-    assert len(q2.answers) == 1
-
-    # ResilientAskInput validation
-    with pytest.raises(ValidationError):
-        ResilientAskInput.model_validate({"question": "Missing answers"})
-
-    with pytest.raises(ValidationError):
-        ResilientAskInput.model_validate(
-            {"question": "Only one option", "answers": ["one"], "writein": False}
-        )
-
-    ask1 = ResilientAskInput.model_validate(
-        {"question": "Two options", "answers": ["one", "two"], "writein": False}
-    )
-    assert len(ask1.answers) == 2
-
-    with pytest.raises(ValidationError):
-        ResilientAskInput.model_validate({"question": "No options", "answers": [], "writein": True})
-
-    ask2 = ResilientAskInput.model_validate(
-        {"question": "One option with writein", "answers": ["one"], "writein": True}
-    )
-    assert len(ask2.answers) == 1
-
-    # multiple=True validation
-    q_multi = QuestionItem(question="Choose features", answers=["auth"], multiple=True)
-    assert q_multi.multiple is True
-    assert len(q_multi.answers) == 1
-
-    with pytest.raises(ValueError, match="requires at least 1 choice"):
-        QuestionItem(question="Choose features", answers=[], multiple=True)
-
-    # ResilientAskInput with multiple and aliases
-    ask_multi = ResilientAskInput.model_validate(
-        {"question": "Pick many", "answers": ["a"], "multiple": True}
-    )
-    assert ask_multi.multiple is True
-
-    ask_alias1 = ResilientAskInput.model_validate(
-        {"question": "Pick many", "answers": ["a"], "multi_select": True}
-    )
-    assert ask_alias1.multiple is True
-
-    ask_alias2 = ResilientAskInput.model_validate(
-        {"question": "Pick many", "answers": ["a"], "multiselect": True}
-    )
-    assert ask_alias2.multiple is True
+    assert resolver.list_artifacts()[0].is_closed is True
 
 
 def test_filter_sync_pr_diff_keeps_data_and_artifacts() -> None:
@@ -320,9 +427,9 @@ def test_filter_sync_pr_diff_keeps_data_and_artifacts() -> None:
         "@@ -1 +1 @@\n"
         "-old\n"
         "+new\n"
-        "diff --git a/artifacts/q1/manifest.json b/artifacts/q1/manifest.json\n"
-        "--- a/artifacts/q1/manifest.json\n"
-        "+++ b/artifacts/q1/manifest.json\n"
+        "diff --git a/artifacts/q/manifest.json b/artifacts/q/manifest.json\n"
+        "--- a/artifacts/q/manifest.json\n"
+        "+++ b/artifacts/q/manifest.json\n"
         "@@ -0,0 +1,2 @@\n"
         "+{\n"
         "+}\n"
@@ -335,7 +442,7 @@ def test_filter_sync_pr_diff_keeps_data_and_artifacts() -> None:
 
     filtered = filter_sync_pr_diff(raw_diff)
     assert "diff --git a/data/results.csv b/data/results.csv" in filtered
-    assert "diff --git a/artifacts/q1/manifest.json" in filtered
+    assert "diff --git a/artifacts/q/manifest.json" in filtered
     assert "agent/state/checkpoint.json" not in filtered
     assert "skills/custom/SKILL.md" not in filtered
 
@@ -343,89 +450,101 @@ def test_filter_sync_pr_diff_keeps_data_and_artifacts() -> None:
 def test_system_prompt_user_inquiry_section() -> None:
     from seamus.harness.prompt import build_scaffold_prompt
 
-    prompt = build_scaffold_prompt()
-    assert "<user_inquiry>" in prompt
-    assert "ask" in prompt
-    assert "Never repeat, duplicate, or re-list questions" in prompt
+    # In chat mode: make_questionnaire, make_artifact, wait_for_click
+    prompt_chat = build_scaffold_prompt(mode="chat")
+    assert "<user_inquiry>" in prompt_chat
+    assert "make_questionnaire" in prompt_chat
+    assert "make_artifact" in prompt_chat
+    assert "wait_for_click" in prompt_chat
+    assert "read_artifact_submission" not in prompt_chat
+    assert "Never repeat, duplicate, or re-list questions" in prompt_chat
+
+    # In plan discuss mode: make_form is also present
+    prompt_plan = build_scaffold_prompt(mode="plan", phase="discuss")
+    assert "<user_inquiry>" in prompt_plan
+    assert "make_form" in prompt_plan
+    assert "make_questionnaire" in prompt_plan
+    assert "make_artifact" in prompt_plan
 
 
-def test_read_artifact_submission_fails_in_same_turn_as_ask() -> None:
-    from seamus.config.models import AgentConfig, InferenceConfig
-    from seamus.domain.entities import Agent
-    from seamus.harness.runner import SessionAgentRunner
-    from tests.test_runner import FakeAgent
-
-    config = AgentConfig(
-        inference=InferenceConfig(api_key="mock-key"),
-        model_name="mock-model",
-    )
-    agent = Agent(config=config, name="test-agent")
-    session = agent.create_session(name="test-session")
-    runner = SessionAgentRunner(session=session, agent=FakeAgent())
-
-    # 1. Calling read_artifact_submission before any ask call returns pending
-    res = json.loads(runner.handle_read_artifact_submission("arbitrary-id"))
-    assert res.get("status") == "pending"
-
-    # 2. Call ask in current turn
-    ask_res = runner.handle_ask("What color?", ["red", "blue"], id="color_q")
-    assert ask_res == "OK"
-    assert runner._current_questionnaire_id is not None
-    current_id = runner._current_questionnaire_id
-
-    # 3. Calling read_artifact_submission with the questionnaire UUID in same turn fails
-    with pytest.raises(ValueError, match="Cannot read artifact submission"):
-        runner.handle_read_artifact_submission(current_id)
-
-    # 4. Calling with the question id alias in same turn also fails
-    with pytest.raises(ValueError, match="Cannot read artifact submission"):
-        runner.handle_read_artifact_submission("color_q")
-
-    # 5. Calling with empty string in same turn also fails
-    with pytest.raises(ValueError, match="Cannot read artifact submission"):
-        runner.handle_read_artifact_submission("")
-
-    # 6. In a subsequent turn, calling does not raise same-turn error
-    runner._pending_questions = []
-    runner._current_questionnaire_id = None
-    runner._turn_created_artifact_ids.clear()
-
-    res_subsequent = json.loads(runner.handle_read_artifact_submission(current_id))
-    assert res_subsequent.get("status") == "pending"
-
-
-def test_questionnaire_builder_duplicate_ids_fails() -> None:
+def test_questionnaire_write_in_and_schema_translation(tmp_path: Path) -> None:
+    artifacts_dir = tmp_path / "artifacts"
     questions = [
-        QuestionItem(question="Pick layout", answers=["grid", "list"], id="layout"),
-        QuestionItem(question="Pick another layout", answers=["cards", "table"], id="layout"),
+        Question(
+            body="Primary language?",
+            answers=["Python", "TypeScript", "Rust"],
+            multiple_choice=False,
+            write_in=True,
+        ),
+        Question(
+            body="Target platforms?",
+            answers=["Linux", "macOS", "Windows"],
+            multiple_choice=True,
+            write_in=False,
+        ),
     ]
-    with pytest.raises(ValueError, match="Duplicate question id 'layout'"):
-        QuestionnaireBuilder.build_card(questions)
 
-
-def test_runner_ask_duplicate_id_fails() -> None:
-    from seamus.config.models import AgentConfig, InferenceConfig
-    from seamus.domain.entities import Agent
-    from seamus.harness.runner import SessionAgentRunner
-    from tests.test_runner import FakeAgent
-
-    config = AgentConfig(
-        inference=InferenceConfig(api_key="mock-key"),
-        model_name="mock-model",
+    q_uuid = QuestionnaireBuilder.create_questionnaire(
+        artifacts_dir=artifacts_dir,
+        questions=questions,
+        title="Stack Questionnaire",
     )
-    agent = Agent(config=config, name="test-agent-duplicate-id")
-    session = agent.create_session(name="test-session-duplicate-id")
-    runner = SessionAgentRunner(session=session, agent=FakeAgent())
 
-    res1 = runner.handle_ask("Select framework", ["react", "vue"], id="framework")
-    assert res1 == "OK"
-    assert len(runner._pending_questions) == 1
+    art_dir = artifacts_dir / "questionnaires" / q_uuid
+    assert (art_dir / "schema.json").is_file()
+    assert (art_dir / "body.json").is_file()
 
-    with pytest.raises(ValueError, match="already exists in the current questionnaire"):
-        runner.handle_ask("Select testing framework", ["jest", "vitest"], id="framework")
-    assert len(runner._pending_questions) == 1
+    # Check body components: ChoiceSet value bound to path, TextField for write-in
+    components = json.loads((art_dir / "body.json").read_text(encoding="utf-8"))
+    choice_sets = [c for c in components if c.get("component") == "ChoiceSet"]
+    text_fields = [c for c in components if c.get("component") == "TextField"]
+    button = next(c for c in components if c.get("component") == "Button")
 
-    res2 = runner.handle_ask("Database type?", ["sql", "nosql"])
-    assert res2 == "OK"
-    with pytest.raises(ValueError, match="already exists in the current questionnaire"):
-        runner.handle_ask("Database type?", ["postgres", "mongo"])
+    assert len(choice_sets) == 2
+    assert len(text_fields) == 1
+    assert choice_sets[0]["value"] == {"path": "/q_1_primary_language"}
+    # Write-in choice set has "Other" as last choice
+    assert choice_sets[0]["choices"][-1]["label"] == "Other"
+    assert choice_sets[0]["choices"][-1]["value"] == "other"
+    # Write-in text field is labelless
+    assert text_fields[0]["value"] == {"path": "/q_1_primary_language_writein"}
+    assert text_fields[0]["label"] == ""
+
+    # Action context binds to data model paths
+    ctx = button["action"]["event"]["context"]
+    assert ctx["q_1_primary_language"] == {"path": "/q_1_primary_language"}
+    assert ctx["q_1_primary_language_writein"] == {"path": "/q_1_primary_language_writein"}
+    assert ctx["q_2_target_platforms"] == {"path": "/q_2_target_platforms"}
+
+    # Simulate client submitting raw values (including single-select passed as list)
+    raw_submission = {
+        "q_1_primary_language": ["python"],
+        "q_1_primary_language_writein": "With PyPy support",
+        "q_2_target_platforms": ["linux", "macos"],
+    }
+
+    result = dispatch_button_click(
+        artifacts_dir=artifacts_dir,
+        family="questionnaires",
+        uuid=q_uuid,
+        button_id="submit-btn",
+        context=raw_submission,
+    )
+
+    # raw_context has single-select unrolled to scalar string
+    assert result.raw_context["q_1_primary_language"] == "python"
+    assert result.raw_context["q_2_target_platforms"] == ["linux", "macos"]
+
+    # context has translated human-readable text and scalar unrolled labels
+    assert result.context["Primary language?"] == {
+        "selection": "Python",
+        "write_in": "With PyPy support",
+    }
+    assert result.context["Target platforms?"] == ["Linux", "macOS"]
+
+    # state.json strictly contains component data paths and NOT duplicate translated questions
+    state_data = json.loads((art_dir / "state.json").read_text(encoding="utf-8"))
+    assert "Primary language?" not in state_data["dataModel"]
+    assert "Target platforms?" not in state_data["dataModel"]
+    assert state_data["dataModel"]["q_1_primary_language"] == "python"
+    assert state_data["dataModel"]["q_2_target_platforms"] == ["linux", "macos"]

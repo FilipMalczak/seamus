@@ -1,110 +1,138 @@
 ---
 name: artifacts
-description: Comprehensive operational guide for Microsoft Adaptive Cards renderable artifacts, questionnaires, forms, plans, and synthetic submission tool calls in Seamus.
+description: Comprehensive operational guide for A2UI renderable artifacts, questionnaires, forms, plans, button whitelist manifests, wait_for_click, and synthetic interaction notifications in Seamus.
 ---
 
-# Seamus Renderable Artifacts & Adaptive Cards Guide
+# Seamus Renderable Artifacts Guide
 
-Seamus provides renderable artifacts allowing agents to present rich, interactive user interfaces directly in the chat or in dedicated workspace tabs. All artifacts are formatted using the **Microsoft Adaptive Cards (v1.5)** specification and persisted on disk under `/artifacts/`.
+Seamus provides renderable artifacts allowing agents to present rich, interactive user interfaces directly in the chat or in dedicated workspace tabs. Artifacts are authored using an **A2UI basic catalog subset** representation and persisted on disk under `/artifacts/<family>/<uuid>/`.
 
-## Adaptive Cards Protocol Foundations
+## Filesystem Structure & Direct Resolution
 
-Adaptive Cards represent user interfaces declaratively as structured JSON cards:
-- **Card Root**: Includes `$schema: "http://adaptivecards.io/schemas/adaptive-card.json"`, `type: "AdaptiveCard"`, and `version: "1.5"`.
-- **Containers**: Structural elements (`Container`, `ColumnSet`, `Column`) that group and lay out content.
-- **Visual Elements**: Rich text blocks (`TextBlock`) supporting Markdown formatting, lists, code spans, headings, and tables.
-- **Input Elements**: Interactive fields such as `Input.ChoiceSet` (for single-choice radio buttons or multi-choice checkboxes) and `Input.Text` (for single-line or multi-line text input).
-- **Actions**: Interactive actions such as `Action.Submit` configured with descriptive action payloads (`submit_questionnaire`, `proceed_plan`).
+Artifact instances live in isolated directories with no hierarchical search:
 
-## Filesystem Structure & Hierarchical Resolution
-
-Inside your sandbox, `/artifacts/` is mounted **read-only**. You can read existing artifacts to inspect prior structures, plans, or user responses, while creating and modifying artifacts through dedicated harness tools (`ask`, `form`, `make_plan`, `update_plan`, `edit_plan`, `discard`).
-
-Artifact files are organized by family and instance:
 ```
 /artifacts/
 ├── questionnaires/
-│   ├── manifest.json              # Family manifest (exposition=embedded, cadence=blocking)
-│   └── <artifact_uuid>/
-│       ├── card.json              # Canonical Adaptive Card schema
-│       ├── submission.json        # User-submitted response values
-│       └── closed.json            # Present if and only if artifact is closed
+│   └── <uuid>/
+│       ├── manifest.json              # Behavioral manifest & button whitelist
+│       ├── body.json                  # Sequence of A2UI basic catalog components
+│       ├── state.json                 # Accumulated dataModel and clicksLeft counters
+│       ├── closed.marker              # Present if and only if artifact is closed
+│       └── interactions/
+│           └── <button_id>.json       # Payloads written upon button clicks
 ├── forms/
-│   ├── manifest.json              # Family manifest (exposition=tabbed, cadence=nonblocking)
-│   └── <artifact_uuid>/
-│       ├── manifest.json          # Instance manifest (custom tab title)
-│       ├── card.json              # Canonical Adaptive Card schema
-│       ├── submission.json        # User-submitted response values
-│       └── closed.json            # Present if and only if artifact is closed
+│   └── <uuid>/
+│       ├── manifest.json
+│       ├── body.json
+│       ├── state.json
+│       ├── closed.marker
+│       └── interactions/
+│           └── <button_id>.json
 └── plans/
-    ├── manifest.json              # Family manifest (exposition=tabbed, cadence=nonblocking)
-    └── <plan_uuid>/
-        ├── manifest.json          # Instance manifest (plan tab title)
-        ├── card.json              # Structured document card with Proceed action
-        ├── plan.md                # Canonical Markdown plan content
-        └── closed.json            # Present when plan is closed, approved, or discarded
+    └── <uuid>/
+        ├── manifest.json
+        ├── body.json
+        ├── state.json
+        ├── plan.md                    # Canonical Markdown plan body
+        ├── closed.marker
+        └── interactions/
+            └── <button_id>.json
 ```
 
-### Hierarchical Resolution
-When loading artifact files, the system checks:
-1. `/artifacts/<family>/<name>/<file>`
-2. `/artifacts/<family>/<file>`
-3. `/artifacts/<file>`
+- **`manifest.json` & `body.json`**: Written atomically upon creation. If `manifest.json` exists without `body.json`, the artifact is corrupted (INV-ART-003).
+- **`state.json`**: Initialized with `{ "dataModel": {}, "clicksLeft": { ... } }`.
+- **`closed.marker`**: Empty file touched when an artifact closes. When closed, tabbed artifacts unmount and embedded artifacts auto-collapse into read-only mode.
+- **`/interactions/<button_id>.json`**: Created when the user clicks an active button.
 
-*Exception*: `closed.json` (and `submission.json`) is checked strictly at the instance level (`/artifacts/<family>/<name>/closed.json`). An artifact is open until this file exists, and closed once it is created.
+## Manifest Schema & Button Whitelist
 
-## Specialized Questionnaire & Form Artifacts
+The manifest controls exposure, blocking behavior, inline commenting, and whitelisted buttons:
 
-### The `ask` Tool (Embedded + Blocking)
-Available in `Chat` mode and `Plan/Discuss` phase:
+```json
+{
+  "name": "Database Configuration",
+  "exposition": "embedded",
+  "blocking": true,
+  "commentable": false,
+  "buttons": [
+    {
+      "id": "submit-btn",
+      "mode": "set",
+      "clicks": 1,
+      "unblocking": true,
+      "closing": true
+    }
+  ]
+}
+```
+
+- **`exposition`**: `"embedded"` (rendered directly inline in chat) or `"tabbed"` (opened in a dedicated tab).
+- **`blocking`**: If `true`, the user cannot send chat messages until an unblocking button is clicked.
+- **`commentable`**: If `true`, enables inline text selection and review comments.
+- **`buttons`**: List of whitelisted buttons:
+  - `id`: Button component ID in `body.json`. Any button clicked in UI that is not listed in `buttons` will log a warning and be ignored.
+  - `mode`: `"set"` (overwrites `/interactions/<id>.json` with pretty JSON) or `"append"` (appends JSON lines).
+  - `clicks`: Positive integer (e.g. `1` or `3`) or `"*"` (unlimited). When clicks reaches `0`, the button is rendered visibly disabled in the UI.
+  - `unblocking`: Whether clicking this button unblocks the session.
+  - `closing`: Whether clicking this button writes `closed.marker` to close the artifact. Closing implies unblocking.
+
+## Atomic Artifact Tools
+
+### 1. `make_questionnaire` (Embedded + Blocking)
+Creates a closed-choice questionnaire:
 ```python
-ask(
-    question: str,
-    answers: list[str],
-    multiple: bool = False,
-    writein: bool = False,
-    id: str | None = None,
-) -> str
+make_questionnaire(
+    title="Deployment Target",
+    questions=[
+        Question(
+            body="Which environment should we target?",
+            answers=["staging", "production"],
+            multiple_choice=False,
+        )
+    ],
+    blocking=True,
+    exposition="embedded",
+)
 ```
-- Creates an inline `questionnaires` artifact (`exposition=embedded`, `cadence=blocking`).
-- Multiple calls in the same turn are batched into a single questionnaire card.
-- While open, the chat composer is disabled until the user submits the questionnaire.
 
-### The `form` Tool (Tabbed + Non-Blocking)
-Available in `Plan/Discuss` phase:
+### 2. `make_form` (Tabbed + Non-Blocking)
+Creates a structured form in a dedicated tab to the right of Changes:
 ```python
-form(
-    question: str,
-    answers: list[str],
-    multiple: bool = False,
-    writein: bool = False,
-    id: str | None = None,
-    title: str = "Form",
-) -> str
+make_form(
+    title="Feature Flags Form",
+    fields=[...],
+    blocking=False,
+    exposition="tabbed",
+)
 ```
-- Creates a `forms` artifact (`exposition=tabbed`, `cadence=nonblocking`) rendered in its own tab to the right of `Changes`.
-- Multiple calls in the same turn are batched into a single form tab.
-- Because `cadence=nonblocking`, the user can continue freestyle conversation in the chat before or instead of submitting the form.
 
-### Communication Rule: Do NOT Duplicate Questions in Text
-When invoking `ask` or `form`, the interactive UI presents all questions, options, and write-in inputs directly to the user.
-- **NEVER** re-state, list, or duplicate the questions or choices in your assistant message text.
-- Emit at most a single brief introductory sentence or emit no text at all.
+### 3. `make_artifact` (Core Atomic Builder)
+Creates custom artifacts with custom manifests and arbitrary A2UI basic catalog components:
+```python
+make_artifact(
+    family="custom",
+    manifest=ArtifactManifest(...),
+    components=[...],
+)
+```
 
-## Plan Artifacts (`plans`)
+### 4. `make_plan`, `update_plan`, `edit_plan` (Plan Mode)
+- `make_plan(title="Plan", content="# Implementation Plan...")`: Creates the session plan tab with a whitelisted **Proceed** button (`id="proceed-btn"`, `clicks=1`, `unblocking=true`, `closing=true`) and inline review commenting enabled.
+- Once created, `update_plan(content)` and `edit_plan(old_string, new_string)` are used for refinements.
 
-In `Plan` mode (`Make` phase):
-- `make_plan(content: str, name: str = "Plan") -> str`: Creates the session-local plan artifact under `/artifacts/plans/<plan_id>/` (`exposition=tabbed`, `cadence=nonblocking`), opening a tab named `name` to the right of `Changes` with rendered Markdown and a **Proceed** button.
-- Once `make_plan` has been called, `make_plan` disappears and is replaced by:
-  - `update_plan(content: str) -> str`: Overwrites the full Markdown content of the active session plan.
-  - `edit_plan(old_string: str, new_string: str) -> str`: Performs an exact substring replacement on the active session plan.
-- Clicking **Proceed** on the Plan tab approves the plan and transitions the session into a new `Plan/Execute` thread.
-- Accepting the Sync PR in `Plan/Execute` (or calling `discard()` on explicit user command) writes `closed.json` to close the plan artifact and removes its tab.
+## Resumption & Human-In-The-Loop Execution
 
-## Receiving User Submissions & `read_artifact_submission`
+### In-Turn Suspension: `wait_for_click`
+To suspend execution within the current turn until the user interacts with the artifact:
+```python
+result_json = wait_for_click(artifact_id=uuid, button_id="submit-btn", fresh=True)
+```
+- Suspends execution and writes `pending_wait.json` to `<session_dir>/agent/state/threads/{thread_id}/pending_wait.json`.
+- When the user clicks the button, execution resumes seamlessly within the same turn (even across server restarts!).
+- Returns a JSON string of `ClickResult`: `{ "artifact_id": str, "button_id": str, "context": dict, "timestamp": float }`.
 
-When the user submits a `questionnaires` or `forms` artifact, the system saves `submission.json`, writes `closed.json`, and synthesizes `read_artifact_submission(artifact_id="<UUID>")` to resume inference.
-
-### Calling Constraints for `read_artifact_submission`
-- **Same-turn prohibition**: You MUST NOT call `read_artifact_submission` in the same turn that you invoke `ask`, `form`, or `make_plan`.
-- **Non-blocking to blocking promotion**: When `read_artifact_submission` is explicitly called on an open non-blocking artifact (`cadence=nonblocking`), that artifact instance's manifest is promoted to `cadence=blocking` until the user submits it.
+### Synthetic Unblocking Notification
+If the agent concludes its turn with an assistant message (e.g. without calling `wait_for_click`), when the user subsequently clicks an unblocking or closing button, Seamus injects a synthetic user turn beginning with:
+`<SYNTHETIC MESSAGE INDICATOR>`
+Treat this notification as direct user event data. The user chat input prevents users from typing this prefix directly.

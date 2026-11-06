@@ -110,19 +110,49 @@ export type ToolCallRecord = {
   result?: unknown;
 };
 
+export const SYNTHETIC_MESSAGE_INDICATOR = "<SYNTHETIC MESSAGE INDICATOR>";
+
+export interface ManifestButton {
+  id: string;
+  mode: "set" | "append";
+  clicks: number | "*";
+  unblocking: boolean;
+  closing: boolean;
+}
+
 export interface ArtifactManifest {
+  name: string;
   exposition: "embedded" | "tabbed";
-  cadence: "blocking" | "nonblocking";
+  blocking: boolean;
+  commentable: boolean;
+  buttons: ManifestButton[];
   title?: string | null;
 }
 
+export interface ArtifactState {
+  dataModel: Record<string, unknown>;
+  clicksLeft: Record<string, number | "*">;
+}
+
+export interface ClickResult {
+  artifact_id: string;
+  button_id: string;
+  context: Record<string, unknown>;
+  timestamp: number;
+}
+
 export interface ArtifactInfo {
-  kind: string;
-  name: string;
+  family: string;
+  uuid: string;
   title?: string | null;
   manifest: ArtifactManifest;
+  body: Array<Record<string, unknown>>;
+  state: ArtifactState;
   is_closed: boolean;
-  card: Record<string, unknown>;
+  // Transitional backward-compatible fields:
+  kind: string;
+  name: string;
+  card?: Record<string, unknown>;
   data?: Record<string, unknown> | null;
 }
 

@@ -216,41 +216,40 @@ def get_default_tools_inspect_info() -> list[ToolInspectInfo]:
         from seamus.harness.runner import (
             DiscardInput,
             EditPlanInput,
+            MakeArtifactInput,
+            MakeFormInput,
             MakePlanInput,
+            MakeQuestionnaireInput,
             PlanTransitionInput,
-            ReadArtifactSubmissionInput,
-            ResilientAskInput,
-            ResilientFormInput,
             SeamusTodoListMiddleware,
             UpdatePlanInput,
+            WaitForClickInput,
         )
 
         dummy_tools = [
             StructuredTool.from_function(
-                name="ask",
-                description=(
-                    "Ask the user a closed question with multiple choices and an optional write-in "
-                    "field. Batch multiple questions in the same turn to generate a questionnaire."
-                ),
+                name="make_artifact",
+                description="Create a new atomic A2UI renderable artifact.",
                 func=lambda *args, **kwargs: "OK",
-                args_schema=ResilientAskInput,
+                args_schema=MakeArtifactInput,
             ),
             StructuredTool.from_function(
-                name="form",
-                description=(
-                    "Create a tabbed, non-blocking questionnaire form in a dedicated tab to the "
-                    "right of Changes."
-                ),
+                name="make_questionnaire",
+                description="Create an atomic questionnaire artifact.",
                 func=lambda *args, **kwargs: "OK",
-                args_schema=ResilientFormInput,
+                args_schema=MakeQuestionnaireInput,
             ),
             StructuredTool.from_function(
-                name="read_artifact_submission",
-                description=(
-                    "Read the canonical user-submitted data model for a questionnaire or artifact."
-                ),
-                func=lambda *args, **kwargs: "{}",
-                args_schema=ReadArtifactSubmissionInput,
+                name="make_form",
+                description="Create an atomic non-blocking form artifact.",
+                func=lambda *args, **kwargs: "OK",
+                args_schema=MakeFormInput,
+            ),
+            StructuredTool.from_function(
+                name="wait_for_click",
+                description="Suspend agent execution until the user clicks an active button.",
+                func=lambda *args, **kwargs: "OK",
+                args_schema=WaitForClickInput,
             ),
             StructuredTool.from_function(
                 name="plan",
@@ -408,20 +407,27 @@ def get_default_tools_inspect_info() -> list[ToolInspectInfo]:
                 backend="harness",
             ),
             ToolInspectInfo(
-                name="ask",
-                description=(
-                    "Ask the user a closed question with multiple choices and an optional write-in "
-                    "field. Batch multiple questions in the same turn to generate a questionnaire."
-                ),
-                parameters=ResilientAskInput.model_json_schema(),
+                name="make_artifact",
+                description="Create a new atomic A2UI renderable artifact.",
+                parameters=MakeArtifactInput.model_json_schema(),
                 backend="harness",
             ),
             ToolInspectInfo(
-                name="read_artifact_submission",
-                description=(
-                    "Read the canonical user-submitted data model for a questionnaire or artifact."
-                ),
-                parameters=ReadArtifactSubmissionInput.model_json_schema(),
+                name="make_questionnaire",
+                description="Create an atomic questionnaire artifact.",
+                parameters=MakeQuestionnaireInput.model_json_schema(),
+                backend="harness",
+            ),
+            ToolInspectInfo(
+                name="make_form",
+                description="Create an atomic non-blocking form artifact.",
+                parameters=MakeFormInput.model_json_schema(),
+                backend="harness",
+            ),
+            ToolInspectInfo(
+                name="wait_for_click",
+                description="Suspend agent execution until the user clicks an active button.",
+                parameters=WaitForClickInput.model_json_schema(),
                 backend="harness",
             ),
         ]

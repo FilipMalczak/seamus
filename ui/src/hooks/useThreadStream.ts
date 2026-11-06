@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  clickArtifact,
   getArtifact,
   getThreadStatus,
   listArtifacts,
@@ -41,6 +42,12 @@ export interface StreamErrorDetails {
   traceback?: string;
 }
 
+function getToolArg(args: unknown, key: string): string | undefined {
+  if (!args || typeof args !== "object") return undefined;
+  const val = (args as Record<string, unknown>)[key];
+  return typeof val === "string" ? val : undefined;
+}
+
 export function useThreadStream(
   agentId: string | null,
   sessionId: string | null,
@@ -66,62 +73,117 @@ export function useThreadStream(
 
   const statusRef = useRef<AgentStatus>("AWAITING_USER");
   const pendingArtifactsRef = useRef<Map<string, ArtifactInfo>>(new Map());
+  const artifactsRef = useRef<ArtifactInfo[]>([]);
+  artifactsRef.current = artifacts;
 
   const attachArtifactToMessages = useCallback((art: ArtifactInfo) => {
     if (art.manifest?.exposition === "tabbed") {
       return;
     }
-    const artId = art.name;
+    const artId = art.uuid || art.name;
     setMessages((prev) => {
       const artPart: MessagePart = {
         type: "artifact",
         id: `artifact-${artId}`,
         artifact: art,
       };
+
+      // 1. If artifact is already in a message, update it in place
       const msgWithArtIdx = findLastIndex(prev, (m) =>
-        Boolean(m.parts?.some((p) => p.type === "artifact" && p.id === `artifact-${artId}`))
+        Boolean(
+          m.parts?.some(
+            (p) =>
+              p.type === "artifact" &&
+              (p.artifact?.uuid === artId ||
+                p.artifact?.name === artId ||
+                p.id === `artifact-${artId}`)
+          )
+        )
       );
       if (msgWithArtIdx >= 0) {
         const target = prev[msgWithArtIdx];
         const updatedParts = (target.parts || []).map((p) =>
-          p.type === "artifact" && p.id === `artifact-${artId}` ? artPart : p
+          p.type === "artifact" &&
+          (p.artifact?.uuid === artId ||
+            p.artifact?.name === artId ||
+            p.id === `artifact-${artId}`)
+            ? artPart
+            : p
         );
         const copy = [...prev];
         copy[msgWithArtIdx] = { ...target, parts: updatedParts };
         return copy;
       }
 
-      const askMsgIdx = findLastIndex(
+      // 2. Find the assistant message with the tool call that created this artifact
+      const toolCallMsgIdx = findLastIndex(
         prev,
         (m) =>
           m.role === "assistant" &&
           Boolean(
             m.toolCalls?.some(
-              (c) => c.name === "ask" || c.name === "read_artifact_submission"
+              (c) =>
+                (c.name === "make_questionnaire" ||
+                  c.name === "make_form" ||
+                  c.name === "make_artifact") &&
+                (c.result === artId ||
+                  String(c.result).includes(artId) ||
+                  getToolArg(c.args, "id") === artId ||
+                  getToolArg(c.args, "artifact_id") === artId)
             )
           )
       );
-      const targetIdx = askMsgIdx >= 0 ? askMsgIdx : prev.length - 1;
-      if (targetIdx >= 0 && prev[targetIdx].role === "assistant") {
-        const target = prev[targetIdx];
-        const copy = [...prev];
-        copy[targetIdx] = {
-          ...target,
-          parts: [...(target.parts || []), artPart],
-        };
-        return copy;
-      } else {
-        return [
-          ...prev,
-          {
-            id: `asst-${Date.now()}`,
-            role: "assistant",
-            text: "",
-            parts: [artPart],
-            timestamp: new Date().toISOString(),
-          },
-        ];
+
+      // 3. Fallback: find any assistant message waiting for this artifact, or with artifact tool calls
+      const fallbackMsgIdx = findLastIndex(
+        prev,
+        (m) =>
+          m.role === "assistant" &&
+          Boolean(
+            m.toolCalls?.some(
+              (c) =>
+                (c.name === "wait_for_click" &&
+                  (getToolArg(c.args, "artifact_id") === artId || !getToolArg(c.args, "artifact_id"))) ||
+                c.name === "make_questionnaire" ||
+                c.name === "make_form" ||
+                c.name === "make_artifact" ||
+                c.name === "ask"
+            )
+          )
+      );
+
+      const targetIdx = toolCallMsgIdx >= 0 ? toolCallMsgIdx : fallbackMsgIdx;
+
+      // If messages haven't loaded yet, do NOT create a fake message at the top!
+      if (targetIdx < 0 || !prev[targetIdx] || prev[targetIdx].role !== "assistant") {
+        return prev;
       }
+
+      const target = prev[targetIdx];
+      const parts = target.parts || [];
+      // Insert right after make_questionnaire if present
+      const tcPartIdx = parts.findIndex(
+        (p) =>
+          p.type === "tool_call" &&
+          (p.toolCall?.name === "make_questionnaire" ||
+            p.toolCall?.name === "make_form" ||
+            p.toolCall?.name === "make_artifact") &&
+          (p.toolCall?.result === artId ||
+            String(p.toolCall?.result).includes(artId) ||
+            getToolArg(p.toolCall?.args, "id") === artId ||
+            getToolArg(p.toolCall?.args, "artifact_id") === artId)
+      );
+
+      const newParts = [...parts];
+      if (tcPartIdx >= 0) {
+        newParts.splice(tcPartIdx + 1, 0, artPart);
+      } else {
+        newParts.push(artPart);
+      }
+
+      const copy = [...prev];
+      copy[targetIdx] = { ...target, parts: newParts };
+      return copy;
     });
   }, []);
 
@@ -146,11 +208,16 @@ export function useThreadStream(
     try {
       const list = await listArtifacts(agentId, sessionId);
       setArtifacts(list);
+      for (const art of list) {
+        if (art.manifest?.exposition !== "tabbed") {
+          attachArtifactToMessages(art);
+        }
+      }
       return list;
     } catch {
       return [];
     }
-  }, [agentId, sessionId]);
+  }, [agentId, sessionId, attachArtifactToMessages]);
 
   useEffect(() => {
     if (!agentId || !sessionId) {
@@ -220,7 +287,7 @@ export function useThreadStream(
             getArtifact(agentId, sessionId, kind, artId)
               .then((art) => {
                 setArtifacts((prev) => {
-                  const idx = prev.findIndex((a) => a.kind === kind && a.name === artId);
+                  const idx = prev.findIndex((a) => (a.uuid === artId || a.name === artId));
                   if (idx >= 0) {
                     const next = [...prev];
                     next[idx] = art;
@@ -230,14 +297,7 @@ export function useThreadStream(
                 });
 
                 if (art.manifest?.exposition !== "tabbed") {
-                  const isRunning =
-                    statusRef.current === "AWAITING_LLM" ||
-                    statusRef.current === "EXECUTING_TOOL";
-                  if (isRunning) {
-                    pendingArtifactsRef.current.set(artId, art);
-                  } else {
-                    attachArtifactToMessages(art);
-                  }
+                  attachArtifactToMessages(art);
                 }
               })
               .catch(() => {});
@@ -321,6 +381,15 @@ export function useThreadStream(
             event.threadId;
           if (toThreadId) {
             onThreadTransitionRef.current?.(toThreadId, event.mode, event.phase);
+          }
+        } else if (type === "STATUS_CHANGED") {
+          const nextStatus = event.status as AgentStatus;
+          if (nextStatus) {
+            statusRef.current = nextStatus;
+            setStatus(nextStatus);
+            if (nextStatus === "AWAITING_USER") {
+              flushPendingArtifacts();
+            }
           }
         } else if (type === "RUN_STARTED") {
           statusRef.current = "AWAITING_LLM";
@@ -1043,6 +1112,27 @@ export function useThreadStream(
                       id: tc.id,
                       toolCall: tc,
                     });
+
+                    // Insert matching artifact immediately following its creation tool call
+                    const matchedArt = artifactsRef.current.find(
+                      (a) =>
+                        a.manifest?.exposition !== "tabbed" &&
+                        (a.uuid === tc.result ||
+                          a.name === tc.result ||
+                          String(tc.result).includes(a.uuid) ||
+                          a.uuid === getToolArg(tc.args, "artifact_id") ||
+                          a.name === getToolArg(tc.args, "artifact_id") ||
+                          a.uuid === getToolArg(tc.args, "id") ||
+                          a.name === getToolArg(tc.args, "id"))
+                    );
+                    if (matchedArt) {
+                      const matchedId = matchedArt.uuid || matchedArt.name;
+                      parts.push({
+                        type: "artifact",
+                        id: `artifact-${matchedId}`,
+                        artifact: matchedArt,
+                      });
+                    }
                   }
                   if (text) {
                     parts.push({
@@ -1064,6 +1154,7 @@ export function useThreadStream(
                   });
                 }
               }
+
               return rebuilt;
             }
 
@@ -1189,26 +1280,44 @@ export function useThreadStream(
 
   const hasOpenBlockingArtifact = useMemo(() => {
     return artifacts.some(
-      (a) => !a.is_closed && a.manifest?.cadence === "blocking"
+      (a) => !a.is_closed && Boolean(a.manifest?.blocking)
     );
   }, [artifacts]);
 
   const submitArtifactHandler = useCallback(
     async (artifact: ArtifactInfo, data: Record<string, unknown>) => {
       if (!agentId || !sessionId) return;
-      await submitArtifact(agentId, sessionId, artifact.kind, artifact.name, data);
+      const { button_id, buttonId, action, ...contextData } = data;
+      const effectiveButtonId =
+        (button_id as string) ||
+        (buttonId as string) ||
+        (action as string) ||
+        "submit-btn";
+      const family = artifact.family || artifact.kind;
+      const uuid = artifact.uuid || artifact.name;
+
       try {
-        const updated = await getArtifact(agentId, sessionId, artifact.kind, artifact.name);
+        await clickArtifact(agentId, sessionId, family, uuid, effectiveButtonId, contextData);
+      } catch (err) {
+        console.warn("clickArtifact failed, attempting fallback to submitArtifact:", err);
+        await submitArtifact(agentId, sessionId, family, uuid, contextData);
+      }
+
+      try {
+        const updated = await getArtifact(agentId, sessionId, family, uuid);
         setArtifacts((prev) =>
           prev.map((a) =>
-            a.kind === artifact.kind && a.name === artifact.name ? updated : a
+            (a.family === family && a.uuid === uuid) || (a.kind === family && a.name === uuid)
+              ? updated
+              : a
           )
         );
         setMessages((prev) =>
           prev.map((m) => {
             if (!m.parts) return m;
             const updatedParts = m.parts.map((p) =>
-              p.type === "artifact" && p.artifact.name === artifact.name
+              p.type === "artifact" &&
+              (p.artifact.uuid === uuid || p.artifact.name === uuid)
                 ? { ...p, artifact: updated }
                 : p
             );
@@ -1216,7 +1325,7 @@ export function useThreadStream(
           })
         );
       } catch (err) {
-        console.error("Failed to refresh artifact after submission:", err);
+        console.error("Failed to refresh artifact after interaction:", err);
       }
     },
     [agentId, sessionId]
