@@ -10,8 +10,8 @@ Artifacts are structured, declarative UI surfaces produced by or on behalf of an
 
 ### Design Principles
 
-1. **A2UI Subset for UI Representation Only**:
-   Seamus adopts the declarative component structure of the [A2UI v0.9 specification](https://github.com/a2ui-project/a2ui). However, Seamus uses A2UI JSON purely as a static representation format (`components` list). Seamus rejects A2UI's multi-file event streaming (`createSurface`, `updateDataModel`, etc.) and distributed data-model philosophy.
+1. **A2UI Subset for UI Representation**:
+   A2UI defines a rich protocol message set (`createSurface`, `updateComponents`, `updateDataModel`, `deleteSurface`, etc.) which Seamus exploits underneath to drive the web frontend renderer. However, persisting multi-file event streams on disk was an internal harness abstraction from early spikes that added unnecessary complexity. Under this model, Seamus uses A2UI JSON purely as a declarative UI component representation (`body.json` corresponds to the `components` list of `updateComponents`). A2UI messages are generated dynamically in-memory and never exposed to the agent or persisted as filesystem event streams.
 2. **In-Memory Event Stream Generation**:
    The actual A2UI event stream sent to the web frontend renderer is assembled dynamically in-memory by the harness. It is never persisted to disk as an event stream.
 3. **No Multi-Level Component Searching**:
@@ -19,7 +19,7 @@ Artifacts are structured, declarative UI surfaces produced by or on behalf of an
 4. **Decoupled State and Interaction Persistence**:
    Runtime state (`dataModel`, `clicksLeft`) and button click payloads are managed directly in the filesystem by the harness.
 5. **Atomic Generation Over Turn-by-Turn Accumulation**:
-   The previous model where tools like `ask` accumulated individual questions across turns into a synthetic questionnaire is deprecated. Artifacts are authored atomically in a single tool call (`make_questionnaire`, `make_form`, `make_artifact`).
+   The previous model where tools like `ask` accumulated individual questions across turns into a synthetic questionnaire is deprecated. Artifacts are authored atomically in a single tool call (`make_questionnaire`, `make_form`, `make_plan`, `make_artifact`).
 6. **Read-Only Sandbox Mount**:
    The `/artifacts/` directory inside the OpenSandbox container is mounted strictly read-only (`readOnly=True`). Agents cannot mutate artifacts via direct file writes or bash commands; all mutations occur through harness-provided tools.
 
@@ -46,11 +46,12 @@ All artifacts are persisted within the session workspace under `<session_dir>/ar
 
 - **INV-ART-001 (No Deletion)**: Artifact files and directories are never deleted during normal operation.
 - **INV-ART-002 (Replace vs. Append)**: State files (`manifest.json`, `body.json`, `state.json`) and `mode="set"` interaction files are modified only by complete content replacement. Interaction files with `mode="append"` are modified by appending single-line JSON records (JSONL).
-- **INV-ART-003 (Co-existence on Creation)**: `body.json` must exist before or at the exact instant `manifest.json` is created. If `manifest.json` is detected without `body.json`, harness validation fails and artifact initialization is aborted.
+- **INV-ART-003 (Co-existence on Creation & Unusable State)**: `body.json` must exist before or at the exact instant `manifest.json` is created. If `manifest.json` is detected without `body.json`, harness validation fails and artifact initialization is aborted. This leaves the agent turn in an unusable `ERROR` state; recovery requires the user to branch the session off a prior turn (typically reverting the tool call that attempted artifact creation so the agent can retry).
 - **INV-ART-004 (Closure Marker)**: An artifact is closed if and only if `closed.marker` exists in its instance directory. The contents of `closed.marker` are ignored (can be empty).
-- **INV-ART-005 (Closure Presentation Semantics)**:
+- **INV-ART-005 (Closure Presentation Semantics & Changes Tab Guard)**:
   - If `exposition="tabbed"`, closing the artifact removes its tab from the UI panel.
-  - If `exposition="embedded"`, closing the artifact automatically collapses its chat bubble and marks all controls permanently disabled/uneditable.
+  - If `exposition="embedded"`, closing the artifact automatically collapses its chat bubble and marks all controls permanently disabled and uneditable.
+  - In addition, when viewed in the Changes tab in rendered mode, closed artifacts remain strictly non-editable and visually locked, ensuring the Changes tab cannot serve as an override or backdoor to interact with closed artifacts.
 
 ---
 
@@ -104,11 +105,13 @@ The manifest defines artifact metadata, presentation rules, conversation blockin
 | :--- | :--- | :--- | :--- |
 | `id` | `string` | *(Required)* | Unique button identifier matching the component ID in `body.json`. |
 | `mode` | `"set"` \| `"append"` | *(Required)* | Storage format in `/interactions/<id>.json`. `"set"` overwrites with pretty-printed JSON. `"append"` appends a JSONL record. |
-| `clicks` | `int` \| `"*"` | `"*"` | Number of clicks allowed before the button becomes inactive. Positive integer (e.g. `1`, `3`) or `"*"` (unlimited). `0` or negative means inactive. |
+| `clicks` | `int` \| `"*"` | `"*"` | Number of clicks allowed before the button becomes inactive. Must be a positive integer (`>= 1`) or `"*"` (unlimited). Non-positive integers (`<= 0`) are disallowed in `manifest.json` and will fail manifest validation upon creation. |
 | `unblocking` | `boolean` | `false` | If `true`, clicking this button unblocks the conversation if the artifact is `blocking: true`. Ignored if artifact is non-blocking. |
 | `closing` | `boolean` | `false` | If `true`, clicking this button closes the artifact (creates `closed.marker`). **Note:** Closing implicitly triggers unblocking. |
 
-> **Security & Validation Rule**: If a user clicks a button in the UI whose ID is **not** listed in `manifest.json.buttons`, the harness strictly ignores the click, even if the button's definition in `body.json` specifies an action event.
+> **Button Whitelisting, Inactivity, and Security Rules**:
+> 1. **Visibly Disabled State (`clicksLeft <= 0`)**: For buttons listed in `manifest.json.buttons` whose remaining quota in `state.json` reaches `0` (or negative, if edited externally in Git), the frontend renders the button in a **visibly disabled state** (grayed out, unclickable).
+> 2. **Unlisted Buttons Warning**: If a component in `body.json` defines an action but its ID is **not** present in `manifest.json.buttons`, the harness logs a warning during artifact validation or event receipt. If an unlisted button is somehow clicked in the UI, the click is dropped and ignored by the harness.
 
 ---
 
@@ -181,10 +184,13 @@ Artifact state is initialized automatically by the harness upon artifact creatio
   "dataModel": {},
   "clicksLeft": {
     "submit-btn": 1,
-    "refresh-btn": "*"
+    "refresh-btn": "*",
+    "exhausted-btn": 0
   }
 }
 ```
+
+> **Tolerance of Inactive & Negative Values in `state.json`**: While `manifest.json` requires positive integers (`>= 1`) or `"*"`, `state.json` explicitly permits values `<= 0`. A button reaches `0` naturally through normal clicks, at which point the frontend disables the button. If manual external edits in Gitea introduce negative values (e.g. `-1`), the harness treats the button as inactive without raising validation exceptions or crashing.
 
 ### Initialization
 
@@ -199,29 +205,29 @@ Artifact state is initialized automatically by the harness upon artifact creatio
 
 ### Click Execution Lifecycle
 
-When a button click arrives for an active artifact:
+In the Web UI:
+- Buttons with `clicksLeft <= 0` are rendered in a **visibly disabled state** (grayed out and non-clickable).
+- When an enabled button is clicked, or an event is dispatched to the harness:
 
 ```mermaid
 flowchart TD
-    Click["User Clicks Button in UI"] --> Whitelist{"Button ID in manifest.buttons?"}
-    Whitelist -- No --> Ignore["Drop Event (Ignored)"]
+    Click["User Dispatches Button Click"] --> Whitelist{"Button ID in manifest.buttons?"}
+    Whitelist -- No --> LogWarning["Log Warning & Drop Event (Ignored)"]
     Whitelist -- Yes --> CheckQuota{"clicksLeft > 0 or '*'?"}
-    CheckQuota -- No --> Ignore
+    CheckQuota -- No --> Drop["Drop Event (Button Inactive)"]
     CheckQuota -- Yes --> Eval["Evaluate Context Paths against UI State"]
     Eval --> WriteInteraction["Write /interactions/<id>.json\n(Overwrite if 'set', Append line if 'append')"]
-    WriteInteraction --> DecQuota["Decrement clicksLeft in state.json (if int)"]
+    WriteInteraction --> DecQuota["Decrement clicksLeft in state.json (if int)\nDisable Button in UI if <= 0"]
     DecQuota --> UpdateDataModel["Update state.json dataModel with Click Context"]
     UpdateDataModel --> CheckUnblock{"unblocking == true or closing == true?"}
     CheckUnblock -- Yes --> UnblockUI["Unblock Chat Input (if blocking)"]
     CheckUnblock -- No --> CheckClose
     UnblockUI --> CheckClose{"closing == true?"}
-    CheckClose -- Yes --> WriteMarker["Create closed.marker\nCollapse / Remove Tab"]
+    CheckClose -- Yes --> WriteMarker["Create closed.marker\nCollapse / Remove Tab / Lock Changes Tab"]
     CheckClose -- No --> WakeWaiting{"Agent awaiting click via wait_for_click?"}
     WriteMarker --> WakeWaiting
     WakeWaiting -- Yes --> ResumeAgent["Resume Agent with Click Result"]
-    WakeWaiting -- No --> CheckSynthetic{"blocking == true and agent sent message?"}
-    CheckSynthetic -- Yes --> SendSynthetic["Inject Synthetic Unblock User Turn"]
-    CheckSynthetic -- No --> Done["Done"]
+    WakeWaiting -- No --> SendSynthetic["Inject Synthetic User Message\n(<SYNTHETIC MESSAGE INDICATOR>)"]
 ```
 
 ### DataModel Accumulation Scenario
@@ -244,22 +250,52 @@ Multiple button clicks incrementally build up `dataModel`:
 
 Agents interact with artifacts strictly through structured tools.
 
-### 1. `make_artifact`
-The primitive, atomic generator tool.
+### 1. Manifest Pydantic Models & `make_artifact`
+
+The manifest schema is modeled explicitly using Pydantic:
 
 ```python
+from typing import Any, Literal
+from pydantic import BaseModel, Field, field_validator
+
+
+class ManifestButton(BaseModel):
+    id: str
+    mode: Literal["set", "append"]
+    clicks: int | Literal["*"] = "*"
+    unblocking: bool = False
+    closing: bool = False
+
+    @field_validator("clicks")
+    @classmethod
+    def validate_positive_clicks(cls, v: int | str) -> int | str:
+        if isinstance(v, int) and v < 1:
+            raise ValueError("Button clicks in manifest must be a positive integer (>= 1) or '*'")
+        if isinstance(v, str) and v != "*":
+            raise ValueError("Button clicks must be an integer or '*'")
+        return v
+
+
+class ArtifactManifest(BaseModel):
+    name: str
+    exposition: Literal["tabbed", "embedded"]
+    blocking: bool = False
+    commentable: bool = False
+    buttons: list[ManifestButton] = Field(default_factory=list)
+
+
 def make_artifact(
     family: str,
-    manifest: dict[str, Any],
+    manifest: ArtifactManifest,
     components: list[dict[str, Any]],
 ) -> str:
     """Create a new artifact atomically.
-    
+
     Args:
-        family: Subdirectory family under /artifacts (e.g. 'custom', 'questionnaires', 'forms').
-        manifest: Artifact manifest specification.
+        family: Subdirectory family under /artifacts (e.g. 'custom', 'questionnaires', 'forms', 'plans').
+        manifest: Strongly-typed artifact manifest specification.
         components: List of A2UI basic catalog component objects.
-        
+
     Returns:
         The generated artifact UUID string.
     """
@@ -278,16 +314,51 @@ class Question(BaseModel):
 def make_questionnaire(questions: list[Question]) -> str:
     """Create an atomic questionnaire artifact.
 
-    Exposition is 'embedded', blocking is True.
-    Contains a single submit button with mode='set', clicks=1,
-    unblocking=True, and closing=True.
+    Configuration:
+      - family: 'questionnaires'
+      - exposition: 'embedded'
+      - blocking: True
+      - buttons: single submit button with mode='set', clicks=1,
+                 unblocking=True, closing=True.
     """
 ```
 
 ### 3. `make_form`
-Specialized template over `make_artifact` for tabular or multi-field forms (`exposition="tabbed"` or `"embedded"`).
+Specialized template over `make_artifact` for multi-field forms and structured surveys.
 
-### 4. `wait_for_click`
+Effectively the same structure as `make_questionnaire`, but configured for a tabbed workspace rather than an inline chat bubble:
+- **Configuration**:
+  - `family: "forms"`
+  - `exposition: "tabbed"` (renders in a dedicated sidebar tab)
+  - `blocking: False` (non-blocking, allowing continued conversational dialogue while the form remains editable in its tab)
+  - `buttons`: submit button with `mode="set"`, `clicks=1`, `unblocking=False`, `closing=True`.
+
+### 4. `make_plan`
+Specialized template over `make_artifact` for session implementation plans.
+
+```python
+def make_plan(
+    title: str,
+    content: str,  # Markdown document body
+) -> str:
+    """Create an atomic plan artifact.
+
+    Configuration:
+      - family: 'plans'
+      - exposition: 'tabbed'
+      - blocking: False
+      - commentable: True (enables inline text selection and review comments)
+      - buttons:
+          - proceed-btn: mode='set', clicks=1, unblocking=True, closing=True
+          - review-btn: action={"comments": "push"} for inline comment submission
+    Writes:
+      - /artifacts/plans/<uuid>/manifest.json
+      - /artifacts/plans/<uuid>/body.json (structured A2UI document)
+      - /artifacts/plans/<uuid>/plan.md (canonical Markdown document)
+    """
+```
+
+### 5. `wait_for_click`
 Explicit agent wait tool realizing Human-in-the-Loop suspension.
 
 ```python
@@ -319,28 +390,27 @@ def wait_for_click(
 
 ---
 
-## 7. Blocking Cadence & Synthetic Message System
+## 7. Interaction Delivery & Synthetic Message System
 
-Artifact blocking halts user conversational input, forcing an interaction with the artifact before dialogue can proceed.
+Artifact interactions are delivered to the agent through two distinct channels depending on whether the agent explicitly paused to await user action.
 
-### Case 1: Agent Calls `wait_for_click` (Standard HITL)
-1. Agent creates blocking artifact (`blocking: true`).
-2. Agent immediately invokes `wait_for_click(...)`.
+### Case 1: Agent Calls `wait_for_click` (Direct HITL Suspension)
+1. Agent creates an artifact (e.g. `blocking=True`).
+2. Agent immediately invokes `wait_for_click(artifact_id=..., button_id=...)`.
 3. The runner suspends agent execution.
-4. In the Web UI, chat input is disabled.
-5. User clicks an unblocking button.
-6. The runner resumes the agent with the `ClickResult`.
-7. Agent generates assistant response. User chat input is re-enabled once the assistant turn completes.
+4. If the artifact was configured with `blocking: true`, the Web UI chat input area is disabled.
+5. User clicks an active button.
+6. The runner wakes the agent, returning the `ClickResult` as the tool output.
+7. Agent generates assistant response. If the artifact was blocking and the button was `unblocking: true` or `closing: true`, user chat input is re-enabled once the assistant turn completes.
 
-### Case 2: Agent Finishes Turn Without Calling `wait_for_click`
-If the agent creates a blocking artifact but responds with a normal text message instead of calling `wait_for_click`:
-1. The harness preserves the blocking state: the Web UI input field remains disabled.
-2. The user is forced to interact with the artifact and click an unblocking button.
-3. When the click occurs, the harness synthesizes an automated user turn injected directly into the conversation:
+### Case 2: Agent Finishes Turn Without Calling `wait_for_click` (Asynchronous / Completed Assistant Messages)
+Regardless of whether an artifact was configured as `blocking: true` or `blocking: false`, if the agent concludes its turn with an assistant message without calling `wait_for_click(...)`:
+1. If the artifact is `blocking: true`, the Web UI chat input area remains disabled until an unblocking button is clicked. If `blocking: false`, the user is free to either type text messages or interact with artifact buttons.
+2. When the user clicks an active button on the artifact, because no tool invocation is suspended awaiting that click, the harness delivers the interaction payload by injecting a synthetic user message into the thread conversation:
 
 ```
 <SYNTHETIC MESSAGE INDICATOR>
-An artifact "Project Requirements Questionnaire" (uuid: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d) blocked the conversation. It was just unblocked by a following event:
+An artifact "Project Requirements Questionnaire" (uuid: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d) was interacted with. The following event occurred:
 {
   "button_id": "submit-btn",
   "context": {
@@ -352,9 +422,10 @@ An artifact "Project Requirements Questionnaire" (uuid: 9b1deb4d-3b7d-4bad-9bdd-
 ```
 
 ### Indicator Token & System Prompt Guardrails
-- **Token**: The literal prefix `<SYNTHETIC MESSAGE INDICATOR>` is reserved for harness-injected system notifications.
-- **System Prompt Guidance**: The dynamic system prompt instructs the model that messages beginning with `<SYNTHETIC MESSAGE INDICATOR>` represent technical notifications dispatched by the harness when an interaction event unblocks the conversation. The model must treat their payload as factual ground truth while understanding that no human manually typed the text.
-- **UI Guardrail**: The Web UI strictly prevents human users from submitting messages starting with `<SYNTHETIC MESSAGE INDICATOR>`.
+- **Token**: The literal prefix `<SYNTHETIC MESSAGE INDICATOR>` is reserved exclusively for harness-injected system notifications.
+- **System Prompt Guidance**: The dynamic system prompt instructs the agent:
+  > When a message begins with `<SYNTHETIC MESSAGE INDICATOR>`, it is an automated technical notification injected by the harness reporting a user interaction event on an artifact (such as a button click, form submission, or plan approval) while the agent was not actively awaiting a tool call. You must treat the enclosed event context and data model as ground-truth user input describing what the user submitted in the UI, even though no human manually typed the notification text itself.
+- **UI Guardrail**: The Web UI strictly prevents human users from submitting any message starting with `<SYNTHETIC MESSAGE INDICATOR>`.
 
 ---
 
@@ -379,7 +450,7 @@ For review-oriented artifacts (such as plans or requirements documents), setting
      }
    }
    ```
-4. **Harness A2UI Rewriting**:
+4. **Harness A2UI Rewriting & Dynamic Click-Time Capture**:
    When the harness generates the in-memory A2UI event stream for the renderer, it rewrites `{"comments": "push"}` into a standard A2UI action event:
    ```json
    "action": {
@@ -389,10 +460,10 @@ For review-oriented artifacts (such as plans or requirements documents), setting
          "comments": [
            {
              "location": {
-               "raw_start": {"line": 12, "char": 0},
-               "raw_end": {"line": 14, "char": 45},
-               "rendered_start": {"line": 10, "char": 0},
-               "rendered_end": {"line": 12, "char": 30}
+               "raw_start": "L12:0",
+               "raw_end": "L14:45",
+               "rendered_start": "L10:0",
+               "rendered_end": "L12:30"
              },
              "span_text": "### Phase 2: Database Migration",
              "comment": "Please use Alembic rather than raw SQL scripts."
@@ -402,7 +473,9 @@ For review-oriented artifacts (such as plans or requirements documents), setting
      }
    }
    ```
-5. **Buffer Clearing**: Upon click, the frontend dispatches the accumulated comments payload to the harness and immediately clears its local comment buffer.
+   > **Dynamic Capture at Click Time**: The rewritten comment payload is **not** statically resolved at render time. Instead, the rewritten A2UI action tells the frontend renderer to evaluate the dynamic comment buffer at the exact moment the button is clicked, populating `context.comments` with all entries accumulated since the previous push.
+
+5. **Buffer Clearing**: Upon click, the frontend dispatches the accumulated comments payload to the harness and immediately resets its local comment buffer (so subsequent clicks only dispatch newly added comments).
 
 ---
 
@@ -412,8 +485,8 @@ Two bundled skills govern artifact usage:
 
 ### 1. `artifacts` Skill
 - Instructs the agent on the lifecycle, layout, and usage of interactive artifacts.
-- Emphasizes that `/artifacts` is mounted read-only (`readOnly=True`) inside OpenSandbox. All creations and edits must use the provided tools (`make_questionnaire`, `make_form`, `make_artifact`).
-- **Guidance**: Emphasizes that custom artifacts (`make_artifact`) are rarely needed; specialized tools (`make_questionnaire`, `make_form`) must be preferred. Existing specialized artifacts can serve as syntax examples when custom authoring is required.
+- Emphasizes that `/artifacts` is mounted read-only (`readOnly=True`) inside OpenSandbox. All creations and edits must use the provided tools (`make_questionnaire`, `make_form`, `make_plan`, `make_artifact`).
+- **Guidance**: Emphasizes that custom artifacts (`make_artifact`) are rarely needed; specialized tools (`make_questionnaire`, `make_form`, `make_plan`) must be preferred. Existing specialized artifacts can serve as syntax examples when custom authoring is required.
 
 ### 2. `a2ui-components` Skill
 - Provides reference documentation for all components available in the default A2UI basic catalog (`Text`, `Button`, `TextField`, `ChoiceSet`, `Column`, `Row`, `Card`, `Review`, etc.).
@@ -428,11 +501,11 @@ Two bundled skills govern artifact usage:
 | :--- | :--- | :--- |
 | `INV-ART-001` | Filesystem | No artifact files or directories are deleted. |
 | `INV-ART-002` | State Mutation | State files overwrite; append-mode interactions append JSONL. |
-| `INV-ART-003` | Co-existence | `body.json` must exist when `manifest.json` is created. |
+| `INV-ART-003` | Co-existence | `body.json` must exist when `manifest.json` is created; violation leads to unrecoverable `ERROR` turn state requiring branching. |
 | `INV-ART-004` | Closure Marker | Existence of `closed.marker` marks artifact as closed. |
-| `INV-ART-005` | Presentation on Close | Closed tabbed artifacts unmount; closed embedded artifacts collapse and lock. |
-| `INV-ART-006` | Whitelisted Clicks | Button clicks for IDs not listed in `manifest.json.buttons` are ignored. |
+| `INV-ART-005` | Presentation on Close | Closed tabbed artifacts unmount; closed embedded artifacts collapse and lock; closed artifacts in Changes tab rendered mode are non-editable. |
+| `INV-ART-006` | Whitelisted Clicks | Button clicks for IDs not listed in `manifest.json.buttons` log a warning and are ignored; buttons with `clicksLeft <= 0` are rendered disabled. |
 | `INV-ART-007` | Hitl Suspension | `wait_for_click` suspends agent execution until target click event. |
-| `INV-ART-008` | Synthetic Unblocking | If agent terminates blocking turn without `wait_for_click`, unblock injects `<SYNTHETIC MESSAGE INDICATOR>`. |
-| `INV-ART-009` | Review Rewriting | `{"comments": "push"}` action is rewritten to A2UI `push_comments` event context. |
+| `INV-ART-008` | Synthetic Notification | If agent finishes turn without `wait_for_click`, user clicks inject `<SYNTHETIC MESSAGE INDICATOR>`. |
+| `INV-ART-009` | Review Rewriting | `{"comments": "push"}` action is rewritten to dynamic click-time `push_comments` event context with `LN:M` locations. |
 | `INV-ART-010` | Read-Only Sandbox | Sandbox mounts `/artifacts` as `readOnly=True`. |
