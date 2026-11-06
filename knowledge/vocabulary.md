@@ -36,17 +36,14 @@ The mechanism and lineage metadata tracking the creation of a child session from
 
 ### Operational Mode
 The active execution posture and behavioral style governing an agent during a thread turn within an open, extensible set of modes:
-- `chat`: Conversational dialogue and direct code editing posture; `/workspace` is mounted read-write and notes is an unconstrained directory. Exposes `ask` and `read_artifact_submission`.
+- `chat`: Conversational dialogue and direct code editing posture; `/workspace` is mounted read-write and notes is an unconstrained directory. Exposes `make_questionnaire` and `wait_for_click`.
 - `plan`: Multi-phase planning mode comprising three distinct execution phases, each operating in an isolated thread boundary:
-  - `discuss`: Workspace exploration and requirements gathering with `/workspace` mounted read-write. The agent is free to organize notes and specifications in any workspace directory without restriction. Exposes `ask`, `form`, `plan()`, `read_artifact_submission`, and `discard()`. Calling `plan()` transitions to Make. The agent is strictly constrained from implementing code or writing the plan artifact during Discuss.
-  - `make`: Synthesizes workspace notes and codebase findings into a session-local Plan artifact (`exposition="tabbed"`, `cadence="nonblocking"`) with `/workspace` mounted read-only. Exposes `make_plan` (replaced dynamically by `update_plan` and `edit_plan` once created), `read_artifact_submission`, and `discard()`. Advancing to Execute is driven by user clicking the "Proceed" button on the Plan tab.
+  - `discuss`: Workspace exploration and requirements gathering with `/workspace` mounted read-write. The agent is free to organize notes and specifications in any workspace directory without restriction. Exposes `make_questionnaire`, `make_form`, `plan()`, `wait_for_click`, and `discard()`. Calling `plan()` transitions to Make. The agent is strictly constrained from implementing code or writing the plan artifact during Discuss.
+  - `make`: Synthesizes workspace notes and codebase findings into a session-local Plan artifact (`exposition="tabbed"`, `blocking=false`) with `/workspace` mounted read-only. Exposes `make_plan`, `wait_for_click`, and `discard()`. Advancing to Execute is driven by user clicking the "Proceed" button on the Plan tab.
   - `execute`: Implements and verifies the approved plan with `/workspace` mounted read-write and `/workspace/notes` mounted read-only. Exposes `discard()`.
 - `act`: Direct task execution; follows commands and performs edits immediately without upfront planning cycles.
 - `analyse`: Read-only workspace investigation; inspects code, runs queries, and answers questions without mutating persistent files.
 - `routing` (planned): Uses a classifier model or tool-wrapped LLM to triage user input and dispatch to an appropriate operational mode.
-
-### Plan Artifact
-A specialized declarative Markdown document artifact (`family="plans"`, `exposition="tabbed"`, `blocking=false`, `commentable=true`) representing a session-level implementation plan. Rendered in a dedicated tab to the right of `Changes` in the Web UI with a "Proceed" button that advances the session from `plan/make` to `plan/execute` and an inline commenting system for section-level review. Created atomically via `make_plan`. See [artifacts.md](./artifacts.md) and [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md).
 
 ### Thread
 A sub-conversation segment within a session representing a discrete execution phase and mode boundary. Only the most recently created thread in a session is open; earlier threads are closed. A thread records AG-UI streaming events, tracks execution status, and executes within a specific operational mode. Switching operational modes closes the active thread and spawns a fresh thread.
@@ -124,6 +121,9 @@ A specialized interactive artifact (`family="questionnaires"`, `exposition="embe
 ### Form
 A specialized interactive artifact (`family="forms"`, `exposition="tabbed"`, `blocking=false`) presented in a dedicated sidebar tab to collect multi-field inputs or structured configuration options without blocking conversational dialogue. Created atomically via `make_form`. See [artifacts.md](./artifacts.md).
 
+### Plan Artifact
+A specialized declarative Markdown document artifact (`family="plans"`, `exposition="tabbed"`, `blocking=false`, `commentable=true`) representing a session-level implementation plan. Rendered in a dedicated tab to the right of `Changes` in the Web UI with a "Proceed" button that advances the session from `plan/make` to `plan/execute` and an inline commenting system for section-level review. Created atomically via `make_plan`. See [artifacts.md](./artifacts.md) and [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md).
+
 ### Bundled Skill
 A core harness platform skill maintained directly in repository source (`src/seamus/skills/bundled/`), mounted into OpenSandbox at `/skills/bundled` with highest precedence over session and system skills, and surfaced in the Agent Inspector.
 
@@ -145,7 +145,6 @@ A core harness platform skill maintained directly in repository source (`src/sea
 - [0031-SUPERSEDED-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-SUPERSEDED-migrate-a2ui-to-adaptive-cards.md)
 - [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md)
 - [artifacts.md](./artifacts.md)
-- [adaptive_cards.md](./adaptive_cards.md)
 - [threads_modes_personas.md](./threads_modes_personas.md)
 - [architecture.md](./architecture.md)
 - [abstractions.md](./abstractions.md)

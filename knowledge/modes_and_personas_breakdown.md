@@ -25,12 +25,12 @@ Certain modes are multi-phased state machines (e.g., `plan` mode progresses thro
   - Guides the agent to ask clarifying questions when requirements are ambiguous.
   - Emphasizes that conversational suggestions are exploratory and that workspace changes are not deliverables destined for the production `main` branch.
 - **Tool Availability**:
-  - **Enabled**: Structured human interaction via `ask` (questionnaires) and `read_artifact_submission`. Read-only inquiry and general reasoning tools.
-  - **Walled Off**: Plan-management tools (`plan`, `make_plan`, `update_plan`, `edit_plan`, `discard`). Production code delivery tools are deactivated or discouraged.
+  - **Enabled**: Structured human interaction via `make_questionnaire` and `wait_for_click`. Read-only inquiry and general reasoning tools.
+  - **Walled Off**: Plan-management tools (`plan`, `make_plan`, `discard`). Production code delivery tools are deactivated or discouraged.
 - **Filesystem & Mount Policy**:
   - Workspace `/workspace` is mounted read-write as an agent scratchpad for transient scripts or scratch calculations. Changes in `chat` mode are not intended for synchronization PRs.
 - **Artifacts & Surfaces**:
-  - Supports blocking human questionnaires created via `ask` rendered in the conversation stream.
+  - Supports blocking human questionnaires created via `make_questionnaire` rendered in the conversation stream.
 
 ---
 
@@ -55,16 +55,16 @@ flowchart LR
   - Explicitly informs the agent that the operational workspace (`/workspace`) is mounted read-write and that it is free to organize notes and specifications in any workspace directory.
   - Strictly prohibits following user instructions to implement code or authoring the actual Plan artifact during Discuss.
   - Instructs the agent to inspect files, trace references, and read documentation.
-  - Directs the agent to formulate clarifying questions using `ask`, `form`, or conversational dialogue whenever ambiguities exist.
+  - Directs the agent to formulate clarifying questions using `make_questionnaire`, `make_form`, or conversational dialogue whenever ambiguities exist.
   - Instructs the agent to record notes, architectural discoveries, and requirements in the workspace.
   - Prompts the agent to call `plan()` once all necessary context has been collected to advance to the plan-drafting phase.
 - **Tool Availability**:
-  - **Enabled**: `ask`, `form`, `read_artifact_submission`, `plan()` (transitions session to `plan/make`), `discard()` (resets planning state). Workspace file tools (`read_file`, `write_file`, `edit_file`, shell commands).
-  - **Walled Off**: Plan authoring tools (`make_plan`, `update_plan`, `edit_plan`).
+  - **Enabled**: `make_questionnaire`, `make_form`, `wait_for_click`, `plan()` (transitions session to `plan/make`), `discard()` (resets planning state). Workspace file tools (`read_file`, `write_file`, `edit_file`, shell commands).
+  - **Walled Off**: Plan authoring tools (`make_plan`).
 - **Filesystem & Mount Policy**:
   - `/workspace` (`data/`): Mounted **read-write** (`readOnly=False`). Notes and specifications can be placed anywhere in the workspace.
 - **Artifacts & Surfaces**:
-  - Blocking questionnaires via `ask` and non-blocking tabbed forms via `form` for structured requirement gathering.
+  - Blocking questionnaires via `make_questionnaire` and non-blocking tabbed forms via `make_form` for structured requirement gathering.
 
 #### Phase 2: `make` (`plan/make`)
 - **Primary Objective**: Synthesize collected requirements into a complete, structured Markdown plan document for user review.
@@ -75,13 +75,13 @@ flowchart LR
   - Injects active plan context if a draft already exists, instructing the agent to apply surgical updates or text replacements.
   - Prohibits switching into code implementation or conversational chatter until the plan is approved.
 - **Tool Availability**:
-  - **Enabled**: `make_plan(title, content)` (initial creation; once called, `make_plan` disappears and `update_plan` appears), `update_plan(content)` (replaces full Markdown content), `edit_plan(old_str, new_str)` (surgical text replacement), `discard()`. Read-only file inspection tools.
-  - **Walled Off**: `plan()`, `ask`, and all file writing/editing tools.
+  - **Enabled**: `make_plan(title, content)`, `wait_for_click()`, `discard()`. Read-only file inspection tools.
+  - **Walled Off**: `plan()`, `make_questionnaire`, and all file writing/editing tools.
 - **Filesystem & Mount Policy**:
   - `/workspace`: Mounted **read-only**.
   - `/workspace/notes`: Mounted **read-only** (notes are finalized reference material).
 - **Artifacts & Surfaces**:
-  - Adaptive Card non-blocking tabbed plan surface rendered in a dedicated tab to the right of Changes, displaying formatted Markdown and an interactive "Proceed to Execution" action button.
+  - A2UI non-blocking tabbed plan surface rendered in a dedicated tab to the right of Changes, displaying formatted Markdown, an inline commenting interface, and an interactive "Proceed to Execution" action button.
 
 #### Phase 3: `execute` (`plan/execute`)
 - **Primary Objective**: Faithfully execute, test, and verify the user-approved plan.
@@ -92,7 +92,7 @@ flowchart LR
   - Reminds the agent to adhere to testing invariants and repository conventions before completing execution.
 - **Tool Availability**:
   - **Enabled**: Full software engineering suite (`read_file`, `write_file`, `edit_file`, shell `execute`, inspector, todo-tracking). `discard()` remains enabled if the user explicitly orders aborting the plan.
-  - **Walled Off**: Plan authoring tools (`make_plan`, `update_plan`, `edit_plan`, `plan()`) and `ask`.
+  - **Walled Off**: Plan authoring tools (`make_plan`, `plan()`) and `make_questionnaire`.
 - **Filesystem & Mount Policy**:
   - `/workspace`: Mounted **read-write** (`readOnly=False`). Surgical code modifications and test executions are fully enabled.
   - `/workspace/notes`: Mounted **read-only** (historical reference for the plan).
@@ -109,7 +109,7 @@ flowchart LR
   - Injects testing discipline and repository conventions.
 - **Tool Availability**:
   - **Enabled**: Full software engineering tool suite (`read_file`, `write_file`, `edit_file`, `execute`).
-  - **Walled Off**: Phased planning tools (`plan`, `make_plan`, `update_plan`, `edit_plan`) and questionnaires (`ask`).
+  - **Walled Off**: Phased planning tools (`plan`, `make_plan`) and questionnaires (`make_questionnaire`).
 - **Filesystem & Mount Policy**:
   - `/workspace`: Mounted **read-write** for production code changes targeting the session's Sync PR.
 
@@ -208,11 +208,11 @@ A **Persona** represents an agent's enduring identity, operational philosophy, d
 
 | Mode / Phase | Persona Customization | `/workspace` Mount | `/workspace/notes` Mount | Enabled Special Tools | Gated / Walled Tools | Primary Surface |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`chat`** | General advisor / brainstorming | Read-Write (scratchpad) | N/A | `ask`, `read_artifact_submission` | `plan`, `make_plan`, `update_plan`, `edit_plan`, `discard` | Conversation stream |
-| **`plan/discuss`** | Exploratory investigator | **Read-Write** | N/A (unconstrained) | `ask`, `form`, `read_artifact_submission`, `plan()`, `discard()` | `make_plan`, `update_plan`, `edit_plan` | Stream + Notes |
-| **`plan/make`** | Methodical plan author | **Read-Only** | **Read-Only** | `make_plan`, `update_plan`, `edit_plan`, `discard()` | `plan()`, `ask`, `write_file`, `edit_file` | Adaptive Card Tabbed Plan |
-| **`plan/execute`** | Disciplined implementer | **Read-Write** | **Read-Only** | `discard()`, full engineering suite | `plan()`, `make_plan`, `update_plan`, `edit_plan`, `ask` | Adaptive Card Tabbed Plan + Changes Diff |
-| **`act`** *(planned)* | Direct, prompt implementer | **Read-Write** | N/A | Full engineering suite | `plan`, `make_plan`, `update_plan`, `edit_plan`, `ask` | Changes Diff |
+| **`chat`** | General advisor / brainstorming | Read-Write (scratchpad) | N/A | `make_questionnaire`, `wait_for_click` | `plan`, `make_plan`, `discard` | Conversation stream |
+| **`plan/discuss`** | Exploratory investigator | **Read-Write** | N/A (unconstrained) | `make_questionnaire`, `make_form`, `wait_for_click`, `plan()`, `discard()` | `make_plan` | Stream + Notes |
+| **`plan/make`** | Methodical plan author | **Read-Only** | **Read-Only** | `make_plan`, `wait_for_click`, `discard()` | `plan()`, `make_questionnaire`, `write_file`, `edit_file` | A2UI Tabbed Plan |
+| **`plan/execute`** | Disciplined implementer | **Read-Write** | **Read-Only** | `discard()`, full engineering suite | `plan()`, `make_plan`, `make_questionnaire` | A2UI Tabbed Plan + Changes Diff |
+| **`act`** *(planned)* | Direct, prompt implementer | **Read-Write** | N/A | Full engineering suite | `plan`, `make_plan`, `make_questionnaire` | Changes Diff |
 | **`analyse`** *(planned)* | Diagnostic auditor / reviewer | **Read-Only** | N/A | Search, call graphs, inspection | All mutation tools (`write_file`, `edit_file`, shell writes) | Diagnostic Report |
 | **`routing`** *(planned)* | Intent classifier | None | N/A | Intent dispatch tool | All workspace and file tools | Internal Dispatch |
 
