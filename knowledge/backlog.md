@@ -273,6 +273,17 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Expands Seamus to support fully offline, private, and zero-cost local LLM development workflows.
 - **Provenance**: `src/seamus/config/models.py`, `src/seamus/harness/runner.py`, `ui/src/components/ConfigModal.tsx`.
 
+### Expand A2UI Basic Catalog Widgets Documentation in Skill
+- **Description**: Expand the bundled `a2ui_components` skill (`src/seamus/skills/bundled/a2ui_components/SKILL.md`) with comprehensive documentation, schema specifications, and JSON examples for the remaining supported A2UI basic catalog components:
+  1. `Tabs`: Tabbed container switching between multiple child subtrees (`tabs: [{"title": str, "child": str}]`).
+  2. `Modal`: Overlay dialog component (`trigger: str`, `content: str`).
+  3. `Slider`: Numerical slider input (`min`, `max`, `step`, `value`, `label`).
+  4. `CheckBox`: Boolean toggle input (`label: str`, `value: bool`).
+  5. `DateTimeInput`: Date and time selection widget (`enableDate: bool`, `enableTime: bool`, `value: str`).
+  6. `Image`: Image rendering widget (`url: str`, `fit: "contain" | "cover" | "fill" | "none"`).
+- **Rationale**: The `a2ui_components` skill currently provides in-depth examples for `Column`, `Row`, `Card`, `Text`, `TextField`, `ChoicePicker`, `Button`, and `Divider`. Documenting the full set of basic catalog widgets empowers agents to author richer, multi-tabbed, modal, or continuous-input interactive surfaces without guessing schemas or referencing raw catalog JSON.
+- **Provenance**: `src/seamus/skills/bundled/a2ui_components/SKILL.md`, `src/seamus/harness/artifacts.py` (`A2UI_COMPONENT_SPECS`), [0039-loose-artifact-normalization-and-mutation-log.md](../decisions/0039-loose-artifact-normalization-and-mutation-log.md).
+
 ## Not formalized
 
 - we need to stress that when we're reviewing a plan and comment on something, this comment must be understood in context of the whole plan with focus on comment subject; agents tend to only care about commented text, ignoring what surrounds it
