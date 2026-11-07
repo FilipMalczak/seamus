@@ -60,7 +60,9 @@ from seamus.harness.artifacts import (
     QuestionItem,
     QuestionnaireBuilder,
     dispatch_button_click,
+    normalize_a2ui_components,
     seed_default_artifacts,
+    validate_a2ui_surface,
 )
 from seamus.harness.prompt import (
     DynamicSystemPromptMiddleware,
@@ -423,10 +425,10 @@ class MakeArtifactInput(BaseModel):
             "(e.g. 'questionnaires', 'forms', 'plans', 'custom')"
         ),
     )
-    manifest: ArtifactManifest = Field(
+    manifest: dict[str, Any] | ArtifactManifest = Field(
         description="Behavioral and exposition manifest for the artifact",
     )
-    components: list[dict[str, Any]] = Field(
+    components: list[dict[str, Any]] | Any = Field(
         description="A2UI basic catalog components sequence for body.json",
     )
     uuid: str | None = Field(
@@ -1094,18 +1096,47 @@ class SessionAgentRunner:
         uuid: str | None = None,
     ) -> str:
         """Create an atomic A2UI renderable artifact in /artifacts/<family>/<uuid>/."""
-        manifest_obj = (
-            manifest
-            if isinstance(manifest, ArtifactManifest)
-            else ArtifactManifest.model_validate(manifest)
+        manifest_obj: ArtifactManifest | None = None
+        manifest_errors: list[str] = []
+        if isinstance(manifest, ArtifactManifest):
+            manifest_obj = manifest
+        elif isinstance(manifest, dict):
+            try:
+                manifest_obj = ArtifactManifest.model_validate(manifest)
+            except Exception as e:
+                manifest_errors.append(f"Invalid manifest: {e}")
+        else:
+            manifest_errors.append(
+                f"Invalid manifest: expected dict or ArtifactManifest, got "
+                f"{type(manifest).__name__}."
+            )
+
+        if manifest_errors or manifest_obj is None:
+            formatted_errors = "\n".join(f"- {err}" for err in manifest_errors)
+            return (
+                f"Failed to render A2UI surface. Artifact was not stored.\n"
+                f"Validation errors:\n{formatted_errors}"
+            )
+
+        surface_errors = validate_a2ui_surface(
+            components=components,
+            manifest=manifest_obj,
         )
+        if surface_errors:
+            formatted_errors = "\n".join(f"- {err}" for err in surface_errors)
+            return (
+                f"Failed to render A2UI surface. Artifact was not stored.\n"
+                f"Validation errors:\n{formatted_errors}"
+            )
+
         ws_mgr = get_workspace_manager()
         artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
+        normalized_components = normalize_a2ui_components(components)
         inst_uuid = ArtifactBuilder.create_artifact(
             artifacts_dir=artifacts_dir,
             family=family,
             manifest=manifest_obj,
-            components=components,
+            components=normalized_components,
             uuid=uuid,
         )
         art_event = {

@@ -93,7 +93,8 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `ManifestButton`: Pydantic model (`id: str`, `mode: Literal["set", "append"]`, `clicks: int | Literal["*"]`, `unblocking: bool`, `closing: bool`).
 - `ArtifactManifest`: Pydantic model (`name: str`, `exposition: Literal["embedded", "tabbed"]`, `blocking: bool`, `commentable: bool`, `buttons: list[ManifestButton]`).
 - `ArtifactInfo`: Pydantic model describing an artifact instance (`family`, `uuid`, `manifest`, `is_closed`, `body`, `state`).
-- `make_artifact`: Core atomic tool creating `/artifacts/<family>/<uuid>/` with `manifest.json` and `body.json`.
+- `make_artifact`: Core atomic tool creating `/artifacts/<family>/<uuid>/` with `manifest.json` and `body.json`, validating the A2UI surface before persisting.
+- `validate_a2ui_surface`: Surface validator checking component structure, basic catalog types, child references, tree topology (no cycles, single parent), component properties, and manifest button declarations before artifact creation.
 - `make_questionnaire`: Specialized atomic questionnaire builder tool.
 - `make_form`: Specialized atomic tabbed non-blocking form builder tool.
 - `make_plan`: Specialized atomic plan builder tool creating `manifest.json`, `body.json`, and canonical `plan.md` with inline commenting support.
@@ -132,6 +133,8 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md)
 - [0031-SUPERSEDED-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-SUPERSEDED-migrate-a2ui-to-adaptive-cards.md)
 - [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md)
+- [0036-mount-bundled-skills-via-shared-volume.md](../decisions/0036-mount-bundled-skills-via-shared-volume.md)
+- [0037-validate-a2ui-surface-render-on-make-artifact.md](../decisions/0037-validate-a2ui-surface-render-on-make-artifact.md)
 - [artifacts.md](./artifacts.md)
 - [architecture.md](./architecture.md)
 - [backlog.md](./backlog.md)

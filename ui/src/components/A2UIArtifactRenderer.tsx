@@ -123,8 +123,15 @@ function normalizeComponents(components: Array<Record<string, any>>): Array<Reco
       if (variant && !["default", "primary", "borderless"].includes(variant)) {
         variant = "default";
       }
+      const action = comp.action || {
+        event: {
+          name: comp.id || "button_click",
+          context: {},
+        },
+      };
       return {
         ...comp,
+        action,
         ...(variant ? { variant } : {}),
       };
     }

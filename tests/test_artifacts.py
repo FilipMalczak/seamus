@@ -6,12 +6,18 @@ from typing import Any
 
 import pytest
 
+from seamus.config.models import (
+    AgentConfig,
+    InferenceConfig,
+    InferenceFormat,
+)
 from seamus.domain.artifacts import (
     ArtifactManifest,
     ArtifactState,
     ManifestButton,
 )
 from seamus.harness.artifacts import (
+    A2UISurfaceValidationError,
     ArtifactBuilder,
     ArtifactCorruptedError,
     ArtifactResolver,
@@ -20,8 +26,23 @@ from seamus.harness.artifacts import (
     Question,
     QuestionnaireBuilder,
     dispatch_button_click,
+    normalize_a2ui_components,
     seed_default_artifacts,
+    validate_a2ui_surface,
 )
+from seamus.harness.runner import SessionAgentRunner
+from seamus.harness.store import HarnessStore
+
+
+def _make_agent_config() -> AgentConfig:
+    return AgentConfig(
+        inference=InferenceConfig(
+            format=InferenceFormat.OPENAI,
+            base_url="https://api.openai.com/v1",
+            api_key="test-key",
+        ),
+        model_name="gpt-4o",
+    )
 
 
 def test_seed_default_artifacts(tmp_path: Path) -> None:
@@ -548,3 +569,457 @@ def test_questionnaire_write_in_and_schema_translation(tmp_path: Path) -> None:
     assert "Target platforms?" not in state_data["dataModel"]
     assert state_data["dataModel"]["q_1_primary_language"] == "python"
     assert state_data["dataModel"]["q_2_target_platforms"] == ["linux", "macos"]
+
+
+def test_validate_a2ui_surface_valid() -> None:
+    manifest = ArtifactManifest(
+        name="Valid Surface",
+        exposition="embedded",
+        blocking=False,
+        buttons=[ManifestButton(id="btn-ok", mode="set", clicks=1)],
+    )
+    components: list[dict[str, Any]] = [
+        {
+            "id": "root",
+            "component": "Column",
+            "children": ["title", "picker", "btn-ok"],
+        },
+        {
+            "id": "title",
+            "component": "Text",
+            "text": "Hello world",
+            "variant": "h2",
+        },
+        {
+            "id": "picker",
+            "component": "ChoicePicker",
+            "options": [{"label": "A", "value": "a"}, {"label": "B", "value": "b"}],
+            "value": ["a"],
+        },
+        {
+            "id": "btn-ok",
+            "component": "Button",
+            "child": "btn-label",
+            "action": {
+                "event": {
+                    "name": "submit_ok",
+                    "context": {"selection": {"path": "/components/picker/value"}},
+                }
+            },
+        },
+        {
+            "id": "btn-label",
+            "component": "Text",
+            "text": "Submit",
+        },
+    ]
+
+    errors = validate_a2ui_surface(components=components, manifest=manifest)
+    assert errors == []
+
+
+def test_validate_a2ui_surface_structural_and_hierarchy_errors() -> None:
+    # 1. Non-list components
+    assert "must be a list" in validate_a2ui_surface(components="invalid")[0]
+
+    # 2. Empty list
+    assert "cannot be empty" in validate_a2ui_surface(components=[])[0]
+
+    # 3. Non-dict element
+    assert "not an object/dict" in validate_a2ui_surface(components=["not_a_dict"])[0]
+
+    # 4. Missing ID
+    assert (
+        "missing a non-empty string 'id'"
+        in validate_a2ui_surface(components=[{"component": "Text"}])[0]
+    )
+
+    # 5. Duplicate ID
+    dup_comps = [
+        {"id": "comp1", "component": "Text", "text": "A"},
+        {"id": "comp1", "component": "Text", "text": "B"},
+    ]
+    assert any(
+        "Duplicate component id 'comp1'" in e for e in validate_a2ui_surface(components=dup_comps)
+    )
+
+    # 6. Unknown component type
+    bad_type_comps = [{"id": "bad1", "component": "SuperUnknownWidget"}]
+    assert any(
+        "Unknown or unsupported component type 'SuperUnknownWidget'" in e
+        for e in validate_a2ui_surface(components=bad_type_comps)
+    )
+
+    # 7. Dangling child in children
+    dangling_children = [
+        {"id": "root", "component": "Column", "children": ["missing-child-1"]},
+    ]
+    assert any(
+        "references child 'missing-child-1'" in e
+        for e in validate_a2ui_surface(components=dangling_children)
+    )
+
+    # 8. Dangling child in child
+    dangling_child = [
+        {"id": "btn", "component": "Button", "child": "missing-label"},
+    ]
+    manifest = ArtifactManifest(
+        name="Test",
+        exposition="embedded",
+        buttons=[ManifestButton(id="btn", mode="set", clicks=1)],
+    )
+    assert any(
+        "references child 'missing-label'" in e
+        for e in validate_a2ui_surface(components=dangling_child, manifest=manifest)
+    )
+
+    # 9. Multiple parents
+    multi_parents = [
+        {"id": "root1", "component": "Column", "children": ["shared"]},
+        {"id": "root2", "component": "Column", "children": ["shared"]},
+        {"id": "shared", "component": "Text", "text": "I have two parents"},
+    ]
+    assert any("multiple parents" in e for e in validate_a2ui_surface(components=multi_parents))
+
+    # 10. Direct self-cycle
+    self_cycle = [
+        {"id": "loop", "component": "Column", "children": ["loop"]},
+    ]
+    assert any("Cycle detected" in e for e in validate_a2ui_surface(components=self_cycle))
+
+    # 11. Multi-node cycle
+    multi_cycle = [
+        {"id": "node_a", "component": "Column", "children": ["node_b"]},
+        {"id": "node_b", "component": "Column", "children": ["node_a"]},
+    ]
+    errs = validate_a2ui_surface(components=multi_cycle)
+    assert any("Cycle detected" in e for e in errs)
+    assert any("No root component found" in e for e in errs)
+
+
+def test_validate_a2ui_surface_component_properties_and_buttons() -> None:
+    manifest = ArtifactManifest(
+        name="Button Check",
+        exposition="embedded",
+        buttons=[ManifestButton(id="btn-allowed", mode="set", clicks=1)],
+    )
+
+    # Text missing text
+    t_no_text = [{"id": "t1", "component": "Text"}]
+    assert any(
+        "text: Expected string, received undefined" in e
+        for e in validate_a2ui_surface(components=t_no_text)
+    )
+
+    # Text variant is normalized to 'body' without errors
+    t_bad_var = [{"id": "t2", "component": "Text", "text": "Hi", "variant": "ultra-mega-bold"}]
+    assert validate_a2ui_surface(components=t_bad_var) == []
+    normalized = normalize_a2ui_components(t_bad_var)
+    assert normalized[0]["variant"] == "body"
+
+    # Image invalid fit enum is rejected with enum error
+    img_bad_fit = [
+        {"id": "img2", "component": "Image", "url": "https://example.com/a.png", "fit": "ultra-fit"}
+    ]
+    assert any(
+        "fit: Invalid enum value" in e for e in validate_a2ui_surface(components=img_bad_fit)
+    )
+
+    # Image missing url
+    img_no_url = [{"id": "img1", "component": "Image"}]
+    assert any(
+        "url: Expected string, received undefined" in e
+        for e in validate_a2ui_surface(components=img_no_url)
+    )
+
+    # Icon missing name
+    icon_no_name = [{"id": "icon1", "component": "Icon"}]
+    assert any(
+        "name: Expected string, received undefined" in e
+        for e in validate_a2ui_surface(components=icon_no_name)
+    )
+
+    # Button not in manifest.buttons
+    btn_not_in_manifest = [
+        {"id": "btn-unregistered", "component": "Button", "child": "lbl"},
+        {"id": "lbl", "component": "Text", "text": "Unregistered"},
+    ]
+    errs = validate_a2ui_surface(components=btn_not_in_manifest, manifest=manifest)
+    assert any(
+        "Button 'btn-unregistered' is present in components but is not declared in manifest.buttons"
+        in e
+        for e in errs
+    )
+
+    # Action context pointer referencing non-existent component
+    bad_pointer_comps = [
+        {
+            "id": "btn-allowed",
+            "component": "Button",
+            "child": "lbl",
+            "action": {
+                "event": {
+                    "name": "act",
+                    "context": {"x": {"path": "/components/ghost_component/value"}},
+                }
+            },
+        },
+        {"id": "lbl", "component": "Text", "text": "Allowed"},
+    ]
+    errs_pointer = validate_a2ui_surface(components=bad_pointer_comps, manifest=manifest)
+    assert any(
+        "Action context pointer '/components/ghost_component/value' references non-existent "
+        "component 'ghost_component'" in e
+        for e in errs_pointer
+    )
+
+
+def test_make_artifact_rejects_invalid_surface_and_does_not_store() -> None:
+    store = HarnessStore()
+    config = _make_agent_config()
+    agent = store.create_agent(config=config, name="agent-art-val")
+    session = store.create_session(agent_identifier=str(agent.id), name="session-art-val")
+    runner = SessionAgentRunner(session=session)
+
+    # Provide components with a dangling child reference
+    invalid_components: list[dict[str, Any]] = [
+        {
+            "id": "root",
+            "component": "Column",
+            "children": ["non-existent-child-id"],
+        }
+    ]
+    manifest = ArtifactManifest(
+        name="Invalid Surface Test",
+        exposition="embedded",
+        buttons=[],
+    )
+
+    result = runner.handle_make_artifact(
+        family="custom",
+        manifest=manifest,
+        components=invalid_components,
+        uuid="invalid-art-uuid",
+    )
+
+    # Check tool response format: errors and explicit "didnt store" notification
+    assert result.startswith("Failed to render A2UI surface. Artifact was not stored.")
+    assert (
+        "Dangling child reference: component 'root' references child 'non-existent-child-id'"
+        in result
+    )
+
+    # Check filesystem: directory must NOT be created under artifacts
+    from seamus.persistence import get_workspace_manager
+
+    art_dir = (
+        get_workspace_manager().get_session_artifacts_dir(session.agent_id, session.id)
+        / "custom"
+        / "invalid-art-uuid"
+    )
+    assert not art_dir.exists()
+
+    # Check thread events: ARTIFACT_CREATED must NOT be emitted
+    thread = session.get_open_thread()
+    assert thread is not None
+    created_events = [e for e in thread.events if e.get("type") == "ARTIFACT_CREATED"]
+    assert len(created_events) == 0
+
+
+def test_make_artifact_rejects_malformed_manifest_and_does_not_store() -> None:
+    store = HarnessStore()
+    config = _make_agent_config()
+    agent = store.create_agent(config=config, name="agent-art-manifest")
+    session = store.create_session(agent_identifier=str(agent.id), name="session-art-manifest")
+    runner = SessionAgentRunner(session=session)
+
+    malformed_manifest = {
+        "exposition": "invalid_exposition_mode",  # must be 'tabbed' or 'embedded'
+    }
+    components = [{"id": "t", "component": "Text", "text": "hello"}]
+
+    result = runner.handle_make_artifact(
+        family="custom",
+        manifest=malformed_manifest,
+        components=components,
+        uuid="malformed-manifest-uuid",
+    )
+
+    assert result.startswith("Failed to render A2UI surface. Artifact was not stored.")
+    assert "Invalid manifest" in result
+
+    from seamus.persistence import get_workspace_manager
+
+    art_dir = (
+        get_workspace_manager().get_session_artifacts_dir(session.agent_id, session.id)
+        / "custom"
+        / "malformed-manifest-uuid"
+    )
+    assert not art_dir.exists()
+
+
+def test_make_artifact_stores_valid_surface_and_emits_event() -> None:
+    store = HarnessStore()
+    config = _make_agent_config()
+    agent = store.create_agent(config=config, name="agent-art-valid")
+    session = store.create_session(agent_identifier=str(agent.id), name="session-art-valid")
+    runner = SessionAgentRunner(session=session)
+
+    manifest = ArtifactManifest(
+        name="Valid Artifact",
+        exposition="embedded",
+        buttons=[ManifestButton(id="btn-ok", mode="set", clicks=1)],
+    )
+    valid_components: list[dict[str, Any]] = [
+        {"id": "root", "component": "Column", "children": ["t", "btn-ok"]},
+        {"id": "t", "component": "Text", "text": "Valid message"},
+        {"id": "btn-ok", "component": "Button", "child": "btn-lbl"},
+        {"id": "btn-lbl", "component": "Text", "text": "Confirm"},
+    ]
+
+    result = runner.handle_make_artifact(
+        family="custom",
+        manifest=manifest,
+        components=valid_components,
+        uuid="valid-art-uuid",
+    )
+
+    # Returns the UUID
+    assert result == "valid-art-uuid"
+
+    # Artifact files are stored on disk
+    from seamus.persistence import get_workspace_manager
+
+    art_dir = (
+        get_workspace_manager().get_session_artifacts_dir(session.agent_id, session.id)
+        / "custom"
+        / "valid-art-uuid"
+    )
+    assert art_dir.exists()
+    assert (art_dir / "body.json").exists()
+    assert (art_dir / "manifest.json").exists()
+    assert (art_dir / "state.json").exists()
+
+    # Thread has ARTIFACT_CREATED event
+    thread = session.get_open_thread()
+    assert thread is not None
+    created_events = [e for e in thread.events if e.get("type") == "ARTIFACT_CREATED"]
+    assert len(created_events) == 1
+    assert created_events[0]["artifact_id"] == "valid-art-uuid"
+    assert created_events[0]["title"] == "Valid Artifact"
+
+
+def test_artifact_builder_create_artifact_with_validate_surface(tmp_path: Path) -> None:
+    manifest = ArtifactManifest(
+        name="Test",
+        exposition="embedded",
+        buttons=[],
+    )
+    invalid_components: list[dict[str, Any]] = [
+        {"id": "root", "component": "Column", "children": ["non_existent_id"]},
+    ]
+
+    with pytest.raises(A2UISurfaceValidationError) as exc_info:
+        ArtifactBuilder.create_artifact(
+            artifacts_dir=tmp_path,
+            family="custom",
+            manifest=manifest,
+            components=invalid_components,
+            validate_surface=True,
+        )
+    assert any("references child 'non_existent_id'" in err for err in exc_info.value.errors)
+
+
+def test_validate_a2ui_surface_rejects_card_with_title_and_body() -> None:
+    bad_card = [
+        {
+            "component": "Card",
+            "id": "card_buttons",
+            "title": "Buttons",
+            "body": [
+                {"component": "Button", "text": "Primary", "id": "btn_primary"},
+            ],
+        }
+    ]
+    errors = validate_a2ui_surface(bad_card)
+    assert len(errors) == 1
+    assert errors[0] == (
+        "Validation failed for component 'Card' (card_buttons): "
+        "child: Expected string, received undefined, "
+        "root: Unrecognized key(s) in object: 'title', 'body'"
+    )
+
+
+def test_make_artifact_rejects_card_with_title_and_body_and_does_not_store() -> None:
+    store = HarnessStore()
+    config = _make_agent_config()
+    agent = store.create_agent(config=config, name="agent-bad-card")
+    session = store.create_session(agent_identifier=str(agent.id), name="session-bad-card")
+    runner = SessionAgentRunner(session=session)
+
+    bad_card = [
+        {
+            "component": "Card",
+            "id": "card_buttons",
+            "title": "Buttons",
+            "body": [
+                {"component": "Button", "text": "Primary", "id": "btn_primary"},
+            ],
+        }
+    ]
+    manifest = ArtifactManifest(
+        name="Bad Card Artifact",
+        exposition="embedded",
+        buttons=[],
+    )
+
+    result = runner.handle_make_artifact(
+        family="custom",
+        manifest=manifest,
+        components=bad_card,
+        uuid="bad-card-uuid",
+    )
+
+    assert result.startswith("Failed to render A2UI surface. Artifact was not stored.")
+    assert (
+        "Validation failed for component 'Card' (card_buttons): "
+        "child: Expected string, received undefined, "
+        "root: Unrecognized key(s) in object: 'title', 'body'"
+    ) in result
+
+    from seamus.persistence import get_workspace_manager
+
+    art_dir = (
+        get_workspace_manager().get_session_artifacts_dir(session.agent_id, session.id)
+        / "custom"
+        / "bad-card-uuid"
+    )
+    assert not art_dir.exists()
+
+    thread = session.get_open_thread()
+    assert thread is not None
+    created_events = [e for e in thread.events if e.get("type") == "ARTIFACT_CREATED"]
+    assert len(created_events) == 0
+
+
+def test_validate_a2ui_surface_normalizes_choiceset_and_textinput() -> None:
+    components: list[dict[str, Any]] = [
+        {
+            "id": "root",
+            "component": "Column",
+            "children": ["cs", "ti"],
+        },
+        {
+            "id": "cs",
+            "component": "ChoiceSet",
+            "choices": ["Option 1", "Option 2"],
+            "value": "Option 1",
+        },
+        {
+            "id": "ti",
+            "component": "TextInput",
+            "placeholder": "Your name",
+        },
+    ]
+    errors = validate_a2ui_surface(components)
+    assert errors == []
