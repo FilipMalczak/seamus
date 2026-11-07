@@ -2,11 +2,8 @@
 
 Persistent record of work intentionally left outstanding across the project, maintained in accordance with [AGENTS.md](../AGENTS.md).
 
-> Current high-level trajectory is: skills -> artifacts -> modes (plan as the first new mode)
-> The idea is that for plan mode I need to present plan somehow; 
-> to do so I can use A2UI artifacts, which I already planned, as they can be used for closed questions or any kind of user survey - and then to any other custom use case the agent might find; maybe researcher will have some use here?
-> anyway, A2UI components are nontrivial, so we'll need to explain how to build these; no point in sending an explanation longer than the system prompt with every inference, so we'll want to offload A2UI components as a skill
-
+> Next goal: mounting external repos;
+> for that we need secrets management, to be able to store git checkout creds safely
 
 ## Deferred
 
