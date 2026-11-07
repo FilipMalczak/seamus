@@ -568,10 +568,10 @@ export function ChatArea({
                   type="button"
                   className="suggestion-pill"
                   onClick={() =>
-                    setInputText("Plan a strategy for migrating a legacy Python codebase.")
+                    setInputText("I need to test and debug custom artifacts. Create one such artifact. It doesn't matter whats inside, just checking that all the mechanics are correct. Use bundled skills to understand how to handle artifacts, especially custom ones. Try the widget-related skill to build an actual showcase of widgets too.")
                   }
                 >
-                  Plan legacy Python migration &rarr;
+                  Showcase custom artifacts &rarr;
                 </button>
                 <button
                   type="button"
@@ -642,7 +642,7 @@ export function ChatArea({
           className="scroll-to-bottom-btn"
           onClick={() => {
             isAtBottomRef.current = true;
-    setIsAtBottom(true);
+            setIsAtBottom(true);
             scrollToBottom("smooth");
           }}
           title="Scroll to bottom"

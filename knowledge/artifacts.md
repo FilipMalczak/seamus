@@ -58,6 +58,7 @@ The artifact filesystem layout is intentionally open to family-specific extensio
   - If `exposition="tabbed"`, closing the artifact removes its tab from the UI panel.
   - If `exposition="embedded"`, closing the artifact automatically collapses its chat bubble and marks all controls permanently disabled and uneditable.
   - In addition, when viewed in the Changes tab in rendered mode, closed artifacts remain strictly non-editable and visually locked, ensuring the Changes tab cannot serve as an override or backdoor to interact with closed artifacts.
+- **INV-ART-011 (Surface Pre-Render Validation on Creation)**: `make_artifact` attempts to render and validate the A2UI component tree and manifest prior to storage. If any rendering or integrity errors occur (unsupported component types, dangling child references, cyclic hierarchies, duplicate IDs, missing required properties, unlisted button IDs, or invalid JSON pointers), the artifact is not stored on disk, no `ARTIFACT_CREATED` event is emitted, and the tool returns a response listing the validation errors and explicitly stating that the artifact was not stored.
 
 ---
 
@@ -297,13 +298,18 @@ def make_artifact(
 ) -> str:
     """Create a new artifact atomically.
 
+    Validates that the components and manifest form a valid, renderable A2UI surface.
+    If validation fails, the artifact is not stored and the tool returns a string detailing
+    the validation errors and explicitly stating that the artifact was not stored.
+
     Args:
         family: Subdirectory family under /artifacts (e.g. 'custom', 'questionnaires', 'forms', 'plans').
         manifest: Strongly-typed artifact manifest specification.
         components: List of A2UI basic catalog component objects.
 
     Returns:
-        The generated artifact UUID string.
+        The generated artifact UUID string on success, or an error description stating that
+        the artifact was not stored on validation failure.
     """
 ```
 
@@ -515,3 +521,4 @@ Two bundled skills govern artifact usage:
 | `INV-ART-008` | Synthetic Notification | If agent finishes turn without `wait_for_click`, user clicks inject `<SYNTHETIC MESSAGE INDICATOR>`. |
 | `INV-ART-009` | Review Rewriting | `{"comments": "push"}` action is rewritten to dynamic click-time `push_comments` event context with `LN:M` locations. |
 | `INV-ART-010` | Read-Only Sandbox | Sandbox mounts `/artifacts` as `readOnly=True`. |
+| `INV-ART-011` | Surface Validation | `make_artifact` validates A2UI surface before storage; invalid surfaces are not stored on disk and return errors with "did not store" notification. |

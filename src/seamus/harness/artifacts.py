@@ -22,6 +22,272 @@ logger = logging.getLogger(__name__)
 
 SUPPORTED_ARTIFACT_KINDS = {"questionnaires", "questionaires", "forms", "plans", "custom"}
 
+BASIC_CATALOG_COMPONENT_TYPES = {
+    "Text",
+    "Image",
+    "Icon",
+    "Video",
+    "AudioPlayer",
+    "Row",
+    "Column",
+    "List",
+    "Card",
+    "Tabs",
+    "Modal",
+    "Divider",
+    "Button",
+    "TextField",
+    "CheckBox",
+    "ChoicePicker",
+    "Slider",
+    "DateTimeInput",
+}
+
+A2UI_ENVELOPE_KEYS: set[str] = {
+    "id",
+    "component",
+    "catalogId",
+    "weight",
+    "accessibility",
+    "metadata",
+}
+
+A2UI_COMPONENT_SPECS: dict[str, dict[str, Any]] = {
+    "Text": {
+        "required": {"text": "string"},
+        "allowed": {"text", "variant"},
+        "enums": {
+            "variant": {"h1", "h2", "h3", "h4", "h5", "caption", "body"},
+        },
+    },
+    "Image": {
+        "required": {"url": "string"},
+        "allowed": {"url", "description", "fit", "variant"},
+        "enums": {
+            "fit": {"contain", "cover", "fill", "none", "scaleDown"},
+            "variant": {
+                "icon",
+                "avatar",
+                "smallFeature",
+                "mediumFeature",
+                "largeFeature",
+                "header",
+            },
+        },
+    },
+    "Icon": {
+        "required": {"name": "string"},
+        "allowed": {"name"},
+    },
+    "Video": {
+        "required": {"url": "string"},
+        "allowed": {"url"},
+    },
+    "AudioPlayer": {
+        "required": {"url": "string"},
+        "allowed": {"url", "description"},
+    },
+    "Row": {
+        "required": {"children": "array"},
+        "allowed": {"children", "justify", "align"},
+        "enums": {
+            "justify": {"start", "center", "end", "spaceBetween", "spaceAround", "spaceEvenly"},
+            "align": {"start", "center", "end", "stretch", "baseline"},
+        },
+    },
+    "Column": {
+        "required": {"children": "array"},
+        "allowed": {"children", "justify", "align"},
+        "enums": {
+            "justify": {"start", "center", "end", "spaceBetween", "spaceAround", "spaceEvenly"},
+            "align": {"start", "center", "end", "stretch", "baseline"},
+        },
+    },
+    "List": {
+        "required": {"children": "array"},
+        "allowed": {"children", "direction", "align"},
+        "enums": {
+            "direction": {"horizontal", "vertical"},
+            "align": {"start", "center", "end", "stretch"},
+        },
+    },
+    "Card": {
+        "required": {"child": "string"},
+        "allowed": {"child"},
+    },
+    "Tabs": {
+        "required": {"tabs": "array"},
+        "allowed": {"tabs"},
+    },
+    "Modal": {
+        "required": {"trigger": "string", "content": "string"},
+        "allowed": {"trigger", "content"},
+    },
+    "Divider": {
+        "required": {},
+        "allowed": {"axis"},
+        "enums": {
+            "axis": {"horizontal", "vertical"},
+        },
+    },
+    "Button": {
+        "required": {"child": "string", "action": "object"},
+        "allowed": {"child", "action", "variant", "checks"},
+        "enums": {
+            "variant": {"default", "primary", "borderless"},
+        },
+    },
+    "TextField": {
+        "required": {"label": "string"},
+        "allowed": {"label", "value", "variant", "validationRegexp", "checks"},
+        "enums": {
+            "variant": {"shortText", "longText", "number", "obscured"},
+        },
+    },
+    "CheckBox": {
+        "required": {"label": "string", "value": "boolean"},
+        "allowed": {"label", "value", "checks"},
+    },
+    "ChoicePicker": {
+        "required": {"options": "array", "value": "array"},
+        "allowed": {"options", "value", "label", "variant", "displayStyle", "filterable", "checks"},
+        "enums": {
+            "variant": {"multipleSelection", "mutuallyExclusive"},
+        },
+    },
+    "Slider": {
+        "required": {"max": "number", "value": "number"},
+        "allowed": {"min", "max", "value", "step", "label", "checks"},
+    },
+    "DateTimeInput": {
+        "required": {"value": "string"},
+        "allowed": {"value", "enableDate", "enableTime", "min", "max", "label", "checks"},
+    },
+}
+
+NORMALIZABLE_COMPONENT_TYPES = {
+    "ChoiceSet",  # normalizes to ChoicePicker
+    "TextInput",  # normalizes to TextField
+}
+
+SUPPORTED_COMPONENT_TYPES = BASIC_CATALOG_COMPONENT_TYPES | NORMALIZABLE_COMPONENT_TYPES
+
+RELAXED_PATH_PATTERN = re.compile(
+    r"^(?:(?:/(?:[^~/]|~[01])*)*|(?:[^~/]|~[01])+(?:/(?:[^~/]|~[01])*)*)$"
+)
+
+
+def normalize_a2ui_components(components: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Normalize components into standard A2UI basicCatalog specifications.
+
+    Seamlessly adapts legacy or custom shapes (like ChoiceSet -> ChoicePicker,
+    TextInput -> TextField, Text variant 'bold' -> Markdown body), matching
+    the front-end A2UIArtifactRenderer normalizeComponents behavior.
+    """
+    normalized: list[dict[str, Any]] = []
+    for comp in components:
+        if not isinstance(comp, dict):
+            normalized.append(comp)
+            continue
+
+        c = dict(comp)
+        # Flatten legacy v0.8 nested component wrapping if present
+        comp_field = c.get("component")
+        if isinstance(comp_field, dict) and len(comp_field) == 1:
+            type_name = next(iter(comp_field.keys()))
+            props = comp_field[type_name]
+            if isinstance(props, dict):
+                c = {"id": c.get("id"), "component": type_name, **props}
+        elif comp_field is None:
+            for supported in SUPPORTED_COMPONENT_TYPES:
+                if supported in c and isinstance(c[supported], dict):
+                    props = c.pop(supported)
+                    c["component"] = supported
+                    c.update(props)
+                    break
+
+        c_type = c.get("component")
+
+        if c_type == "Text":
+            variant = c.get("variant")
+            text = c.get("text")
+            if variant == "bold":
+                variant = "body"
+                if isinstance(text, str) and not text.startswith("**"):
+                    text = f"**{text}**"
+            elif variant not in {"h1", "h2", "h3", "h4", "h5", "caption", "body"}:
+                variant = "body"
+            c["variant"] = variant
+            if text is not None:
+                c["text"] = text
+            normalized.append(c)
+            continue
+
+        if c_type in {"ChoiceSet", "ChoicePicker"}:
+            is_multi = bool(c.get("isMultiSelect") or c.get("variant") == "multipleSelection")
+            raw_opts = c.get("choices") or c.get("options") or []
+            options: list[dict[str, str]] = []
+            if isinstance(raw_opts, list):
+                for opt in raw_opts:
+                    if isinstance(opt, dict):
+                        lbl = (
+                            opt.get("label")
+                            or opt.get("text")
+                            or opt.get("value")
+                            or opt.get("id")
+                            or ""
+                        )
+                        val = opt.get("value") or opt.get("id") or ""
+                        options.append({"label": str(lbl), "value": str(val)})
+                    else:
+                        options.append({"label": str(opt), "value": str(opt)})
+            val = c.get("value")
+            if isinstance(val, dict) and "path" in val:
+                norm_val: Any = val
+            elif isinstance(val, list):
+                norm_val = [str(x) for x in val]
+            elif val not in (None, ""):
+                norm_val = [str(val)]
+            else:
+                norm_val = []
+
+            res = {k: v for k, v in c.items() if k not in {"choices", "isMultiSelect"}}
+            res["component"] = "ChoicePicker"
+            res["variant"] = "multipleSelection" if is_multi else "mutuallyExclusive"
+            res["options"] = options
+            res["value"] = norm_val
+            normalized.append(res)
+            continue
+
+        if c_type in {"TextInput", "TextField"}:
+            val = c.get("value")
+            if not (isinstance(val, dict) and "path" in val) and val is None:
+                val = ""
+            label = c.get("label") or c.get("placeholder") or ""
+            res = {k: v for k, v in c.items() if k not in {"placeholder"}}
+            res["component"] = "TextField"
+            res["label"] = label
+            res["value"] = val
+            normalized.append(res)
+            continue
+
+        if c_type == "Button":
+            variant = c.get("variant")
+            if variant and variant not in {"default", "primary", "borderless"}:
+                c["variant"] = "default"
+            if not c.get("action"):
+                c["action"] = {
+                    "event": {
+                        "name": str(c.get("id", "button_click")),
+                        "context": {},
+                    }
+                }
+            normalized.append(c)
+            continue
+
+        normalized.append(c)
+    return normalized
+
 
 def seed_default_artifacts(artifacts_dir: Path) -> None:
     """Seed default artifact family directories under /artifacts/."""
@@ -31,6 +297,303 @@ def seed_default_artifacts(artifacts_dir: Path) -> None:
 
 class ArtifactCorruptedError(Exception):
     """Raised when an artifact has a manifest but is missing body.json (INV-ART-003)."""
+
+
+class A2UISurfaceValidationError(Exception):
+    """Raised when an A2UI surface fails pre-render validation."""
+
+    def __init__(self, errors: list[str]) -> None:
+        self.errors = errors
+        super().__init__("; ".join(errors))
+
+
+def _extract_component_type_and_props(comp: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """Extract component type name and properties dict from component definition."""
+    comp_field = comp.get("component")
+    if isinstance(comp_field, str):
+        return comp_field, comp
+    if isinstance(comp_field, dict) and len(comp_field) == 1:
+        type_name = next(iter(comp_field.keys()))
+        props = comp_field[type_name]
+        return type_name, props if isinstance(props, dict) else {}
+    for supported in SUPPORTED_COMPONENT_TYPES:
+        if supported in comp and isinstance(comp[supported], dict):
+            return supported, comp[supported]
+    return "", comp
+
+
+def validate_a2ui_surface(
+    components: Any,
+    manifest: ArtifactManifest | dict[str, Any] | None = None,
+    initial_data: dict[str, Any] | None = None,
+) -> list[str]:
+    """Validate that the components and manifest form a valid, renderable A2UI surface.
+
+    Returns a list of human-readable error descriptions matching @a2ui/web_core
+    validation diagnostics. An empty list signifies a valid surface that can be
+    successfully rendered by A2UI.
+    """
+    errors: list[str] = []
+
+    if not isinstance(components, list):
+        errors.append(
+            f"components must be a list of component objects, got {type(components).__name__}."
+        )
+        return errors
+
+    if len(components) == 0:
+        errors.append("components list cannot be empty.")
+        return errors
+
+    seen_ids: set[str] = set()
+
+    # 1. Structural check: each component must be a dict with a valid ID
+    for idx, comp in enumerate(components):
+        if not isinstance(comp, dict):
+            errors.append(
+                f"Component at index {idx} is not an object/dict (got {type(comp).__name__})."
+            )
+            continue
+
+        c_id = comp.get("id")
+        if not c_id or not isinstance(c_id, str):
+            errors.append(f"Component at index {idx} is missing a non-empty string 'id'.")
+            continue
+
+        if c_id in seen_ids:
+            errors.append(f"Duplicate component id '{c_id}' found at index {idx}.")
+            continue
+
+        seen_ids.add(c_id)
+
+    if len(seen_ids) != len(components):
+        # Already reported dict/id errors
+        return errors
+
+    # 2. Normalize components (ChoiceSet -> ChoicePicker, TextInput -> TextField,
+    # bold -> body, etc.)
+    normalized = normalize_a2ui_components(components)
+    components_by_id = {c["id"]: c for c in normalized if isinstance(c, dict) and "id" in c}
+
+    # 3. Schema validation for each component (required properties, allowed envelope,
+    # unrecognized keys)
+    for c_id, comp in components_by_id.items():
+        c_type, _ = _extract_component_type_and_props(comp)
+        if not c_type:
+            errors.append(f"Component '{c_id}' is missing a valid 'component' type.")
+            continue
+        if c_type not in BASIC_CATALOG_COMPONENT_TYPES:
+            errors.append(
+                f"Unknown or unsupported component type '{c_type}' for component '{c_id}'."
+            )
+            continue
+
+        spec = A2UI_COMPONENT_SPECS.get(c_type, {})
+        issues: list[str] = []
+
+        # 3a. Required properties check
+        required_fields: dict[str, str] = spec.get("required", {})
+        for req_field, exp_type in required_fields.items():
+            if req_field not in comp or comp[req_field] is None:
+                issues.append(f"{req_field}: Expected {exp_type}, received undefined")
+            else:
+                val = comp[req_field]
+                if exp_type == "string" and not isinstance(val, (str, dict)):
+                    issues.append(
+                        f"{req_field}: Expected string, received "
+                        f"{'array' if isinstance(val, list) else type(val).__name__}"
+                    )
+                elif exp_type == "array" and not isinstance(val, list):
+                    issues.append(
+                        f"{req_field}: Expected array, received "
+                        f"{'object' if isinstance(val, dict) else type(val).__name__}"
+                    )
+                elif exp_type == "object" and not isinstance(val, dict):
+                    issues.append(
+                        f"{req_field}: Expected object, received "
+                        f"{'array' if isinstance(val, list) else type(val).__name__}"
+                    )
+                elif exp_type == "number" and (
+                    not isinstance(val, (int, float, dict)) or isinstance(val, bool)
+                ):
+                    issues.append(f"{req_field}: Expected number, received {type(val).__name__}")
+                elif exp_type == "boolean" and not isinstance(val, (bool, dict)):
+                    issues.append(f"{req_field}: Expected boolean, received {type(val).__name__}")
+
+        # 3b. Enum values check
+        enums: dict[str, set[str]] = spec.get("enums", {})
+        for enum_field, allowed_opts in enums.items():
+            if enum_field in comp and comp[enum_field] is not None:
+                val = comp[enum_field]
+                if isinstance(val, str) and val not in allowed_opts:
+                    opts_str = " | ".join(sorted(allowed_opts))
+                    issues.append(
+                        f"{enum_field}: Invalid enum value. Expected {opts_str}, received '{val}'"
+                    )
+
+        # 3c. Unrecognized keys check
+        allowed_keys = A2UI_ENVELOPE_KEYS | spec.get("allowed", set())
+        unrec = [k for k in comp.keys() if k not in allowed_keys]
+        if unrec:
+            unrec_formatted = ", ".join(f"'{k}'" for k in unrec)
+            issues.append(f"root: Unrecognized key(s) in object: {unrec_formatted}")
+
+        if issues:
+            errors.append(
+                f"Validation failed for component '{c_type}' ({c_id}): {', '.join(issues)}"
+            )
+
+    # 4. Extract child references and parent relationships
+    adj: dict[str, list[str]] = {cid: [] for cid in seen_ids}
+    parent_map: dict[str, list[str]] = {cid: [] for cid in seen_ids}
+
+    for c_id, comp in components_by_id.items():
+        c_type, props = _extract_component_type_and_props(comp)
+        child_refs: list[str] = []
+
+        if "children" in props:
+            children_val = props["children"]
+            if isinstance(children_val, list):
+                for child_idx, item in enumerate(children_val):
+                    if isinstance(item, str):
+                        child_refs.append(item)
+                    elif isinstance(item, dict) and "componentId" in item:
+                        child_refs.append(str(item["componentId"]))
+                    else:
+                        errors.append(
+                            f"Component '{c_id}' children[{child_idx}] is not a valid child "
+                            "reference string."
+                        )
+
+        if "child" in props:
+            child_val = props["child"]
+            if isinstance(child_val, str):
+                child_refs.append(child_val)
+            elif isinstance(child_val, dict) and "componentId" in child_val:
+                child_refs.append(str(child_val["componentId"]))
+
+        if c_type == "Tabs" and "tabs" in props:
+            tabs_val = props["tabs"]
+            if isinstance(tabs_val, list):
+                for tab_idx, tab_item in enumerate(tabs_val):
+                    if isinstance(tab_item, dict) and "child" in tab_item:
+                        tab_child = tab_item["child"]
+                        if isinstance(tab_child, str):
+                            child_refs.append(tab_child)
+                        else:
+                            errors.append(
+                                f"Component '{c_id}' tabs[{tab_idx}].child must be a string "
+                                "component ID."
+                            )
+
+        if c_type == "Modal":
+            if "content" in props and isinstance(props["content"], str):
+                child_refs.append(props["content"])
+            if "trigger" in props and isinstance(props["trigger"], str):
+                child_refs.append(props["trigger"])
+
+        for ch in child_refs:
+            if ch not in seen_ids:
+                errors.append(
+                    f"Dangling child reference: component '{c_id}' references child '{ch}', "
+                    "which does not exist in components."
+                )
+            else:
+                adj[c_id].append(ch)
+                parent_map[ch].append(c_id)
+
+    # 5. Check for multiple parents
+    for c_id, parents in parent_map.items():
+        if len(parents) > 1:
+            errors.append(
+                f"Component '{c_id}' has multiple parents: {parents}. "
+                "In A2UI, each child component must have at most one parent."
+            )
+
+    # 6. Cycle detection in component hierarchy
+    color: dict[str, int] = {cid: 0 for cid in seen_ids}
+
+    def dfs_cycle(node: str, path: list[str]) -> bool:
+        color[node] = 1
+        path.append(node)
+        for neighbor in adj.get(node, []):
+            if neighbor not in color:
+                continue
+            if color[neighbor] == 1:
+                cycle_idx = path.index(neighbor)
+                cycle_path = path[cycle_idx:] + [neighbor]
+                errors.append(f"Cycle detected in component hierarchy: {' -> '.join(cycle_path)}.")
+                return True
+            elif color[neighbor] == 0:
+                if dfs_cycle(neighbor, path):
+                    return True
+        path.pop()
+        color[node] = 2
+        return False
+
+    for node in seen_ids:
+        if color[node] == 0:
+            dfs_cycle(node, [])
+
+    # 7. Root existence check
+    roots = [cid for cid, parents in parent_map.items() if not parents]
+    if len(seen_ids) > 0 and len(roots) == 0:
+        errors.append(
+            "Invalid component hierarchy: No root component found "
+            "(all components are children of other components, forming a closed cycle)."
+        )
+
+    # 8. Manifest button alignment
+    if manifest is not None:
+        manifest_button_ids: set[str] = set()
+        if isinstance(manifest, ArtifactManifest):
+            manifest_button_ids = {btn.id for btn in manifest.buttons}
+        elif isinstance(manifest, dict):
+            btns = manifest.get("buttons") or []
+            if isinstance(btns, list):
+                manifest_button_ids = {
+                    str(b["id"])
+                    for b in btns
+                    if isinstance(b, dict) and "id" in b and b["id"] is not None
+                }
+        for c_id in seen_ids:
+            c_comp = components_by_id.get(c_id, {})
+            c_type, _ = _extract_component_type_and_props(c_comp)
+            if c_type == "Button":
+                if c_id not in manifest_button_ids:
+                    errors.append(
+                        f"Button '{c_id}' is present in components but is not declared "
+                        "in manifest.buttons."
+                    )
+
+    # 9. Data model and action context pointer checks
+    def check_pointers(val: Any, current_path: str = "") -> None:
+        if isinstance(val, dict):
+            if "path" in val and isinstance(val["path"], str):
+                p = val["path"]
+                if not RELAXED_PATH_PATTERN.match(p):
+                    errors.append(
+                        f"Invalid JSON Pointer path syntax '{p}' at {current_path or 'root'}."
+                    )
+                elif p.startswith("/components/"):
+                    parts = p.strip("/").split("/")
+                    if len(parts) >= 2:
+                        target_id = parts[1]
+                        if target_id not in seen_ids:
+                            errors.append(
+                                f"Action context pointer '{p}' references non-existent "
+                                f"component '{target_id}'."
+                            )
+            for k, v in val.items():
+                check_pointers(v, f"{current_path}.{k}" if current_path else k)
+        elif isinstance(val, list):
+            for i, item in enumerate(val):
+                check_pointers(item, f"{current_path}[{i}]")
+
+    for comp in components_by_id.values():
+        check_pointers(comp)
+
+    return errors
 
 
 def _to_snake_id(s: str) -> str:
@@ -94,8 +657,14 @@ class ArtifactBuilder:
         components: list[dict[str, Any]],
         uuid: str | None = None,
         initial_data: dict[str, Any] | None = None,
+        validate_surface: bool = False,
     ) -> str:
         """Create a new artifact instance directory and write body, manifest, and state."""
+        if validate_surface:
+            errors = validate_a2ui_surface(components, manifest, initial_data)
+            if errors:
+                raise A2UISurfaceValidationError(errors)
+
         instance_uuid = uuid or str(uuid4())
         inst_dir = artifacts_dir / family / instance_uuid
         inst_dir.mkdir(parents=True, exist_ok=True)

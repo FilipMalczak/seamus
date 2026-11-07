@@ -41,10 +41,10 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Provenance**: [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [artifacts.md](./artifacts.md).
 
 ### Custom Interactive Artifact Authoring
-- **Description**: Provide advanced agent workflows and templates for authoring custom multi-surface A2UI interactive artifacts via `make_artifact` with arbitrary button hierarchies and state models under `/artifacts/custom/`.
+- **Description**: Provide advanced agent workflows and templates for authoring custom multi-surface A2UI interactive artifacts via `make_artifact` with arbitrary button hierarchies and state models under `/artifacts/custom/`. Note: pre-render surface validation (`validate_a2ui_surface`) was established in [0037-validate-a2ui-surface-render-on-make-artifact.md](../decisions/0037-validate-a2ui-surface-render-on-make-artifact.md) to guarantee only valid surfaces are persisted.
 - **Why Deferred**: Prioritized specialized, validated artifact families (questionnaires, forms, plans) to establish disk structure and rendering contracts before opening raw artifact creation.
 - **Revisit Trigger**: When introducing custom agent generative UI authoring workflows.
-- **Provenance**: [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [artifacts.md](./artifacts.md).
+- **Provenance**: [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [0037-validate-a2ui-surface-render-on-make-artifact.md](../decisions/0037-validate-a2ui-surface-render-on-make-artifact.md), [artifacts.md](./artifacts.md).
 
 ### Multi-Mount Repository Support and Dynamic Skill Discovery
 - **Description**: When Seamus introduces support for mounting multiple repositories/projects (e.g., existing user codebases) into the agent's sandbox container, dynamically discover and track both `<mount>/skills` and `<mount>/.skills` directories present across all mounted workspaces as project-level skill sources. In accordance with the established skill precedence hierarchy, non-dotted `skills` takes precedence over dotted `.skills`, and project mounts take precedence after the operational `/workspace` but before ambient system-wide skills.
