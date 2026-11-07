@@ -29,6 +29,8 @@ interface SidebarProps {
   selectedThreadId: string | null;
   activeStatus?: AgentStatus;
   systemInfo?: SystemInfoResponse | null;
+  onSelectAgent?: (agentId: string) => void;
+  onSelectSession?: (agentId: string, sessionId: string) => void;
   onSelectThread: (agentId: string, sessionId: string, threadId: string) => void;
   onCreateAgent: (name?: string | null) => Promise<any>;
   onCreateSession: (agentId: string, name?: string | null) => Promise<any>;
@@ -48,6 +50,8 @@ export function Sidebar({
   selectedThreadId,
   activeStatus,
   systemInfo,
+  onSelectAgent,
+  onSelectSession,
   onSelectThread,
   onCreateAgent,
   onCreateSession,
@@ -227,11 +231,19 @@ export function Sidebar({
               <div key={agent.id} className="tree-agent-group">
                 <div
                   className={`tree-node tree-agent-node ${isAgentSelected ? "selected-agent" : ""}`}
+                  onClick={() => {
+                    if (!isEditingAgent && onSelectAgent) {
+                      onSelectAgent(agent.id);
+                    }
+                  }}
                 >
                   <button
                     type="button"
                     className="tree-expand-btn"
-                    onClick={() => toggleAgent(agent.id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleAgent(agent.id);
+                    }}
                     title={isAgentExpanded ? "Collapse" : "Expand"}
                   >
                     {isAgentExpanded ? (
@@ -283,7 +295,10 @@ export function Sidebar({
                     <button
                       type="button"
                       className="icon-action-btn"
-                      onClick={() => handleCreateSession(agent.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCreateSession(agent.id);
+                      }}
                       title="New Session"
                     >
                       <Plus className="size-3.5" />
@@ -291,7 +306,8 @@ export function Sidebar({
                     <button
                       type="button"
                       className="icon-action-btn"
-                      onClick={() =>
+                      onClick={(e) => {
+                        e.stopPropagation();
                         onEditConfig(
                           `Agent Config (${agentDisplay})`,
                           agent.config,
@@ -300,8 +316,8 @@ export function Sidebar({
                               await onUpdateAgentConfig(agent.id, updated);
                             }
                           }
-                        )
-                      }
+                        );
+                      }}
                       title="View / Edit Agent Config"
                     >
                       <Settings className="size-3.5" />
@@ -325,7 +341,10 @@ export function Sidebar({
                     ) : (
                       sessions.map((session) => {
                         const isSessionExpanded = expandedSessions[session.id] ?? true;
-                        const isSessionSelected = session.id === selectedSessionId;
+                        const isSessionSelected =
+                          session.id === selectedSessionId && selectedThreadId === null;
+                        const isSessionParentOfSelectedThread =
+                          session.id === selectedSessionId && selectedThreadId !== null;
                         const threads = session.threads || [];
                         const openThread =
                           threads.find((t) => t.is_open) || threads[0];
@@ -346,12 +365,20 @@ export function Sidebar({
                             <div
                               className={`tree-node tree-session-node ${
                                 isSessionSelected ? "selected-session" : ""
-                              }`}
+                              } ${isSessionParentOfSelectedThread ? "session-active-parent" : ""}`}
+                              onClick={() => {
+                                if (!isEditingSession && onSelectSession) {
+                                  onSelectSession(agent.id, session.id);
+                                }
+                              }}
                             >
                               <button
                                 type="button"
                                 className="tree-expand-btn"
-                                onClick={() => toggleSession(session.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleSession(session.id);
+                                }}
                               >
                                 {isSessionExpanded ? (
                                   <ChevronDown className="size-3" />

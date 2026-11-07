@@ -172,6 +172,8 @@ export function App() {
     activeAgent,
     activeSession,
     activeThread,
+    selectAgent,
+    selectSession,
     selectThread,
     createAgent,
     createSession,
@@ -331,14 +333,7 @@ export function App() {
 
   const handleNavigateToSession = (targetSessionId: string) => {
     if (!selectedAgentId || !activeAgent) return;
-    const targetSession = activeAgent.sessionsMap?.[targetSessionId];
-    if (targetSession) {
-      const openThread =
-        targetSession.threads.find((t) => t.is_open) || targetSession.threads[0];
-      if (openThread) {
-        selectThread(selectedAgentId, targetSessionId, openThread.id);
-      }
-    }
+    selectSession(selectedAgentId, targetSessionId);
   };
 
   return (
@@ -358,6 +353,8 @@ export function App() {
           selectedThreadId={selectedThreadId}
           activeStatus={activeStatus}
           systemInfo={systemInfo}
+          onSelectAgent={selectAgent}
+          onSelectSession={selectSession}
           onSelectThread={selectThread}
           onCreateAgent={createAgent}
           onCreateSession={createSession}
@@ -457,6 +454,8 @@ export function App() {
                 sessionProvenance={activeSession?.provenance || null}
                 sessionLineage={activeSession?.lineage}
                 thread={activeThread || null}
+                isSessionView={selectedThreadId === null}
+                onSelectThread={selectThread}
                 onStatusChange={setActiveStatus}
                 onKillSession={async () => {
                   if (selectedAgentId && selectedSessionId) {
@@ -471,17 +470,19 @@ export function App() {
                       mode
                     );
                     await refreshTree();
-                    const openThread = Object.values(updated.threads || {}).find(
-                      (t: any) => t.is_open
-                    );
-                    if (openThread) {
-                      selectThread(selectedAgentId, selectedSessionId, openThread.id);
+                    if (selectedThreadId) {
+                      const openThread = Object.values(updated.threads || {}).find(
+                        (t: any) => t.is_open
+                      );
+                      if (openThread) {
+                        selectThread(selectedAgentId, selectedSessionId, openThread.id);
+                      }
                     }
                   }
                 }}
                 onThreadTransition={async (toThreadId) => {
                   await refreshTree();
-                  if (selectedAgentId && selectedSessionId && toThreadId) {
+                  if (selectedAgentId && selectedSessionId && toThreadId && selectedThreadId) {
                     selectThread(selectedAgentId, selectedSessionId, toThreadId);
                   }
                 }}
@@ -540,10 +541,10 @@ export function App() {
                 onAcceptThread={async () => {
                   if (selectedAgentId && selectedSessionId && activeThread) {
                     const newThread = await acceptThread(selectedAgentId, selectedSessionId, activeThread.id);
-                    if (newThread?.id) {
+                    if (selectedThreadId && newThread?.id) {
                       selectThread(selectedAgentId, selectedSessionId, newThread.id);
-                      setActiveMainTab("chat");
                     }
+                    setActiveMainTab("chat");
                   }
                 }}
               />

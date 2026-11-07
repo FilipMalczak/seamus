@@ -3,7 +3,8 @@
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi.responses import StreamingResponse
 
 from seamus.domain.resolution import EntityNotFoundError, resolve_session
 from seamus.harness.inspector import AgentInspectReport, build_agent_inspect_report
@@ -92,6 +93,43 @@ async def get_session(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
     return _to_session_detail(session)
+
+
+@router.get("/{session_identifier}/stream")
+async def stream_session(
+    agent_identifier: str,
+    session_identifier: str,
+    request: Request,
+    follow: bool = True,
+) -> StreamingResponse:
+    """Stream session messages over SSE across all threads.
+
+    Concatenates past events from all threads, followed by live broadcasts.
+    """
+    store = get_harness_store()
+    try:
+        agent = store.resolve_agent(agent_identifier)
+        session = resolve_session(agent, session_identifier)
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    registry = get_runner_registry()
+    runner = registry.get_runner(session, agent=agent)
+    accept_header = request.headers.get("accept")
+
+    return StreamingResponse(
+        runner.stream_session_events(
+            session=session,
+            accept_header=accept_header,
+            follow=follow,
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/{session_identifier}", response_model=SessionDetailResponse)

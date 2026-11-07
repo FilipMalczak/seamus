@@ -47,23 +47,25 @@ function resolveSelectionFromUrl(
     return { agentId: targetAgent.id, sessionId: null, threadId: null };
   }
 
-  const targetSession =
-    (sessionParam
-      ? sessions.find((s) => s.id === sessionParam || s.name === sessionParam)
-      : undefined) || sessions[0];
+  const sortedSessions = [...sessions].sort(
+    (a, b) =>
+      new Date(b.last_touched_at || b.created_at).getTime() -
+      new Date(a.last_touched_at || a.created_at).getTime()
+  );
 
-  const targetThread =
-    (threadParam
-      ? targetSession.threads.find(
-          (t) => t.id === threadParam || t.name === threadParam
-        )
-      : undefined) ||
-    targetSession.threads.find((t) => t.is_open) ||
-    targetSession.threads[0];
+  const targetSession = sessionParam
+    ? sessions.find((s) => s.id === sessionParam || s.name === sessionParam) || sortedSessions[0]
+    : sortedSessions[0];
+
+  const targetThread = threadParam
+    ? targetSession?.threads.find(
+        (t) => t.id === threadParam || t.name === threadParam
+      )
+    : undefined;
 
   return {
     agentId: targetAgent.id,
-    sessionId: targetSession.id,
+    sessionId: targetSession ? targetSession.id : null,
     threadId: targetThread ? targetThread.id : null,
   };
 }
@@ -154,24 +156,48 @@ export function useAgentsTree() {
     []
   );
 
+  const selectSession = useCallback(
+    (agentId: string, sessionId: string) => {
+      setSelectedAgentId(agentId);
+      setSelectedSessionId(sessionId);
+      setSelectedThreadId(null);
+    },
+    []
+  );
+
+  const selectAgent = useCallback(
+    (agentId: string) => {
+      setSelectedAgentId(agentId);
+      const targetAgent = agents.find((a) => a.id === agentId);
+      const sessions = Object.values(targetAgent?.sessionsMap || {});
+      if (sessions.length > 0) {
+        const sortedSessions = [...sessions].sort(
+          (a, b) =>
+            new Date(b.last_touched_at || b.created_at).getTime() -
+            new Date(a.last_touched_at || a.created_at).getTime()
+        );
+        setSelectedSessionId(sortedSessions[0].id);
+      } else {
+        setSelectedSessionId(null);
+      }
+      setSelectedThreadId(null);
+    },
+    [agents]
+  );
+
   const handleCreateAgent = useCallback(
     async (name?: string | null) => {
       const created = await createAgent({ name: name || null });
       await refreshTree();
       // The backend creates a default session & thread for the new agent.
-      // Auto-select them immediately so user can type right away.
+      // Auto-select session view immediately so user can type right away.
       try {
         const detail = await getAgent(created.id);
         setSelectedAgentId(created.id);
         if (detail.sessions && detail.sessions.length > 0) {
           const defSession = detail.sessions[0];
           setSelectedSessionId(defSession.id);
-          const sDetail = await getSession(created.id, defSession.id);
-          const openThread =
-            sDetail.threads.find((t) => t.is_open) || sDetail.threads[0];
-          if (openThread) {
-            setSelectedThreadId(openThread.id);
-          }
+          setSelectedThreadId(null);
         }
       } catch {
         setSelectedAgentId(created.id);
@@ -187,10 +213,7 @@ export function useAgentsTree() {
       await refreshTree();
       setSelectedAgentId(agentId);
       setSelectedSessionId(created.id);
-      const openThread = created.threads.find((t) => t.is_open) || created.threads[0];
-      if (openThread) {
-        setSelectedThreadId(openThread.id);
-      }
+      setSelectedThreadId(null);
       return created;
     },
     [refreshTree]
@@ -290,15 +313,17 @@ export function useAgentsTree() {
       await refreshTree();
       setSelectedAgentId(agentId);
       setSelectedSessionId(sessionId);
-      const openThread =
-        updatedSession.threads.find((t) => t.is_open) ||
-        updatedSession.threads[updatedSession.threads.length - 1];
-      if (openThread) {
-        setSelectedThreadId(openThread.id);
+      if (selectedThreadId) {
+        const openThread =
+          updatedSession.threads.find((t) => t.is_open) ||
+          updatedSession.threads[updatedSession.threads.length - 1];
+        if (openThread) {
+          setSelectedThreadId(openThread.id);
+        }
       }
       return updatedSession;
     },
-    [refreshTree]
+    [refreshTree, selectedThreadId]
   );
 
   const handleBranchSession = useCallback(
@@ -331,7 +356,14 @@ export function useAgentsTree() {
   // Helper getters
   const activeAgent = agents.find((a) => a.id === selectedAgentId);
   const activeSession = activeAgent?.sessionsMap?.[selectedSessionId ?? ""];
-  const activeThread = activeSession?.threads.find((t) => t.id === selectedThreadId);
+  const openThread =
+    activeSession?.threads.find((t) => t.is_open) ||
+    (activeSession?.threads && activeSession.threads.length > 0
+      ? activeSession.threads[activeSession.threads.length - 1]
+      : undefined);
+  const activeThread = selectedThreadId
+    ? activeSession?.threads.find((t) => t.id === selectedThreadId) || openThread
+    : openThread;
 
   return {
     agents,
@@ -343,6 +375,8 @@ export function useAgentsTree() {
     activeAgent,
     activeSession,
     activeThread,
+    selectAgent,
+    selectSession,
     selectThread,
     createAgent: handleCreateAgent,
     createSession: handleCreateSession,
