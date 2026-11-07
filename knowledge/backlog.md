@@ -10,6 +10,12 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## Deferred
 
+### Multi-Thread Conversational History Inclusion Strategy
+- **Description**: Expand thread history overlap beyond the immediate predecessor thread (`currentSession.threads[-1].messages[-n:]`) to a multi-thread sliding window budget across all historical session threads. For example, budgeting up to 20 messages total from prior threads across arbitrary thread boundaries (e.g., 10 from $T_1$, 7 from $T_2$, 3 from $T_3$ when initializing $T_4$).
+- **Why Deferred**: Seeding the last $N$ messages from the immediate preceding thread is simple, deterministic, and sufficient for the initial implementation before building multi-thread aggregation and token budgeting algorithms.
+- **Revisit Trigger**: When multi-phase sessions span several short threads (e.g. rapid mode toggling or brief review threads) where context from older threads is lost with single-predecessor overlap.
+- **Provenance**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), `knowledge/backlog.md`.
+
 ### Alternative Button Action Level Notations in Artifact Manifests
 - **Description**: Experiment with consolidated or level-based notations for manifest button configurations (e.g. `someLevelName = data | unblocking | closing`) rather than discrete orthogonal boolean flags (`unblocking: bool`, `closing: bool`).
 - **Why Deferred**: Independent boolean flags (`unblocking: bool = False`, `closing: bool = False`) are explicit, orthogonal, and simple to validate in early iterations.
@@ -132,11 +138,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Improvement**: Review and redesign error reporting systematically: define distinct error categories (recoverable tool feedback intended for model correction vs fatal harness/system faults), establish consistent propagation through SSE events and thread status, and provide clear, actionable error indicators in the web UI.
 - **Provenance**: `src/seamus/harness/runner.py`, [0031-SUPERSEDED-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-SUPERSEDED-migrate-a2ui-to-adaptive-cards.md), [architecture.md](./architecture.md).
 
-### Button Retention and Disabled Presentation on Closed Artifacts
-- **Current Problem**: In `make_questionnaire` and `make_plan`, proceed and submit buttons are configured with `clicks=1`. Once clicked, `clicksLeft` reaches 0, which causes the buttons to disappear from the rendered card view in the web UI when the artifact closes, rather than remaining visible in a disabled state. This prevents users from inspecting past submission actions and causes visual layout shifts.
-- **Improvement**: Allow these buttons to retain the default `clicks="*"` (unlimited click count) instead of custom `clicks=1`, and rely on artifact closing / disabled status to prevent further interaction while preserving the button elements in the UI.
-- **Provenance**: `src/seamus/harness/artifacts.py`, `ui/src/components/A2UIArtifactRenderer.tsx`.
-
 ### Artifact Lifecycle and Retention During Thread Acceptance
 - **Current Problem**: Accepting a thread (`accept_thread`) explicitly closes `session.active_plan_id`, but other artifacts (questionnaires, forms, custom artifacts) and their interaction states lack a defined lifecycle: it is unclear whether unclosed artifacts should be forcibly closed, preserved, archived, or carried over into the new thread's workspace view.
 - **Improvement**: Review and define formal closing, retention, and archiving rules for all artifact families upon Sync PR acceptance and thread transition.
@@ -258,26 +259,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Accommodates both lightweight conversational workflows focused on getting tasks done and deep engineering/debugging sessions requiring full inspectability.
 - **Provenance**: [0003-react-web-ui.md](../decisions/0003-react-web-ui.md), [architecture.md](./architecture.md#system-overview).
 
-### Editable Composer Text Area During Processing and Artifact Blocking
-- **Description**: Keep the message composer textarea editable when message sending is disabled due to agent processing or open blocking artifacts. Only disable the Send button and Enter key submit handler, allowing users to type and prepare their subsequent message while waiting for the agent turn or artifact interaction to conclude.
-- **Rationale**: Disabling the entire input field prevents drafting follow-up responses and disrupts conversational fluidity.
-- **Provenance**: `ui/src/components/ChatArea.tsx`.
-
-### Automatic UI Navigation to Newly Spawned Threads
-- **Description**: When the harness server transitions or spawns a new thread in an active session (e.g. following mode changes, thread acceptance, or unblocking triggers), automatically update the UI selection to view the newly opened thread if the user is currently viewing the originating thread.
-- **Rationale**: Prevents users from being left viewing an inactive or closed historical thread when a new conversational turn has already begun in a child thread.
-- **Provenance**: `ui/src/App.tsx`, `ui/src/components/ChatArea.tsx`, `ui/src/hooks/useAgentsTree.ts`.
-
-### Default Workspace .gitignore Seeding and Prompt Persistence Guidance
-- **Description**: Seed a sensible default `.gitignore` (ignoring virtual environments, `__pycache__`, temporary build artifacts, and node modules) during agent repository and workspace initialization in `GitWorkspaceManager`. Update the `<operating_environment>` prompt composition in `src/seamus/harness/prompt.py` to explicitly explain to the agent that `.gitignore` determines which files are tracked by Git persistence versus which files remain untracked and ephemeral in the container sandbox.
-- **Rationale**: Prevents ephemeral build artifacts from polluting the Git persistence history and clarifies to the agent how Git tracking interacts with the sandbox boundary.
-- **Provenance**: `src/seamus/persistence/workspace.py`, `src/seamus/harness/prompt.py`.
-
-### Configurable Conversational Message Overlap Across Thread Transitions
-- **Description**: When opening a new thread from an existing thread (such as during mode transitions, plan execution handoffs, or thread rollover), seed the new thread's checkpoint/message trajectory with a sliding window of the last $N$ messages from the preceding thread. Expose the overlap message count in configuration (`AgentConfig.thread_message_overlap: int = 5` or similar).
-- **Rationale**: Newly opened threads currently start with an empty conversational history, requiring the model to infer context exclusively from session notes or system prompt. Seeding a configurable window of recent messages provides seamless conversational continuity across thread execution boundaries.
-- **Provenance**: `src/seamus/harness/runner.py`, `src/seamus/config/models.py`, `src/seamus/harness/store.py`.
-
 ### Configurable Sandbox Container Image, Bundled Dev Image, and Environment Inspection
 - **Description**: Add `sandbox_image: str | None = None` to `AgentConfig` (and `ConfigTemplate`), allowing custom container images to be configured per agent/session (falling back to environment variable `OPENSANDBOX_IMAGE` or default). Bundle a dedicated Seamus development sandbox image pre-installed with standard developer tooling (Git, uv, Node, build tools) rather than relying on bare `python:3.12-slim`. In addition, explain the sandbox image's capabilities in the system prompt and/or expose the Dockerfile within the image itself (e.g. at `/etc/Dockerfile`) so the agent can inspect what tools and libraries are installed in its environment.
 - **Rationale**: The minimal `python:3.12-slim` base image lacks standard tools required by coding agents, and the agent needs clear self-knowledge of its container environment and available binaries.
@@ -287,11 +268,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Description**: Redesign the message branch action layout in `MessageItem.tsx`. Move the branch action icon/button to the right of message bubbles (e.g., in a hover/action gutter) rather than placing it in the bottom footer below the bubble content, and review branch point indicators to ensure they are visually intuitive and unambiguous.
 - **Rationale**: Footer placement below the bubble text is visually misleading and occupies unnecessary vertical space across conversational streams.
 - **Provenance**: `ui/src/components/MessageItem.tsx`, `ui/src/components/ChatArea.tsx`.
-
-### Complete Removal of gpt-oss-20b References and Presets
-- **Description**: Purge all references to `openai/gpt-oss-20b` across the entire codebase, configuration templates, environment files (`.env`, `.env.template`), frontend presets (`MODEL_PRESETS` in `ConfigModal.tsx`), and tests. Standardize everywhere on `openai/gpt-oss-120b` (or other capable frontier models) so clean setup scripts (`./run.sh --clean`) never seed or point to 20b.
-- **Rationale**: The 20b model is insufficiently capable for reliable autonomous tool usage and complex harness orchestration; eliminating it avoids stale template initialization when resetting state.
-- **Provenance**: [0032-operational-mode-in-agent-config-and-defaults.md](../decisions/0032-operational-mode-in-agent-config-and-defaults.md), `ui/src/components/ConfigModal.tsx`, `.env`, `.env.template`.
 
 ### Full Auto-Restart and Execution Recovery on System Startup
 - **Description**: Automatically detect in-flight or interrupted agent sessions upon harness server restart/startup, recovering execution from the latest checkpoint and auto-resuming the agent's run loop.
@@ -304,6 +280,12 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Provenance**: `src/seamus/config/models.py`, `src/seamus/harness/runner.py`, `ui/src/components/ConfigModal.tsx`.
 
 ## Not formalized
+
+- we need to stress that when we're reviewing a plan and comment on something, this comment must be understood in context of the whole plan with focus on comment subject; agents tend to only care about commented text, ignoring what surrounds it
+
+- System Events should be on the right side, as user messages are
+- non-embedded artifacts need some kind of anchor in the conversation view; that anchor must work even after closing the artifact; I think we might need "close" icon in artifact tab (the tab itself, not tab body) that disappears when that artifact blocks the conversation 
+- "rendered" in diff should be type-specific; body should be renderable as the UI, manifest as UI + state, markdowns should be rendered in this view too
 
 - a way to attach to button (in artifact) both data from inputs and comments [low]
 - comments need to be saved in artifact state, not just "review" append log [low]

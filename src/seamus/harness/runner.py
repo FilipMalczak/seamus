@@ -173,6 +173,24 @@ class SeamusLangGraphAgent(LangGraphAgent):  # type: ignore[misc]
         return merged
 
 
+def select_message_overlap(messages: list[Any], max_count: int) -> list[Any]:
+    """Select up to max_count trailing messages, ensuring no orphaned tool messages."""
+    if not messages or max_count <= 0:
+        return []
+    window = list(messages[-max_count:])
+    while window and (
+        getattr(window[0], "type", None) == "tool"
+        or getattr(window[0], "role", None) == "tool"
+        or type(window[0]).__name__ == "ToolMessage"
+    ):
+        idx_in_orig = len(messages) - len(window)
+        if idx_in_orig > 0:
+            window.insert(0, messages[idx_in_orig - 1])
+        else:
+            window.pop(0)
+    return window
+
+
 class SessionBusyError(RuntimeError):
     """Raised when an input is dispatched to a session while it is still running a task."""
 
@@ -1930,6 +1948,48 @@ class SessionAgentRunner:
 
             return user_msg_id
 
+    def _seed_thread_overlap(self, thread: Thread) -> None:
+        """Seed an empty thread with trailing messages from its immediate predecessor thread."""
+        overlap = getattr(self.session.config, "thread_message_overlap", 5)
+        if overlap <= 0:
+            return
+
+        try:
+            cur_state = self._agent.graph.get_state({"configurable": {"thread_id": thread.id.hex}})
+            cur_messages = cur_state.values.get("messages", []) if cur_state else []
+            if cur_messages:
+                return
+
+            thread_list = list(self.session.threads.values())
+            if thread not in thread_list:
+                return
+            idx = thread_list.index(thread)
+            if idx <= 0:
+                return
+
+            prev_thread = thread_list[idx - 1]
+            prev_state = self._agent.graph.get_state(
+                {"configurable": {"thread_id": prev_thread.id.hex}}
+            )
+            if not prev_state or not prev_state.values.get("messages"):
+                return
+
+            prev_messages = list(prev_state.values["messages"])
+            carryover = select_message_overlap(prev_messages, overlap)
+            if carryover:
+                self._agent.graph.update_state(
+                    {"configurable": {"thread_id": thread.id.hex}},
+                    {"messages": carryover},
+                )
+                logger.info(
+                    "Seeded thread %s with %d overlap messages from predecessor thread %s",
+                    thread.id,
+                    len(carryover),
+                    prev_thread.id,
+                )
+        except Exception:
+            logger.exception("Failed to seed thread message overlap for thread %s", thread.id)
+
     async def _run_loop(self, thread: Thread, user_message: UserMessage | None = None) -> None:
         """Internal execution loop with hierarchical agent, session, and thread spans."""
         agent_entity = self._resolve_agent_entity()
@@ -1954,6 +2014,7 @@ class SessionAgentRunner:
         self._turn_created_artifact_ids.clear()
         self._pending_phase_transition = None
         self.sync_sandbox_mounts(thread)
+        self._seed_thread_overlap(thread)
         input_data = RunAgentInput(
             thread_id=thread.id.hex,
             run_id=run_id,

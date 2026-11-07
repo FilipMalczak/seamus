@@ -754,15 +754,15 @@ export function ChatArea({
                   : !isOpen
                     ? "This thread is closed. Select the active open thread to continue."
                     : hasOpenBlockingArtifact
-                      ? "Questionnaire in progress. Please submit the questionnaire above to continue."
+                      ? "Questionnaire in progress (drafting enabled; submit questionnaire to send)..."
                       : isBusy
-                        ? "Agent is busy processing... please wait."
+                        ? "Agent is busy processing (drafting enabled; please wait to send)..."
                         : "Send a message to Seamus... (Enter to send, Shift+Enter for newline)"
             }
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={handleKeyDown}
-            disabled={!isOpen || isBusy || sending || hasOpenBlockingArtifact}
+            disabled={!isOpen}
             rows={2}
             autoFocus
           />

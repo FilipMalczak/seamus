@@ -304,7 +304,7 @@ class QuestionnaireBuilder:
                 ManifestButton(
                     id="submit-btn",
                     mode="set",
-                    clicks=1,
+                    clicks="*",
                     unblocking=True,
                     closing=True,
                 )
@@ -363,7 +363,7 @@ class FormBuilder:
                 ManifestButton(
                     id=submit_btn_id,
                     mode="set",
-                    clicks=1,
+                    clicks="*",
                     unblocking=False,
                     closing=True,
                 )
@@ -483,7 +483,7 @@ class PlanBuilder:
                 ManifestButton(
                     id="proceed-btn",
                     mode="set",
-                    clicks=1,
+                    clicks="*",
                     unblocking=True,
                     closing=True,
                 ),
@@ -575,16 +575,6 @@ class PlanBuilder:
         inst_dir = artifacts_dir / "plans" / plan_id
         inst_dir.mkdir(parents=True, exist_ok=True)
         (inst_dir / "closed.marker").touch(exist_ok=True)
-        state_file = inst_dir / "state.json"
-        if state_file.is_file():
-            try:
-                state_data = json.loads(state_file.read_text(encoding="utf-8"))
-                clicks = state_data.get("clicksLeft", {})
-                clicks["proceed-btn"] = 0
-                state_data["clicksLeft"] = clicks
-                state_file.write_text(json.dumps(state_data, indent=2), encoding="utf-8")
-            except Exception:
-                pass
         return inst_dir
 
     @classmethod

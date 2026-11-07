@@ -233,3 +233,4 @@ Requirements, rationale, provenance, and stable IDs.
 - [0031-SUPERSEDED-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-SUPERSEDED-migrate-a2ui-to-adaptive-cards.md)
 - [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md)
 - [0032-operational-mode-in-agent-config-and-defaults.md](../decisions/0032-operational-mode-in-agent-config-and-defaults.md)
+- [0035-harness-low-hanging-fruits.md](../decisions/0035-harness-low-hanging-fruits.md)

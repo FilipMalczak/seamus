@@ -66,6 +66,32 @@ def filter_sync_pr_diff(raw_diff: str) -> str:
     return "".join(kept)
 
 
+DEFAULT_WORKSPACE_GITIGNORE = """# Ephemeral build artifacts and caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Package and dependency directories
+node_modules/
+dist/
+build/
+*.egg-info/
+
+# Ephemeral runtime data and logs
+*.log
+.DS_Store
+"""
+
+
 class GitWorkspaceManager:
     """Manages local git working copies and synchronizes them with Gitea."""
 
@@ -184,6 +210,11 @@ class GitWorkspaceManager:
             data_gitkeep = data_dir / ".gitkeep"
             if not data_gitkeep.exists():
                 data_gitkeep.touch()
+
+            # Seed default .gitignore
+            gitignore_file = agent_dir / ".gitignore"
+            if not gitignore_file.exists():
+                gitignore_file.write_text(DEFAULT_WORKSPACE_GITIGNORE, encoding="utf-8")
 
             # Write initial config
             config_payload = {

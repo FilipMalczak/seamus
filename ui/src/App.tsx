@@ -539,7 +539,11 @@ export function App() {
                 agentStatus={activeStatus}
                 onAcceptThread={async () => {
                   if (selectedAgentId && selectedSessionId && activeThread) {
-                    await acceptThread(selectedAgentId, selectedSessionId, activeThread.id);
+                    const newThread = await acceptThread(selectedAgentId, selectedSessionId, activeThread.id);
+                    if (newThread?.id) {
+                      selectThread(selectedAgentId, selectedSessionId, newThread.id);
+                      setActiveMainTab("chat");
+                    }
                   }
                 }}
               />

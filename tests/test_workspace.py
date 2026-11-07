@@ -57,9 +57,14 @@ def test_initialize_agent_repo(
 
     agent_dir = manager.initialize_agent_repo(agent)
     assert (agent_dir / ".git").exists()
+    assert (agent_dir / ".gitignore").exists()
     assert (agent_dir / "agent" / "config" / "config.json").exists()
     assert (agent_dir / "agent" / "state" / ".gitkeep").exists()
     assert (agent_dir / "data" / ".gitkeep").exists()
+
+    gitignore_content = (agent_dir / ".gitignore").read_text()
+    assert "__pycache__/" in gitignore_content
+    assert "node_modules/" in gitignore_content
 
     config_data = json.loads((agent_dir / "agent" / "config" / "config.json").read_text())
     assert config_data["id"] == str(agent.id)

@@ -12,7 +12,6 @@ interface ConfigModalProps {
 
 const MODEL_PRESETS = [
   "openai/gpt-oss-120b",
-  "openai/gpt-oss-20b",
   "anthropic/claude-sonnet-4",
   "openai/gpt-4.1",
   "openai/gpt-4.1-mini",

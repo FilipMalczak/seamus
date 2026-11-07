@@ -79,6 +79,19 @@ def test_agent_config_copy_with_overrides() -> None:
     assert base.system_prompt == "Base prompt"
     assert base.todo_implementation == TodoImplementation.NONE
     assert base.skills_implementation == SkillsImplementation.NONE
+    assert base.thread_message_overlap == 5
+    assert derived.thread_message_overlap == 5
+
+
+def test_agent_config_thread_message_overlap() -> None:
+    cfg = AgentConfig()
+    assert cfg.thread_message_overlap == 5
+
+    custom = AgentConfig(thread_message_overlap=12)
+    assert custom.thread_message_overlap == 12
+
+    derived = cfg.copy_with_overrides(custom)
+    assert derived.thread_message_overlap == 12
 
 
 def test_agent_config_todo_and_skills_implementation_validation() -> None:
