@@ -34,6 +34,7 @@ from seamus.harness.sandbox import (
     build_sandbox_system_prompt,
     get_or_create_sandbox_api_key,
     get_sandbox_settings,
+    sync_bundled_skills,
 )
 from seamus.harness.store import (
     HarnessStore,
@@ -74,4 +75,5 @@ __all__ = [
     "get_sandbox_settings",
     "reset_harness_store",
     "reset_runner_registry",
+    "sync_bundled_skills",
 ]

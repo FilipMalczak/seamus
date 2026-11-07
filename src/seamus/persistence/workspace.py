@@ -104,6 +104,12 @@ class GitWorkspaceManager:
         self.client = client or GiteaClient(self.settings)
         self.workspace_root = self.settings.workspace_dir
         self.workspace_root.mkdir(parents=True, exist_ok=True)
+        try:
+            from seamus.harness.sandbox import sync_bundled_skills
+
+            sync_bundled_skills(self.workspace_root / "bundled_skills")
+        except Exception:
+            logger.debug("Failed to sync bundled skills during workspace initialization")
 
     def _run_git(self, cwd: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
         """Execute a git command within the specified working directory."""

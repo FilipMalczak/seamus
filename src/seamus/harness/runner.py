@@ -670,6 +670,7 @@ class SessionAgentRunner:
             data_dir=data_dir,
             artifacts_dir=artifacts_dir,
             notes_dir=notes_dir,
+            workspace_root=getattr(ws_mgr, "workspace_root", None),
             workspace_readonly=mount_policy.workspace_readonly,
             notes_mounted=mount_policy.notes_mounted,
             notes_readonly=mount_policy.notes_readonly,
