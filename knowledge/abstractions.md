@@ -93,8 +93,10 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `ManifestButton`: Pydantic model (`id: str`, `mode: Literal["set", "append"]`, `clicks: int | Literal["*"]`, `unblocking: bool`, `closing: bool`).
 - `ArtifactManifest`: Pydantic model (`name: str`, `exposition: Literal["embedded", "tabbed"]`, `blocking: bool`, `commentable: bool`, `buttons: list[ManifestButton]`).
 - `ArtifactInfo`: Pydantic model describing an artifact instance (`family`, `uuid`, `manifest`, `is_closed`, `body`, `state`).
-- `make_artifact`: Core atomic tool creating `/artifacts/<family>/<uuid>/` with `manifest.json` and `body.json`, validating the A2UI surface before persisting.
+- `make_artifact`: Core atomic tool creating `/artifacts/<family>/<uuid>/` with `manifest.json` and `body.json`, validating the A2UI surface before persisting and auto-synthesizing root containers when omitted.
 - `validate_a2ui_surface`: Surface validator checking component structure, basic catalog types, child references, tree topology (no cycles, single parent), component properties, and manifest button declarations before artifact creation.
+- `check_a2ui_surface_warnings`: Static inspector checking for missing explicit `root` component IDs, disconnected top-level root widgets, and unreachable/orphaned components, generating actionable diagnostic warnings for the agent.
+- `normalize_a2ui_components`: Normalizer converting legacy aliases (`ChoiceSet`, `TextInput`), wrapping non-standard button actions, and auto-synthesizing a root `Column` container when `id="root"` is missing.
 - `make_questionnaire`: Specialized atomic questionnaire builder tool.
 - `make_form`: Specialized atomic tabbed non-blocking form builder tool.
 - `make_plan`: Specialized atomic plan builder tool creating `manifest.json`, `body.json`, and canonical `plan.md` with inline commenting support.

@@ -522,3 +522,4 @@ Two bundled skills govern artifact usage:
 | `INV-ART-009` | Review Rewriting | `{"comments": "push"}` action is rewritten to dynamic click-time `push_comments` event context with `LN:M` locations. |
 | `INV-ART-010` | Read-Only Sandbox | Sandbox mounts `/artifacts` as `readOnly=True`. |
 | `INV-ART-011` | Surface Validation | `make_artifact` validates A2UI surface before storage; invalid surfaces are not stored on disk and return errors with "did not store" notification. |
+| `INV-ART-012` | Root Component & Structure Warning | Every A2UI surface resolves from a root component; if `id='root'` is missing or multiple disconnected roots exist, a root `Column` container is synthesized during normalization to prevent blank renders, and static incomplete structure warnings are returned to the agent. |

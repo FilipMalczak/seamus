@@ -1,112 +1,282 @@
 ---
 name: a2ui_components
-description: Canonical reference for authoring A2UI basic catalog components (Text, TextField, ChoiceSet, Button, Column, Row, Card, Container, Review) and action payloads in Seamus artifacts.
+description: Canonical reference for authoring A2UI basic catalog components (Text, TextField, ChoicePicker, Button, Column, Row, Card, Divider) and root hierarchy in Seamus artifacts.
 ---
 
 # A2UI Basic Catalog Reference
 
-Seamus utilizes a clean subset of the **A2UI Basic Catalog (v0.9)** for describing declarative user interfaces in artifacts. The full component definition JSON schema is stored in `./resources/catalog.json`.
+Seamus utilizes the **A2UI Basic Catalog (v0.9)** for describing declarative user interfaces in artifacts. The full component definition JSON schema is stored in `./resources/catalog.json`.
 
 Artifact UI definitions reside in `/artifacts/<family>/<uuid>/body.json` as a flat JSON array of component objects matching the structure expected in A2UI `updateComponents` events.
 
-## Core Component Types
+---
 
-### 1. `Text`
-Renders formatted text or headers.
-```json
-{
-  "id": "intro_title",
-  "component": "Text",
-  "text": "Please choose your deployment settings",
-  "variant": "h2"
-}
+## The Mandatory Root Component Rule
+
+> [!IMPORTANT]
+> **One component in `components` MUST have `"id": "root"`** (typically a `Column`, `Row`, or `Card`).
+> 
+> A2UI resolves and renders component trees starting from the component with `id="root"`. All other components in the flat array must be direct or indirect descendants of this root component (referenced by ID in `children: ["..."]` or `child: "..."`).
+>
+> If multiple widgets are emitted without an enclosing root container (e.g. emitting a `Text` and a `Button` side-by-side with no parent), the component structure is incomplete and will trigger a warning.
+
+```mermaid
+graph TD
+    Root["root (Column)"] --> Intro["intro (Text)"]
+    Root --> CardWidget["card1 (Card)"]
+    Root --> ActionRow["actions (Row)"]
+    CardWidget --> FormCol["form_col (Column)"]
+    FormCol --> Input["name_field (TextField)"]
+    FormCol --> Choices["env_picker (ChoicePicker)"]
+    ActionRow --> SubmitBtn["submit_btn (Button)"]
+    SubmitBtn --> SubmitLbl["submit_lbl (Text)"]
 ```
-- `text`: String value or Markdown text.
-- `variant`: `"h1" | "h2" | "h3" | "h4" | "h5" | "body" | "caption" | "bold"`
 
-### 2. `TextField`
-Single-line or multi-line text input field.
-```json
-{
-  "id": "custom_note_input",
-  "component": "TextField",
-  "label": "Additional Notes",
-  "placeholder": "Enter custom details...",
-  "value": ""
-}
-```
-- `value`: Current text string. Evaluated on click via path context `/components/<id>/value`.
+---
 
-### 3. `ChoiceSet`
-Single-choice or multi-choice options set (radio buttons or checkboxes).
-```json
-{
-  "id": "env_choices",
-  "component": "ChoiceSet",
-  "isMultiSelect": false,
-  "choices": [
-    { "id": "opt_staging", "label": "Staging", "value": "staging" },
-    { "id": "opt_prod", "label": "Production", "value": "production" }
-  ],
-  "value": "staging"
-}
-```
-- `isMultiSelect`: Boolean (`false` for radio buttons, `true` for checkboxes).
-- `choices`: Array of `{ "id": str, "label": str, "value": str }`.
-- `value`: Current selected value (string for single select, array of strings for multi-select).
+## Component Reference
 
-### 4. `Button`
-Clickable button initiating an action event.
-```json
-{
-  "id": "submit-btn",
-  "component": "Button",
-  "child": "submit_label",
-  "variant": "primary",
-  "action": {
-    "event": {
-      "name": "submit_settings",
-      "context": {
-        "environment": { "path": "/components/env_choices/value" },
-        "notes": { "path": "/components/custom_note_input/value" }
-      }
-    }
-  }
-}
-```
-- `id`: Button ID. **Must be listed in `manifest.json` under `buttons`**, or clicks will be ignored!
-- `child`: ID of child `Text` component providing the label.
-- `variant`: `"default" | "primary" | "borderless"` (A2UI basicCatalog standard: `primary` for main CTA, `default` for neutral/secondary action, `borderless` for text-link style).
-- `action.event.context`: Dictionary mapping output keys to JSON pointers (e.g. `/components/<component_id>/value`). Evaluated when the button is clicked.
+### 1. Root & Layout Containers
 
-### 5. Layout Containers: `Column`, `Row`, `Container`, `Card`
-Organize child components visually.
+#### `Column`
+Vertical stack layout container.
 ```json
 {
   "id": "root",
   "component": "Column",
-  "children": ["intro_title", "env_choices", "custom_note_input", "submit-btn"]
+  "children": ["title_text", "settings_card", "actions_row"]
 }
 ```
-- `children`: List of component IDs rendered within this container.
+- `children`: Array of component IDs rendered vertically in order.
+- `justify`: (Optional) `"start" | "center" | "end" | "spaceBetween" | "spaceAround" | "spaceEvenly"`
+- `align`: (Optional) `"start" | "center" | "end" | "stretch" | "baseline"`
 
-### 6. `Review`
-Dedicated inline commenting and review component used for reviewing document artifacts (such as plans).
+#### `Row`
+Horizontal layout container.
 ```json
 {
-  "id": "review-btn",
-  "component": "Review",
-  "target": "plan_content",
-  "label": "Submit Review Comments",
+  "id": "actions_row",
+  "component": "Row",
+  "children": ["cancel_btn", "submit_btn"]
+}
+```
+- `children`: Array of component IDs rendered horizontally in order.
+- `justify`, `align`: Same options as `Column`.
+
+#### `Card`
+Visually framed panel card.
+```json
+{
+  "id": "settings_card",
+  "component": "Card",
+  "child": "settings_column"
+}
+```
+> [!CAUTION]
+> In A2UI v0.9, `Card` strictly accepts a single child ID (`"child": "<id>"`). It **does NOT** accept `title` or `body`. To create a card with a title and multiple fields, point `child` to a `Column` containing a `Text` title and your content components.
+
+#### `Divider`
+Visual dividing line.
+```json
+{
+  "id": "divider_1",
+  "component": "Divider",
+  "axis": "horizontal"
+}
+```
+- `axis`: `"horizontal" | "vertical"` (defaults to `"horizontal"`).
+
+---
+
+### 2. Display Components
+
+#### `Text`
+Renders formatted text, markdown, or headings.
+```json
+{
+  "id": "intro_title",
+  "component": "Text",
+  "text": "## Deployment Configuration",
+  "variant": "body"
+}
+```
+- `text`: String value (supports GitHub-flavored Markdown).
+- `variant`: `"h1" | "h2" | "h3" | "h4" | "h5" | "body" | "caption"`
+
+#### `Image`
+Renders an image from a URL.
+```json
+{
+  "id": "banner",
+  "component": "Image",
+  "url": "https://example.com/logo.png",
+  "fit": "contain"
+}
+```
+- `url`: Image source URL string.
+- `fit`: `"contain" | "cover" | "fill" | "none" | "scaleDown"`
+
+#### `Icon`
+Renders a named icon.
+```json
+{
+  "id": "check_icon",
+  "component": "Icon",
+  "name": "check"
+}
+```
+
+---
+
+### 3. Input & Interactive Components
+
+#### `TextField`
+Text entry field for user input.
+```json
+{
+  "id": "notes_input",
+  "component": "TextField",
+  "label": "Release Notes",
+  "value": ""
+}
+```
+- `label`: Label describing the field.
+- `value`: Initial string value (or data model binding).
+- `variant`: (Optional) `"shortText" | "longText" | "number" | "obscured"`
+
+#### `ChoicePicker` (or `ChoiceSet`)
+Single or multiple choice selection.
+```json
+{
+  "id": "env_picker",
+  "component": "ChoicePicker",
+  "label": "Target Environment",
+  "variant": "mutuallyExclusive",
+  "options": [
+    { "label": "Staging", "value": "staging" },
+    { "label": "Production", "value": "production" }
+  ],
+  "value": ["staging"]
+}
+```
+- `options`: List of `{ "label": str, "value": str }`.
+- `variant`: `"mutuallyExclusive"` (radio buttons) or `"multipleSelection"` (checkboxes).
+- `value`: List of selected value strings.
+
+#### `Button`
+Clickable action button.
+```json
+{
+  "id": "deploy-btn",
+  "component": "Button",
+  "child": "deploy_btn_label",
+  "variant": "primary",
   "action": {
     "event": {
-      "name": "review_comments",
+      "name": "deploy_action",
       "context": {
-        "comments": { "path": "/review/comments" }
+        "environment": { "path": "/components/env_picker/value" },
+        "notes": { "path": "/components/notes_input/value" }
       }
     }
   }
 }
 ```
-When clicked, comments formatted with `LN:M` line-and-character coordinates are pushed into `/interactions/<id>.json`.
+- `id`: Button ID. **MUST be declared in `manifest.json` under `buttons`**, or clicks will be ignored!
+- `child`: String ID of a child component providing the label (typically a `Text` component).
+- `variant`: `"primary"` (main action), `"default"` (secondary/neutral), `"borderless"` (link style).
+- `action`: Action payload containing the event name and context data pointers.
 
+---
+
+## Complete Example: Showcase Custom Artifact
+
+Here is a complete, working example of an artifact showcasing widgets properly structured under a root container:
+
+### `manifest.json`
+```json
+{
+  "name": "Widget Showcase",
+  "exposition": "embedded",
+  "blocking": false,
+  "commentable": false,
+  "buttons": [
+    {
+      "id": "submit-btn",
+      "mode": "set",
+      "clicks": 1,
+      "unblocking": false,
+      "closing": false
+    }
+  ]
+}
+```
+
+### `body.json`
+```json
+[
+  {
+    "id": "root",
+    "component": "Column",
+    "children": ["header_text", "config_card", "actions_row"]
+  },
+  {
+    "id": "header_text",
+    "component": "Text",
+    "text": "### Custom Widget Showcase\nConfigure your options below.",
+    "variant": "body"
+  },
+  {
+    "id": "config_card",
+    "component": "Card",
+    "child": "card_column"
+  },
+  {
+    "id": "card_column",
+    "component": "Column",
+    "children": ["target_picker", "notes_field"]
+  },
+  {
+    "id": "target_picker",
+    "component": "ChoicePicker",
+    "label": "Select Target",
+    "variant": "mutuallyExclusive",
+    "options": [
+      { "label": "Development", "value": "dev" },
+      { "label": "Staging", "value": "staging" }
+    ],
+    "value": ["dev"]
+  },
+  {
+    "id": "notes_field",
+    "component": "TextField",
+    "label": "Additional Notes",
+    "value": ""
+  },
+  {
+    "id": "actions_row",
+    "component": "Row",
+    "children": ["submit-btn"]
+  },
+  {
+    "id": "submit-btn",
+    "component": "Button",
+    "child": "submit_label",
+    "variant": "primary",
+    "action": {
+      "event": {
+        "name": "submit_showcase",
+        "context": {
+          "target": { "path": "/components/target_picker/value" },
+          "notes": { "path": "/components/notes_field/value" }
+        }
+      }
+    }
+  },
+  {
+    "id": "submit_label",
+    "component": "Text",
+    "text": "Submit Configuration"
+  }
+]
+```
