@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Prevent Docker Compose from attempting shell variable expansion on ${secret(...)} in .env;
+# backend loads .env directly via env_file with format: raw.
+export COMPOSE_ENV_FILES="${COMPOSE_ENV_FILES:-/dev/null}"
+
 UI_URL="http://localhost:3000"
 BACKEND_HEALTH_URL="http://localhost:8000/health"
 GITEA_HEALTH_URL="http://localhost:3001/api/v1/version"
@@ -12,12 +16,12 @@ usage() {
   cat <<EOF
 Usage: $0 [OPTIONS]
 
-Ensure Seamus services (FastAPI backend, React UI, OpenSandbox, Gitea, and PostgreSQL) are running and open in the default browser.
+Ensure Seamus services (FastAPI backend, React UI, OpenSandbox, Gitea, OpenBao, and PostgreSQL) are running and open in the default browser.
 
 Options:
   -r, --restart    Restart application containers for which we own the image (backend, frontend, opensandbox)
                    and rebuild to update code while preserving data and infrastructure containers
-  -c, --clean      Kill all containers, remove all persistent volumes and data storages, and start fresh
+  -c, --clean      Reset Gitea, workspaces, and sandbox state while preserving OpenBao secrets, and start fresh
   -h, --help       Show this help message and exit
 EOF
 }
@@ -72,9 +76,42 @@ open_in_browser() {
 echo "Checking Seamus service status..."
 
 if [ "$CLEAN" = true ]; then
-  echo "Clean start requested. Tearing down all containers and removing persistent volumes..."
-  docker compose down -v --remove-orphans
+  echo "Clean start requested. Resetting Gitea, workspaces, and sandbox state while preserving OpenBao secrets..."
+  docker compose rm -f -s -v frontend backend opensandbox gitea gitea-init >/dev/null 2>&1 || true
+
+  project_name="${COMPOSE_PROJECT_NAME:-$(basename "$(pwd)" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_-]//g')}"
+  docker volume rm -f \
+    "${project_name}_gitea-data" \
+    "seamus-workspaces" \
+    "${project_name}_opensandbox-data" \
+    "${project_name}_opensandbox-auth" >/dev/null 2>&1 || true
   rm -rf "${SEAMUS_WORKSPACE_DIR:-.seamus/workspaces}" .seamus/opensandbox
+
+  docker compose up -d postgres
+  until docker compose exec -T postgres pg_isready -U "${POSTGRES_USER:-gitea}" -d "${POSTGRES_DB:-gitea}" >/dev/null 2>&1; do
+    sleep 1
+  done
+  docker compose exec -T postgres psql -U "${POSTGRES_USER:-gitea}" -d "${POSTGRES_DB:-gitea}" -c "
+  DO \$\$ DECLARE
+      r RECORD;
+  BEGIN
+      FOR r IN (
+          SELECT tablename
+          FROM pg_tables
+          WHERE schemaname = 'public'
+            AND tablename NOT IN ('vault_kv_store', 'vault_ha_locks')
+      ) LOOP
+          EXECUTE 'DROP TABLE IF EXISTS public.' || quote_ident(r.tablename) || ' CASCADE';
+      END LOOP;
+      FOR r IN (
+          SELECT sequencename
+          FROM pg_sequences
+          WHERE schemaname = 'public'
+      ) LOOP
+          EXECUTE 'DROP SEQUENCE IF EXISTS public.' || quote_ident(r.sequencename) || ' CASCADE';
+      END LOOP;
+  END \$\$;
+  " >/dev/null
 
   echo "Starting all services from clean state..."
   docker compose up -d --build

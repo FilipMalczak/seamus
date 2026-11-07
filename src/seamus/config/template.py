@@ -46,10 +46,12 @@ class ConfigTemplateStore:
     def _load_initial_template(self) -> AgentConfig:
         """Attempt to load template from persistence; fall back to environment seed."""
         try:
+            from seamus.vault.interpolator import strip_secret_versions
+
             ws_mgr = self._get_workspace_manager()
             data = ws_mgr.read_system_config_template()
             if data is not None:
-                return AgentConfig.model_validate(data)
+                return AgentConfig.model_validate(strip_secret_versions(data))
             initial = self._load_from_environment()
             ws_mgr.commit_system_config_template(initial.model_dump())
             return initial
@@ -65,13 +67,17 @@ class ConfigTemplateStore:
         if env_file is not None:
             target = Path(env_file)
             if target.exists():
-                load_dotenv(dotenv_path=target, override=False)
+                load_dotenv(dotenv_path=target, override=False, interpolate=False)
         else:
-            load_dotenv(override=False)
+            load_dotenv(override=False, interpolate=False)
 
         api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
         if not api_key:
             api_key = os.getenv("OPEN_ROUTER_API_KEY", "").strip()
+        if api_key.startswith("$${"):
+            api_key = api_key[1:]
+        if not api_key:
+            api_key = "${secret('/api-key/inference/openrouter')}"
 
         base_url = os.getenv("OPENROUTER_BASE_URL", "").strip() or "https://openrouter.ai/api/v1"
         model_name = (

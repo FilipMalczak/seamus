@@ -107,6 +107,7 @@ class Session(BaseModel):
     config: AgentConfig
     status: SessionStatus = Field(default=SessionStatus.ACTIVE)
     active_plan_id: str | None = None
+    secret_versions: dict[str, int] = Field(default_factory=dict)
     provenance: SessionBranchProvenance | None = None
     lineage: list[SessionBranchProvenance] = Field(default_factory=list)
     threads: dict[UUID, Thread] = Field(default_factory=dict)

@@ -127,6 +127,12 @@ A specialized declarative Markdown document artifact (`family="plans"`, `exposit
 ### Bundled Skill
 A core harness platform skill maintained directly in repository source (`src/seamus/skills/bundled/`), mounted into OpenSandbox at `/skills/bundled` with highest precedence over session and system skills, and surfaced in the Agent Inspector.
 
+### Secret Reference
+A symbolic string interpolation expression (`${secret('/path')}` or `${secret(path='/path', field='value')}`) embedded inside configuration fields (`InferenceConfig`, `AgentConfig`, `ConfigTemplate`). Evaluated strictly in memory against the OpenBao KV v2 vault (`secret/`) so cleartext credentials are never persisted to disk or Git. See [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md).
+
+### Exploded Secret Reference
+The canonical, version-pinned form of a secret reference (`${secret(path='/path', field='value', version=N)}`) written exclusively to on-disk `agent/config/config.json` during checkpoint commits to record the exact OpenBao secret version active prior to that checkpoint while keeping live in-memory session configs unversioned. See [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md).
+
 ## Cross-References
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
@@ -144,6 +150,7 @@ A core harness platform skill maintained directly in repository source (`src/sea
 - [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md)
 - [0031-SUPERSEDED-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-SUPERSEDED-migrate-a2ui-to-adaptive-cards.md)
 - [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md)
+- [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md)
 - [artifacts.md](./artifacts.md)
 - [threads_modes_personas.md](./threads_modes_personas.md)
 - [architecture.md](./architecture.md)

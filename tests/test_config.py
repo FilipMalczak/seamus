@@ -201,3 +201,19 @@ def test_resolve_skill_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 
     assert resolve_skill_path("~/.seamus/skills") == container_skills.resolve()
     assert resolve_skill_path("~") == container_host_home.resolve()
+
+
+def test_config_template_load_from_environment_preserves_secret_reference(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("OPEN_ROUTER_API_KEY", raising=False)
+
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "OPENROUTER_API_KEY=${secret('/api-key/inference/openrouter')}\n",
+        encoding="utf-8",
+    )
+
+    loaded = ConfigTemplateStore._load_from_environment(env_file=env_file)
+    assert loaded.inference.api_key == "${secret('/api-key/inference/openrouter')}"

@@ -9,6 +9,7 @@ from seamus.server.routes.sessions import router as sessions_router
 from seamus.server.routes.settings import router as settings_router
 from seamus.server.routes.system import router as system_router
 from seamus.server.routes.threads import router as threads_router
+from seamus.server.routes.vault import router as vault_router
 
 api_router = APIRouter(prefix="/api/v-alpha")
 api_router.include_router(config_router)
@@ -18,5 +19,6 @@ api_router.include_router(sessions_router)
 api_router.include_router(artifacts_router)
 api_router.include_router(threads_router)
 api_router.include_router(system_router)
+api_router.include_router(vault_router)
 
 __all__ = ["api_router"]

@@ -200,6 +200,12 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), [0031-SUPERSEDED-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-SUPERSEDED-migrate-a2ui-to-adaptive-cards.md), [0033-decouple-plans-and-submissions-from-a2ui.md](../decisions/0033-decouple-plans-and-submissions-from-a2ui.md), [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [threads_modes_personas.md](./threads_modes_personas.md), [artifacts.md](./artifacts.md).
 - **Linked Invariants**: [INV-005](./invariants.md#inv-005-single-open-thread-invariant), [INV-028](./invariants.md#inv-028-mode-transition-thread-spawning-boundary), [INV-041](./invariants.md#inv-041-operational-mode-mount-policy-non-blocking-tabbed-plans-and-recursion-limit).
 
+### REQ-035: OpenBao Secrets Vault Integration, Per-Inference Version Watching, and Checkpoint Explosion
+- **Description**: The system must integrate OpenBao (KV v2 at `secret/`) in Docker Compose with an auxiliary initialization/unsealing service (`openbao-init`), support symbolic string secret references (`${secret('/path')}` and `${secret(path='/path', field='value')}` with `field` defaulting to `'value'` and `version` disallowed in user configs) across `AgentConfig`, `InferenceConfig`, and `ConfigTemplate`, evaluate secrets exclusively in memory, watch for newer secret versions per inference (`refresh_secrets` / `refresh_secrets_sync`) and auto-reload when `current_version > loaded_version`, explode secret expressions to `${secret(path='/...', field='...', version=N)}` in `agent/config/config.json` on checkpoint commits while keeping live in-memory session configs unversioned, expose a link to OpenBao's token login page in the navigation sidebar footer, and provide a `Secrets` tab in System Settings for listing/adding secrets and revealing the OpenBao login token.
+- **Rationale**: Prevents cleartext credentials from ever being committed to Git while enabling zero-downtime secret rotation across active sessions and recording exact secret version provenance at every checkpoint for future time-travel reproducibility.
+- **Provenance**: [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md).
+- **Linked Invariants**: [INV-042](./invariants.md#inv-042-in-memory-secret-evaluation-per-inference-version-watching-and-checkpoint-explosion).
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [invariants.md](./invariants.md)
@@ -236,3 +242,4 @@ Requirements, rationale, provenance, and stable IDs.
 - [0035-harness-low-hanging-fruits.md](../decisions/0035-harness-low-hanging-fruits.md)
 - [0036-mount-bundled-skills-via-shared-volume.md](../decisions/0036-mount-bundled-skills-via-shared-volume.md)
 - [0037-validate-a2ui-surface-render-on-make-artifact.md](../decisions/0037-validate-a2ui-surface-render-on-make-artifact.md)
+- [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md)

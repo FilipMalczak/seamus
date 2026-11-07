@@ -67,7 +67,7 @@ export function ConfigModal({
       base.inference = {
         format: "openai",
         base_url: "https://openrouter.ai/api/v1",
-        api_key: null,
+        api_key: "${secret('/api-key/inference/openrouter')}",
       };
     }
     updater(base);
@@ -321,10 +321,14 @@ export function ConfigModal({
                 </div>
                 <div className="config-input-with-action">
                   <input
-                    type={showApiKey ? "text" : "password"}
+                    type={
+                      showApiKey || (currentApiKey ?? "").trim().startsWith("${secret(")
+                        ? "text"
+                        : "password"
+                    }
                     className="config-input"
                     value={currentApiKey ?? ""}
-                    placeholder="Leave empty (null) or enter provider API key..."
+                    placeholder="${secret('/api-key/inference/openrouter')}"
                     onChange={(e) => {
                       const val = e.target.value;
                       updateDraft((d) => {

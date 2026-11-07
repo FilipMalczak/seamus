@@ -76,6 +76,12 @@ from seamus.harness.sandbox import (
     get_sandbox_settings,
 )
 from seamus.persistence import GitCheckpointSaver, get_workspace_manager
+from seamus.vault import (
+    collect_secret_references,
+    get_default_vault_client,
+    resolve_secrets_with_versions,
+    resolve_secrets_with_versions_sync,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -607,6 +613,9 @@ class SessionAgentRunner:
         self._turn_created_artifact_ids: set[str] = set()
         self._pending_phase_transition: tuple[str, str | None, bool] | None = None
         self._pending_clicks: dict[tuple[str, str | None], asyncio.Future[str]] = {}
+        self._loaded_secret_versions: dict[tuple[str, str], int] = {}
+        self._resolved_system_prompt: str | None = None
+        self._llm: ReasoningChatOpenAI | None = None
 
         if agent is not None:
             self._agent = agent
@@ -634,14 +643,21 @@ class SessionAgentRunner:
     def _build_deep_agent(self) -> LangGraphAgent:
         """Instantiate the DeepAgent graph and wrap it in a SeamusLangGraphAgent."""
         self.session.config.validate_complete()
-        api_key = self.session.config.inference.api_key or ""
-        base_url = self.session.config.inference.base_url
+        resolved_config, version_map = resolve_secrets_with_versions_sync(self.session.config)
+        self._loaded_secret_versions = dict(version_map)
+        self.session.secret_versions = {
+            f"{k[0]}:{k[1]}": v for k, v in self._loaded_secret_versions.items()
+        }
+        self._resolved_system_prompt = resolved_config.system_prompt
+        api_key = resolved_config.inference.api_key or ""
+        base_url = resolved_config.inference.base_url
 
         llm = ReasoningChatOpenAI(
-            model=self.session.config.model_name,
+            model=resolved_config.model_name,
             api_key=SecretStr(api_key),
             base_url=base_url,
         )
+        self._llm = llm
 
         # Prepare Git workspace and isolate agent files under data/
         ws_mgr = get_workspace_manager()
@@ -695,7 +711,7 @@ class SessionAgentRunner:
         self._effective_system_prompt = effective_prompt
 
         dynamic_prompt_middleware = DynamicSystemPromptMiddleware(
-            prompt_provider=lambda _req: self.build_effective_system_prompt(),
+            prompt_provider=self._provide_prompt_for_request,
             tools_provider=lambda req: self.get_active_tools_for_request(req.tools),
             messages_provider=self._provide_messages_for_request,
             should_short_circuit=lambda _req: self._pending_phase_transition is not None,
@@ -705,6 +721,8 @@ class SessionAgentRunner:
             agent_id=self.session.agent_id,
             session_id=self.session.id,
             workspace_manager=ws_mgr,
+            session=self.session,
+            secret_versions_provider=lambda: dict(self._loaded_secret_versions),
         )
         self.checkpointer = checkpointer
 
@@ -913,6 +931,153 @@ class SessionAgentRunner:
                 filtered.append(tool_obj)
         return filtered
 
+    def _apply_resolved_config_to_llm(self, resolved_config: Any) -> None:
+        """Update the active ReasoningChatOpenAI instance with newly resolved secret values."""
+        self._resolved_system_prompt = resolved_config.system_prompt
+        if self._llm is None:
+            return
+        new_api_key = resolved_config.inference.api_key or ""
+        new_base_url = resolved_config.inference.base_url
+        new_model = resolved_config.model_name
+
+        current_key = (
+            self._llm.openai_api_key.get_secret_value()
+            if isinstance(self._llm.openai_api_key, SecretStr)
+            else str(self._llm.openai_api_key or "")
+        )
+        if (
+            current_key != new_api_key
+            or self._llm.openai_api_base != new_base_url
+            or self._llm.model_name != new_model
+        ):
+            fresh_llm = ReasoningChatOpenAI(
+                model=new_model,
+                api_key=SecretStr(new_api_key),
+                base_url=new_base_url,
+            )
+            self._llm.openai_api_key = fresh_llm.openai_api_key
+            self._llm.openai_api_base = fresh_llm.openai_api_base
+            self._llm.model_name = fresh_llm.model_name
+            for attr in ("root_client", "client", "root_async_client", "async_client"):
+                if hasattr(fresh_llm, attr):
+                    setattr(self._llm, attr, getattr(fresh_llm, attr))
+
+    def refresh_secrets_sync(self) -> bool:
+        """Check referenced secrets in OpenBao and reload if any version has increased."""
+        refs = collect_secret_references(self.session.config, allow_version=True)
+        if not refs:
+            return False
+
+        client = get_default_vault_client()
+        needs_reload = False
+        checked_paths: dict[str, int] = {}
+
+        for ref in refs:
+            norm_path = ref.normalized_path
+            loaded_ver = self._loaded_secret_versions.get((norm_path, ref.field))
+            if loaded_ver is None:
+                needs_reload = True
+                break
+            if norm_path not in checked_paths:
+                try:
+                    meta = client.get_secret_metadata_sync(ref.path)
+                    checked_paths[norm_path] = int(meta.get("current_version") or 1)
+                except Exception:
+                    try:
+                        _, ver = client.get_secret_with_version_sync(ref.path)
+                        checked_paths[norm_path] = ver
+                    except Exception:
+                        logger.debug(
+                            "Failed to check secret version for %s during sync refresh",
+                            ref.path,
+                            exc_info=True,
+                        )
+                        continue
+            current_ver = checked_paths.get(norm_path)
+            if current_ver is not None and current_ver > loaded_ver:
+                needs_reload = True
+                break
+
+        if not needs_reload:
+            return False
+
+        resolved_config, version_map = resolve_secrets_with_versions_sync(
+            self.session.config, client=client
+        )
+        self._loaded_secret_versions = dict(version_map)
+        self.session.secret_versions = {
+            f"{k[0]}:{k[1]}": v for k, v in self._loaded_secret_versions.items()
+        }
+        self._apply_resolved_config_to_llm(resolved_config)
+        logger.info(
+            "Reloaded updated secret versions for session %s: %s",
+            self.session.id,
+            self._loaded_secret_versions,
+        )
+        return True
+
+    async def refresh_secrets(self) -> bool:
+        """Async check referenced secrets in OpenBao and reload if any version increased."""
+        refs = collect_secret_references(self.session.config, allow_version=True)
+        if not refs:
+            return False
+
+        client = get_default_vault_client()
+        needs_reload = False
+        checked_paths: dict[str, int] = {}
+
+        for ref in refs:
+            norm_path = ref.normalized_path
+            loaded_ver = self._loaded_secret_versions.get((norm_path, ref.field))
+            if loaded_ver is None:
+                needs_reload = True
+                break
+            if norm_path not in checked_paths:
+                try:
+                    meta = await client.get_secret_metadata(ref.path)
+                    checked_paths[norm_path] = int(meta.get("current_version") or 1)
+                except Exception:
+                    try:
+                        _, ver = await client.get_secret_with_version(ref.path)
+                        checked_paths[norm_path] = ver
+                    except Exception:
+                        logger.debug(
+                            "Failed to check secret version for %s during async refresh",
+                            ref.path,
+                            exc_info=True,
+                        )
+                        continue
+            current_ver = checked_paths.get(norm_path)
+            if current_ver is not None and current_ver > loaded_ver:
+                needs_reload = True
+                break
+
+        if not needs_reload:
+            return False
+
+        resolved_config, version_map = await resolve_secrets_with_versions(
+            self.session.config, client=client
+        )
+        self._loaded_secret_versions = dict(version_map)
+        self.session.secret_versions = {
+            f"{k[0]}:{k[1]}": v for k, v in self._loaded_secret_versions.items()
+        }
+        self._apply_resolved_config_to_llm(resolved_config)
+        logger.info(
+            "Reloaded updated secret versions for session %s: %s",
+            self.session.id,
+            self._loaded_secret_versions,
+        )
+        return True
+
+    def _provide_prompt_for_request(self, _req: Any) -> str:
+        """Check for newer secret versions per-inference and return the effective system prompt."""
+        try:
+            self.refresh_secrets_sync()
+        except Exception:
+            logger.debug("Error refreshing secrets before model inference", exc_info=True)
+        return self.build_effective_system_prompt()
+
     def _provide_messages_for_request(self, request: Any) -> list[Any] | None:
         """Supply a synthetic trigger HumanMessage when auto-waking a fresh phase thread."""
         msgs = getattr(request, "messages", None)
@@ -947,7 +1112,12 @@ class SessionAgentRunner:
     ) -> str:
         """Dynamically assemble the effective LM-XML system prompt for the session."""
         sandbox_settings = get_sandbox_settings()
-        custom_prompt = (self.session.config.system_prompt or "").strip()
+        raw_prompt = (
+            self._resolved_system_prompt
+            if self._resolved_system_prompt is not None
+            else (self.session.config.system_prompt or "")
+        )
+        custom_prompt = raw_prompt.strip()
         target_thread = thread or (
             self.session.get_open_thread()
             if self.session.is_active or self.session.threads
@@ -1661,7 +1831,7 @@ class SessionAgentRunner:
                 self.session.agent_id, self.session.id, new_thread.id, new_thread.events
             )
             ws_mgr.commit_state_changes(self.session.agent_id, self.session.id, new_thread.id)
-            ws_mgr.commit_session_config(self.session)
+            ws_mgr.commit_session_config(self.session, secret_versions=self._loaded_secret_versions)
         except Exception:
             logger.exception("Failed to persist thread transition for session %s", self.session.id)
 
@@ -2084,6 +2254,10 @@ class SessionAgentRunner:
 
         ws_mgr = get_workspace_manager()
         ws_mgr.sync_session_workspace(self.session)
+        try:
+            await self.refresh_secrets()
+        except Exception:
+            logger.debug("Error refreshing secrets at start of _run_loop", exc_info=True)
 
         request_agent = self._agent.clone()
         with logfire.span(
@@ -2160,7 +2334,9 @@ class SessionAgentRunner:
                             ws_mgr.commit_state_changes(
                                 self.session.agent_id, self.session.id, thread.id
                             )
-                            ws_mgr.commit_session_config(self.session)
+                            ws_mgr.commit_session_config(
+                                self.session, secret_versions=self._loaded_secret_versions
+                            )
                         except Exception:
                             logger.exception(
                                 "Failed to commit state changes on turn completion "

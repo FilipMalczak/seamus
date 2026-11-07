@@ -194,9 +194,37 @@ export interface SystemGiteaInfo {
   owner: string | null;
 }
 
+export interface SystemVaultInfo {
+  enabled: boolean;
+  url: string | null;
+  login_url?: string | null;
+}
+
 export interface SystemInfoResponse {
   logfire: SystemLogfireInfo;
   gitea: SystemGiteaInfo;
+  vault?: SystemVaultInfo;
+}
+
+export interface VaultSecretItem {
+  path: string;
+  keys: string[];
+  version?: number | null;
+}
+
+export interface VaultSecretListResponse {
+  secrets: VaultSecretItem[];
+}
+
+export interface VaultSecretDetailResponse {
+  path: string;
+  keys: string[];
+  current_version: number | null;
+  versions: number[];
+}
+
+export interface VaultTokenResponse {
+  token: string | null;
 }
 
 export type SessionDiffResponse = {

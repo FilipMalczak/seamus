@@ -921,8 +921,12 @@ class HarnessStore:
                 if not main_raw:
                     continue
                 try:
+                    from seamus.vault.interpolator import strip_secret_versions
+
                     agent_payload = json.loads(main_raw)
-                    agent_config = AgentConfig.model_validate(agent_payload.get("config", {}))
+                    agent_config = AgentConfig.model_validate(
+                        strip_secret_versions(agent_payload.get("config", {}))
+                    )
                     created_at_str = agent_payload.get("created_at")
                     agent_created_at = (
                         datetime.fromisoformat(created_at_str)
@@ -955,8 +959,19 @@ class HarnessStore:
                         continue
                     try:
                         session_payload = json.loads(session_raw)
+                        persisted_config = session_payload.get("config", {})
+                        from seamus.vault.parser import find_secret_references
+
+                        loaded_secret_versions: dict[str, int] = {}
+                        for _, ref in find_secret_references(
+                            json.dumps(persisted_config), allow_version=True
+                        ):
+                            if ref.version is not None:
+                                loaded_secret_versions[f"{ref.normalized_path}:{ref.field}"] = (
+                                    ref.version
+                                )
                         session_config = AgentConfig.model_validate(
-                            session_payload.get("config", {})
+                            strip_secret_versions(persisted_config)
                         )
                         session_created_at_str = session_payload.get("created_at")
                         session_created_at = (
@@ -992,6 +1007,7 @@ class HarnessStore:
                             config=session_config,
                             status=session_status,
                             active_plan_id=session_payload.get("active_plan_id"),
+                            secret_versions=loaded_secret_versions,
                             provenance=provenance,
                             lineage=lineage,
                             created_at=session_created_at,

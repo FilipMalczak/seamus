@@ -77,6 +77,9 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 11. **Artifact Subsystem & Bundled Skills (`seamus.harness.artifacts`, `seamus.skills.bundled`)**:
    - Location: `src/seamus/harness/artifacts.py`, `src/seamus/domain/artifacts.py`, `src/seamus/skills/bundled/`
    - Responsibility: Persistence, validation, and auto-synthesis of A2UI subset renderable artifacts under `<session_workspace>/artifacts/<family>/<uuid>/` (`manifest.json`, `body.json`, `state.json`, `closed.marker`, `interactions/<button_id>.json`). Houses atomic builders (`make_artifact`, `make_questionnaire`, `make_form`, `make_plan`), pre-render surface validation (`validate_a2ui_surface`), static structure warning checks (`check_a2ui_surface_warnings`), loose component tree normalization and auto-repair with mutation logging (`normalize_a2ui_components`, `auto_declare_manifest_buttons`), and agent tools (`wait_for_click`). Manages `/skills/bundled` mounted read-only into OpenSandbox containers at highest priority, backed by shared workspace volume storage in containerized setups.
+12. **Secrets Vault Subsystem (`seamus.vault`, `openbao`)**:
+   - Location: `src/seamus/vault/`, `src/seamus/server/routes/vault.py`, `openbao/`
+   - Responsibility: OpenBao KV v2 secrets vault client (`VaultClient`), symbolic `${secret(...)}` parser (`parse_secret_reference`, `find_secret_references`), in-memory configuration interpolation (`resolve_secrets_with_versions`), session branch and checkpoint version explosion (`explode_secret_references`, `strip_secret_versions`, `get_secret_versions_for_references_sync`), and REST endpoints (`/api/v-alpha/vault/secrets`, `/api/v-alpha/vault/token`). Orchestrates per-inference secret version watching in `SessionAgentRunner` and persistent config explosion in `GitWorkspaceManager` and `GitCheckpointSaver`.
 
 ## Cross-References
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
@@ -114,6 +117,7 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 - [0038-a2ui-root-component-and-incomplete-structure-warning.md](../decisions/0038-a2ui-root-component-and-incomplete-structure-warning.md)
 - [0039-loose-artifact-normalization-and-mutation-log.md](../decisions/0039-loose-artifact-normalization-and-mutation-log.md)
 - [0040-session-level-ui-view-and-unified-thread-feed.md](../decisions/0040-session-level-ui-view-and-unified-thread-feed.md)
+- [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md)
 - [artifacts.md](./artifacts.md)
 - [threads_modes_personas.md](./threads_modes_personas.md)
 - [abstractions.md](./abstractions.md)

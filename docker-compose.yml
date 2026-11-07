@@ -61,6 +61,61 @@ services:
     volumes:
       - gitea-data:/data
 
+  openbao-db-init:
+    image: postgres:16-alpine
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        PGPASSWORD="$${POSTGRES_PASSWORD:-gitea}" psql -h postgres -U "$${POSTGRES_USER:-gitea}" -d "$${POSTGRES_DB:-gitea}" -c '
+        CREATE TABLE IF NOT EXISTS vault_kv_store (
+          parent_path TEXT COLLATE "C" NOT NULL,
+          path        TEXT COLLATE "C",
+          key         TEXT COLLATE "C",
+          value       BYTEA,
+          CONSTRAINT vault_kv_store_pkey PRIMARY KEY (path, key)
+        );
+        CREATE INDEX IF NOT EXISTS parent_path_idx ON vault_kv_store (parent_path);
+        CREATE TABLE IF NOT EXISTS vault_ha_locks (
+          ha_key      TEXT COLLATE "C" NOT NULL,
+          ha_identity TEXT COLLATE "C" NOT NULL,
+          ha_value    TEXT COLLATE "C",
+          valid_until TIMESTAMP WITH TIME ZONE NOT NULL,
+          CONSTRAINT vault_ha_locks_pkey PRIMARY KEY (ha_key)
+        );
+        '
+
+  openbao:
+    image: openbao/openbao:latest
+    restart: unless-stopped
+    environment:
+      - BAO_ADDR=http://127.0.0.1:8200
+    volumes:
+      - ./openbao/config.hcl:/openbao/config/config.hcl:ro
+    ports:
+      - "8200:8200"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      openbao-db-init:
+        condition: service_completed_successfully
+    command: ["server"]
+
+  openbao-init:
+    image: openbao/openbao:latest
+    user: "0:0"
+    restart: "no"
+    depends_on:
+      openbao:
+        condition: service_started
+    volumes:
+      - ./openbao/init.sh:/init.sh:ro
+      - openbao-auth:/var/run/seamus-openbao
+    entrypoint: ["/bin/sh", "/init.sh"]
+
   opensandbox:
     build:
       context: ./opensandbox
@@ -92,12 +147,17 @@ services:
       - OPENSANDBOX_WORKSPACE_VOLUME=seamus-workspaces
       - SEAMUS_OPENSANDBOX_KEY_FILE=/var/run/seamus-opensandbox/api_key
       - SEAMUS_HOST_HOME=${HOME:-}
+      - OPENBAO_URL=${OPENBAO_URL:-http://openbao:8200}
+      - OPENBAO_EXTERNAL_URL=${OPENBAO_EXTERNAL_URL:-http://localhost:8200}
+      - OPENBAO_TOKEN_FILE=/var/run/seamus-openbao/root_token
     env_file:
       - path: .env
         required: false
+        format: raw
     volumes:
       - backend-workspaces:/app/workspaces
       - opensandbox-auth:/var/run/seamus-opensandbox:ro
+      - openbao-auth:/var/run/seamus-openbao:ro
       - ${HOME:-/root}:${HOME:-/root}:ro
     ports:
       - "8000:8000"
@@ -105,6 +165,8 @@ services:
       gitea:
         condition: service_healthy
       gitea-init:
+        condition: service_completed_successfully
+      openbao-init:
         condition: service_completed_successfully
       opensandbox:
         condition: service_healthy
@@ -126,3 +188,4 @@ volumes:
     name: seamus-workspaces
   opensandbox-data:
   opensandbox-auth:
+  openbao-auth:

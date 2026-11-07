@@ -2,7 +2,7 @@
 
 import base64
 import logging
-from collections.abc import AsyncIterator, Iterator, Sequence
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from typing import Any
 from uuid import UUID
 
@@ -16,8 +16,10 @@ from langgraph.checkpoint.base import (
 )
 from langgraph.checkpoint.memory import MemorySaver
 
+from seamus.domain.entities import Session
 from seamus.domain.resolution import parse_uuid
 from seamus.persistence.workspace import GitWorkspaceManager, get_workspace_manager
+from seamus.vault.interpolator import explode_secret_references
 
 logger = logging.getLogger(__name__)
 
@@ -77,12 +79,16 @@ class GitCheckpointSaver(MemorySaver):
         session_id: UUID,
         workspace_manager: GitWorkspaceManager | None = None,
         inner: BaseCheckpointSaver[Any] | None = None,
+        session: Session | None = None,
+        secret_versions_provider: Callable[[], Mapping[tuple[str, str], int]] | None = None,
     ) -> None:
         super().__init__()
         self.agent_id = agent_id
         self.session_id = session_id
         self.workspace_manager = workspace_manager or get_workspace_manager()
         self.inner = inner
+        self.session = session
+        self.secret_versions_provider = secret_versions_provider
         self._load_from_workspace()
 
     def copy_thread(self, source_thread_id: str, target_thread_id: str) -> None:
@@ -261,6 +267,21 @@ class GitCheckpointSaver(MemorySaver):
             if todos:
                 self.workspace_manager.save_thread_todos(
                     self.agent_id, self.session_id, target_uuid, todos
+                )
+
+            if self.session is not None:
+                version_map = (
+                    self.secret_versions_provider()
+                    if self.secret_versions_provider is not None
+                    else {}
+                )
+                exploded_cfg = explode_secret_references(
+                    self.session.config.model_dump(),
+                    version_map,
+                )
+                self.workspace_manager.write_session_config_file(
+                    self.session,
+                    config_dict=exploded_cfg,
                 )
         except Exception:
             logger.exception("Failed to save checkpoint to disk for session %s", self.session_id)

@@ -86,8 +86,18 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `AgentInspector`: Tabbed agent inspection console surfacing decomposed system prompts (composite, scaffold, custom) with Markdown rendering and copy action, tool inventory with expandable JSON parameter schemas, inference runtime parameters, message trajectory, active task list (`todos`), and workspace file listing.
 - `ChangesViewer`: Tabbed session changes view rendering the active Sync PR unified diff using `@pierre/diffs` with unified/split mode toggle, hierarchical Tree and flat List file navigation sidebar with status badges and diff stats, per-file collapsible diff cards, external Gitea PR link, manual and automatic live turn-transition/polling refresh, and the relocated "Accept" button.
 - `ConfigModal`: Modal editor for agent and session configuration supporting both a structured Form view (model presets + custom identifier, inference format, base URL presets, API key toggle/clear, middleware implementation selectors, and system prompt) and a Raw JSON editor with syntax validation and formatting.
-- `SettingsModal`: Modal editor for system settings (managing `skill_directories` via path list and raw JSON with a prominent warning against system-level skills).
+- `SettingsModal`: Modal editor for system settings featuring `General` (managing `skill_directories` via path list and raw JSON with a prominent warning against system-level skills) and `Secrets` (revealing the OpenBao login token, listing secrets with copyable `${secret(...)}` pills, and creating/updating secrets in OpenBao).
 - `A2UIArtifactRenderer`: Front-end component rendering A2UI basic component surfaces (`body.json`) within chat message bubbles and dedicated panel tabs, handling evaluated button clicks, comment review pushes, and disabled state for closed/read-only artifacts.
+
+### Secrets Vault Subsystem (`seamus.vault`)
+- `SecretReference`: Immutable dataclass (`path`, `field="value"`, `version=None`, `raw_expression=""`) providing `normalized_path`, `to_exploded_expression(resolved_version)`, and `to_unversioned_expression()`.
+- `ResolvedSecretField`: Immutable dataclass (`value: str`, `version: int`) representing a resolved string field and its OpenBao version.
+- `VaultSettings`: Pydantic settings model (`base_url`, `external_url`, `token`, `token_file`, `mount="secret"`, `login_url`) loaded from environment or `/var/run/seamus-openbao/root_token`.
+- `VaultClient`: Async and sync client for OpenBao KV v2 (`get_secret_with_version`, `get_secret_field_with_version`, `get_secret_metadata`, `set_secret`, `list_secrets`, plus `*_sync` counterparts).
+- `parse_secret_reference` / `find_secret_references`: Parser for `${secret('/path')}` and `${secret(path='/path', field='value')}` with `allow_version: bool` enforcement.
+- `resolve_secrets_with_versions` / `resolve_secrets_with_versions_sync`: Deep in-memory secret interpolation returning `(resolved_model, version_map)` without mutating the source Pydantic model.
+- `explode_secret_references` / `strip_secret_versions`: Helpers rewriting secret expressions with explicit `path=`, `field=`, and `version=` for session config and checkpoint commits (`GitWorkspaceManager`, `GitCheckpointSaver`) and stripping `version=` upon hydration from Gitea (`HarnessStore`, `ConfigTemplateStore`).
+- `get_secret_versions_for_references_sync`: Helper resolving current versions for referenced secrets from memory or vault queries without leaking secret values.
 
 ### Artifacts Subsystem (`seamus.domain.artifacts`, `seamus.harness.artifacts`)
 - `ManifestButton`: Pydantic model (`id: str`, `mode: Literal["set", "append"]`, `clicks: int | Literal["*"]`, `unblocking: bool`, `closing: bool`).
@@ -141,6 +151,7 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - [0038-a2ui-root-component-and-incomplete-structure-warning.md](../decisions/0038-a2ui-root-component-and-incomplete-structure-warning.md)
 - [0039-loose-artifact-normalization-and-mutation-log.md](../decisions/0039-loose-artifact-normalization-and-mutation-log.md)
 - [0040-session-level-ui-view-and-unified-thread-feed.md](../decisions/0040-session-level-ui-view-and-unified-thread-feed.md)
+- [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md)
 - [artifacts.md](./artifacts.md)
 - [architecture.md](./architecture.md)
 - [backlog.md](./backlog.md)
