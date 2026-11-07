@@ -172,45 +172,267 @@ NORMALIZABLE_COMPONENT_TYPES = {
 
 SUPPORTED_COMPONENT_TYPES = BASIC_CATALOG_COMPONENT_TYPES | NORMALIZABLE_COMPONENT_TYPES
 
+CANONICAL_COMPONENT_MAP: dict[str, str] = {
+    "text": "Text",
+    "heading": "Text",
+    "header": "Text",
+    "paragraph": "Text",
+    "label": "Text",
+    "button": "Button",
+    "btn": "Button",
+    "column": "Column",
+    "col": "Column",
+    "row": "Row",
+    "card": "Card",
+    "divider": "Divider",
+    "separator": "Divider",
+    "image": "Image",
+    "img": "Image",
+    "tabs": "Tabs",
+    "modal": "Modal",
+    "dialog": "Modal",
+    "choicepicker": "ChoicePicker",
+    "choiceset": "ChoicePicker",
+    "select": "ChoicePicker",
+    "dropdown": "ChoicePicker",
+    "radio": "ChoicePicker",
+    "radiogroup": "ChoicePicker",
+    "textfield": "TextField",
+    "textinput": "TextField",
+    "input": "TextField",
+    "checkbox": "CheckBox",
+    "slider": "Slider",
+    "datetimeinput": "DateTimeInput",
+    "dateinput": "DateTimeInput",
+}
+
+COMPONENT_TYPE_ALIAS_KEYS = ("type", "component_type", "componentType", "widget", "kind")
+
 RELAXED_PATH_PATTERN = re.compile(
     r"^(?:(?:/(?:[^~/]|~[01])*)*|(?:[^~/]|~[01])+(?:/(?:[^~/]|~[01])*)*)$"
 )
 
 
-def normalize_a2ui_components(components: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def auto_declare_manifest_buttons(
+    manifest: ArtifactManifest | dict[str, Any] | None,
+    components: list[dict[str, Any]],
+    mutation_log: list[str] | None = None,
+) -> None:
+    """Ensure any Button present in components is declared in manifest.buttons."""
+    if manifest is None:
+        return
+
+    manifest_button_ids: set[str] = set()
+    if isinstance(manifest, ArtifactManifest):
+        manifest_button_ids = {btn.id for btn in manifest.buttons}
+    elif isinstance(manifest, dict):
+        btns = manifest.get("buttons") or []
+        if isinstance(btns, list):
+            manifest_button_ids = {
+                str(b["id"])
+                for b in btns
+                if isinstance(b, dict) and "id" in b and b["id"] is not None
+            }
+
+    for comp in components:
+        if not isinstance(comp, dict):
+            continue
+        c_type, _ = _extract_component_type_and_props(comp)
+        if c_type == "Button":
+            b_id = comp.get("id")
+            if isinstance(b_id, str) and b_id not in manifest_button_ids:
+                manifest_button_ids.add(b_id)
+                if isinstance(manifest, ArtifactManifest):
+                    manifest.buttons.append(ManifestButton(id=b_id, mode="set", clicks=1))
+                elif isinstance(manifest, dict):
+                    if "buttons" not in manifest or not isinstance(manifest["buttons"], list):
+                        manifest["buttons"] = []
+                    manifest["buttons"].append({"id": b_id, "mode": "set", "clicks": 1})
+                if mutation_log is not None:
+                    mutation_log.append(f"Auto-declared button '{b_id}' in manifest.buttons.")
+
+
+def normalize_a2ui_components(
+    components: Any,
+    mutation_log: list[str] | None = None,
+) -> list[dict[str, Any]]:
     """Normalize components into standard A2UI basicCatalog specifications.
 
-    Seamlessly adapts legacy or custom shapes (like ChoiceSet -> ChoicePicker,
-    TextInput -> TextField, Text variant 'bold' -> Markdown body), matching
+    Loosely parses input (handling JSON strings, wrapper dicts, missing IDs,
+    type aliases, button label shortcuts, and card adaptations), matching
     the front-end A2UIArtifactRenderer normalizeComponents behavior.
     """
+
+    def record_mutation(msg: str) -> None:
+        if mutation_log is not None:
+            mutation_log.append(msg)
+
+    raw_list: Any = components
+    if isinstance(raw_list, str):
+        try:
+            raw_list = json.loads(raw_list)
+            record_mutation("Parsed component list from JSON string.")
+        except Exception:
+            return []
+
+    if isinstance(raw_list, dict):
+        if "components" in raw_list and isinstance(raw_list["components"], list):
+            raw_list = raw_list["components"]
+            record_mutation("Extracted component list from dictionary 'components' key.")
+        elif "body" in raw_list and isinstance(raw_list["body"], list):
+            raw_list = raw_list["body"]
+            record_mutation("Extracted component list from dictionary 'body' key.")
+        elif "surface" in raw_list and isinstance(raw_list["surface"], dict):
+            surf_comps = raw_list["surface"].get("components")
+            if isinstance(surf_comps, list):
+                raw_list = surf_comps
+                record_mutation("Extracted component list from 'surface.components'.")
+            else:
+                raw_list = [raw_list]
+        else:
+            raw_list = [raw_list]
+
+    if not isinstance(raw_list, list):
+        return []
+
+    existing_ids: set[str] = set()
+    for item in raw_list:
+        if isinstance(item, dict):
+            c_id = item.get("id")
+            if isinstance(c_id, str) and c_id.strip():
+                existing_ids.add(c_id.strip())
+
     normalized: list[dict[str, Any]] = []
-    for comp in components:
+    extra_components: list[dict[str, Any]] = []
+    seen_ids_in_pass: set[str] = set()
+
+    for idx, comp in enumerate(raw_list):
         if not isinstance(comp, dict):
             normalized.append(comp)
             continue
 
         c = dict(comp)
-        # Flatten legacy v0.8 nested component wrapping if present
+
+        # 1. Component type alias resolution ("type", "component_type", "componentType", etc.)
+        comp_field = c.get("component")
+        if not comp_field or not isinstance(comp_field, str):
+            for alias_key in COMPONENT_TYPE_ALIAS_KEYS:
+                if alias_key in c and isinstance(c[alias_key], str) and c[alias_key].strip():
+                    alias_val = c.pop(alias_key)
+                    c["component"] = alias_val.strip()
+                    record_mutation(
+                        f"Renamed '{alias_key}' ('{alias_val}') to 'component' "
+                        f"on component at index {idx}."
+                    )
+                    break
+
+        # Flatten legacy v0.8 nested component wrapping if present (e.g. {"Text": {"text": ...}})
         comp_field = c.get("component")
         if isinstance(comp_field, dict) and len(comp_field) == 1:
             type_name = next(iter(comp_field.keys()))
             props = comp_field[type_name]
             if isinstance(props, dict):
                 c = {"id": c.get("id"), "component": type_name, **props}
+                record_mutation(
+                    f"Flattened nested '{type_name}' definition into component at index {idx}."
+                )
         elif comp_field is None:
             for supported in SUPPORTED_COMPONENT_TYPES:
                 if supported in c and isinstance(c[supported], dict):
                     props = c.pop(supported)
                     c["component"] = supported
                     c.update(props)
+                    record_mutation(
+                        f"Flattened nested '{supported}' key into component at index {idx}."
+                    )
                     break
+
+        # Property-based component type inference if still missing
+        if not c.get("component") or not isinstance(c.get("component"), str):
+            inferred: str | None = None
+            if "text" in c:
+                inferred = "Text"
+            elif "options" in c or "choices" in c:
+                inferred = "ChoicePicker"
+            elif "children" in c:
+                inferred = "Column"
+            elif "child" in c:
+                inferred = "Card"
+            elif "url" in c or "src" in c:
+                inferred = "Image"
+            elif "tabs" in c:
+                inferred = "Tabs"
+            elif "action" in c:
+                inferred = "Button"
+            elif "validationRegexp" in c:
+                inferred = "TextField"
+
+            if inferred:
+                c["component"] = inferred
+                record_mutation(
+                    f"Inferred component type '{inferred}' from properties at index {idx}."
+                )
+
+        # Canonicalize component type (case-insensitive and alias mapping)
+        if isinstance(c.get("component"), str):
+            orig_type = c["component"]
+            canon = CANONICAL_COMPONENT_MAP.get(orig_type.lower())
+            if canon:
+                if canon != orig_type:
+                    c["component"] = canon
+                    if orig_type.lower() in ("heading", "header") and "variant" not in c:
+                        c["variant"] = "h2"
+                    record_mutation(
+                        f"Normalized component type '{orig_type}' to '{canon}' at index {idx}."
+                    )
+
+        # 2. ID resolution: Auto-assign ID if missing or empty
+        c_id = c.get("id")
+        if not c_id or not isinstance(c_id, str) or not c_id.strip():
+            prefix = str(c.get("component") or "comp").lower()
+            candidate = f"{prefix}_{idx}"
+            counter = 1
+            while candidate in existing_ids:
+                candidate = f"{prefix}_{idx}_{counter}"
+                counter += 1
+            existing_ids.add(candidate)
+            c["id"] = candidate
+            record_mutation(
+                f"Auto-assigned id='{candidate}' to component at index {idx} (missing ID)."
+            )
+        else:
+            c["id"] = c_id.strip()
+            if c["id"] in seen_ids_in_pass:
+                orig_id = c["id"]
+                candidate = f"{orig_id}_{idx}"
+                counter = 1
+                while candidate in existing_ids:
+                    candidate = f"{orig_id}_{idx}_{counter}"
+                    counter += 1
+                existing_ids.add(candidate)
+                c["id"] = candidate
+                record_mutation(
+                    f"Deduplicated ID for component at index {idx} from '{orig_id}' "
+                    f"to '{candidate}'."
+                )
+            else:
+                seen_ids_in_pass.add(c["id"])
 
         c_type = c.get("component")
 
+        # 3. Component-specific adaptations
         if c_type == "Text":
             variant = c.get("variant")
             text = c.get("text")
+            if text is None:
+                for text_alias in ("content", "body", "value", "label"):
+                    if text_alias in c:
+                        text = str(c.pop(text_alias))
+                        record_mutation(
+                            f"Mapped '{text_alias}' to 'text' on Text component '{c['id']}'."
+                        )
+                        break
+
             if variant == "bold":
                 variant = "body"
                 if isinstance(text, str) and not text.startswith("**"):
@@ -263,7 +485,7 @@ def normalize_a2ui_components(components: list[dict[str, Any]]) -> list[dict[str
             val = c.get("value")
             if not (isinstance(val, dict) and "path" in val) and val is None:
                 val = ""
-            label = c.get("label") or c.get("placeholder") or ""
+            label = c.get("label") or c.get("placeholder") or c.get("id", "")
             res = {k: v for k, v in c.items() if k not in {"placeholder"}}
             res["component"] = "TextField"
             res["label"] = label
@@ -282,10 +504,170 @@ def normalize_a2ui_components(components: list[dict[str, Any]]) -> list[dict[str
                         "context": {},
                     }
                 }
+                record_mutation(f"Auto-generated default action for Button component '{c['id']}'.")
+
+            if not c.get("child") or not isinstance(c.get("child"), str):
+                label_text = c.pop("label", None) or c.pop("text", None) or c.pop("title", None)
+                if label_text is None:
+                    label_text = c["id"]
+                btn_label_id = f"{c['id']}_label"
+                counter = 1
+                while btn_label_id in existing_ids:
+                    btn_label_id = f"{c['id']}_label_{counter}"
+                    counter += 1
+                existing_ids.add(btn_label_id)
+                extra_components.append(
+                    {"id": btn_label_id, "component": "Text", "text": str(label_text)}
+                )
+                c["child"] = btn_label_id
+                record_mutation(f"Synthesized child Text '{btn_label_id}' for Button '{c['id']}'.")
+
+            normalized.append(c)
+            continue
+
+        if c_type == "Card":
+            if not c.get("child") or not isinstance(c.get("child"), str):
+                if "children" in c and isinstance(c["children"], list):
+                    card_children = c.pop("children")
+                    if len(card_children) == 1 and isinstance(card_children[0], str):
+                        c["child"] = card_children[0]
+                        record_mutation(
+                            f"Converted Card '{c['id']}' children array to child "
+                            f"reference '{c['child']}'."
+                        )
+                    else:
+                        card_col_id = f"{c['id']}_col"
+                        counter = 1
+                        while card_col_id in existing_ids:
+                            card_col_id = f"{c['id']}_col_{counter}"
+                            counter += 1
+                        existing_ids.add(card_col_id)
+                        extra_components.append(
+                            {"id": card_col_id, "component": "Column", "children": card_children}
+                        )
+                        c["child"] = card_col_id
+                        record_mutation(
+                            f"Synthesized inner Column '{card_col_id}' for Card '{c['id']}'."
+                        )
+                elif "title" in c or "body" in c or "content" in c:
+                    title_val = c.pop("title", None)
+                    body_val = c.pop("body", None) or c.pop("content", None)
+                    inner_ids: list[str] = []
+                    if title_val is not None:
+                        t_id = f"{c['id']}_title"
+                        counter = 1
+                        while t_id in existing_ids:
+                            t_id = f"{c['id']}_title_{counter}"
+                            counter += 1
+                        existing_ids.add(t_id)
+                        extra_components.append(
+                            {
+                                "id": t_id,
+                                "component": "Text",
+                                "text": str(title_val),
+                                "variant": "h3",
+                            }
+                        )
+                        inner_ids.append(t_id)
+                    if body_val is not None:
+                        if isinstance(body_val, list):
+                            for b_item in body_val:
+                                if isinstance(b_item, dict):
+                                    norm_items = normalize_a2ui_components([b_item])
+                                    top_children: list[str] = []
+                                    if norm_items and norm_items[0].get("id") == "root":
+                                        raw_top = norm_items[0].get("children")
+                                        if isinstance(raw_top, list):
+                                            top_children = [str(x) for x in raw_top]
+                                    for ni in norm_items:
+                                        if ni.get("id") != "root":
+                                            extra_components.append(ni)
+                                    for tc in top_children:
+                                        if tc not in inner_ids:
+                                            inner_ids.append(tc)
+                                elif isinstance(b_item, str):
+                                    if b_item in existing_ids:
+                                        inner_ids.append(b_item)
+                                    else:
+                                        b_id = f"{c['id']}_item"
+                                        counter = 1
+                                        while b_id in existing_ids:
+                                            b_id = f"{c['id']}_item_{counter}"
+                                            counter += 1
+                                        existing_ids.add(b_id)
+                                        extra_components.append(
+                                            {"id": b_id, "component": "Text", "text": b_item}
+                                        )
+                                        inner_ids.append(b_id)
+                        elif isinstance(body_val, str) and body_val in existing_ids:
+                            inner_ids.append(body_val)
+                        else:
+                            b_id = f"{c['id']}_body"
+                            counter = 1
+                            while b_id in existing_ids:
+                                b_id = f"{c['id']}_body_{counter}"
+                                counter += 1
+                            existing_ids.add(b_id)
+                            extra_components.append(
+                                {
+                                    "id": b_id,
+                                    "component": "Text",
+                                    "text": str(body_val),
+                                    "variant": "body",
+                                }
+                            )
+                            inner_ids.append(b_id)
+                    card_col_id = f"{c['id']}_col"
+                    counter = 1
+                    while card_col_id in existing_ids:
+                        card_col_id = f"{c['id']}_col_{counter}"
+                        counter += 1
+                    existing_ids.add(card_col_id)
+                    extra_components.append(
+                        {"id": card_col_id, "component": "Column", "children": inner_ids}
+                    )
+                    c["child"] = card_col_id
+                    record_mutation(
+                        f"Adapted Card '{c['id']}' with title/body into child "
+                        f"Column '{card_col_id}'."
+                    )
+                else:
+                    empty_id = f"{c['id']}_empty"
+                    counter = 1
+                    while empty_id in existing_ids:
+                        empty_id = f"{c['id']}_empty_{counter}"
+                        counter += 1
+                    existing_ids.add(empty_id)
+                    extra_components.append({"id": empty_id, "component": "Text", "text": ""})
+                    c["child"] = empty_id
+                    record_mutation(f"Defaulted empty child Text for Card '{c['id']}'.")
+
+            normalized.append(c)
+            continue
+
+        if c_type in ("Column", "Row"):
+            if "children" not in c or not isinstance(c["children"], list):
+                if "child" in c and isinstance(c["child"], str):
+                    c["children"] = [c.pop("child")]
+                    record_mutation(
+                        f"Converted singular 'child' to 'children' on {c_type} '{c['id']}'."
+                    )
+                else:
+                    c["children"] = []
+                    record_mutation(f"Defaulted missing 'children' to [] on {c_type} '{c['id']}'.")
+            normalized.append(c)
+            continue
+
+        if c_type == "Image":
+            if "src" in c and "url" not in c:
+                c["url"] = c.pop("src")
+                record_mutation(f"Renamed 'src' to 'url' on Image '{c['id']}'.")
             normalized.append(c)
             continue
 
         normalized.append(c)
+
+    normalized.extend(extra_components)
 
     # Ensure there is a root component for A2UI MessageProcessor/NodeResolver
     has_root = any(isinstance(c, dict) and c.get("id") == "root" for c in normalized)
@@ -327,6 +709,10 @@ def normalize_a2ui_components(components: list[dict[str, Any]]) -> list[dict[str
                     "component": "Column",
                     "children": root_candidates,
                 },
+            )
+            record_mutation(
+                f"Auto-synthesized root 'Column' container enclosing top-level component(s): "
+                f"{', '.join(root_candidates)}."
             )
 
     return normalized
@@ -480,6 +866,7 @@ def validate_a2ui_surface(
     components: Any,
     manifest: ArtifactManifest | dict[str, Any] | None = None,
     initial_data: dict[str, Any] | None = None,
+    auto_declare_buttons: bool = False,
 ) -> list[str]:
     """Validate that the components and manifest form a valid, renderable A2UI surface.
 
@@ -489,44 +876,50 @@ def validate_a2ui_surface(
     """
     errors: list[str] = []
 
-    if not isinstance(components, list):
+    raw_list: Any = components
+    if isinstance(raw_list, str):
+        try:
+            raw_list = json.loads(raw_list)
+        except Exception:
+            errors.append(
+                f"components must be a list of component objects, got {type(components).__name__}."
+            )
+            return errors
+
+    if isinstance(raw_list, dict):
+        if "components" in raw_list and isinstance(raw_list["components"], list):
+            raw_list = raw_list["components"]
+        elif "body" in raw_list and isinstance(raw_list["body"], list):
+            raw_list = raw_list["body"]
+
+    if not isinstance(raw_list, list):
         errors.append(
             f"components must be a list of component objects, got {type(components).__name__}."
         )
         return errors
 
-    if len(components) == 0:
+    if len(raw_list) == 0:
         errors.append("components list cannot be empty.")
         return errors
 
-    seen_ids: set[str] = set()
-
-    # 1. Structural check: each component must be a dict with a valid ID
-    for idx, comp in enumerate(components):
+    for idx, comp in enumerate(raw_list):
         if not isinstance(comp, dict):
             errors.append(
                 f"Component at index {idx} is not an object/dict (got {type(comp).__name__})."
             )
-            continue
-
-        c_id = comp.get("id")
-        if not c_id or not isinstance(c_id, str):
-            errors.append(f"Component at index {idx} is missing a non-empty string 'id'.")
-            continue
-
-        if c_id in seen_ids:
-            errors.append(f"Duplicate component id '{c_id}' found at index {idx}.")
-            continue
-
-        seen_ids.add(c_id)
-
-    if len(seen_ids) != len(components):
-        # Already reported dict/id errors
+    if errors:
         return errors
 
-    # 2. Normalize components (ChoiceSet -> ChoicePicker, TextInput -> TextField,
-    # bold -> body, synthesize root Column container if missing, etc.)
-    normalized = normalize_a2ui_components(components)
+    # Normalize components loosely (ChoiceSet -> ChoicePicker, TextInput -> TextField,
+    # auto-assign missing IDs, auto-rename type/componentType, synthesize root container, etc.)
+    normalized = normalize_a2ui_components(raw_list)
+    if not normalized:
+        errors.append("components list cannot be empty.")
+        return errors
+
+    if auto_declare_buttons and manifest is not None:
+        auto_declare_manifest_buttons(manifest, normalized)
+
     components_by_id = {c["id"]: c for c in normalized if isinstance(c, dict) and "id" in c}
     normalized_ids = set(components_by_id.keys())
 

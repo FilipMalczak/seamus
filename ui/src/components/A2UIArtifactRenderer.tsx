@@ -56,17 +56,180 @@ interface A2UIArtifactRendererProps {
   readOnly?: boolean;
 }
 
+const CANONICAL_COMPONENT_MAP: Record<string, string> = {
+  text: "Text",
+  heading: "Text",
+  header: "Text",
+  paragraph: "Text",
+  label: "Text",
+  button: "Button",
+  btn: "Button",
+  column: "Column",
+  col: "Column",
+  row: "Row",
+  card: "Card",
+  divider: "Divider",
+  separator: "Divider",
+  image: "Image",
+  img: "Image",
+  tabs: "Tabs",
+  modal: "Modal",
+  dialog: "Modal",
+  choicepicker: "ChoicePicker",
+  choiceset: "ChoicePicker",
+  select: "ChoicePicker",
+  dropdown: "ChoicePicker",
+  radio: "ChoicePicker",
+  radiogroup: "ChoicePicker",
+  textfield: "TextField",
+  textinput: "TextField",
+  input: "TextField",
+  checkbox: "CheckBox",
+  slider: "Slider",
+  datetimeinput: "DateTimeInput",
+  dateinput: "DateTimeInput",
+};
+
+const COMPONENT_TYPE_ALIAS_KEYS = ["type", "component_type", "componentType", "widget", "kind"];
+
 /**
  * Normalizes components into standard A2UI basicCatalog specifications.
  * Seamlessly adapts legacy or custom shapes (like ChoiceSet -> ChoicePicker, Text variant 'bold' -> Markdown body).
  */
-function normalizeComponents(components: Array<Record<string, any>>): Array<Record<string, any>> {
-  const normalized = components.map((comp) => {
-    if (!comp || typeof comp !== "object") return comp;
+function normalizeComponents(components: any): Array<Record<string, any>> {
+  let rawList = components;
+  if (typeof rawList === "string") {
+    try {
+      rawList = JSON.parse(rawList);
+    } catch {
+      return [];
+    }
+  }
 
-    if (comp.component === "Text") {
-      let variant = comp.variant;
-      let text = comp.text;
+  if (rawList && typeof rawList === "object" && !Array.isArray(rawList)) {
+    if (Array.isArray(rawList.components)) {
+      rawList = rawList.components;
+    } else if (Array.isArray(rawList.body)) {
+      rawList = rawList.body;
+    } else if (rawList.surface && Array.isArray(rawList.surface.components)) {
+      rawList = rawList.surface.components;
+    } else {
+      rawList = [rawList];
+    }
+  }
+
+  if (!Array.isArray(rawList)) {
+    return [];
+  }
+
+  const existingIds = new Set<string>();
+  for (const item of rawList) {
+    if (item && typeof item === "object" && typeof item.id === "string" && item.id.trim()) {
+      existingIds.add(item.id.trim());
+    }
+  }
+
+  const extraComponents: Array<Record<string, any>> = [];
+  const seenIdsInPass = new Set<string>();
+
+  const normalized: Array<Record<string, any>> = [];
+
+  for (let idx = 0; idx < rawList.length; idx++) {
+    const comp = rawList[idx];
+    if (!comp || typeof comp !== "object") {
+      normalized.push(comp);
+      continue;
+    }
+
+    const c = { ...comp };
+
+    // 1. Alias resolution for component type
+    if (!c.component || typeof c.component !== "string") {
+      for (const aliasKey of COMPONENT_TYPE_ALIAS_KEYS) {
+        if (typeof c[aliasKey] === "string" && c[aliasKey].trim()) {
+          c.component = c[aliasKey].trim();
+          delete c[aliasKey];
+          break;
+        }
+      }
+    }
+
+    // Property-based component type inference
+    if (!c.component || typeof c.component !== "string") {
+      if (typeof c.text === "string") {
+        c.component = "Text";
+      } else if (Array.isArray(c.options) || Array.isArray(c.choices)) {
+        c.component = "ChoicePicker";
+      } else if (Array.isArray(c.children)) {
+        c.component = "Column";
+      } else if (typeof c.child === "string") {
+        c.component = "Card";
+      } else if (typeof c.url === "string" || typeof c.src === "string") {
+        c.component = "Image";
+      } else if (Array.isArray(c.tabs)) {
+        c.component = "Tabs";
+      } else if (c.action) {
+        c.component = "Button";
+      } else if (c.validationRegexp) {
+        c.component = "TextField";
+      }
+    }
+
+    // Canonicalize component type
+    if (typeof c.component === "string") {
+      const orig = c.component;
+      const canon = CANONICAL_COMPONENT_MAP[orig.toLowerCase()];
+      if (canon) {
+        c.component = canon;
+        if (["heading", "header"].includes(orig.toLowerCase()) && !c.variant) {
+          c.variant = "h2";
+        }
+      }
+    }
+
+    // 2. ID resolution: Auto-assign ID if missing or empty
+    if (!c.id || typeof c.id !== "string" || !c.id.trim()) {
+      const prefix = String(c.component || "comp").toLowerCase();
+      let candidate = `${prefix}_${idx}`;
+      let counter = 1;
+      while (existingIds.has(candidate)) {
+        candidate = `${prefix}_${idx}_${counter}`;
+        counter++;
+      }
+      existingIds.add(candidate);
+      c.id = candidate;
+    } else {
+      c.id = c.id.trim();
+      if (seenIdsInPass.has(c.id)) {
+        const origId = c.id;
+        let candidate = `${origId}_${idx}`;
+        let counter = 1;
+        while (existingIds.has(candidate)) {
+          candidate = `${origId}_${idx}_${counter}`;
+          counter++;
+        }
+        existingIds.add(candidate);
+        c.id = candidate;
+      } else {
+        seenIdsInPass.add(c.id);
+      }
+    }
+
+    // 3. Component-specific adaptations
+    if (c.component === "Text") {
+      let variant = c.variant;
+      let text = c.text;
+      if (text === undefined || text === null) {
+        for (const alias of ["content", "body", "value", "label"]) {
+          if (c[alias] !== undefined) {
+            text = String(c[alias]);
+            delete c[alias];
+            break;
+          }
+        }
+      }
+      if (text === undefined || text === null) text = "";
+
       if (variant === "bold") {
         variant = "body";
         if (typeof text === "string" && !text.startsWith("**")) {
@@ -75,16 +238,17 @@ function normalizeComponents(components: Array<Record<string, any>>): Array<Reco
       } else if (!["h1", "h2", "h3", "h4", "h5", "caption", "body"].includes(variant)) {
         variant = "body";
       }
-      return { ...comp, variant, text };
+      normalized.push({ ...c, variant, text });
+      continue;
     }
 
-    if (comp.component === "ChoiceSet" || comp.component === "ChoicePicker") {
-      const isMulti = Boolean(comp.isMultiSelect || comp.variant === "multipleSelection");
-      const options = (comp.choices || comp.options || []).map((opt: any) => ({
+    if (c.component === "ChoiceSet" || c.component === "ChoicePicker") {
+      const isMulti = Boolean(c.isMultiSelect || c.variant === "multipleSelection");
+      const options = (c.choices || c.options || []).map((opt: any) => ({
         label: opt.label || opt.text || opt.value || opt.id || "",
         value: String(opt.value || opt.id || ""),
       }));
-      let val = comp.value;
+      let val = c.value;
       if (val && typeof val === "object" && "path" in val) {
         // Data model pointer: preserve { path: "..." }
       } else if (Array.isArray(val)) {
@@ -94,50 +258,187 @@ function normalizeComponents(components: Array<Record<string, any>>): Array<Reco
       } else {
         val = [];
       }
-      return {
-        id: comp.id,
+      normalized.push({
+        id: c.id,
         component: "ChoicePicker",
         variant: isMulti ? "multipleSelection" : "mutuallyExclusive",
         options,
         value: val,
-      };
+      });
+      continue;
     }
 
-    if (comp.component === "TextInput" || comp.component === "TextField") {
-      let val = comp.value;
+    if (c.component === "TextInput" || c.component === "TextField") {
+      let val = c.value;
       if (val && typeof val === "object" && "path" in val) {
         // Data model pointer: preserve { path: "..." }
       } else if (val === undefined || val === null) {
         val = "";
       }
-      return {
-        id: comp.id,
+      normalized.push({
+        id: c.id,
         component: "TextField",
-        label: comp.label || comp.placeholder || "",
+        label: c.label || c.placeholder || c.id || "",
         value: val,
-      };
+      });
+      continue;
     }
 
-    if (comp.component === "Button") {
-      let variant = comp.variant;
+    if (c.component === "Button") {
+      let variant = c.variant;
       if (variant && !["default", "primary", "borderless"].includes(variant)) {
         variant = "default";
       }
-      const action = comp.action || {
+      const action = c.action || {
         event: {
-          name: comp.id || "button_click",
+          name: c.id || "button_click",
           context: {},
         },
       };
-      return {
-        ...comp,
+
+      if (!c.child || typeof c.child !== "string") {
+        const labelText = c.label || c.text || c.title || c.id || "Button";
+        let btnLabelId = `${c.id}_label`;
+        let counter = 1;
+        while (existingIds.has(btnLabelId)) {
+          btnLabelId = `${c.id}_label_${counter}`;
+          counter++;
+        }
+        existingIds.add(btnLabelId);
+        extraComponents.push({
+          id: btnLabelId,
+          component: "Text",
+          text: String(labelText),
+        });
+        c.child = btnLabelId;
+      }
+
+      normalized.push({
+        ...c,
         action,
         ...(variant ? { variant } : {}),
-      };
+      });
+      continue;
     }
 
-    return comp;
-  });
+    if (c.component === "Card") {
+      if (!c.child || typeof c.child !== "string") {
+        if (Array.isArray(c.children)) {
+          if (c.children.length === 1 && typeof c.children[0] === "string") {
+            c.child = c.children[0];
+          } else {
+            let cardColId = `${c.id}_col`;
+            let counter = 1;
+            while (existingIds.has(cardColId)) {
+              cardColId = `${c.id}_col_${counter}`;
+              counter++;
+            }
+            existingIds.add(cardColId);
+            extraComponents.push({
+              id: cardColId,
+              component: "Column",
+              children: c.children,
+            });
+            c.child = cardColId;
+          }
+        } else if (c.title || c.body || c.content) {
+          const innerIds: string[] = [];
+          if (c.title) {
+            let tId = `${c.id}_title`;
+            let counter = 1;
+            while (existingIds.has(tId)) {
+              tId = `${c.id}_title_${counter}`;
+              counter++;
+            }
+            existingIds.add(tId);
+            extraComponents.push({
+              id: tId,
+              component: "Text",
+              text: String(c.title),
+              variant: "h3",
+            });
+            innerIds.push(tId);
+          }
+          const bodyVal = c.body || c.content;
+          if (bodyVal) {
+            if (typeof bodyVal === "string" && existingIds.has(bodyVal)) {
+              innerIds.push(bodyVal);
+            } else {
+              let bId = `${c.id}_body`;
+              let counter = 1;
+              while (existingIds.has(bId)) {
+                bId = `${c.id}_body_${counter}`;
+                counter++;
+              }
+              existingIds.add(bId);
+              extraComponents.push({
+                id: bId,
+                component: "Text",
+                text: String(bodyVal),
+                variant: "body",
+              });
+              innerIds.push(bId);
+            }
+          }
+          let cardColId = `${c.id}_col`;
+          let counter = 1;
+          while (existingIds.has(cardColId)) {
+            cardColId = `${c.id}_col_${counter}`;
+            counter++;
+          }
+          existingIds.add(cardColId);
+          extraComponents.push({
+            id: cardColId,
+            component: "Column",
+            children: innerIds,
+          });
+          c.child = cardColId;
+        } else {
+          let emptyId = `${c.id}_empty`;
+          let counter = 1;
+          while (existingIds.has(emptyId)) {
+            emptyId = `${c.id}_empty_${counter}`;
+            counter++;
+          }
+          existingIds.add(emptyId);
+          extraComponents.push({
+            id: emptyId,
+            component: "Text",
+            text: "",
+          });
+          c.child = emptyId;
+        }
+      }
+      normalized.push(c);
+      continue;
+    }
+
+    if (c.component === "Column" || c.component === "Row") {
+      if (!Array.isArray(c.children)) {
+        if (typeof c.child === "string") {
+          c.children = [c.child];
+          delete c.child;
+        } else {
+          c.children = [];
+        }
+      }
+      normalized.push(c);
+      continue;
+    }
+
+    if (c.component === "Image") {
+      if (c.src && !c.url) {
+        c.url = c.src;
+        delete c.src;
+      }
+      normalized.push(c);
+      continue;
+    }
+
+    normalized.push(c);
+  }
+
+  normalized.push(...extraComponents);
 
   // Ensure there is a root component for A2UI MessageProcessor/NodeResolver
   const hasRoot = normalized.some((c: any) => c && c.id === "root");
