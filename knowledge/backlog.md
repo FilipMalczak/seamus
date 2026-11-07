@@ -41,10 +41,10 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Provenance**: [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [artifacts.md](./artifacts.md).
 
 ### Custom Interactive Artifact Authoring
-- **Description**: Provide advanced agent workflows and templates for authoring custom multi-surface A2UI interactive artifacts via `make_artifact` with arbitrary button hierarchies and state models under `/artifacts/custom/`. Note: pre-render surface validation (`validate_a2ui_surface`) was established in [0037-validate-a2ui-surface-render-on-make-artifact.md](../decisions/0037-validate-a2ui-surface-render-on-make-artifact.md) and root container auto-synthesis with static structure warnings in [0038-a2ui-root-component-and-incomplete-structure-warning.md](../decisions/0038-a2ui-root-component-and-incomplete-structure-warning.md).
+- **Description**: Provide advanced agent workflows and templates for authoring custom multi-surface A2UI interactive artifacts via `make_artifact` with arbitrary button hierarchies and state models under `/artifacts/custom/`. Note: pre-render surface validation (`validate_a2ui_surface`) was established in [0037-validate-a2ui-surface-render-on-make-artifact.md](../decisions/0037-validate-a2ui-surface-render-on-make-artifact.md), root container auto-synthesis with static structure warnings in [0038-a2ui-root-component-and-incomplete-structure-warning.md](../decisions/0038-a2ui-root-component-and-incomplete-structure-warning.md), and loose normalization with mutation log feedback in [0039-loose-artifact-normalization-and-mutation-log.md](../decisions/0039-loose-artifact-normalization-and-mutation-log.md).
 - **Why Deferred**: Prioritized specialized, validated artifact families (questionnaires, forms, plans) to establish disk structure and rendering contracts before opening raw artifact creation.
 - **Revisit Trigger**: When introducing custom agent generative UI authoring workflows.
-- **Provenance**: [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [0037-validate-a2ui-surface-render-on-make-artifact.md](../decisions/0037-validate-a2ui-surface-render-on-make-artifact.md), [artifacts.md](./artifacts.md).
+- **Provenance**: [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [0037-validate-a2ui-surface-render-on-make-artifact.md](../decisions/0037-validate-a2ui-surface-render-on-make-artifact.md), [0038-a2ui-root-component-and-incomplete-structure-warning.md](../decisions/0038-a2ui-root-component-and-incomplete-structure-warning.md), [0039-loose-artifact-normalization-and-mutation-log.md](../decisions/0039-loose-artifact-normalization-and-mutation-log.md), [artifacts.md](./artifacts.md).
 
 ### Multi-Mount Repository Support and Dynamic Skill Discovery
 - **Description**: When Seamus introduces support for mounting multiple repositories/projects (e.g., existing user codebases) into the agent's sandbox container, dynamically discover and track both `<mount>/skills` and `<mount>/.skills` directories present across all mounted workspaces as project-level skill sources. In accordance with the established skill precedence hierarchy, non-dotted `skills` takes precedence over dotted `.skills`, and project mounts take precedence after the operational `/workspace` but before ambient system-wide skills.
@@ -272,6 +272,17 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Description**: Add first-class support for Ollama as a local model provider in Seamus, allowing agents to run against locally hosted models without requiring external API keys. Configure base URLs, model selection presets, and streaming adapters compatible with Ollama's API.
 - **Rationale**: Expands Seamus to support fully offline, private, and zero-cost local LLM development workflows.
 - **Provenance**: `src/seamus/config/models.py`, `src/seamus/harness/runner.py`, `ui/src/components/ConfigModal.tsx`.
+
+### Expand A2UI Basic Catalog Widgets Documentation in Skill
+- **Description**: Expand the bundled `a2ui_components` skill (`src/seamus/skills/bundled/a2ui_components/SKILL.md`) with comprehensive documentation, schema specifications, and JSON examples for the remaining supported A2UI basic catalog components:
+  1. `Tabs`: Tabbed container switching between multiple child subtrees (`tabs: [{"title": str, "child": str}]`).
+  2. `Modal`: Overlay dialog component (`trigger: str`, `content: str`).
+  3. `Slider`: Numerical slider input (`min`, `max`, `step`, `value`, `label`).
+  4. `CheckBox`: Boolean toggle input (`label: str`, `value: bool`).
+  5. `DateTimeInput`: Date and time selection widget (`enableDate: bool`, `enableTime: bool`, `value: str`).
+  6. `Image`: Image rendering widget (`url: str`, `fit: "contain" | "cover" | "fill" | "none"`).
+- **Rationale**: The `a2ui_components` skill currently provides in-depth examples for `Column`, `Row`, `Card`, `Text`, `TextField`, `ChoicePicker`, `Button`, and `Divider`. Documenting the full set of basic catalog widgets empowers agents to author richer, multi-tabbed, modal, or continuous-input interactive surfaces without guessing schemas or referencing raw catalog JSON.
+- **Provenance**: `src/seamus/skills/bundled/a2ui_components/SKILL.md`, `src/seamus/harness/artifacts.py` (`A2UI_COMPONENT_SPECS`), [0039-loose-artifact-normalization-and-mutation-log.md](../decisions/0039-loose-artifact-normalization-and-mutation-log.md).
 
 ## Not formalized
 

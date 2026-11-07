@@ -118,8 +118,15 @@ make_artifact(
 ```
 > [!IMPORTANT]
 > `make_artifact` validates the component tree and manifest to ensure the A2UI surface can be rendered without errors:
-> 1. **Mandatory Root**: Exactly one component in `components` should have `"id": "root"` (e.g. a `Column` or `Row`) containing all other widgets as descendants. If `"id": "root"` is omitted or multiple disconnected roots are found, Seamus auto-synthesizes a root `Column` and returns a warning so you can refine the layout.
-> 2. **Render Validation**: If validation fails (e.g. unknown component types, dangling child IDs, cycles, missing required properties, or buttons in `components` not declared in `manifest.buttons`), **the artifact is not stored** and the tool returns the list of errors with a notification stating that the artifact was not stored. When this occurs, inspect the errors, fix the component tree, and call `make_artifact` again.
+> 1. **Mandatory Root**: Exactly one component in `components` should have `"id": "root"` (e.g. a `Column` or `Row`) containing all other widgets as descendants. If `"id": "root"` is omitted or multiple disconnected roots are found, Seamus auto-synthesizes a root `Column` and returns a notice so you can refine the layout.
+> 2. **Loose Normalization & Mutation Log**: To eliminate unnecessary conversational roundtrips, Seamus automatically normalizes common minor syntax variations:
+>    - Missing component `id` values are automatically assigned deterministic unique IDs (e.g. `text_0`, `button_1`).
+>    - Common type aliases (`"type"`, `"component_type"`, `"componentType"`, `"widget"`) and lowercase names (`"text"`, `"button"`, `"heading"`) are automatically converted to standard `"component"` types.
+>    - `Button` elements with inline `label` or `text` automatically receive synthesized child `Text` components.
+>    - `Card` elements with inline `title`, `body`, or `children` are automatically adapted into standard child container subtrees.
+>    - Buttons omitted from `manifest.buttons` are automatically declared.
+>    When any automatic normalization occurs, `make_artifact` returns a `Notice: Automatically normalized component tree:` log alongside the created artifact UUID so you can see exactly how the request was adapted.
+> 3. **Render Validation**: If fatal validation fails (e.g. unknown component types, dangling child IDs, or cycles), **the artifact is not stored** and the tool returns the list of errors with a notification stating that the artifact was not stored. When this occurs, inspect the errors, fix the component tree, and call `make_artifact` again.
 
 ### 4. `make_plan`, `update_plan`, `edit_plan` (Plan Mode)
 - `make_plan(title="Plan", content="# Implementation Plan...")`: Creates the session plan tab with a whitelisted **Proceed** button (`id="proceed-btn"`, `clicks="*"`, `unblocking=true`, `closing=true`) and inline review commenting enabled.

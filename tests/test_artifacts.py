@@ -629,20 +629,25 @@ def test_validate_a2ui_surface_structural_and_hierarchy_errors() -> None:
     # 3. Non-dict element
     assert "not an object/dict" in validate_a2ui_surface(components=["not_a_dict"])[0]
 
-    # 4. Missing ID
-    assert (
-        "missing a non-empty string 'id'"
-        in validate_a2ui_surface(components=[{"component": "Text"}])[0]
+    # 4. Missing ID is auto-assigned and validates cleanly
+    assert validate_a2ui_surface(components=[{"component": "Text", "text": "Hello"}]) == []
+    mutations: list[str] = []
+    norm = normalize_a2ui_components(
+        [{"component": "Text", "text": "Hello"}], mutation_log=mutations
     )
+    assert any("Auto-assigned id=" in m for m in mutations)
+    assert any(c.get("id") == "text_0" for c in norm)
 
-    # 5. Duplicate ID
+    # 5. Duplicate ID is deduplicated and validates cleanly
     dup_comps = [
         {"id": "comp1", "component": "Text", "text": "A"},
         {"id": "comp1", "component": "Text", "text": "B"},
     ]
-    assert any(
-        "Duplicate component id 'comp1'" in e for e in validate_a2ui_surface(components=dup_comps)
-    )
+    mutations_dup: list[str] = []
+    norm_dup = normalize_a2ui_components(dup_comps, mutation_log=mutations_dup)
+    assert any("Deduplicated ID" in m for m in mutations_dup)
+    assert len({c["id"] for c in norm_dup if isinstance(c, dict) and "id" in c}) == len(norm_dup)
+    assert validate_a2ui_surface(components=dup_comps) == []
 
     # 6. Unknown component type
     bad_type_comps = [{"id": "bad1", "component": "SuperUnknownWidget"}]
@@ -875,7 +880,12 @@ def test_make_artifact_stores_valid_surface_and_emits_event() -> None:
     valid_components: list[dict[str, Any]] = [
         {"id": "root", "component": "Column", "children": ["t", "btn-ok"]},
         {"id": "t", "component": "Text", "text": "Valid message"},
-        {"id": "btn-ok", "component": "Button", "child": "btn-lbl"},
+        {
+            "id": "btn-ok",
+            "component": "Button",
+            "child": "btn-lbl",
+            "action": {"event": {"name": "btn_click", "context": {}}},
+        },
         {"id": "btn-lbl", "component": "Text", "text": "Confirm"},
     ]
 
@@ -932,8 +942,8 @@ def test_artifact_builder_create_artifact_with_validate_surface(tmp_path: Path) 
     assert any("references child 'non_existent_id'" in err for err in exc_info.value.errors)
 
 
-def test_validate_a2ui_surface_rejects_card_with_title_and_body() -> None:
-    bad_card = [
+def test_validate_a2ui_surface_adapts_card_with_title_and_body() -> None:
+    card_with_title_and_body = [
         {
             "component": "Card",
             "id": "card_buttons",
@@ -943,23 +953,19 @@ def test_validate_a2ui_surface_rejects_card_with_title_and_body() -> None:
             ],
         }
     ]
-    errors = validate_a2ui_surface(bad_card)
-    assert len(errors) == 1
-    assert errors[0] == (
-        "Validation failed for component 'Card' (card_buttons): "
-        "child: Expected string, received undefined, "
-        "root: Unrecognized key(s) in object: 'title', 'body'"
-    )
+    # Loosely normalized: Card adapts into child Column, Button gets child label, etc.
+    errors = validate_a2ui_surface(card_with_title_and_body)
+    assert errors == []
 
 
-def test_make_artifact_rejects_card_with_title_and_body_and_does_not_store() -> None:
+def test_make_artifact_adapts_card_with_title_and_body_and_stores() -> None:
     store = HarnessStore()
     config = _make_agent_config()
-    agent = store.create_agent(config=config, name="agent-bad-card")
-    session = store.create_session(agent_identifier=str(agent.id), name="session-bad-card")
+    agent = store.create_agent(config=config, name="agent-card-title-body")
+    session = store.create_session(agent_identifier=str(agent.id), name="session-card-title-body")
     runner = SessionAgentRunner(session=session)
 
-    bad_card = [
+    card_payload = [
         {
             "component": "Card",
             "id": "card_buttons",
@@ -970,7 +976,7 @@ def test_make_artifact_rejects_card_with_title_and_body_and_does_not_store() -> 
         }
     ]
     manifest = ArtifactManifest(
-        name="Bad Card Artifact",
+        name="Card Artifact",
         exposition="embedded",
         buttons=[],
     )
@@ -978,30 +984,34 @@ def test_make_artifact_rejects_card_with_title_and_body_and_does_not_store() -> 
     result = runner.handle_make_artifact(
         family="custom",
         manifest=manifest,
-        components=bad_card,
-        uuid="bad-card-uuid",
+        components=card_payload,
+        uuid="card-adapted-uuid",
     )
 
-    assert result.startswith("Failed to render A2UI surface. Artifact was not stored.")
-    assert (
-        "Validation failed for component 'Card' (card_buttons): "
-        "child: Expected string, received undefined, "
-        "root: Unrecognized key(s) in object: 'title', 'body'"
-    ) in result
+    assert "card-adapted-uuid" in result
+    assert "Notice: Automatically normalized component tree:" in result
+    assert "Adapted Card 'card_buttons' with title/body into child Column" in result
 
     from seamus.persistence import get_workspace_manager
 
     art_dir = (
         get_workspace_manager().get_session_artifacts_dir(session.agent_id, session.id)
         / "custom"
-        / "bad-card-uuid"
+        / "card-adapted-uuid"
     )
-    assert not art_dir.exists()
+    assert art_dir.exists()
+    stored_body = json.loads((art_dir / "body.json").read_text(encoding="utf-8"))
+    by_id = {c["id"]: c for c in stored_body}
+    assert by_id["card_buttons"]["child"] == "card_buttons_col"
+    assert by_id["card_buttons_col"]["component"] == "Column"
+    assert "card_buttons_title" in by_id["card_buttons_col"]["children"]
+    assert "btn_primary" in by_id["card_buttons_col"]["children"]
 
     thread = session.get_open_thread()
     assert thread is not None
     created_events = [e for e in thread.events if e.get("type") == "ARTIFACT_CREATED"]
-    assert len(created_events) == 0
+    assert len(created_events) == 1
+    assert created_events[0]["artifact_id"] == "card-adapted-uuid"
 
 
 def test_validate_a2ui_surface_normalizes_choiceset_and_textinput() -> None:
@@ -1150,3 +1160,134 @@ def test_make_artifact_auto_synthesizes_root_and_returns_warning() -> None:
     created_events = [e for e in thread.events if e.get("type") == "ARTIFACT_CREATED"]
     assert len(created_events) == 1
     assert created_events[0]["artifact_id"] == "auto-root-uuid"
+
+
+def test_normalize_a2ui_components_missing_id_auto_assigned() -> None:
+    raw = [
+        {"component": "Text", "text": "Paragraph 1"},
+        {"component": "Text", "text": "Paragraph 2"},
+    ]
+    mutations: list[str] = []
+    norm = normalize_a2ui_components(raw, mutation_log=mutations)
+    assert len(norm) == 3  # synthesized root + 2 texts
+    assert any("Auto-assigned id='text_0'" in m for m in mutations)
+    assert any("Auto-assigned id='text_1'" in m for m in mutations)
+    assert any(c.get("id") == "text_0" for c in norm)
+    assert any(c.get("id") == "text_1" for c in norm)
+
+
+def test_normalize_a2ui_components_type_aliases_and_casing() -> None:
+    raw = [
+        {"id": "t1", "type": "Text", "text": "Using type alias"},
+        {"id": "t2", "component_type": "text", "text": "Using component_type alias"},
+        {"id": "t3", "componentType": "heading", "text": "Heading alias"},
+        {"id": "btn1", "type": "button", "label": "Click me"},
+    ]
+    mutations: list[str] = []
+    norm = normalize_a2ui_components(raw, mutation_log=mutations)
+    by_id = {c["id"]: c for c in norm}
+
+    assert by_id["t1"]["component"] == "Text"
+    assert by_id["t2"]["component"] == "Text"
+    assert by_id["t3"]["component"] == "Text"
+    assert by_id["t3"]["variant"] == "h2"
+    assert by_id["btn1"]["component"] == "Button"
+
+    assert any("Renamed 'type' ('Text') to 'component'" in m for m in mutations)
+    assert any("Renamed 'component_type' ('text') to 'component'" in m for m in mutations)
+    assert any("Renamed 'componentType' ('heading') to 'component'" in m for m in mutations)
+
+
+def test_normalize_a2ui_components_property_inference() -> None:
+    raw = [
+        {"id": "inferred_text", "text": "Inferred from text property"},
+        {"id": "inferred_choice", "options": [{"label": "A", "value": "a"}]},
+        {"id": "inferred_col", "children": ["inferred_text"]},
+    ]
+    mutations: list[str] = []
+    norm = normalize_a2ui_components(raw, mutation_log=mutations)
+    by_id = {c["id"]: c for c in norm}
+
+    assert by_id["inferred_text"]["component"] == "Text"
+    assert by_id["inferred_choice"]["component"] == "ChoicePicker"
+    assert by_id["inferred_col"]["component"] == "Column"
+    assert any("Inferred component type 'Text'" in m for m in mutations)
+
+
+def test_normalize_a2ui_components_button_child_and_card_adaptation() -> None:
+    raw = [
+        {"id": "btn1", "component": "Button", "label": "Save Progress"},
+        {"id": "card1", "component": "Card", "title": "Summary", "body": "Card description"},
+    ]
+    mutations: list[str] = []
+    norm = normalize_a2ui_components(raw, mutation_log=mutations)
+    by_id = {c["id"]: c for c in norm}
+
+    # Button child was synthesized
+    assert "child" in by_id["btn1"]
+    child_id = by_id["btn1"]["child"]
+    assert child_id in by_id
+    assert by_id[child_id]["component"] == "Text"
+    assert by_id[child_id]["text"] == "Save Progress"
+
+    # Card child was synthesized as a Column enclosing title & body
+    assert "child" in by_id["card1"]
+    card_child_id = by_id["card1"]["child"]
+    assert card_child_id in by_id
+    assert by_id[card_child_id]["component"] == "Column"
+    card_children = by_id[card_child_id]["children"]
+    assert len(card_children) == 2
+    assert by_id[card_children[0]]["text"] == "Summary"
+    assert by_id[card_children[1]]["text"] == "Card description"
+
+
+def test_auto_declare_manifest_buttons() -> None:
+    manifest = ArtifactManifest(
+        name="Auto Button Decl",
+        exposition="embedded",
+        buttons=[],
+    )
+    components = [
+        {"id": "btn-auto", "component": "Button", "child": "lbl"},
+        {"id": "lbl", "component": "Text", "text": "Auto Declared"},
+    ]
+    mutations: list[str] = []
+    from seamus.harness.artifacts import auto_declare_manifest_buttons
+
+    auto_declare_manifest_buttons(manifest, components, mutation_log=mutations)
+    assert any(btn.id == "btn-auto" for btn in manifest.buttons)
+    assert any("Auto-declared button 'btn-auto'" in m for m in mutations)
+
+
+def test_handle_make_artifact_mutation_log_feedback() -> None:
+    store = HarnessStore()
+    config = _make_agent_config()
+    agent = store.create_agent(config=config, name="agent-art-mut")
+    session = store.create_session(agent_identifier=str(agent.id), name="session-art-mut")
+    runner = SessionAgentRunner(session=session)
+
+    # Agent emits raw components without id on first element, and uses 'type' alias
+    raw_components = [
+        {"type": "Text", "text": "Intro text"},
+        {"id": "submit-btn", "component": "Button", "label": "Submit"},
+    ]
+    manifest = {
+        "name": "Loose Artifact",
+        "exposition": "embedded",
+        "buttons": [],  # Button not declared
+    }
+
+    result = runner.handle_make_artifact(
+        family="custom",
+        manifest=manifest,
+        components=raw_components,
+        uuid="mutated-uuid",
+    )
+
+    assert "mutated-uuid" in result
+    assert "Notice: Automatically normalized component tree:" in result
+    assert "Auto-assigned id='text_0'" in result
+    assert "Renamed 'type' ('Text') to 'component'" in result
+    assert "Synthesized child Text 'submit-btn_label' for Button 'submit-btn'" in result
+    assert "Auto-declared button 'submit-btn' in manifest.buttons" in result
+    assert "Auto-synthesized root 'Column' container" in result

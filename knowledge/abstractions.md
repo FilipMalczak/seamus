@@ -96,7 +96,8 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `make_artifact`: Core atomic tool creating `/artifacts/<family>/<uuid>/` with `manifest.json` and `body.json`, validating the A2UI surface before persisting and auto-synthesizing root containers when omitted.
 - `validate_a2ui_surface`: Surface validator checking component structure, basic catalog types, child references, tree topology (no cycles, single parent), component properties, and manifest button declarations before artifact creation.
 - `check_a2ui_surface_warnings`: Static inspector checking for missing explicit `root` component IDs, disconnected top-level root widgets, and unreachable/orphaned components, generating actionable diagnostic warnings for the agent.
-- `normalize_a2ui_components`: Normalizer converting legacy aliases (`ChoiceSet`, `TextInput`), wrapping non-standard button actions, and auto-synthesizing a root `Column` container when `id="root"` is missing.
+- `normalize_a2ui_components`: Normalizer loosely parsing component trees (auto-assigning missing IDs, mapping type aliases like `"type"` and `"component_type"`, inferring component types from properties, synthesizing child `Text` for buttons, adapting `Card` containers with title/body/children into Columns, auto-declaring manifest buttons, and auto-synthesizing root `Column` container when `id="root"` is missing) with mutation logging.
+- `auto_declare_manifest_buttons`: Helper ensuring any `Button` declared in components is represented in `manifest.buttons` to prevent validation friction.
 - `make_questionnaire`: Specialized atomic questionnaire builder tool.
 - `make_form`: Specialized atomic tabbed non-blocking form builder tool.
 - `make_plan`: Specialized atomic plan builder tool creating `manifest.json`, `body.json`, and canonical `plan.md` with inline commenting support.
@@ -137,6 +138,8 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md)
 - [0036-mount-bundled-skills-via-shared-volume.md](../decisions/0036-mount-bundled-skills-via-shared-volume.md)
 - [0037-validate-a2ui-surface-render-on-make-artifact.md](../decisions/0037-validate-a2ui-surface-render-on-make-artifact.md)
+- [0038-a2ui-root-component-and-incomplete-structure-warning.md](../decisions/0038-a2ui-root-component-and-incomplete-structure-warning.md)
+- [0039-loose-artifact-normalization-and-mutation-log.md](../decisions/0039-loose-artifact-normalization-and-mutation-log.md)
 - [artifacts.md](./artifacts.md)
 - [architecture.md](./architecture.md)
 - [backlog.md](./backlog.md)

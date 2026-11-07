@@ -18,7 +18,7 @@ Artifact UI definitions reside in `/artifacts/<family>/<uuid>/body.json` as a fl
 > 
 > A2UI resolves and renders component trees starting from the component with `id="root"`. All other components in the flat array must be direct or indirect descendants of this root component (referenced by ID in `children: ["..."]` or `child: "..."`).
 >
-> If multiple widgets are emitted without an enclosing root container (e.g. emitting a `Text` and a `Button` side-by-side with no parent), the component structure is incomplete and will trigger a warning.
+> If multiple widgets are emitted without an enclosing root container, or if `id` or `component` aliases are used, Seamus loosely normalizes the tree (synthesizing a root `Column`, auto-assigning IDs, and adapting aliases) and returns a detailed `Notice: Automatically normalized component tree:` log to you in the tool response.
 
 ```mermaid
 graph TD

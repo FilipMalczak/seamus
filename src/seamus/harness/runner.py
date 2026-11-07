@@ -59,6 +59,7 @@ from seamus.harness.artifacts import (
     Question,
     QuestionItem,
     QuestionnaireBuilder,
+    auto_declare_manifest_buttons,
     check_a2ui_surface_warnings,
     dispatch_button_click,
     normalize_a2ui_components,
@@ -426,7 +427,7 @@ class MakeArtifactInput(BaseModel):
             "(e.g. 'questionnaires', 'forms', 'plans', 'custom')"
         ),
     )
-    manifest: dict[str, Any] | ArtifactManifest = Field(
+    manifest: dict[str, Any] | ArtifactManifest | str = Field(
         description="Behavioral and exposition manifest for the artifact",
     )
     components: list[dict[str, Any]] | Any = Field(
@@ -1092,24 +1093,37 @@ class SessionAgentRunner:
     def handle_make_artifact(
         self,
         family: str,
-        manifest: ArtifactManifest | dict[str, Any],
-        components: list[dict[str, Any]],
+        manifest: ArtifactManifest | dict[str, Any] | str,
+        components: list[dict[str, Any]] | Any,
         uuid: str | None = None,
     ) -> str:
         """Create an atomic A2UI renderable artifact in /artifacts/<family>/<uuid>/."""
+        mutations: list[str] = []
+
+        raw_manifest = manifest
+        if isinstance(raw_manifest, str):
+            try:
+                raw_manifest = json.loads(raw_manifest)
+                mutations.append("Parsed manifest from JSON string.")
+            except Exception as e:
+                return (
+                    f"Failed to render A2UI surface. Artifact was not stored.\n"
+                    f"Validation errors:\n- Invalid manifest JSON: {e}"
+                )
+
         manifest_obj: ArtifactManifest | None = None
         manifest_errors: list[str] = []
-        if isinstance(manifest, ArtifactManifest):
-            manifest_obj = manifest
-        elif isinstance(manifest, dict):
+        if isinstance(raw_manifest, ArtifactManifest):
+            manifest_obj = raw_manifest
+        elif isinstance(raw_manifest, dict):
             try:
-                manifest_obj = ArtifactManifest.model_validate(manifest)
+                manifest_obj = ArtifactManifest.model_validate(raw_manifest)
             except Exception as e:
                 manifest_errors.append(f"Invalid manifest: {e}")
         else:
             manifest_errors.append(
                 f"Invalid manifest: expected dict or ArtifactManifest, got "
-                f"{type(manifest).__name__}."
+                f"{type(raw_manifest).__name__}."
             )
 
         if manifest_errors or manifest_obj is None:
@@ -1119,8 +1133,12 @@ class SessionAgentRunner:
                 f"Validation errors:\n{formatted_errors}"
             )
 
+        # Normalize components loosely and auto-declare any undeclared buttons in manifest
+        normalized_components = normalize_a2ui_components(components, mutation_log=mutations)
+        auto_declare_manifest_buttons(manifest_obj, normalized_components, mutation_log=mutations)
+
         surface_errors = validate_a2ui_surface(
-            components=components,
+            components=normalized_components,
             manifest=manifest_obj,
         )
         if surface_errors:
@@ -1134,7 +1152,6 @@ class SessionAgentRunner:
 
         ws_mgr = get_workspace_manager()
         artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
-        normalized_components = normalize_a2ui_components(components)
         inst_uuid = ArtifactBuilder.create_artifact(
             artifacts_dir=artifacts_dir,
             family=family,
@@ -1154,11 +1171,15 @@ class SessionAgentRunner:
         if thread is not None:
             thread.append_event(art_event)
 
+        response = inst_uuid
+        if mutations:
+            mutations_text = "\n".join(f"- {m}" for m in mutations)
+            response += f"\n\nNotice: Automatically normalized component tree:\n{mutations_text}"
         if surface_warnings:
             warnings_text = "\n".join(f"- {w}" for w in surface_warnings)
-            return f"{inst_uuid}\n\nWarning: Incomplete A2UI component tree:\n{warnings_text}"
+            response += f"\n\nWarning: Incomplete A2UI component tree:\n{warnings_text}"
 
-        return inst_uuid
+        return response
 
     def handle_make_questionnaire(
         self,
