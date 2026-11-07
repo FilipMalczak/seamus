@@ -141,6 +141,7 @@ Keep knowledge synchronized with the implementation:
 - Update `requirements.md` and `invariants.md` when affected behavior changes, including relevant cross-references.
 - Update other knowledge files when documented concepts or relationships change.
 - Review and update `backlog.md` when a task creates, addresses, postpones, or invalidates outstanding work.
+- Update `FEATURES.md` when user-facing capabilities, flags, or configuration change.
 - Document only information whose absence would materially hinder future work or increase errors. Do not duplicate source code or document every class and function.
 
 ## Final Task Checklist
@@ -152,6 +153,7 @@ Before declaring a task complete:
 - [ ] Durable implementation knowledge documented where appropriate.
 - [ ] Relevant knowledge files and decisions cross-linked.
 - [ ] Knowledge updated to reflect implementation changes.
+- [ ] FEATURES.md updated if user-facing capabilities, flags, or configuration changed.
 - [ ] Backlog reviewed for relevant entries; deferred work, accepted technical debt, and other actionable follow-ups recorded in the correct sections; completed or invalidated entries removed.
 - [ ] Markdown links use document-relative paths; no machine-specific absolute filesystem paths are committed.
 - [ ] No unrelated code rewritten.
