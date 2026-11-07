@@ -140,6 +140,7 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - [0037-validate-a2ui-surface-render-on-make-artifact.md](../decisions/0037-validate-a2ui-surface-render-on-make-artifact.md)
 - [0038-a2ui-root-component-and-incomplete-structure-warning.md](../decisions/0038-a2ui-root-component-and-incomplete-structure-warning.md)
 - [0039-loose-artifact-normalization-and-mutation-log.md](../decisions/0039-loose-artifact-normalization-and-mutation-log.md)
+- [0040-session-level-ui-view-and-unified-thread-feed.md](../decisions/0040-session-level-ui-view-and-unified-thread-feed.md)
 - [artifacts.md](./artifacts.md)
 - [architecture.md](./architecture.md)
 - [backlog.md](./backlog.md)

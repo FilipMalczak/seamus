@@ -155,6 +155,13 @@ Modes define distinct triggers that spawn new threads:
 2. **Analysis Scope Shifts**: In `analyse` mode, starting an analysis on a different component or investigation hypothesis can open a fresh thread to keep inquiry contexts isolated.
 3. **Chat Scratchpad Isolation**: In `chat` mode, discussions and scratchpad testing occur in their own thread, ensuring that exploratory experiments do not pollute the Git history or diff viewer of implementation threads.
 
+### Session View and Unified Thread Feed
+
+While threads serve as isolated checkpoints and mode execution boundaries on the backend, the Web UI presents the session as the primary unit of interaction ([0040-session-level-ui-view-and-unified-thread-feed.md](../decisions/0040-session-level-ui-view-and-unified-thread-feed.md)):
+- **Session View**: Concatenates events and message bubbles from all threads in the session into a continuous chronological feed (`GET /api/v-alpha/agent/{agent}/session/{session}/stream`), with visual thread transition indicators (`.thread-transition-separator`) between sequential threads. Sending input in Session View automatically routes to the latest open thread.
+- **Thread View**: Isolates and displays an individual thread (`GET /api/v-alpha/agent/{agent}/session/{session}/thread/{thread}`) when explicitly selected in the navigation tree or clicked from a transition separator.
+- **Navigation & Stickiness**: Clicking an agent opens its latest active session in Session View; clicking a session opens Session View. Opening or transitioning threads while in Session View stays in Session View.
+
 ---
 
 ## 5. Persistence and Git Integration
@@ -171,6 +178,7 @@ Modes define distinct triggers that spawn new threads:
 ## 6. Cross-References
 
 - [modes_and_personas_breakdown.md](./modes_and_personas_breakdown.md)
+- [0040-session-level-ui-view-and-unified-thread-feed.md](../decisions/0040-session-level-ui-view-and-unified-thread-feed.md)
 - [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md)
 - [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md)
 - [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md)

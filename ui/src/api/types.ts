@@ -162,6 +162,14 @@ export type MessagePart =
   | { type: "artifact"; id: string; artifact: ArtifactInfo }
   | { type: "text"; id: string; content: string };
 
+export interface ThreadTransitionInfo {
+  threadId: string;
+  threadName?: string | null;
+  mode?: string;
+  phase?: string | null;
+  modeLabel?: string;
+}
+
 export type ChatMessage = {
   id: string;
   role: "user" | "assistant" | "system";
@@ -171,6 +179,7 @@ export type ChatMessage = {
   toolCalls?: ToolCallRecord[];
   parts?: MessagePart[];
   timestamp: string;
+  threadTransition?: ThreadTransitionInfo;
 };
 
 export interface SystemLogfireInfo {

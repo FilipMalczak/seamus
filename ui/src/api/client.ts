@@ -338,6 +338,73 @@ export function subscribeToThreadStream(
   };
 }
 
+export function subscribeToSessionStream(
+  agentId: string,
+  sessionId: string,
+  onEvent: (event: any) => void,
+  onError?: (err: Error) => void
+): () => void {
+  const controller = new AbortController();
+  const url = `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/stream`;
+
+  (async () => {
+    try {
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: { Accept: "text/event-stream" },
+      });
+
+      if (!res.ok) {
+        throw new Error(`SSE session stream failed with status ${res.status}`);
+      }
+
+      if (!res.body) {
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (!controller.signal.aborted) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() ?? "";
+
+        for (const block of lines) {
+          const trimmed = block.trim();
+          if (!trimmed) continue;
+          for (const line of trimmed.split("\n")) {
+            if (line.startsWith("data:")) {
+              const jsonStr = line.slice(5).trim();
+              if (jsonStr) {
+                try {
+                  const parsed = JSON.parse(jsonStr);
+                  onEvent(parsed);
+                } catch {
+                  // If raw string event
+                  onEvent({ type: "RAW_TEXT", data: jsonStr });
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      if (!controller.signal.aborted) {
+        onError?.(err instanceof Error ? err : new Error(String(err)));
+      }
+    }
+  })();
+
+  return () => {
+    controller.abort();
+  };
+}
+
 export async function getAgentInspection(
   agentId: string,
   sessionId: string,

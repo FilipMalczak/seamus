@@ -41,6 +41,8 @@ interface ChatAreaProps {
   sessionProvenance?: SessionBranchProvenance | null;
   sessionLineage?: SessionBranchProvenance[];
   thread: ThreadInfo | null;
+  isSessionView?: boolean;
+  onSelectThread?: (agentId: string, sessionId: string, threadId: string) => void;
   onStatusChange?: (status: AgentStatus) => void;
   onKillSession?: () => void;
   onSwitchMode?: (mode: "chat" | "plan") => Promise<void> | void;
@@ -74,6 +76,8 @@ export function ChatArea({
   sessionProvenance,
   sessionLineage,
   thread,
+  isSessionView = false,
+  onSelectThread,
   onStatusChange,
   onKillSession,
   onSwitchMode,
@@ -109,7 +113,7 @@ export function ChatArea({
   } = useThreadStream(
     agentId,
     sessionId,
-    thread?.id ?? null,
+    isSessionView ? null : (thread?.id ?? null),
     sessionStatus,
     onThreadTransition
   );
@@ -475,17 +479,29 @@ export function ChatArea({
             <span className="crumb-session">{sessionName || sessionId || "Session"}</span>
             <span className="crumb-sep">/</span>
           </span>
-          <span className="crumb-item crumb-item-thread">
-            <span className="crumb-thread">
-              {thread.name || thread.id}
+          {isSessionView ? (
+            <span className="crumb-item crumb-item-thread crumb-item-session-view">
+              <span className="crumb-thread">Session View</span>
+              <span className={`thread-mode-badge mode-${currentThreadMode}`}>
+                {currentModeLabel}
+              </span>
+              <span className={`thread-state-badge ${isOpen ? "state-open" : "state-closed"}`}>
+                {isOpen ? "Active Open Thread" : "Closed Thread"}
+              </span>
             </span>
-            <span className={`thread-mode-badge mode-${currentThreadMode}`}>
-              {currentModeLabel}
+          ) : (
+            <span className="crumb-item crumb-item-thread">
+              <span className="crumb-thread">
+                {thread.name || thread.id}
+              </span>
+              <span className={`thread-mode-badge mode-${currentThreadMode}`}>
+                {currentModeLabel}
+              </span>
+              <span className={`thread-state-badge ${isOpen ? "state-open" : "state-closed"}`}>
+                {isOpen ? "Active Open Thread" : "Closed Thread"}
+              </span>
             </span>
-            <span className={`thread-state-badge ${isOpen ? "state-open" : "state-closed"}`}>
-              {isOpen ? "Active Open Thread" : "Closed Thread"}
-            </span>
-          </span>
+          )}
         </div>
 
         <div className="chat-top-actions">
@@ -586,52 +602,95 @@ export function ChatArea({
             </div>
           </div>
         ) : (
-          messages.map((msg, idx) => (
-            <React.Fragment key={msg.id}>
-              <MessageItem
-                message={msg}
-                onBranch={onBranchMessage ? () => handleBranchItem(msg) : undefined}
-                onBranchTool={
-                  onBranchMessage && msg.role === "assistant" && msg.toolCalls && msg.toolCalls.length > 0
-                    ? () => handleBranchToolItem(msg)
-                    : undefined
-                }
-                onSubmitArtifact={handleSubmitArtifact}
-                submittingArtifactId={submittingArtifactId}
-              />
-              {branchPoints.get(idx)?.map((prov, pIdx) => (
-                <div
-                  key={`${prov.parent_session_id}-${prov.parent_message_id}-${pIdx}`}
-                  className="branch-provenance-separator"
-                >
+          messages.map((msg, idx) => {
+            if (msg.threadTransition) {
+              return (
+                <div key={msg.id} className="thread-transition-separator">
                   <div className="separator-line" />
                   <div className="separator-content">
-                    <GitFork className="size-3 text-sky-400" />
-                    <span className="separator-text">branched from</span>
-                    {onNavigateToSession ? (
+                    <Sparkles className="size-3 text-sky-400" />
+                    <span className="separator-text">Thread switched to</span>
+                    {onSelectThread && agentId && sessionId ? (
                       <button
                         type="button"
                         className="separator-link-btn"
                         onClick={() =>
-                          onNavigateToSession(prov.parent_session_id)
+                          onSelectThread(
+                            agentId,
+                            sessionId,
+                            msg.threadTransition!.threadId
+                          )
                         }
-                        title={`Navigate to parent session: ${prov.parent_session_name || prov.parent_session_id}`}
+                        title={`Isolate and open thread: ${msg.threadTransition.threadName || msg.threadTransition.threadId}`}
                       >
-                        {prov.parent_session_name ||
-                          prov.parent_session_id.slice(0, 8)}
+                        {msg.threadTransition.threadName ||
+                          msg.threadTransition.threadId.slice(0, 8)}
                       </button>
                     ) : (
                       <span className="separator-name">
-                        {prov.parent_session_name ||
-                          prov.parent_session_id.slice(0, 8)}
+                        {msg.threadTransition.threadName ||
+                          msg.threadTransition.threadId.slice(0, 8)}
                       </span>
                     )}
+                    <span
+                      className={`badge-mode badge-mode-${msg.threadTransition.mode || "chat"}`}
+                      title={`Thread Mode: ${msg.threadTransition.modeLabel || msg.threadTransition.mode}`}
+                    >
+                      {msg.threadTransition.modeLabel || msg.threadTransition.mode}
+                    </span>
                   </div>
                   <div className="separator-line" />
                 </div>
-              ))}
-            </React.Fragment>
-          ))
+              );
+            }
+
+            return (
+              <React.Fragment key={msg.id}>
+                <MessageItem
+                  message={msg}
+                  onBranch={onBranchMessage ? () => handleBranchItem(msg) : undefined}
+                  onBranchTool={
+                    onBranchMessage && msg.role === "assistant" && msg.toolCalls && msg.toolCalls.length > 0
+                      ? () => handleBranchToolItem(msg)
+                      : undefined
+                  }
+                  onSubmitArtifact={handleSubmitArtifact}
+                  submittingArtifactId={submittingArtifactId}
+                />
+                {branchPoints.get(idx)?.map((prov, pIdx) => (
+                  <div
+                    key={`${prov.parent_session_id}-${prov.parent_message_id}-${pIdx}`}
+                    className="branch-provenance-separator"
+                  >
+                    <div className="separator-line" />
+                    <div className="separator-content">
+                      <GitFork className="size-3 text-sky-400" />
+                      <span className="separator-text">branched from</span>
+                      {onNavigateToSession ? (
+                        <button
+                          type="button"
+                          className="separator-link-btn"
+                          onClick={() =>
+                            onNavigateToSession(prov.parent_session_id)
+                          }
+                          title={`Navigate to parent session: ${prov.parent_session_name || prov.parent_session_id}`}
+                        >
+                          {prov.parent_session_name ||
+                            prov.parent_session_id.slice(0, 8)}
+                        </button>
+                      ) : (
+                        <span className="separator-name">
+                          {prov.parent_session_name ||
+                            prov.parent_session_id.slice(0, 8)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="separator-line" />
+                  </div>
+                ))}
+              </React.Fragment>
+            );
+          })
         )}
         <div ref={viewportEndRef} />
       </div>

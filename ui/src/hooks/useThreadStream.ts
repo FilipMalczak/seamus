@@ -6,6 +6,7 @@ import {
   listArtifacts,
   postUserInput,
   submitArtifact,
+  subscribeToSessionStream,
   subscribeToThreadStream,
 } from "../api/client";
 import type {
@@ -264,7 +265,7 @@ export function useThreadStream(
 
   // Connect to SSE stream
   useEffect(() => {
-    if (!agentId || !sessionId || !threadId) {
+    if (!agentId || !sessionId) {
       setMessages([]);
       return;
     }
@@ -273,12 +274,8 @@ export function useThreadStream(
     setStreamError(null);
     setStreamErrorDetails(null);
 
-    const unsubscribe = subscribeToThreadStream(
-      agentId,
-      sessionId,
-      threadId,
-      (event: any) => {
-        const type = event.type || event.event;
+    const onEventHandler = (event: any) => {
+      const type = event.type || event.event;
 
         if (type === "ARTIFACT_CREATED") {
           const artId = event.artifact_id || event.artifactId;
@@ -380,6 +377,32 @@ export function useThreadStream(
             event.thread_id ||
             event.threadId;
           if (toThreadId) {
+            if (!event.is_first) {
+              setMessages((prev) => {
+                const alreadyPresent = prev.some(
+                  (m) => m.threadTransition?.threadId === toThreadId
+                );
+                if (alreadyPresent) return prev;
+                return [
+                  ...prev,
+                  {
+                    id: `transition-${toThreadId}`,
+                    role: "system",
+                    text: "",
+                    timestamp: new Date().toISOString(),
+                    threadTransition: {
+                      threadId: toThreadId,
+                      threadName: event.thread_name || event.name || null,
+                      mode: event.mode,
+                      phase: event.phase,
+                      modeLabel:
+                        event.mode_label ||
+                        (event.phase ? `${event.mode}/${event.phase}` : event.mode),
+                    },
+                  },
+                ];
+              });
+            }
             onThreadTransitionRef.current?.(toThreadId, event.mode, event.phase);
           }
         } else if (type === "STATUS_CHANGED") {
@@ -1220,15 +1243,19 @@ export function useThreadStream(
             });
           });
         }
-      },
-      (err) => {
-        setStreamError(err.message);
-        setStreamErrorDetails({
-          message: err.message,
-          errorType: "StreamConnectionError",
-        });
-      }
-    );
+      };
+
+    const onErrorHandler = (err: any) => {
+      setStreamError(err.message);
+      setStreamErrorDetails({
+        message: err.message,
+        errorType: "StreamConnectionError",
+      });
+    };
+
+    const unsubscribe = threadId
+      ? subscribeToThreadStream(agentId, sessionId, threadId, onEventHandler, onErrorHandler)
+      : subscribeToSessionStream(agentId, sessionId, onEventHandler, onErrorHandler);
 
     return () => {
       unsubscribe();

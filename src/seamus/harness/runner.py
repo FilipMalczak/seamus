@@ -42,7 +42,7 @@ from seamus.domain.artifacts import (
     ArtifactManifest,
     ClickResult,
 )
-from seamus.domain.entities import Agent, AgentStatus, Session, Thread
+from seamus.domain.entities import Agent, AgentStatus, Session, SessionStatus, Thread
 from seamus.domain.modes import (
     ALL_HARNESS_TOOLS,
     ModeName,
@@ -2246,6 +2246,54 @@ class SessionAgentRunner:
                     yield self._format_sse_event(encoder, event)
                 except TimeoutError:
                     # Keepalive ping or check if thread was closed
+                    continue
+            while not queue.empty():
+                event = queue.get_nowait()
+                yield self._format_sse_event(encoder, event)
+        finally:
+            self.broadcaster.unsubscribe(queue)
+
+    async def stream_session_events(
+        self,
+        session: Session,
+        accept_header: str | None = None,
+        follow: bool = True,
+    ) -> AsyncGenerator[str, None]:
+        """Stream past events concatenated from all threads, then stream live events."""
+        encoder = EventEncoder(accept=accept_header or "*/*")
+        sorted_threads = sorted(session.threads.values(), key=lambda t: t.created_at)
+
+        # 1. Replay past events across all threads in chronological order
+        for idx, thread in enumerate(sorted_threads):
+            transition_ev = {
+                "type": "THREAD_TRANSITION",
+                "thread_id": str(thread.id),
+                "thread_name": thread.name,
+                "mode": thread.mode,
+                "phase": thread.phase,
+                "mode_label": thread.mode_label,
+                "is_first": idx == 0,
+                "is_open": thread.is_open,
+                "created_at": thread.created_at.isoformat(),
+            }
+            yield self._format_sse_event(encoder, transition_ev)
+
+            for event in thread.events:
+                yield self._format_sse_event(encoder, event)
+
+        # If session is terminal or client requested replay only, finish stream immediately
+        if session.status != SessionStatus.ACTIVE or not follow:
+            return
+
+        # 2. Subscribe and stream live events from broadcaster across threads
+        queue = self.broadcaster.subscribe()
+        try:
+            while session.status == SessionStatus.ACTIVE:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=1.0)
+                    yield self._format_sse_event(encoder, event)
+                except TimeoutError:
+                    # Keepalive ping or check if session status changed
                     continue
             while not queue.empty():
                 event = queue.get_nowait()
