@@ -67,13 +67,17 @@ class ConfigTemplateStore:
         if env_file is not None:
             target = Path(env_file)
             if target.exists():
-                load_dotenv(dotenv_path=target, override=False)
+                load_dotenv(dotenv_path=target, override=False, interpolate=False)
         else:
-            load_dotenv(override=False)
+            load_dotenv(override=False, interpolate=False)
 
         api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
         if not api_key:
             api_key = os.getenv("OPEN_ROUTER_API_KEY", "").strip()
+        if api_key.startswith("$${"):
+            api_key = api_key[1:]
+        if not api_key:
+            api_key = "${secret('/api-key/inference/openrouter')}"
 
         base_url = os.getenv("OPENROUTER_BASE_URL", "").strip() or "https://openrouter.ai/api/v1"
         model_name = (

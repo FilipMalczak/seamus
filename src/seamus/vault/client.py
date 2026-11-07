@@ -377,4 +377,3 @@ def reset_default_vault_client(client: VaultClient | None = None) -> None:
     """Reset or override the global singleton VaultClient (useful in tests)."""
     global _DEFAULT_VAULT_CLIENT
     _DEFAULT_VAULT_CLIENT = client
-

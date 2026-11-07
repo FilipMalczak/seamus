@@ -126,4 +126,3 @@ class VaultSettings(BaseModel):
             token_file=token_file,
             mount=mount,
         )
-

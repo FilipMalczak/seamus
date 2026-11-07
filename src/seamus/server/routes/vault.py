@@ -150,4 +150,3 @@ async def get_secret_metadata(path: str) -> VaultSecretDetailResponse:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(exc),
         ) from exc
-

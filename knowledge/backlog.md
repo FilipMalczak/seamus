@@ -302,6 +302,8 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 - if a field in config or config template would be masked and contains ${} expression, it doesn't need to be masked
 
+- are we sure that we recognize v2? [CRITICAL]
+
 - way, waaaaay forward: disablability of more layers and components; 
   - for sure context compaction, I dont like it
   - disabling specific artifacts (generic are always allowed, in which case we need to mount custom examples directory, which might be a good idea anyway)

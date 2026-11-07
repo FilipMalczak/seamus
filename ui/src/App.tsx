@@ -94,7 +94,7 @@ export function App() {
     inference: {
       format: "openai",
       base_url: "https://openrouter.ai/api/v1",
-      api_key: null,
+      api_key: "${secret('/api-key/inference/openrouter')}",
     },
     model_name: "openai/gpt-oss-120b",
   });
@@ -304,7 +304,7 @@ export function App() {
         inference: {
           format: "openai",
           base_url: "https://openrouter.ai/api/v1",
-          api_key: null,
+          api_key: "${secret('/api-key/inference/openrouter')}",
         },
         model_name: "openai/gpt-oss-120b",
       }

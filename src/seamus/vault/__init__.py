@@ -65,4 +65,3 @@ __all__ = [
     "strip_secret_versions_from_string",
     "validate_secret_expressions",
 ]
-

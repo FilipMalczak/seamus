@@ -124,15 +124,15 @@ def setup_telemetry(
     """Configure Logfire and OpenTelemetry environment for Seamus, loading from .env if present."""
     global _TELEMETRY_INITIALIZED, _EFFECTIVE_SEND_TO_LOGFIRE
 
-    # Load environment variables from .env file
+    # Load environment variables from .env file (interpolate=False preserves ${secret(...)} syntax)
     if env_file is not None:
-        load_dotenv(dotenv_path=Path(env_file), override=False)
+        load_dotenv(dotenv_path=Path(env_file), override=False, interpolate=False)
     else:
         dotenv_path = find_dotenv(usecwd=True)
         if dotenv_path:
-            load_dotenv(dotenv_path=dotenv_path, override=False)
+            load_dotenv(dotenv_path=dotenv_path, override=False, interpolate=False)
         else:
-            load_dotenv(override=False)
+            load_dotenv(override=False, interpolate=False)
 
     # Ensure LangChain and LangGraph emit OpenTelemetry traces natively
     os.environ.setdefault("LANGSMITH_OTEL_ENABLED", "true")

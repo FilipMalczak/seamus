@@ -153,6 +153,7 @@ services:
     env_file:
       - path: .env
         required: false
+        format: raw
     volumes:
       - backend-workspaces:/app/workspaces
       - opensandbox-auth:/var/run/seamus-opensandbox:ro
