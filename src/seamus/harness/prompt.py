@@ -168,6 +168,14 @@ def build_operating_environment(
             "is transient and ephemeral, and will be discarded when the sandbox restarts."
         )
 
+    persistence += (
+        f"\nYour operational directory `{workdir}` is governed by Git persistence. "
+        "The repository contains a `.gitignore` file that determines which files and directories "
+        "are tracked and persisted across commits and session branches. Untracked and ignored "
+        "files (such as caches, build artifacts, and virtual environments) remain ephemeral "
+        "within the sandbox container."
+    )
+
     sandbox_desc = (
         "Shell commands and tools execute inside the isolated sandbox environment. "
         "You have full access to developer tooling, package managers, and compilers "

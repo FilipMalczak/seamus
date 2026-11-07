@@ -60,6 +60,7 @@ class AgentConfig(BaseModel):
     system_prompt: str | None = None
     todo_implementation: TodoImplementation = TodoImplementation.DEEPAGENTS
     skills_implementation: SkillsImplementation = SkillsImplementation.DEEPAGENTS
+    thread_message_overlap: int = 5
 
     def is_complete(self) -> bool:
         """Return True if this configuration is complete enough to initialize an agent."""
@@ -116,6 +117,11 @@ class AgentConfig(BaseModel):
                     overrides.skills_implementation
                     if "skills_implementation" in overrides.model_fields_set
                     else self.skills_implementation
+                ),
+                "thread_message_overlap": (
+                    overrides.thread_message_overlap
+                    if "thread_message_overlap" in overrides.model_fields_set
+                    else self.thread_message_overlap
                 ),
             },
             deep=True,

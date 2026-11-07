@@ -118,7 +118,7 @@ make_artifact(
 ```
 
 ### 4. `make_plan`, `update_plan`, `edit_plan` (Plan Mode)
-- `make_plan(title="Plan", content="# Implementation Plan...")`: Creates the session plan tab with a whitelisted **Proceed** button (`id="proceed-btn"`, `clicks=1`, `unblocking=true`, `closing=true`) and inline review commenting enabled.
+- `make_plan(title="Plan", content="# Implementation Plan...")`: Creates the session plan tab with a whitelisted **Proceed** button (`id="proceed-btn"`, `clicks="*"`, `unblocking=true`, `closing=true`) and inline review commenting enabled.
 - Once created, `update_plan(content)` and `edit_plan(old_string, new_string)` are used for refinements.
 
 ## Resumption & Human-In-The-Loop Execution

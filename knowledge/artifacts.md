@@ -324,7 +324,7 @@ def make_questionnaire(questions: list[Question]) -> str:
       - family: 'questionnaires'
       - exposition: 'embedded'
       - blocking: True
-      - buttons: single submit button with mode='set', clicks=1,
+      - buttons: single submit button with mode='set', clicks='*',
                  unblocking=True, closing=True.
     """
 ```
@@ -337,7 +337,7 @@ Effectively the same structure as `make_questionnaire`, but configured for a tab
   - `family: "forms"`
   - `exposition: "tabbed"` (renders in a dedicated sidebar tab)
   - `blocking: False` (non-blocking, allowing continued conversational dialogue while the form remains editable in its tab)
-  - `buttons`: submit button with `mode="set"`, `clicks=1`, `unblocking=False`, `closing=True`.
+  - `buttons`: submit button with `mode="set"`, `clicks="*"`, `unblocking=False`, `closing=True`.
 
 ### 4. `make_plan`
 Specialized template over `make_artifact` for session implementation plans.
@@ -355,7 +355,7 @@ def make_plan(
       - blocking: False
       - commentable: True (enables inline text selection and review comments)
       - buttons:
-          - proceed-btn: mode='set', clicks=1, unblocking=True, closing=True
+          - proceed-btn: mode='set', clicks='*', unblocking=True, closing=True
           - review-btn: action={"comments": "push"} for inline comment submission
     Writes:
       - /artifacts/plans/<uuid>/manifest.json

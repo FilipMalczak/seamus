@@ -418,7 +418,7 @@ def test_seamus_todo_middleware_resilient_inputs() -> None:
     assert std.todos[0].content == "Clean codebase"
     assert std.todos[0].status == "in_progress"
 
-    # 2. task + state variations (as observed in gpt-oss-20b runs)
+    # 2. task + state variations (as observed in LLM runs)
     variant1 = ResilientWriteTodosInput.model_validate(
         {"todos": [{"task": "foo", "state": "in_progress"}, {"task": "bar", "state": "pending"}]}
     )
@@ -701,3 +701,85 @@ def test_session_agent_runner_recursion_limit_configuration(
     assert external_agent.config == {}
     runner_provided = SessionAgentRunner(session=session, agent=external_agent, recursion_limit=420)
     assert runner_provided.agent.config == {"recursion_limit": 420}
+
+
+def test_select_message_overlap() -> None:
+    from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
+    from seamus.harness.runner import select_message_overlap
+
+    # 1. Empty or non-positive
+    assert select_message_overlap([], 5) == []
+    assert select_message_overlap([HumanMessage(content="hi")], 0) == []
+
+    # 2. Basic trailing window
+    m1 = HumanMessage(content="1")
+    m2 = AIMessage(content="2")
+    m3 = HumanMessage(content="3")
+    assert select_message_overlap([m1, m2, m3], 2) == [m2, m3]
+
+    # 3. ToolMessage boundary handling (never start on orphaned ToolMessage)
+    t1 = ToolMessage(content="res", tool_call_id="call-1")
+    m4 = AIMessage(content="4")
+    # Window of 2 from [m1, m2, t1, m4] -> [t1, m4]. But t1 is tool, so walk back to m2!
+    res = select_message_overlap([m1, m2, t1, m4], 2)
+    assert res == [m2, t1, m4]
+
+    # If tool message has no predecessor, drop it
+    res_no_pred = select_message_overlap([t1, m4], 2)
+    assert res_no_pred == [m4]
+
+
+def test_seed_thread_overlap() -> None:
+    from unittest.mock import MagicMock
+
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    from seamus.domain.entities import Agent
+    from seamus.harness.runner import SessionAgentRunner
+
+    mock_graph = MagicMock()
+    mock_graph.nodes = {}
+    mock_agent = MagicMock()
+    mock_agent.graph = mock_graph
+    mock_agent.config = {}
+    mock_agent.clone.return_value = mock_agent
+
+    config = AgentConfig(
+        inference=InferenceConfig(api_key="mock-key"),
+        model_name="mock-model",
+        thread_message_overlap=3,
+    )
+    agent = Agent(config=config, name="agent-overlap")
+    session = agent.create_session(name="sess-overlap")
+
+    t1 = session.get_open_thread()
+    t2 = session.create_thread(name="t2", reuse_empty=False)
+
+    runner = SessionAgentRunner(session=session, agent=mock_agent)
+
+    # Mock graph states: t2 empty, t1 has 4 messages
+    m1 = HumanMessage(content="hello")
+    m2 = AIMessage(content="hi")
+    m3 = HumanMessage(content="how are you")
+    m4 = AIMessage(content="good")
+
+    def mock_get_state(config_arg: dict[str, Any]) -> MagicMock:
+        snap = MagicMock()
+        tid = config_arg.get("configurable", {}).get("thread_id")
+        if tid == t1.id.hex:
+            snap.values = {"messages": [m1, m2, m3, m4]}
+        else:
+            snap.values = {"messages": []}
+        return snap
+
+    mock_graph.get_state.side_effect = mock_get_state
+
+    # Seed t2
+    runner._seed_thread_overlap(t2)
+
+    # update_state should have been called for t2 with the last 3 messages: [m2, m3, m4]
+    mock_graph.update_state.assert_called_once_with(
+        {"configurable": {"thread_id": t2.id.hex}},
+        {"messages": [m2, m3, m4]},
+    )

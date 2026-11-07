@@ -224,7 +224,7 @@ def test_plan_builder_lifecycle(tmp_path: Path) -> None:
     resolver = ArtifactResolver(artifacts_dir)
     plan_info = resolver.load_artifact("plans", plan_uuid)
     assert plan_info.is_closed is True
-    assert plan_info.state.clicksLeft.get("proceed-btn") == 0
+    assert plan_info.state.clicksLeft.get("proceed-btn") == "*"
 
 
 def test_plan_review_button_and_unlimited_clicks(tmp_path: Path) -> None:

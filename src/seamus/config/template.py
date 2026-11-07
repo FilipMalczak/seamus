@@ -84,6 +84,8 @@ class ConfigTemplateStore:
             or os.getenv("SEAMUS_MODE", "").strip()
             or OperationalMode.PLAN.value
         )
+        overlap_str = os.getenv("SEAMUS_THREAD_MESSAGE_OVERLAP", "").strip()
+        thread_message_overlap = int(overlap_str) if overlap_str.isdigit() else 5
 
         return AgentConfig(
             inference=InferenceConfig(
@@ -93,6 +95,7 @@ class ConfigTemplateStore:
             ),
             model_name=model_name,
             mode=mode,
+            thread_message_overlap=thread_message_overlap,
         )
 
     def get_template(self) -> AgentConfig:
