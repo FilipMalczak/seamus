@@ -3,7 +3,10 @@
 from enum import StrEnum
 from typing import Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from seamus.vault.models import SecretSyntaxError
+from seamus.vault.parser import find_secret_references
 
 
 class InferenceFormat(StrEnum):
@@ -40,6 +43,17 @@ class InferenceConfig(BaseModel):
     base_url: str = "https://openrouter.ai/api/v1"
     api_key: str | None = None
 
+    @model_validator(mode="after")
+    def _validate_secret_refs(self) -> Self:
+        for field_name in ("base_url", "api_key"):
+            val = getattr(self, field_name)
+            if isinstance(val, str) and "${" in val:
+                try:
+                    find_secret_references(val, allow_version=False)
+                except SecretSyntaxError as exc:
+                    raise ValueError(str(exc)) from exc
+        return self
+
     def is_complete(self) -> bool:
         """Return True if all required inference fields are present and non-empty."""
         return bool(
@@ -61,6 +75,17 @@ class AgentConfig(BaseModel):
     todo_implementation: TodoImplementation = TodoImplementation.DEEPAGENTS
     skills_implementation: SkillsImplementation = SkillsImplementation.DEEPAGENTS
     thread_message_overlap: int = 5
+
+    @model_validator(mode="after")
+    def _validate_secret_refs(self) -> Self:
+        for field_name in ("model_name", "system_prompt"):
+            val = getattr(self, field_name)
+            if isinstance(val, str) and "${" in val:
+                try:
+                    find_secret_references(val, allow_version=False)
+                except SecretSyntaxError as exc:
+                    raise ValueError(str(exc)) from exc
+        return self
 
     def is_complete(self) -> bool:
         """Return True if this configuration is complete enough to initialize an agent."""

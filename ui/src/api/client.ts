@@ -13,6 +13,9 @@ import type {
   SystemSettings,
   SystemSettingsResponse,
   ThreadInfo,
+  VaultSecretDetailResponse,
+  VaultSecretListResponse,
+  VaultTokenResponse,
 } from "./types";
 
 const BASE_URL = "/api/v-alpha";
@@ -488,6 +491,28 @@ export async function clickArtifact(
     }
   );
   return handleResponse<ClickResult>(res);
+}
+
+export async function listVaultSecrets(): Promise<VaultSecretListResponse> {
+  const res = await fetch(`${BASE_URL}/vault/secrets`);
+  return handleResponse<VaultSecretListResponse>(res);
+}
+
+export async function createOrUpdateVaultSecret(
+  path: string,
+  data: Record<string, string>
+): Promise<VaultSecretDetailResponse> {
+  const res = await fetch(`${BASE_URL}/vault/secrets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path, data }),
+  });
+  return handleResponse<VaultSecretDetailResponse>(res);
+}
+
+export async function getVaultToken(): Promise<VaultTokenResponse> {
+  const res = await fetch(`${BASE_URL}/vault/token`);
+  return handleResponse<VaultTokenResponse>(res);
 }
 
 

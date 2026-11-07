@@ -3,12 +3,18 @@
 from fastapi import APIRouter
 
 from seamus.persistence import get_persistence_settings
-from seamus.server.schemas import SystemGiteaInfo, SystemInfoResponse, SystemLogfireInfo
+from seamus.server.schemas import (
+    SystemGiteaInfo,
+    SystemInfoResponse,
+    SystemLogfireInfo,
+    SystemVaultInfo,
+)
 from seamus.telemetry import (
     get_logfire_dashboard_url,
     get_logfire_service_name,
     is_logfire_enabled,
 )
+from seamus.vault.models import VaultSettings
 
 router = APIRouter(prefix="/system", tags=["system"])
 
@@ -25,6 +31,8 @@ async def get_system_info() -> SystemInfoResponse:
     gitea_url = persist_settings.gitea_external_url if gitea_on else None
     gitea_owner = persist_settings.gitea_admin_user if gitea_on else None
 
+    vault_settings = VaultSettings.from_env()
+
     return SystemInfoResponse(
         logfire=SystemLogfireInfo(
             enabled=logfire_on,
@@ -35,5 +43,10 @@ async def get_system_info() -> SystemInfoResponse:
             enabled=gitea_on,
             url=gitea_url,
             owner=gitea_owner,
+        ),
+        vault=SystemVaultInfo(
+            enabled=True,
+            url=vault_settings.external_url,
+            login_url=vault_settings.login_url,
         ),
     )

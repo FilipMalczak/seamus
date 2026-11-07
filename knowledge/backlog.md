@@ -93,6 +93,16 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## Technical debt
 
+### [CRITICAL] Dedicated PostgreSQL User/Database or Instance for OpenBao Storage
+- **Current Problem**: In the MVP OpenBao integration (`openbao/config.hcl` and `docker-compose.yml`), OpenBao shares the `gitea` PostgreSQL user and `gitea` database (`postgres://gitea:gitea@postgres:5432/gitea?sslmode=disable`) for its `vault_kv_store` and `vault_ha_locks` tables. Sharing database credentials and schema namespace between Gitea and the secrets vault violates least-privilege isolation.
+- **Improvement**: Provision at minimum a dedicated PostgreSQL role and database with strict privileges exclusively for OpenBao, or run a dedicated PostgreSQL instance for OpenBao storage.
+- **Provenance**: [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md), `openbao/config.hcl`, `docker-compose.yml`.
+
+### Thorough Security Review and Hardening of MVP OpenBao Secrets Integration
+- **Current Problem**: The initial OpenBao integration is an MVP design: `openbao-init` initializes a single-share unseal key and root token stored in the shared `openbao-auth` volume (`/var/run/seamus-openbao`), the backend authenticates using this root token, and `/api/v-alpha/vault/token` exposes the login token to the UI for convenience.
+- **Improvement**: Conduct a comprehensive security review and hardening pass on the OpenBao integration: replace root token usage in the backend with scoped AppRole/token policies, evaluate auto-unseal mechanisms or KMS integration instead of plaintext unseal key storage on a Docker volume, restrict token exposure endpoints, enable TLS, and audit secret interpolation boundaries so resolved secrets cannot be exfiltrated via prompt injection or error logs.
+- **Provenance**: [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md), `openbao/init.sh`, `src/seamus/vault/`, `src/seamus/server/routes/vault.py`.
+
 ### Session Branching Interaction with Session-Local Non-Blocking Artifacts and Multi-Repo Git Mounts
 - **Current Problem**: Session branching (`branch_session`) copies thread checkpoint history and Git commits from a specific parent assistant turn. However, non-blocking artifacts (such as `plan`) and session-level directories (such as notes and specs in `/workspace`) are session-scoped and encompass multi-turn, multi-phase exchanges. In addition, when future multi-repository mounts are introduced, multiple Git repositories must remain synchronized across branches, phases, and thread checkpoints. We need to rethink and review how session branching, session-local non-blocking artifacts, and multi-repo Git mounts interact safely without orphaned artifacts, desynchronized working trees, or broken plan lineage.
 - **Improvement**: Formally model artifact provenance and multi-repo checkpoint synchronization in `branch_session`, ensuring child branched sessions cleanly copy or fork active plan artifacts and multi-mount Git states without conflicting with the parent session.
@@ -289,6 +299,8 @@ Persistent record of work intentionally left outstanding across the project, mai
 - multiple mounted repos; this will require us to figure out squashing strategies and how to track which commit corresponds to which across repos [high, but complicated]
 
 - default implementation selection: decide on system-wide defaults for `todo_implementation` and `skills_implementation` once alternative/native implementations are stabilized
+
+- if a field in config or config template would be masked and contains ${} expression, it doesn't need to be masked
 
 - way, waaaaay forward: disablability of more layers and components; 
   - for sure context compaction, I dont like it

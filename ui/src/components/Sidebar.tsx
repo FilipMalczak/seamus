@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Flame,
   GitBranch,
+  KeyRound,
   Loader2,
   MessageSquare,
   Pencil,
@@ -611,7 +612,9 @@ export function Sidebar({
         )}
       </div>
 
-      {(systemInfo?.logfire?.enabled || systemInfo?.gitea?.enabled) && (
+      {(systemInfo?.logfire?.enabled ||
+        systemInfo?.gitea?.enabled ||
+        systemInfo?.vault?.enabled) && (
         <div className="sidebar-footer">
           <div className="system-links-row">
             {systemInfo?.logfire?.enabled && (
@@ -631,6 +634,24 @@ export function Sidebar({
                 <Flame size={18} />
               </a>
             )}
+            {systemInfo?.vault?.enabled &&
+              (systemInfo.vault.login_url || systemInfo.vault.url) && (
+                <a
+                  href={
+                    systemInfo.vault.login_url ||
+                    `${systemInfo.vault.url?.replace(/\/$/, "")}/ui/vault/auth?with=token`
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="system-link-icon system-link-vault"
+                  title={`Open OpenBao Login via Token (${
+                    systemInfo.vault.login_url || systemInfo.vault.url
+                  })`}
+                  aria-label="Open OpenBao Login via Token"
+                >
+                  <KeyRound size={18} />
+                </a>
+              )}
             {systemInfo?.gitea?.enabled && systemInfo.gitea.url && (
               <>
                 <a

@@ -50,11 +50,17 @@ __all__ = [
     "SystemInfoResponse",
     "SystemLogfireInfo",
     "SystemSettingsResponse",
+    "SystemVaultInfo",
     "ThreadCreateRequest",
     "ThreadResponse",
     "ThreadUpdateRequest",
     "ToolInspectInfo",
     "UserInputRequest",
+    "VaultSecretCreateRequest",
+    "VaultSecretDetailResponse",
+    "VaultSecretItem",
+    "VaultSecretListResponse",
+    "VaultTokenResponse",
     "WorkspaceInspectInfo",
 ]
 
@@ -230,11 +236,56 @@ class SystemGiteaInfo(BaseModel):
     owner: str | None = None
 
 
+class SystemVaultInfo(BaseModel):
+    """Information about OpenBao secrets vault integration."""
+
+    enabled: bool = True
+    url: str | None = None
+    login_url: str | None = None
+
+
 class SystemInfoResponse(BaseModel):
     """Information about system integrations and external systems."""
 
     logfire: SystemLogfireInfo
     gitea: SystemGiteaInfo
+    vault: SystemVaultInfo = Field(default_factory=SystemVaultInfo)
+
+
+class VaultSecretItem(BaseModel):
+    """Summary of a secret stored in OpenBao."""
+
+    path: str
+    keys: list[str] = Field(default_factory=list)
+    version: int | None = None
+
+
+class VaultSecretListResponse(BaseModel):
+    """Response listing all secret paths and their field keys in OpenBao."""
+
+    secrets: list[VaultSecretItem] = Field(default_factory=list)
+
+
+class VaultSecretCreateRequest(BaseModel):
+    """Request payload for creating or updating a secret in OpenBao."""
+
+    path: str
+    data: dict[str, str]
+
+
+class VaultSecretDetailResponse(BaseModel):
+    """Detailed metadata response for a secret in OpenBao (without plaintext values)."""
+
+    path: str
+    keys: list[str] = Field(default_factory=list)
+    current_version: int | None = None
+    versions: list[int] = Field(default_factory=list)
+
+
+class VaultTokenResponse(BaseModel):
+    """Response containing the OpenBao login token."""
+
+    token: str | None = None
 
 
 class SessionDiffResponse(BaseModel):

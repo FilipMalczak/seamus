@@ -517,14 +517,17 @@ class GitWorkspaceManager:
             logger.warning("Failed to auto-pull session workspace %s: %s", session.id, exc)
             return False
 
-    def commit_session_config(self, session: Session) -> None:
-        """Serialize and commit session configuration directory to session branch."""
-        if not self.settings.enabled:
-            return
-
+    def write_session_config_file(
+        self,
+        session: Session,
+        config_dict: dict[str, Any] | None = None,
+    ) -> Path | None:
+        """Write session configuration JSON to agent/config/config.json in the session workspace."""
         session_dir = self.get_session_workspace_path(session.agent_id, session.id)
-        if not (session_dir / ".git").exists():
-            return
+        if not session_dir.exists() and not self.settings.enabled:
+            return None
+        if self.settings.enabled and not (session_dir / ".git").exists():
+            return None
 
         config_dir = session_dir / "agent" / "config"
         config_dir.mkdir(parents=True, exist_ok=True)
@@ -534,7 +537,7 @@ class GitWorkspaceManager:
             "agent_id": str(session.agent_id),
             "name": session.name,
             "created_at": session.created_at.isoformat(),
-            "config": session.config.model_dump(),
+            "config": config_dict if config_dict is not None else session.config.model_dump(),
             "status": session.status.value,
             "active_plan_id": session.active_plan_id,
             "provenance": (
@@ -554,9 +557,20 @@ class GitWorkspaceManager:
                 for t in sorted(session.threads.values(), key=lambda t: t.created_at)
             ],
         }
-        (config_dir / "config.json").write_text(
-            json.dumps(config_payload, indent=2), encoding="utf-8"
-        )
+        config_file = config_dir / "config.json"
+        config_file.write_text(json.dumps(config_payload, indent=2), encoding="utf-8")
+        return config_file
+
+    def commit_session_config(self, session: Session) -> None:
+        """Serialize and commit session configuration directory to session branch."""
+        if not self.settings.enabled:
+            return
+
+        session_dir = self.get_session_workspace_path(session.agent_id, session.id)
+        if not (session_dir / ".git").exists():
+            return
+
+        self.write_session_config_file(session)
 
         status = self._run_git(session_dir, ["status", "--porcelain", "agent/config/"])
         if status.stdout.strip():
@@ -998,7 +1012,9 @@ class GitWorkspaceManager:
             return False
 
         paths_to_check = [
-            p for p in ["data", "agent/state", "artifacts", "notes"] if (session_dir / p).exists()
+            p
+            for p in ["data", "agent/state", "agent/config", "artifacts", "notes"]
+            if (session_dir / p).exists()
         ]
         if not paths_to_check:
             return False

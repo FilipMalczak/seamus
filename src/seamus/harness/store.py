@@ -921,8 +921,12 @@ class HarnessStore:
                 if not main_raw:
                     continue
                 try:
+                    from seamus.vault.interpolator import strip_secret_versions
+
                     agent_payload = json.loads(main_raw)
-                    agent_config = AgentConfig.model_validate(agent_payload.get("config", {}))
+                    agent_config = AgentConfig.model_validate(
+                        strip_secret_versions(agent_payload.get("config", {}))
+                    )
                     created_at_str = agent_payload.get("created_at")
                     agent_created_at = (
                         datetime.fromisoformat(created_at_str)
@@ -956,7 +960,7 @@ class HarnessStore:
                     try:
                         session_payload = json.loads(session_raw)
                         session_config = AgentConfig.model_validate(
-                            session_payload.get("config", {})
+                            strip_secret_versions(session_payload.get("config", {}))
                         )
                         session_created_at_str = session_payload.get("created_at")
                         session_created_at = (
