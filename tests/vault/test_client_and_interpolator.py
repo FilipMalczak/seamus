@@ -333,3 +333,86 @@ def test_checkpoint_saver_explodes_secret_expressions_on_disk_and_git(tmp_path: 
 
     # Verify session.config in memory was NOT mutated to include version=5
     assert session.config.inference.api_key == "${secret('/api-key/inference/openrouter')}"
+
+
+def test_write_session_config_file_explodes_secret_expressions_without_config_dict(
+    tmp_path: Path,
+) -> None:
+    agent_cfg = AgentConfig(
+        inference=InferenceConfig(
+            api_key="${secret('/api-key/inference/openrouter')}",
+            base_url="https://openrouter.ai/api/v1",
+        ),
+        model_name="openai/gpt-oss-120b",
+    )
+    agent = Agent(name="test-agent", config=agent_cfg)
+    session = Session(
+        agent_id=agent.id,
+        name="test-session",
+        config=agent_cfg,
+        secret_versions={"/api-key/inference/openrouter:value": 7},
+    )
+
+    settings = PersistenceSettings(workspace_dir=tmp_path / "ws", enabled=False)
+    ws_mgr = GitWorkspaceManager(settings=settings)
+    ws_mgr.create_session_workspace(session, agent)
+
+    # Calling write_session_config_file with NO config_dict
+    ws_mgr.write_session_config_file(session)
+
+    session_dir = ws_mgr.get_session_workspace_path(agent.id, session.id)
+    config_file = session_dir / "agent" / "config" / "config.json"
+    disk_data = json.loads(config_file.read_text(encoding="utf-8"))
+    assert (
+        disk_data["config"]["inference"]["api_key"]
+        == "${secret(path='/api-key/inference/openrouter', field='value', version=7)}"
+    )
+    # Memory config remains unversioned
+    assert session.config.inference.api_key == "${secret('/api-key/inference/openrouter')}"
+
+
+def test_commit_session_config_resolves_vault_version_if_not_cached(tmp_path: Path) -> None:
+    agent_cfg = AgentConfig(
+        inference=InferenceConfig(
+            api_key="${secret('/api-key/inference/openrouter')}",
+            base_url="https://openrouter.ai/api/v1",
+        ),
+        model_name="openai/gpt-oss-120b",
+    )
+    agent = Agent(name="test-agent", config=agent_cfg)
+    session = Session(
+        agent_id=agent.id,
+        name="test-session",
+        config=agent_cfg,
+    )
+
+    settings = PersistenceSettings(workspace_dir=tmp_path / "ws", enabled=False)
+    ws_mgr = GitWorkspaceManager(settings=settings)
+    ws_mgr.create_session_workspace(session, agent)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/secret/metadata/api-key/inference/openrouter":
+            return httpx.Response(200, json={"data": {"current_version": 9}})
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    sync_http = httpx.Client(transport=transport, base_url="http://openbao:8200")
+    vault_client = VaultClient(sync_client=sync_http)
+
+    from seamus.vault.client import reset_default_vault_client
+
+    reset_default_vault_client(vault_client)
+    try:
+        ws_mgr.write_session_config_file(session)
+    finally:
+        reset_default_vault_client(None)
+
+    session_dir = ws_mgr.get_session_workspace_path(agent.id, session.id)
+    config_file = session_dir / "agent" / "config" / "config.json"
+    disk_data = json.loads(config_file.read_text(encoding="utf-8"))
+    assert (
+        disk_data["config"]["inference"]["api_key"]
+        == "${secret(path='/api-key/inference/openrouter', field='value', version=9)}"
+    )
+    assert session.config.inference.api_key == "${secret('/api-key/inference/openrouter')}"
+    sync_http.close()

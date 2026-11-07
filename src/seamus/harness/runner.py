@@ -645,6 +645,9 @@ class SessionAgentRunner:
         self.session.config.validate_complete()
         resolved_config, version_map = resolve_secrets_with_versions_sync(self.session.config)
         self._loaded_secret_versions = dict(version_map)
+        self.session.secret_versions = {
+            f"{k[0]}:{k[1]}": v for k, v in self._loaded_secret_versions.items()
+        }
         self._resolved_system_prompt = resolved_config.system_prompt
         api_key = resolved_config.inference.api_key or ""
         base_url = resolved_config.inference.base_url
@@ -1002,6 +1005,9 @@ class SessionAgentRunner:
             self.session.config, client=client
         )
         self._loaded_secret_versions = dict(version_map)
+        self.session.secret_versions = {
+            f"{k[0]}:{k[1]}": v for k, v in self._loaded_secret_versions.items()
+        }
         self._apply_resolved_config_to_llm(resolved_config)
         logger.info(
             "Reloaded updated secret versions for session %s: %s",
@@ -1053,6 +1059,9 @@ class SessionAgentRunner:
             self.session.config, client=client
         )
         self._loaded_secret_versions = dict(version_map)
+        self.session.secret_versions = {
+            f"{k[0]}:{k[1]}": v for k, v in self._loaded_secret_versions.items()
+        }
         self._apply_resolved_config_to_llm(resolved_config)
         logger.info(
             "Reloaded updated secret versions for session %s: %s",
@@ -1822,7 +1831,7 @@ class SessionAgentRunner:
                 self.session.agent_id, self.session.id, new_thread.id, new_thread.events
             )
             ws_mgr.commit_state_changes(self.session.agent_id, self.session.id, new_thread.id)
-            ws_mgr.commit_session_config(self.session)
+            ws_mgr.commit_session_config(self.session, secret_versions=self._loaded_secret_versions)
         except Exception:
             logger.exception("Failed to persist thread transition for session %s", self.session.id)
 
@@ -2325,7 +2334,9 @@ class SessionAgentRunner:
                             ws_mgr.commit_state_changes(
                                 self.session.agent_id, self.session.id, thread.id
                             )
-                            ws_mgr.commit_session_config(self.session)
+                            ws_mgr.commit_session_config(
+                                self.session, secret_versions=self._loaded_secret_versions
+                            )
                         except Exception:
                             logger.exception(
                                 "Failed to commit state changes on turn completion "

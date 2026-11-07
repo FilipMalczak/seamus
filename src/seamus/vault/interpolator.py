@@ -1,6 +1,6 @@
 """Recursive resolver, validator, and checkpoint exploder for secret reference expressions."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from pydantic import BaseModel
@@ -256,7 +256,7 @@ def resolve_secrets_sync[T](obj: T, client: VaultClient | None = None) -> T:
 
 def explode_secret_string(
     text: str,
-    version_map: Mapping[tuple[str, str], int],
+    version_map: Mapping[Any, int],
     default_version: int = 1,
 ) -> str:
     """Rewrite ${secret(...)} expressions in text into canonical exploded form with version.
@@ -269,15 +269,64 @@ def explode_secret_string(
 
     result = text
     for full_expr, ref in matches:
-        ver = version_map.get((ref.normalized_path, ref.field)) or ref.version or default_version
+        norm = ref.normalized_path
+        clean = norm.lstrip("/")
+        ver = (
+            version_map.get((norm, ref.field))
+            or version_map.get((clean, ref.field))
+            or version_map.get((ref.path, ref.field))
+            or version_map.get(f"{norm}:{ref.field}")
+            or version_map.get(f"{clean}:{ref.field}")
+            or ref.version
+            or default_version
+        )
         exploded = ref.to_exploded_expression(ver)
         result = result.replace(full_expr, exploded, 1)
     return result
 
 
+def get_secret_versions_for_references_sync(
+    refs: Sequence[SecretReference],
+    version_map: Mapping[Any, int] | None = None,
+    client: VaultClient | None = None,
+) -> dict[tuple[str, str], int]:
+    """Resolve or lookup secret versions for a sequence of SecretReferences."""
+    result: dict[tuple[str, str], int] = {}
+    if version_map:
+        for k, v in version_map.items():
+            if isinstance(k, tuple) and len(k) == 2:
+                norm_path = f"/{str(k[0]).strip().lstrip('/')}"
+                result[(norm_path, str(k[1]))] = int(v)
+            elif isinstance(k, str) and ":" in k:
+                p, f = k.split(":", 1)
+                norm_path = f"/{p.strip().lstrip('/')}"
+                result[(norm_path, f)] = int(v)
+
+    vault_client = None
+    for ref in refs:
+        norm_key = (ref.normalized_path, ref.field)
+        if norm_key in result:
+            continue
+        if ref.version is not None:
+            result[norm_key] = ref.version
+            continue
+        if vault_client is None:
+            vault_client = client or get_default_vault_client()
+        try:
+            meta = vault_client.get_secret_metadata_sync(ref.path)
+            result[norm_key] = int(meta.get("current_version") or 1)
+        except Exception:
+            try:
+                _, ver = vault_client.get_secret_with_version_sync(ref.path)
+                result[norm_key] = ver
+            except Exception:
+                result[norm_key] = 1
+    return result
+
+
 def explode_secret_references[T](
     obj: T,
-    version_map: Mapping[tuple[str, str], int],
+    version_map: Mapping[Any, int],
     default_version: int = 1,
 ) -> T:
     """Recursively rewrite ${secret(...)} references in obj into exploded versioned form.

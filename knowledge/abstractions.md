@@ -96,7 +96,8 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `VaultClient`: Async and sync client for OpenBao KV v2 (`get_secret_with_version`, `get_secret_field_with_version`, `get_secret_metadata`, `set_secret`, `list_secrets`, plus `*_sync` counterparts).
 - `parse_secret_reference` / `find_secret_references`: Parser for `${secret('/path')}` and `${secret(path='/path', field='value')}` with `allow_version: bool` enforcement.
 - `resolve_secrets_with_versions` / `resolve_secrets_with_versions_sync`: Deep in-memory secret interpolation returning `(resolved_model, version_map)` without mutating the source Pydantic model.
-- `explode_secret_references` / `strip_secret_versions`: Helpers rewriting secret expressions with explicit `path=`, `field=`, and `version=` for checkpoint commits (`GitCheckpointSaver`) and stripping `version=` upon hydration from Gitea (`HarnessStore`, `ConfigTemplateStore`).
+- `explode_secret_references` / `strip_secret_versions`: Helpers rewriting secret expressions with explicit `path=`, `field=`, and `version=` for session config and checkpoint commits (`GitWorkspaceManager`, `GitCheckpointSaver`) and stripping `version=` upon hydration from Gitea (`HarnessStore`, `ConfigTemplateStore`).
+- `get_secret_versions_for_references_sync`: Helper resolving current versions for referenced secrets from memory or vault queries without leaking secret values.
 
 ### Artifacts Subsystem (`seamus.domain.artifacts`, `seamus.harness.artifacts`)
 - `ManifestButton`: Pydantic model (`id: str`, `mode: Literal["set", "append"]`, `clicks: int | Literal["*"]`, `unblocking: bool`, `closing: bool`).
