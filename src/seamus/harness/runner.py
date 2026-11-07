@@ -59,6 +59,7 @@ from seamus.harness.artifacts import (
     Question,
     QuestionItem,
     QuestionnaireBuilder,
+    check_a2ui_surface_warnings,
     dispatch_button_click,
     normalize_a2ui_components,
     seed_default_artifacts,
@@ -1129,6 +1130,8 @@ class SessionAgentRunner:
                 f"Validation errors:\n{formatted_errors}"
             )
 
+        surface_warnings = check_a2ui_surface_warnings(components=components)
+
         ws_mgr = get_workspace_manager()
         artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
         normalized_components = normalize_a2ui_components(components)
@@ -1150,6 +1153,11 @@ class SessionAgentRunner:
         thread = self.session.get_open_thread()
         if thread is not None:
             thread.append_event(art_event)
+
+        if surface_warnings:
+            warnings_text = "\n".join(f"- {w}" for w in surface_warnings)
+            return f"{inst_uuid}\n\nWarning: Incomplete A2UI component tree:\n{warnings_text}"
+
         return inst_uuid
 
     def handle_make_questionnaire(

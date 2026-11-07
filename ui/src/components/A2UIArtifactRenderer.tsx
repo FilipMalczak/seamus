@@ -61,7 +61,7 @@ interface A2UIArtifactRendererProps {
  * Seamlessly adapts legacy or custom shapes (like ChoiceSet -> ChoicePicker, Text variant 'bold' -> Markdown body).
  */
 function normalizeComponents(components: Array<Record<string, any>>): Array<Record<string, any>> {
-  return components.map((comp) => {
+  const normalized = components.map((comp) => {
     if (!comp || typeof comp !== "object") return comp;
 
     if (comp.component === "Text") {
@@ -138,6 +138,38 @@ function normalizeComponents(components: Array<Record<string, any>>): Array<Reco
 
     return comp;
   });
+
+  // Ensure there is a root component for A2UI MessageProcessor/NodeResolver
+  const hasRoot = normalized.some((c: any) => c && c.id === "root");
+  if (!hasRoot && normalized.length > 0) {
+    const referenced = new Set<string>();
+    for (const c of normalized) {
+      if (!c) continue;
+      if (typeof c.child === "string") referenced.add(c.child);
+      if (Array.isArray(c.children)) {
+        for (const ch of c.children) {
+          if (typeof ch === "string") referenced.add(ch);
+        }
+      }
+      if (typeof c.trigger === "string") referenced.add(c.trigger);
+      if (typeof c.content === "string") referenced.add(c.content);
+      if (Array.isArray(c.tabs)) {
+        for (const t of c.tabs) {
+          if (t && typeof t.child === "string") referenced.add(t.child);
+        }
+      }
+    }
+    const roots = normalized.filter((c: any) => c && c.id && !referenced.has(c.id)).map((c: any) => c.id);
+    if (roots.length > 0) {
+      normalized.unshift({
+        id: "root",
+        component: "Column",
+        children: roots,
+      });
+    }
+  }
+
+  return normalized;
 }
 
 export function A2UIArtifactRenderer({

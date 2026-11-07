@@ -286,7 +286,161 @@ def normalize_a2ui_components(components: list[dict[str, Any]]) -> list[dict[str
             continue
 
         normalized.append(c)
+
+    # Ensure there is a root component for A2UI MessageProcessor/NodeResolver
+    has_root = any(isinstance(c, dict) and c.get("id") == "root" for c in normalized)
+    if not has_root and normalized:
+        referenced_ids: set[str] = set()
+        for c in normalized:
+            if not isinstance(c, dict):
+                continue
+            child = c.get("child")
+            if isinstance(child, str):
+                referenced_ids.add(child)
+            children = c.get("children")
+            if isinstance(children, list):
+                for ch in children:
+                    if isinstance(ch, str):
+                        referenced_ids.add(ch)
+            trigger = c.get("trigger")
+            if isinstance(trigger, str):
+                referenced_ids.add(trigger)
+            content = c.get("content")
+            if isinstance(content, str):
+                referenced_ids.add(content)
+            tabs = c.get("tabs")
+            if isinstance(tabs, list):
+                for t in tabs:
+                    if isinstance(t, dict) and isinstance(t.get("child"), str):
+                        referenced_ids.add(t["child"])
+
+        root_candidates = [
+            str(c["id"])
+            for c in normalized
+            if isinstance(c, dict) and c.get("id") and str(c["id"]) not in referenced_ids
+        ]
+        if root_candidates:
+            normalized.insert(
+                0,
+                {
+                    "id": "root",
+                    "component": "Column",
+                    "children": root_candidates,
+                },
+            )
+
     return normalized
+
+
+def check_a2ui_surface_warnings(components: Any) -> list[str]:
+    """Inspect component definitions and return warnings for statically incomplete structures.
+
+    Warnings do not prevent artifact creation, but alert agents to structural
+    omissions such as missing 'root' components, multiple disconnected root widgets,
+    or unreachable/orphaned components.
+    """
+    warnings: list[str] = []
+    if not isinstance(components, list) or len(components) == 0:
+        return warnings
+
+    component_ids: list[str] = []
+    referenced_ids: set[str] = set()
+
+    for comp in components:
+        if not isinstance(comp, dict):
+            continue
+        c_id = comp.get("id")
+        if isinstance(c_id, str):
+            component_ids.append(c_id)
+
+        child = comp.get("child")
+        if isinstance(child, str):
+            referenced_ids.add(child)
+        children = comp.get("children")
+        if isinstance(children, list):
+            for ch in children:
+                if isinstance(ch, str):
+                    referenced_ids.add(ch)
+        trigger = comp.get("trigger")
+        if isinstance(trigger, str):
+            referenced_ids.add(trigger)
+        content = comp.get("content")
+        if isinstance(content, str):
+            referenced_ids.add(content)
+        tabs = comp.get("tabs")
+        if isinstance(tabs, list):
+            for t in tabs:
+                if isinstance(t, dict) and isinstance(t.get("child"), str):
+                    referenced_ids.add(t["child"])
+
+    roots = [cid for cid in component_ids if cid not in referenced_ids]
+
+    if "root" not in component_ids:
+        if len(roots) > 1:
+            warnings.append(
+                f"No component with id='root' was provided, and multiple disconnected top-level "
+                f"components ({', '.join(roots)}) were detected. A root 'Column' container was "
+                "automatically synthesized to render them. To have full layout control, define an "
+                "explicit root component with id='root' (such as Column or Row) and list these "
+                "components in its 'children'."
+            )
+        elif len(roots) == 1:
+            warnings.append(
+                f"No component with id='root' was provided. Top-level component '{roots[0]}' "
+                "was wrapped in an auto-synthesized root 'Column'. To ensure standard A2UI "
+                "rendering, name your top-level container with id='root'."
+            )
+        else:
+            warnings.append(
+                "No component with id='root' was provided and no top-level root candidates "
+                "were found."
+            )
+    else:
+        # 'root' is defined, check for any orphaned components not reachable from 'root'
+        adj: dict[str, list[str]] = {cid: [] for cid in component_ids}
+        for comp in components:
+            if not isinstance(comp, dict):
+                continue
+            c_id = comp.get("id")
+            if not isinstance(c_id, str):
+                continue
+            for ch in [comp.get("child"), comp.get("trigger"), comp.get("content")]:
+                if isinstance(ch, str) and ch in adj:
+                    adj[c_id].append(ch)
+            children = comp.get("children")
+            if isinstance(children, list):
+                for ch in children:
+                    if isinstance(ch, str) and ch in adj:
+                        adj[c_id].append(ch)
+            tabs = comp.get("tabs")
+            if isinstance(tabs, list):
+                for t in tabs:
+                    if (
+                        isinstance(t, dict)
+                        and isinstance(t.get("child"), str)
+                        and t["child"] in adj
+                    ):
+                        adj[c_id].append(t["child"])
+
+        reachable: set[str] = set()
+        queue = ["root"]
+        while queue:
+            curr = queue.pop(0)
+            if curr in reachable:
+                continue
+            reachable.add(curr)
+            for neighbor in adj.get(curr, []):
+                if neighbor not in reachable:
+                    queue.append(neighbor)
+
+        orphans = [cid for cid in component_ids if cid not in reachable]
+        if orphans:
+            warnings.append(
+                f"Orphaned component(s) {orphans} are not reachable from 'root' and will "
+                "not be rendered on the surface."
+            )
+
+    return warnings
 
 
 def seed_default_artifacts(artifacts_dir: Path) -> None:
@@ -371,9 +525,10 @@ def validate_a2ui_surface(
         return errors
 
     # 2. Normalize components (ChoiceSet -> ChoicePicker, TextInput -> TextField,
-    # bold -> body, etc.)
+    # bold -> body, synthesize root Column container if missing, etc.)
     normalized = normalize_a2ui_components(components)
     components_by_id = {c["id"]: c for c in normalized if isinstance(c, dict) and "id" in c}
+    normalized_ids = set(components_by_id.keys())
 
     # 3. Schema validation for each component (required properties, allowed envelope,
     # unrecognized keys)
@@ -444,8 +599,8 @@ def validate_a2ui_surface(
             )
 
     # 4. Extract child references and parent relationships
-    adj: dict[str, list[str]] = {cid: [] for cid in seen_ids}
-    parent_map: dict[str, list[str]] = {cid: [] for cid in seen_ids}
+    adj: dict[str, list[str]] = {cid: [] for cid in normalized_ids}
+    parent_map: dict[str, list[str]] = {cid: [] for cid in normalized_ids}
 
     for c_id, comp in components_by_id.items():
         c_type, props = _extract_component_type_and_props(comp)
@@ -493,7 +648,7 @@ def validate_a2ui_surface(
                 child_refs.append(props["trigger"])
 
         for ch in child_refs:
-            if ch not in seen_ids:
+            if ch not in normalized_ids:
                 errors.append(
                     f"Dangling child reference: component '{c_id}' references child '{ch}', "
                     "which does not exist in components."
@@ -511,7 +666,7 @@ def validate_a2ui_surface(
             )
 
     # 6. Cycle detection in component hierarchy
-    color: dict[str, int] = {cid: 0 for cid in seen_ids}
+    color: dict[str, int] = {cid: 0 for cid in normalized_ids}
 
     def dfs_cycle(node: str, path: list[str]) -> bool:
         color[node] = 1
@@ -531,13 +686,13 @@ def validate_a2ui_surface(
         color[node] = 2
         return False
 
-    for node in seen_ids:
+    for node in normalized_ids:
         if color[node] == 0:
             dfs_cycle(node, [])
 
     # 7. Root existence check
     roots = [cid for cid, parents in parent_map.items() if not parents]
-    if len(seen_ids) > 0 and len(roots) == 0:
+    if len(normalized_ids) > 0 and len(roots) == 0:
         errors.append(
             "Invalid component hierarchy: No root component found "
             "(all components are children of other components, forming a closed cycle)."
@@ -556,7 +711,7 @@ def validate_a2ui_surface(
                     for b in btns
                     if isinstance(b, dict) and "id" in b and b["id"] is not None
                 }
-        for c_id in seen_ids:
+        for c_id in normalized_ids:
             c_comp = components_by_id.get(c_id, {})
             c_type, _ = _extract_component_type_and_props(c_comp)
             if c_type == "Button":
@@ -579,7 +734,7 @@ def validate_a2ui_surface(
                     parts = p.strip("/").split("/")
                     if len(parts) >= 2:
                         target_id = parts[1]
-                        if target_id not in seen_ids:
+                        if target_id not in normalized_ids:
                             errors.append(
                                 f"Action context pointer '{p}' references non-existent "
                                 f"component '{target_id}'."

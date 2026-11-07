@@ -25,6 +25,7 @@ from seamus.harness.artifacts import (
     PlanBuilder,
     Question,
     QuestionnaireBuilder,
+    check_a2ui_surface_warnings,
     dispatch_button_click,
     normalize_a2ui_components,
     seed_default_artifacts,
@@ -715,7 +716,8 @@ def test_validate_a2ui_surface_component_properties_and_buttons() -> None:
     t_bad_var = [{"id": "t2", "component": "Text", "text": "Hi", "variant": "ultra-mega-bold"}]
     assert validate_a2ui_surface(components=t_bad_var) == []
     normalized = normalize_a2ui_components(t_bad_var)
-    assert normalized[0]["variant"] == "body"
+    t2_comp = next(c for c in normalized if c.get("id") == "t2")
+    assert t2_comp["variant"] == "body"
 
     # Image invalid fit enum is rejected with enum error
     img_bad_fit = [
@@ -1023,3 +1025,128 @@ def test_validate_a2ui_surface_normalizes_choiceset_and_textinput() -> None:
     ]
     errors = validate_a2ui_surface(components)
     assert errors == []
+
+
+def test_normalize_a2ui_components_synthesizes_root_column_when_missing() -> None:
+    raw_components: list[dict[str, Any]] = [
+        {"id": "intro", "component": "Text", "text": "Hello"},
+        {
+            "id": "btn",
+            "component": "Button",
+            "child": "lbl",
+            "action": {"event": {"name": "click", "context": {}}},
+        },
+        {"id": "lbl", "component": "Text", "text": "Click"},
+    ]
+    normalized = normalize_a2ui_components(raw_components)
+    # Root component synthesized at index 0
+    assert normalized[0]["id"] == "root"
+    assert normalized[0]["component"] == "Column"
+    assert normalized[0]["children"] == ["intro", "btn"]
+
+    # When root is already present, no second root is synthesized
+    with_root: list[dict[str, Any]] = [
+        {"id": "root", "component": "Row", "children": ["t1"]},
+        {"id": "t1", "component": "Text", "text": "Already has root"},
+    ]
+    normalized_with_root = normalize_a2ui_components(with_root)
+    assert len([c for c in normalized_with_root if c["id"] == "root"]) == 1
+    assert normalized_with_root[0]["component"] == "Row"
+
+
+def test_check_a2ui_surface_warnings_missing_root_multiple_roots() -> None:
+    raw_components: list[dict[str, Any]] = [
+        {"id": "intro", "component": "Text", "text": "Hello"},
+        {
+            "id": "btn",
+            "component": "Button",
+            "child": "lbl",
+            "action": {"event": {"name": "click", "context": {}}},
+        },
+        {"id": "lbl", "component": "Text", "text": "Click"},
+    ]
+    warnings = check_a2ui_surface_warnings(raw_components)
+    assert len(warnings) == 1
+    assert "No component with id='root' was provided" in warnings[0]
+    assert "multiple disconnected top-level components (intro, btn)" in warnings[0]
+
+
+def test_check_a2ui_surface_warnings_missing_root_single_root() -> None:
+    raw_components: list[dict[str, Any]] = [
+        {"id": "main_col", "component": "Column", "children": ["lbl"]},
+        {"id": "lbl", "component": "Text", "text": "Inside"},
+    ]
+    warnings = check_a2ui_surface_warnings(raw_components)
+    assert len(warnings) == 1
+    assert (
+        "Top-level component 'main_col' was wrapped in an auto-synthesized root 'Column'"
+        in warnings[0]
+    )
+
+
+def test_check_a2ui_surface_warnings_orphaned_components() -> None:
+    raw_components: list[dict[str, Any]] = [
+        {"id": "root", "component": "Column", "children": ["c1"]},
+        {"id": "c1", "component": "Text", "text": "Connected"},
+        {"id": "c2", "component": "Text", "text": "Orphaned"},
+    ]
+    warnings = check_a2ui_surface_warnings(raw_components)
+    assert len(warnings) == 1
+    assert "Orphaned component(s) ['c2'] are not reachable from 'root'" in warnings[0]
+
+
+def test_make_artifact_auto_synthesizes_root_and_returns_warning() -> None:
+    store = HarnessStore()
+    config = _make_agent_config()
+    agent = store.create_agent(config=config, name="agent-warning-showcase")
+    session = store.create_session(agent_identifier=str(agent.id), name="session-warning-showcase")
+    runner = SessionAgentRunner(session=session)
+
+    # Component tree missing root with multiple disconnected widgets
+    components: list[dict[str, Any]] = [
+        {"id": "intro", "component": "Text", "text": "Intro text"},
+        {
+            "id": "ok-btn",
+            "component": "Button",
+            "child": "ok-lbl",
+            "action": {"event": {"name": "ok", "context": {}}},
+        },
+        {"id": "ok-lbl", "component": "Text", "text": "OK"},
+    ]
+    manifest = ArtifactManifest(
+        name="Showcase Without Root",
+        exposition="embedded",
+        buttons=[ManifestButton(id="ok-btn", mode="set", clicks=1)],
+    )
+
+    result = runner.handle_make_artifact(
+        family="custom",
+        manifest=manifest,
+        components=components,
+        uuid="auto-root-uuid",
+    )
+
+    # Artifact is stored and created event is emitted
+    assert "auto-root-uuid" in result
+    assert "Warning: Incomplete A2UI component tree:" in result
+    assert "No component with id='root' was provided" in result
+
+    from seamus.persistence import get_workspace_manager
+
+    art_dir = (
+        get_workspace_manager().get_session_artifacts_dir(session.agent_id, session.id)
+        / "custom"
+        / "auto-root-uuid"
+    )
+    assert art_dir.exists()
+    body_data = json.loads((art_dir / "body.json").read_text(encoding="utf-8"))
+    # Stored body has synthesized root Column
+    assert body_data[0]["id"] == "root"
+    assert body_data[0]["component"] == "Column"
+    assert body_data[0]["children"] == ["intro", "ok-btn"]
+
+    thread = session.get_open_thread()
+    assert thread is not None
+    created_events = [e for e in thread.events if e.get("type") == "ARTIFACT_CREATED"]
+    assert len(created_events) == 1
+    assert created_events[0]["artifact_id"] == "auto-root-uuid"
