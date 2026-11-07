@@ -49,6 +49,47 @@ def test_sandbox_backend_mounts_bundled_skill_and_artifacts(tmp_path: Path) -> N
     assert bundled_vol.name == "skills-bundled"
     assert bundled_vol.mount_path == "/skills/bundled"
     assert bundled_vol.read_only is True
+    assert bundled_vol.host is not None
+    assert bundled_vol.pvc is None
+
+
+def test_sandbox_backend_mounts_bundled_skill_via_workspace_volume(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspaces"
+    data_dir = workspace_root / "agent-1" / "session-1" / "data"
+    artifacts_dir = workspace_root / "agent-1" / "session-1" / "artifacts"
+    data_dir.mkdir(parents=True)
+    artifacts_dir.mkdir(parents=True)
+
+    backend = SeamusOpenSandboxBackend(
+        agent_id=uuid4(),
+        session_id=uuid4(),
+        data_dir=data_dir,
+        artifacts_dir=artifacts_dir,
+        workspace_root=workspace_root,
+        settings=SandboxSettings(
+            use_server_proxy=False,
+            workspace_volume="seamus-workspaces",
+        ),
+        skill_directories=[],
+    )
+
+    bundled_vol = backend.build_bundled_skill_volume()
+    assert bundled_vol is not None
+    assert bundled_vol.name == "skills-bundled"
+    assert bundled_vol.mount_path == "/skills/bundled"
+    assert bundled_vol.read_only is True
+    assert bundled_vol.pvc is not None
+    assert bundled_vol.pvc.claim_name == "seamus-workspaces"
+    assert bundled_vol.sub_path == "bundled_skills"
+    assert bundled_vol.host is None
+
+    # Check that skills files were synced to workspace_root / "bundled_skills"
+    synced_artifacts = workspace_root / "bundled_skills" / "artifacts" / "SKILL.md"
+    assert synced_artifacts.is_file()
+    assert "A2UI" in synced_artifacts.read_text(encoding="utf-8")
+
+    synced_a2ui = workspace_root / "bundled_skills" / "a2ui_components" / "SKILL.md"
+    assert synced_a2ui.is_file()
 
 
 def test_bundled_skills_precedence_in_skill_sources(tmp_path: Path) -> None:

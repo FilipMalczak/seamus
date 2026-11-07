@@ -76,13 +76,14 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
    - Responsibility: Test suites verifying unit, component, and persistence logic. `tests/conftest.py` orchestrates an ephemeral, SQLite-backed Gitea container fixture with dynamic port allocation and temporary workspace root, isolating the test suite from live development environments and enabling collision-free parallel execution.
 11. **Artifact Subsystem & Bundled Skills (`seamus.harness.artifacts`, `seamus.skills.bundled`)**:
    - Location: `src/seamus/harness/artifacts.py`, `src/seamus/domain/artifacts.py`, `src/seamus/skills/bundled/`
-   - Responsibility: Persistence and validation of A2UI subset renderable artifacts under `<session_workspace>/artifacts/<family>/<uuid>/` (`manifest.json`, `body.json`, `state.json`, `closed.marker`, `interactions/<button_id>.json`). Houses atomic builders (`make_artifact`, `make_questionnaire`, `make_form`, `make_plan`) and agent tools (`wait_for_click`). Manages `/skills/bundled` mounted read-only into OpenSandbox containers at highest priority.
+   - Responsibility: Persistence and validation of A2UI subset renderable artifacts under `<session_workspace>/artifacts/<family>/<uuid>/` (`manifest.json`, `body.json`, `state.json`, `closed.marker`, `interactions/<button_id>.json`). Houses atomic builders (`make_artifact`, `make_questionnaire`, `make_form`, `make_plan`) and agent tools (`wait_for_click`). Manages `/skills/bundled` mounted read-only into OpenSandbox containers at highest priority, backed by shared workspace volume storage in containerized setups.
 
 ## Cross-References
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
 - [0003-react-web-ui.md](../decisions/0003-react-web-ui.md)
 - [0004-inline-tree-editing-session-status.md](../decisions/0004-inline-tree-editing-session-status.md)
+- [0036-mount-bundled-skills-via-shared-volume.md](../decisions/0036-mount-bundled-skills-via-shared-volume.md)
 - [0005-logfire-integration.md](../decisions/0005-logfire-integration.md)
 - [0006-external-system-links.md](../decisions/0006-external-system-links.md)
 - [0007-agui-reasoning-and-trace-messages.md](../decisions/0007-agui-reasoning-and-trace-messages.md)

@@ -40,12 +40,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Revisit Trigger**: When UI input validators support custom min/max arity bounds or when complex survey forms require mandatory zero-or-more / range constraints.
 - **Provenance**: [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [artifacts.md](./artifacts.md).
 
-### Tabbed Artifact Exposition and Non-Blocking Cadence Lifecycles
-- **Description**: Expand artifact exposition support from `exposition=embedded` to include `exposition=tabbed` (rendering artifacts in dedicated inspector-like tabs rather than inline in chat bubbles). Formalize the lifecycle and closing rules for non-blocking artifacts (`blocking=false`) upon submission or timeout.
-- **Why Deferred**: Focused initially on embedded questionnaires with blocking cadence to validate the core pipeline and synthetic tool dispatch before expanding tabbed workflows.
-- **Revisit Trigger**: When introducing planning or multi-view artifacts that require dedicated panel real estate or optional non-blocking surveys.
-- **Provenance**: [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [artifacts.md](./artifacts.md).
-
 ### Custom Interactive Artifact Authoring
 - **Description**: Provide advanced agent workflows and templates for authoring custom multi-surface A2UI interactive artifacts via `make_artifact` with arbitrary button hierarchies and state models under `/artifacts/custom/`.
 - **Why Deferred**: Prioritized specialized, validated artifact families (questionnaires, forms, plans) to establish disk structure and rendering contracts before opening raw artifact creation.

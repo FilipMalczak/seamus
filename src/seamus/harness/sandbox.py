@@ -4,6 +4,7 @@ import contextlib
 import logging
 import os
 import secrets
+import shutil
 from datetime import timedelta
 from functools import lru_cache
 from pathlib import Path
@@ -24,6 +25,19 @@ logger = logging.getLogger(__name__)
 DEFAULT_OPERATIONAL_DIR = "/workspace"
 DEFAULT_API_KEY_FILE = Path(".seamus/opensandbox/api_key")
 BUNDLED_SKILLS_DIR = Path(__file__).resolve().parent.parent / "skills" / "bundled"
+
+
+def sync_bundled_skills(target_dir: Path) -> Path:
+    """Synchronize bundled platform skills from BUNDLED_SKILLS_DIR to target_dir.
+
+    Ensures the target directory exists and copies all built-in platform skills idempotently,
+    enabling shared volume mounts in containerized environments.
+    """
+    if not BUNDLED_SKILLS_DIR.is_dir():
+        return target_dir
+    target_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(BUNDLED_SKILLS_DIR, target_dir, dirs_exist_ok=True)
+    return target_dir
 
 
 class SandboxSettings(BaseModel):
@@ -101,6 +115,7 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
         data_dir: Path,
         artifacts_dir: Path | None = None,
         notes_dir: Path | None = None,
+        workspace_root: Path | None = None,
         workspace_readonly: bool = False,
         notes_mounted: bool = False,
         notes_readonly: bool = True,
@@ -119,6 +134,15 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
         self.settings = settings or get_sandbox_settings()
         self.skill_directories = skill_directories if skill_directories is not None else []
         self._active_sandbox: SandboxSync | None = sandbox
+        if workspace_root is not None:
+            self.workspace_root = workspace_root
+        else:
+            try:
+                from seamus.persistence.workspace import get_workspace_manager
+
+                self.workspace_root = get_workspace_manager().workspace_root
+            except Exception:
+                self.workspace_root = data_dir.parent.parent.parent
         super().__init__(sandbox=sandbox, timeout=self.settings.timeout)
 
     def reconfigure_mounts(
@@ -227,14 +251,30 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
 
     def build_bundled_skill_volume(self) -> Volume | None:
         """Build read-only OpenSandbox Volume for built-in platform skills if present."""
-        if BUNDLED_SKILLS_DIR.is_dir():
+        if not BUNDLED_SKILLS_DIR.is_dir():
+            return None
+
+        if self.settings.workspace_volume:
+            target_dir = self.workspace_root / "bundled_skills"
+            sync_bundled_skills(target_dir)
             return Volume(
                 name="skills-bundled",
                 mountPath="/skills/bundled",
                 readOnly=True,
-                host=Host(path=str(BUNDLED_SKILLS_DIR.resolve())),
+                pvc=PVC(
+                    claimName=self.settings.workspace_volume,
+                    createIfNotExists=True,
+                    deleteOnSandboxTermination=False,
+                ),
+                subPath="bundled_skills",
             )
-        return None
+
+        return Volume(
+            name="skills-bundled",
+            mountPath="/skills/bundled",
+            readOnly=True,
+            host=Host(path=str(BUNDLED_SKILLS_DIR.resolve())),
+        )
 
     def build_skill_volumes(self) -> list[Volume]:
         """Build read-only OpenSandbox Volumes for system-wide skill directories.
