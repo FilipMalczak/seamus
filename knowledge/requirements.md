@@ -219,6 +219,13 @@ Requirements, rationale, provenance, and stable IDs.
 - **Linked Invariants**: [INV-046](./invariants.md#inv-046-real-time-sandbox-terminal-streaming-and-working-directory-continuity).
 
 
+### REQ-038: Ollama Local Model Provider Support & Active Model Execution Management
+- **Description**: The system must provide first-class support for Ollama as a local model inference provider (`InferenceFormat.OLLAMA` or local endpoint port `11434`), allowing agents to execute without mandatory API keys. When targeting an Ollama instance, the harness must perform an HTTP healthcheck to verify that the Ollama daemon is running in the background and actively ensure the target model is loaded and running in memory via `POST /api/generate` before initiating agent execution, failing fast with informative diagnostics if Ollama is unreachable or the model is missing.
+- **Rationale**: Enables private, offline, and zero-cost local LLM development workflows while actively managing model loading so agents do not fail due to uninitialized or missing local models.
+- **Provenance**: [0045-ollama-local-model-provider.md](../decisions/0045-ollama-local-model-provider.md), `src/seamus/config/models.py`, `src/seamus/harness/runner.py`, `ui/src/components/ConfigModal.tsx`.
+- **Linked Invariants**: [INV-047](./invariants.md#inv-047-ollama-healthcheck-and-active-model-execution-management).
+
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [invariants.md](./invariants.md)
@@ -257,4 +264,5 @@ Requirements, rationale, provenance, and stable IDs.
 - [0037-validate-a2ui-surface-render-on-make-artifact.md](../decisions/0037-validate-a2ui-surface-render-on-make-artifact.md)
 - [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md)
 - [0042-mount-external-git-repositories.md](../decisions/0042-mount-external-git-repositories.md)
+- [0045-ollama-local-model-provider.md](../decisions/0045-ollama-local-model-provider.md)
 - [persistence.md](./persistence.md)

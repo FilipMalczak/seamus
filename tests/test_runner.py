@@ -783,3 +783,151 @@ def test_seed_thread_overlap() -> None:
         {"configurable": {"thread_id": t2.id.hex}},
         {"messages": [m2, m3, m4]},
     )
+
+
+def test_ensure_ollama_model_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    import json
+    import urllib.request
+    from unittest.mock import MagicMock
+
+    from seamus.harness.runner import _ensure_ollama_model
+
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = b'{"model": "llama3.2:3b", "done": true}'
+    mock_resp.__enter__.return_value = mock_resp
+
+    captured_req: list[urllib.request.Request] = []
+
+    def fake_urlopen(req: urllib.request.Request, *args: Any, **kwargs: Any) -> Any:
+        captured_req.append(req)
+        return mock_resp
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    res = _ensure_ollama_model("http://localhost:11434/v1/", "llama3.2:3b")
+    assert res == "http://localhost:11434/v1/"
+    assert len(captured_req) == 1
+    assert captured_req[0].full_url == "http://localhost:11434/api/generate"
+    req_data = captured_req[0].data
+    assert isinstance(req_data, bytes)
+    assert json.loads(req_data.decode("utf-8")) == {"model": "llama3.2:3b"}
+
+
+def test_ensure_ollama_model_fallback_docker_service(monkeypatch: pytest.MonkeyPatch) -> None:
+    import urllib.error
+    import urllib.request
+    from unittest.mock import MagicMock
+
+    from seamus.harness.runner import _ensure_ollama_model
+
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = b'{"model": "llama3.2:3b", "done": true}'
+    mock_resp.__enter__.return_value = mock_resp
+
+    captured_urls: list[str] = []
+
+    def fake_urlopen(req: urllib.request.Request, *args: Any, **kwargs: Any) -> Any:
+        captured_urls.append(req.full_url)
+        if "localhost" in req.full_url:
+            raise urllib.error.URLError("Connection refused")
+        return mock_resp
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    res = _ensure_ollama_model("http://localhost:11434/v1", "llama3.2:3b")
+    assert res == "http://ollama:11434/v1"
+    assert "http://localhost:11434/api/generate" in captured_urls
+    assert "http://ollama:11434/api/generate" in captured_urls
+
+
+def test_ensure_ollama_model_fallback_docker_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    import urllib.error
+    import urllib.request
+    from unittest.mock import MagicMock
+
+    from seamus.harness.runner import _ensure_ollama_model
+
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = b'{"model": "llama3.2:3b", "done": true}'
+    mock_resp.__enter__.return_value = mock_resp
+
+    captured_urls: list[str] = []
+
+    def fake_urlopen(req: urllib.request.Request, *args: Any, **kwargs: Any) -> Any:
+        captured_urls.append(req.full_url)
+        if "localhost" in req.full_url or "ollama" in req.full_url:
+            raise urllib.error.URLError("Connection refused")
+        return mock_resp
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    res = _ensure_ollama_model("http://localhost:11434/v1", "llama3.2:3b")
+    assert res == "http://host.docker.internal:11434/v1"
+    assert "http://localhost:11434/api/generate" in captured_urls
+    assert "http://host.docker.internal:11434/api/generate" in captured_urls
+
+
+def test_ensure_ollama_model_auto_pull(monkeypatch: pytest.MonkeyPatch) -> None:
+    import io
+    import urllib.error
+    import urllib.request
+    from unittest.mock import MagicMock
+
+    from seamus.harness.runner import _ensure_ollama_model
+
+    calls: list[str] = []
+
+    def fake_urlopen(req: urllib.request.Request, *args: Any, **kwargs: Any) -> Any:
+        calls.append(req.full_url)
+        resp = MagicMock()
+        resp.__enter__.return_value = resp
+        if req.full_url.endswith("/api/pull"):
+            resp.read.return_value = b'{"status": "success"}'
+        elif len(calls) == 1:
+            raise urllib.error.HTTPError(
+                req.full_url,
+                404,
+                "Not Found",
+                {},  # type: ignore[arg-type]
+                io.BytesIO(b'{"error": "model \'gemma4:e4b\' not found"}'),
+            )
+        else:
+            resp.read.return_value = b'{"model": "gemma4:e4b", "done": true}'
+        return resp
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    res = _ensure_ollama_model("http://localhost:11434/v1", "gemma4:e4b")
+    assert res == "http://localhost:11434/v1"
+    assert "http://localhost:11434/api/pull" in calls
+
+
+def test_ensure_ollama_model_not_running(monkeypatch: pytest.MonkeyPatch) -> None:
+    import urllib.error
+    import urllib.request
+
+    from seamus.harness.runner import _ensure_ollama_model
+
+    def fake_urlopen(*args: Any, **kwargs: Any) -> Any:
+        raise urllib.error.URLError("Connection refused")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    with pytest.raises(RuntimeError, match="Ollama healthcheck failed"):
+        _ensure_ollama_model("http://localhost:11434/v1", "llama3.2:3b")
+
+
+def test_ensure_ollama_model_error_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    import urllib.request
+    from unittest.mock import MagicMock
+
+    from seamus.harness.runner import _ensure_ollama_model
+
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = b'{"error": "model \'not-found\' not found"}'
+    mock_resp.__enter__.return_value = mock_resp
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **kw: mock_resp)
+
+    with pytest.raises(RuntimeError, match="Failed to run model 'not-found' on Ollama"):
+        _ensure_ollama_model("http://localhost:11434/v1", "not-found")

@@ -5,6 +5,8 @@ import json
 import logging
 import os
 import traceback
+import urllib.error
+import urllib.request
 from collections.abc import AsyncGenerator, Mapping, Sequence
 from typing import Any, Literal, Self, cast
 from uuid import uuid4
@@ -35,7 +37,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.types import Command
 from pydantic import BaseModel, Field, SecretStr, model_validator
 
-from seamus.config.models import SkillsImplementation, TodoImplementation
+from seamus.config.models import InferenceFormat, SkillsImplementation, TodoImplementation
 from seamus.config.settings import get_system_settings_store
 from seamus.domain.artifacts import (
     SYNTHETIC_MESSAGE_INDICATOR,
@@ -112,6 +114,119 @@ def _extract_reasoning_text(payload: Mapping[str, Any]) -> str | None:
             return "".join(parts)
 
     return None
+
+
+def _ensure_ollama_model(base_url: str, model_name: str) -> str:
+    """Perform healthcheck on Ollama and ensure model is running / loaded into memory.
+
+    Returns the effective base URL (auto-resolving localhost to host.docker.internal
+    if running inside a container and localhost refuses connection).
+    Returns the effective base URL (auto-resolving localhost to internal docker
+    service 'ollama' or 'host.docker.internal' if running in a container).
+    """
+    candidates = [base_url]
+    parsed_base = base_url.strip().rstrip("/")
+    if "localhost" in parsed_base or "127.0.0.1" in parsed_base:
+        docker_service_url = parsed_base.replace("localhost", "ollama").replace(
+            "127.0.0.1", "ollama"
+        )
+        if docker_service_url not in candidates:
+            candidates.append(docker_service_url)
+        docker_host_url = parsed_base.replace("localhost", "host.docker.internal").replace(
+            "127.0.0.1", "host.docker.internal"
+        )
+        if docker_host_url not in candidates:
+            candidates.append(docker_host_url)
+
+    last_exc: Exception | None = None
+    for cand in candidates:
+        ollama_base = cand.strip().rstrip("/").removesuffix("/v1").rstrip("/")
+        try:
+            req = urllib.request.Request(
+                f"{ollama_base}/api/generate",
+                data=json.dumps({"model": model_name}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                if isinstance(data, dict) and "error" in data:
+                    err_msg = str(data["error"])
+                    if "not found" in err_msg.lower():
+                        # Auto-pull model if missing
+                        try:
+                            pull_req = urllib.request.Request(
+                                f"{ollama_base}/api/pull",
+                                data=json.dumps({"model": model_name, "stream": False}).encode(
+                                    "utf-8"
+                                ),
+                                headers={"Content-Type": "application/json"},
+                            )
+                            with urllib.request.urlopen(pull_req, timeout=600):
+                                pass
+                            # Retry generate to load model into memory
+                            with urllib.request.urlopen(req, timeout=60) as retry_resp:
+                                retry_data = json.loads(retry_resp.read().decode("utf-8"))
+                                if isinstance(retry_data, dict) and "error" in retry_data:
+                                    raise RuntimeError(
+                                        f"Failed to run model '{model_name}' on Ollama after pull: "
+                                        f"{retry_data['error']}"
+                                    )
+                                return cand
+                        except Exception as pull_exc:
+                            raise RuntimeError(
+                                f"Failed to pull and run model '{model_name}' on Ollama: {pull_exc}"
+                            ) from pull_exc
+                    raise RuntimeError(
+                        f"Failed to run model '{model_name}' on Ollama: {data['error']}"
+                    )
+            return cand
+        except urllib.error.HTTPError as exc:
+            err_msg = ""
+            try:
+                err_data = json.loads(exc.read().decode("utf-8"))
+                if isinstance(err_data, dict):
+                    err_msg = str(err_data.get("error", ""))
+            except Exception:
+                err_msg = str(exc)
+
+            if exc.code == 404 and "not found" in err_msg.lower():
+                try:
+                    pull_req = urllib.request.Request(
+                        f"{ollama_base}/api/pull",
+                        data=json.dumps({"model": model_name, "stream": False}).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                    )
+                    with urllib.request.urlopen(pull_req, timeout=600):
+                        pass
+                    with urllib.request.urlopen(req, timeout=60) as retry_resp:
+                        retry_data = json.loads(retry_resp.read().decode("utf-8"))
+                        if isinstance(retry_data, dict) and "error" in retry_data:
+                            raise RuntimeError(
+                                f"Failed to run model '{model_name}' on Ollama after pull: "
+                                f"{retry_data['error']}"
+                            )
+                        return cand
+                except Exception as pull_exc:
+                    raise RuntimeError(
+                        f"Failed to pull and run model '{model_name}' on Ollama: {pull_exc}"
+                    ) from pull_exc
+
+            raise RuntimeError(
+                f"Failed to run model '{model_name}' on Ollama: {err_msg or exc}"
+            ) from exc
+        except urllib.error.URLError as exc:
+            last_exc = exc
+            continue
+
+    ollama_base = base_url.strip().rstrip("/").removesuffix("/v1").rstrip("/")
+    raise RuntimeError(
+        f"Ollama healthcheck failed at {ollama_base}. "
+        f"Ensure Ollama is running in background. If Seamus backend is running inside Docker "
+        f"and Ollama is on the host, ensure Ollama is listening on all interfaces "
+        f"(set OLLAMA_HOST=0.0.0.0): {last_exc}"
+        f"Ensure Ollama is running (e.g. docker-compose 'ollama' service "
+        f"or local daemon): {last_exc}"
+    ) from last_exc
 
 
 class ReasoningChatOpenAI(ChatOpenAI):
@@ -657,6 +772,13 @@ class SessionAgentRunner:
         api_key = resolved_config.inference.api_key or ""
         base_url = resolved_config.inference.base_url
 
+        if resolved_config.inference.format == InferenceFormat.OLLAMA or "11434" in base_url:
+            base_url = _ensure_ollama_model(base_url, resolved_config.model_name)
+            if not api_key:
+                api_key = "ollama"
+            if not base_url.rstrip("/").endswith("/v1"):
+                base_url = f"{base_url.rstrip('/')}/v1"
+
         llm = ReasoningChatOpenAI(
             model=resolved_config.model_name,
             api_key=SecretStr(api_key),
@@ -969,6 +1091,13 @@ class SessionAgentRunner:
         new_api_key = resolved_config.inference.api_key or ""
         new_base_url = resolved_config.inference.base_url
         new_model = resolved_config.model_name
+
+        if resolved_config.inference.format == InferenceFormat.OLLAMA or "11434" in new_base_url:
+            new_base_url = _ensure_ollama_model(new_base_url, new_model)
+            if not new_api_key:
+                new_api_key = "ollama"
+            if not new_base_url.rstrip("/").endswith("/v1"):
+                new_base_url = f"{new_base_url.rstrip('/')}/v1"
 
         current_key = (
             self._llm.openai_api_key.get_secret_value()

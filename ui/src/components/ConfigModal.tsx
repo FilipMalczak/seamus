@@ -18,11 +18,16 @@ const MODEL_PRESETS = [
   "google/gemini-2.5-pro",
   "google/gemini-2.5-flash",
   "deepseek/deepseek-r1",
+  "gemma4:e4b",
+  "llama3.2:3b",
+  "qwen3.8:latest",
 ];
 
 const BASE_URL_PRESETS = [
   { label: "OpenRouter", url: "https://openrouter.ai/api/v1" },
   { label: "OpenAI", url: "https://api.openai.com/v1" },
+  { label: "Ollama", url: "http://localhost:11434/v1" },
+  { label: "Ollama (Docker)", url: "http://ollama:11434/v1" },
 ];
 
 export function ConfigModal({
@@ -258,6 +263,7 @@ export function ConfigModal({
                     }
                   >
                     <option value="openai">openai (OpenAI-compatible)</option>
+                    <option value="ollama">ollama (Local Ollama)</option>
                   </select>
                 </div>
 

@@ -228,3 +228,37 @@ def test_agent_config_sandbox_image() -> None:
 
     derived = cfg.copy_with_overrides(custom)
     assert derived.sandbox_image == "custom-sandbox:v1"
+
+
+def test_ollama_inference_config_completeness() -> None:
+    # Format OLLAMA without API key is complete
+    ollama_cfg = InferenceConfig(
+        format=InferenceFormat.OLLAMA,
+        base_url="http://localhost:11434/v1",
+    )
+    assert ollama_cfg.is_complete() is True
+
+    agent_cfg = AgentConfig(
+        inference=ollama_cfg,
+        model_name="llama3.2:3b",
+    )
+    assert agent_cfg.is_complete() is True
+    # Should not raise
+    agent_cfg.validate_complete()
+
+    # Port 11434 with OPENAI format without API key is also complete
+    port_cfg = InferenceConfig(
+        format=InferenceFormat.OPENAI,
+        base_url="http://127.0.0.1:11434/v1",
+    )
+    assert port_cfg.is_complete() is True
+
+    # Standard remote URL with OPENAI format without API key is NOT complete
+    remote_cfg = InferenceConfig(
+        format=InferenceFormat.OPENAI,
+        base_url="https://api.openai.com/v1",
+        api_key=None,
+    )
+    assert remote_cfg.is_complete() is False
+    with pytest.raises(ValueError, match="inference.api_key"):
+        AgentConfig(inference=remote_cfg, model_name="gpt-4o").validate_complete()

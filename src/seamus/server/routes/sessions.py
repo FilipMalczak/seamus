@@ -116,7 +116,10 @@ async def stream_session(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
     registry = get_runner_registry()
-    runner = registry.get_runner(session, agent=agent)
+    try:
+        runner = registry.get_runner(session, agent=agent)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     accept_header = request.headers.get("accept")
 
     return StreamingResponse(
@@ -257,7 +260,10 @@ async def post_user_input(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     registry = get_runner_registry()
-    runner = registry.get_runner(session, agent=agent)
+    try:
+        runner = registry.get_runner(session, agent=agent)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     try:
         user_msg_id = await runner.dispatch_user_input(text, message_id=payload.message_id)
@@ -362,7 +368,10 @@ async def stream_terminal_command(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
     registry = get_runner_registry()
-    runner = registry.get_runner(session, agent=agent)
+    try:
+        runner = registry.get_runner(session, agent=agent)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     return StreamingResponse(
         runner.stream_terminal_command(
@@ -393,7 +402,10 @@ async def get_terminal_info(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
     registry = get_runner_registry()
-    runner = registry.get_runner(session, agent=agent)
+    try:
+        runner = registry.get_runner(session, agent=agent)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     backend = runner.get_sandbox_backend()
 
     return TerminalInfoResponse(

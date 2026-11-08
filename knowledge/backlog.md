@@ -2,15 +2,13 @@
 
 Persistent record of work intentionally left outstanding across the project, maintained in accordance with [AGENTS.md](../AGENTS.md).
 
-## Next
-
-### Ollama Local Model Provider Support
-- **Description**: Add first-class support for Ollama as a local model provider in Seamus, allowing agents to run against locally hosted models without requiring external API keys. Configure base URLs, model selection presets, and streaming adapters compatible with Ollama's API.
-- **Rationale**: Expands Seamus to support fully offline, private, and zero-cost local LLM development workflows.
-- **Provenance**: `src/seamus/config/models.py`, `src/seamus/harness/runner.py`, `ui/src/components/ConfigModal.tsx`.
-
-
 ## Deferred
+
+### GPU Passthrough Acceleration for Containerized Ollama
+- **Description**: Add GPU acceleration support (e.g. NVIDIA Container Toolkit `--gpus all` directives in `docker-compose.yml` or ROCm runtime for AMD) and direct host socket bridging for Ollama inference in Seamus.
+- **Why Deferred**: Running Ollama in CPU mode via containerized `ollama/ollama:latest` on the internal Docker network provides out-of-the-box local inference without requiring host GPU drivers, CUDA setups, or NVIDIA Container Toolkit installation.
+- **Revisit Trigger**: When executing larger parameter models (e.g. 20B+) or when users require hardware-accelerated local inference for reduced turn latency.
+- **Provenance**: [0045-ollama-local-model-provider.md](../decisions/0045-ollama-local-model-provider.md), `docker-compose.yml`.
 
 ### Multi-Thread Conversational History Inclusion Strategy
 - **Description**: Expand thread history overlap beyond the immediate predecessor thread (`currentSession.threads[-1].messages[-n:]`) to a multi-thread sliding window budget across all historical session threads. For example, budgeting up to 20 messages total from prior threads across arbitrary thread boundaries (e.g., 10 from $T_1$, 7 from $T_2$, 3 from $T_3$ when initializing $T_4$).

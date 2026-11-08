@@ -18,8 +18,8 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 
 ### `seamus.config` (`src/seamus/config`)
 - Configuration abstractions and stores.
-- `InferenceFormat`: Supported inference protocol shapes (e.g. `openai`).
-- `InferenceConfig`: Provider settings (format, base URL, optional API key).
+- `InferenceFormat`: Supported inference protocol shapes (`openai`, `ollama`).
+- `InferenceConfig`: Provider settings (format, base URL, optional API key; API key is optional for Ollama).
 - `TodoImplementation`: Supported planning/todo list implementations (`none`, `deepagents`).
 - `SkillsImplementation`: Supported skills discovery and disclosure middleware implementations (`none`, `deepagents`).
 - `OperationalMode`: Supported operational execution modes (`chat`, `plan`).
@@ -159,6 +159,7 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md)
 - [0042-mount-external-git-repositories.md](../decisions/0042-mount-external-git-repositories.md)
 - [0044-interactive-web-terminal.md](../decisions/0044-interactive-web-terminal.md)
+- [0045-ollama-local-model-provider.md](../decisions/0045-ollama-local-model-provider.md)
 - [artifacts.md](./artifacts.md)
 - [architecture.md](./architecture.md)
 - [persistence.md](./persistence.md)
