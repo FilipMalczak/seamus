@@ -561,13 +561,21 @@ export function App() {
               />
             )}
 
-            {activeMainTab === "terminal" && (
+            <div
+              style={{
+                display: activeMainTab === "terminal" ? "flex" : "none",
+                height: "100%",
+                width: "100%",
+                flexDirection: "column",
+              }}
+            >
               <TerminalView
                 agentId={selectedAgentId}
                 sessionId={selectedSessionId}
                 sessionName={activeSession?.name || null}
+                isActive={activeMainTab === "terminal"}
               />
-            )}
+            </div>
 
             {openTabbedArtifacts.map((art) => {
               const tabKey = `artifact:${art.kind}:${art.name}`;

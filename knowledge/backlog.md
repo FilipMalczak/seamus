@@ -103,6 +103,11 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## Technical debt
 
+### Configurable or Heartbeat-Driven Terminal Session Lifecycle (Replacing Arbitrary 5m Timeout)
+- **Current Problem**: Live sandbox terminal emulator sessions in the Web UI currently rely on a hardcoded 5-minute client-side inactivity timer (`TERMINAL_INACTIVITY_TIMEOUT_MS = 300_000`) since the last executed command to determine when to expire and reset the terminal buffer and working state across tab switches. An arbitrary fixed duration does not account for long-running batch jobs, active user reading pauses, or user-configured session retention preferences.
+- **Improvement**: Replace the client-side 5-minute timeout with a robust server-side heartbeat or configurable session lifecycle mechanism (e.g. `terminal_session_timeout` in `AgentConfig` or system settings, persistent session exec IDs via OpenSandbox session management, or WebSocket/SSE ping heartbeats) with explicit UI notifications when a session is detached, suspended, or reconnected.
+- **Provenance**: `ui/src/components/TerminalView.tsx`, `src/seamus/harness/runner.py`, [0044-interactive-web-terminal.md](../decisions/0044-interactive-web-terminal.md).
+
 ### [CRITICAL] Dedicated PostgreSQL User/Database or Instance for OpenBao Storage
 - **Current Problem**: In the MVP OpenBao integration (`openbao/config.hcl` and `docker-compose.yml`), OpenBao shares the `gitea` PostgreSQL user and `gitea` database (`postgres://gitea:gitea@postgres:5432/gitea?sslmode=disable`) for its `vault_kv_store` and `vault_ha_locks` tables. Sharing database credentials and schema namespace between Gitea and the secrets vault violates least-privilege isolation.
 - **Improvement**: Provision at minimum a dedicated PostgreSQL role and database with strict privileges exclusively for OpenBao, or run a dedicated PostgreSQL instance for OpenBao storage.

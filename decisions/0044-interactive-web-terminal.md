@@ -37,9 +37,12 @@ To provide immediate, non-intrusive visibility into the agent's execution enviro
      - Quick action buttons for common developer tasks (`ls -la`, `git status`, `pwd`, `which tools`, `ps aux`, `inspect sandbox`).
      - Exit status indicators (green check on 0, red status on non-zero).
      - Buffer clearing via `Ctrl+L` or Clear button.
+     - Persistent input focus: command line input is never disabled during execution, ensuring continuous keyboard focus after sending commands without requiring mouse clicks.
+     - Live session state persistence: retains terminal history, active streams, and working directory across UI tab switches for up to 5 minutes of inactivity since the last command; automatically starts a new live session if inactivity exceeds 5 minutes.
 
 ## Consequences
 
 - Developers can immediately inspect running processes, test commands, and verify container tools without leaving the Seamus Web UI or accessing the Docker host.
 - Real-time streaming provides instantaneous feedback for long-running scripts and builds.
 - Directory state is preserved across commands, enabling natural shell navigation (`cd`, `git`, etc.).
+

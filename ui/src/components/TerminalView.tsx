@@ -11,13 +11,16 @@ import {
 import { getTerminalInfo, streamTerminalCommand } from "../api/client";
 import type { TerminalStreamEvent } from "../api/types";
 
-interface TerminalViewProps {
+export const TERMINAL_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+export interface TerminalViewProps {
   agentId: string | null;
   sessionId: string | null;
   sessionName?: string | null;
+  isActive?: boolean;
 }
 
-interface CommandHistoryEntry {
+export interface CommandHistoryEntry {
   id: string;
   command: string;
   workingDirectory: string;
@@ -26,6 +29,17 @@ interface CommandHistoryEntry {
   isRunning?: boolean;
   error?: string | null;
 }
+
+interface SessionTerminalState {
+  history: CommandHistoryEntry[];
+  cwd: string;
+  commandHistoryList: string[];
+  lastCommandTimestamp: number;
+  isExecuting?: boolean;
+}
+
+// Module-level cache storing terminal state per session across tab and session switches
+export const sessionTerminalCache = new Map<string, SessionTerminalState>();
 
 const QUICK_COMMANDS = [
   { label: "ls -la", cmd: "ls -la" },
@@ -36,52 +50,111 @@ const QUICK_COMMANDS = [
   { label: "ps aux", cmd: "ps aux" },
 ];
 
-export function TerminalView({ agentId, sessionId, sessionName }: TerminalViewProps) {
+export function TerminalView({ agentId, sessionId, sessionName, isActive = true }: TerminalViewProps) {
   const [cwd, setCwd] = useState<string>("/workspace");
   const [history, setHistory] = useState<CommandHistoryEntry[]>([]);
   const [inputCommand, setInputCommand] = useState<string>("");
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [commandHistoryList, setCommandHistoryList] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
+  const [, setLastCommandTime] = useState<number>(Date.now());
 
   const terminalBodyRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const abortControllerRef = useRef<(() => void) | null>(null);
 
-  // Load initial working directory info
-  useEffect(() => {
-    if (!agentId || !sessionId) return;
-    let active = true;
-    getTerminalInfo(agentId, sessionId)
-      .then((info) => {
-        if (active && info.operational_dir) {
-          setCwd(info.operational_dir);
-        }
-      })
-      .catch(() => {
-        // Fall back to /workspace if info endpoint fails
-      });
-    return () => {
-      active = false;
-    };
-  }, [agentId, sessionId]);
+  // Focus helper ensuring input gets focus immediately without losing it
+  const focusInput = useCallback(() => {
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+  }, []);
 
-  // Scroll to bottom on updates
+  // Restore or initialize session state respecting the 5-minute inactivity window
+  const syncSessionFromCache = useCallback(
+    (targetSessionId: string) => {
+      const cached = sessionTerminalCache.get(targetSessionId);
+      const now = Date.now();
+
+      if (cached) {
+        const elapsed = now - cached.lastCommandTimestamp;
+        if (elapsed <= TERMINAL_INACTIVITY_TIMEOUT_MS) {
+          // Live session active (< 5m since last command): restore state
+          setHistory(cached.history);
+          setCwd(cached.cwd);
+          setCommandHistoryList(cached.commandHistoryList);
+          setIsExecuting(!!cached.isExecuting);
+          setLastCommandTime(cached.lastCommandTimestamp);
+          return;
+        }
+        // Inactivity exceeded 5m: invalidate expired session and create a new live session
+        sessionTerminalCache.delete(targetSessionId);
+      }
+
+      // New live session
+      setHistory([]);
+      setCwd("/workspace");
+      setCommandHistoryList([]);
+      setIsExecuting(false);
+      setLastCommandTime(now);
+
+      if (agentId) {
+        getTerminalInfo(agentId, targetSessionId)
+          .then((info) => {
+            if (info.operational_dir) {
+              setCwd(info.operational_dir);
+            }
+          })
+          .catch(() => {
+            // Fall back to /workspace
+          });
+      }
+    },
+    [agentId]
+  );
+
+  // On session change or tab activation: check 5-minute validity and restore/create
+  useEffect(() => {
+    if (!sessionId) {
+      setHistory([]);
+      return;
+    }
+    syncSessionFromCache(sessionId);
+    if (isActive) {
+      focusInput();
+    }
+  }, [sessionId, isActive, syncSessionFromCache, focusInput]);
+
+  // Periodic expiration checker: if 5 minutes elapse without commands, expire live session
+  useEffect(() => {
+    if (!sessionId) return;
+    const interval = setInterval(() => {
+      const cached = sessionTerminalCache.get(sessionId);
+      if (cached && cached.history.length > 0) {
+        const elapsed = Date.now() - cached.lastCommandTimestamp;
+        if (elapsed > TERMINAL_INACTIVITY_TIMEOUT_MS) {
+          // Expire and create a new clean session
+          sessionTerminalCache.delete(sessionId);
+          setHistory([]);
+          setCommandHistoryList([]);
+          setIsExecuting(false);
+          setLastCommandTime(Date.now());
+        }
+      }
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [sessionId]);
+
+  // Scroll to bottom on output updates and keep focus
   useEffect(() => {
     if (terminalBodyRef.current) {
       terminalBodyRef.current.scrollTop = terminalBodyRef.current.scrollHeight;
     }
-  }, [history, isExecuting]);
-
-  // Cleanup active stream on unmount or session switch
-  useEffect(() => {
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current();
-        abortControllerRef.current = null;
-      }
-    };
-  }, [sessionId]);
+    if (isActive) {
+      focusInput();
+    }
+  }, [history, isExecuting, isActive, focusInput]);
 
   const handleInterrupt = useCallback(() => {
     if (abortControllerRef.current) {
@@ -89,37 +162,75 @@ export function TerminalView({ agentId, sessionId, sessionName }: TerminalViewPr
       abortControllerRef.current = null;
     }
     setIsExecuting(false);
+    const now = Date.now();
+    setLastCommandTime(now);
+
     setHistory((prev) => {
       if (prev.length === 0) return prev;
       const last = prev[prev.length - 1];
-      if (last.isRunning) {
-        return [
-          ...prev.slice(0, -1),
-          {
-            ...last,
-            isRunning: false,
-            error: "Process interrupted by user (SIGINT)",
-            exitCode: 130,
-          },
-        ];
+      const updated = last.isRunning
+        ? [
+            ...prev.slice(0, -1),
+            {
+              ...last,
+              isRunning: false,
+              error: "Process interrupted by user (SIGINT)",
+              exitCode: 130,
+            },
+          ]
+        : prev;
+
+      if (sessionId) {
+        sessionTerminalCache.set(sessionId, {
+          history: updated,
+          cwd,
+          commandHistoryList,
+          lastCommandTimestamp: now,
+          isExecuting: false,
+        });
       }
-      return prev;
+      return updated;
     });
-  }, []);
+
+    focusInput();
+  }, [sessionId, cwd, commandHistoryList, focusInput]);
 
   const executeCommand = useCallback(
     (cmdToRun: string) => {
       const trimmed = cmdToRun.trim();
-      if (!agentId || !sessionId || !trimmed) return;
+      if (!agentId || !sessionId || !trimmed) {
+        focusInput();
+        return;
+      }
+
+      // If a command is already executing, don't overlap; prompt user
+      if (isExecuting) {
+        focusInput();
+        return;
+      }
+
+      const now = Date.now();
+      setLastCommandTime(now);
 
       // Handle local clear command
       if (trimmed === "clear") {
         setHistory([]);
         setInputCommand("");
+        if (sessionId) {
+          sessionTerminalCache.set(sessionId, {
+            history: [],
+            cwd,
+            commandHistoryList,
+            lastCommandTimestamp: now,
+            isExecuting: false,
+          });
+        }
+        focusInput();
         return;
       }
 
-      setCommandHistoryList((prev) => [trimmed, ...prev.filter((c) => c !== trimmed)]);
+      const updatedHistoryList = [trimmed, ...commandHistoryList.filter((c) => c !== trimmed)];
+      setCommandHistoryList(updatedHistoryList);
       setHistoryIndex(-1);
 
       const entryId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -131,9 +242,22 @@ export function TerminalView({ agentId, sessionId, sessionName }: TerminalViewPr
         isRunning: true,
       };
 
-      setHistory((prev) => [...prev, currentEntry]);
+      const nextHistory = [...history, currentEntry];
+      setHistory(nextHistory);
       setInputCommand("");
       setIsExecuting(true);
+
+      // Keep cache updated with running state and current activity timestamp
+      sessionTerminalCache.set(sessionId, {
+        history: nextHistory,
+        cwd,
+        commandHistoryList: updatedHistoryList,
+        lastCommandTimestamp: now,
+        isExecuting: true,
+      });
+
+      // Maintain input focus immediately after dispatch
+      focusInput();
 
       const cancelFn = streamTerminalCommand(
         agentId,
@@ -143,23 +267,35 @@ export function TerminalView({ agentId, sessionId, sessionName }: TerminalViewPr
           working_directory: cwd,
         },
         (event: TerminalStreamEvent) => {
+          const eventTime = Date.now();
+          setLastCommandTime(eventTime);
+
           if (event.type === "stdout" || event.type === "stderr") {
-            setHistory((prev) =>
-              prev.map((item) =>
+            setHistory((prev) => {
+              const updated = prev.map((item) =>
                 item.id === entryId
                   ? {
                       ...item,
                       output: [...item.output, { type: event.type, text: event.data }],
                     }
                   : item
-              )
-            );
+              );
+              sessionTerminalCache.set(sessionId, {
+                history: updated,
+                cwd,
+                commandHistoryList: updatedHistoryList,
+                lastCommandTimestamp: eventTime,
+                isExecuting: true,
+              });
+              return updated;
+            });
           } else if (event.type === "exit") {
+            const nextCwd = event.working_directory || cwd;
             if (event.working_directory) {
               setCwd(event.working_directory);
             }
-            setHistory((prev) =>
-              prev.map((item) =>
+            setHistory((prev) => {
+              const updated = prev.map((item) =>
                 item.id === entryId
                   ? {
                       ...item,
@@ -167,13 +303,22 @@ export function TerminalView({ agentId, sessionId, sessionName }: TerminalViewPr
                       exitCode: event.exit_code,
                     }
                   : item
-              )
-            );
+              );
+              sessionTerminalCache.set(sessionId, {
+                history: updated,
+                cwd: nextCwd,
+                commandHistoryList: updatedHistoryList,
+                lastCommandTimestamp: eventTime,
+                isExecuting: false,
+              });
+              return updated;
+            });
             setIsExecuting(false);
             abortControllerRef.current = null;
+            focusInput();
           } else if (event.type === "error") {
-            setHistory((prev) =>
-              prev.map((item) =>
+            setHistory((prev) => {
+              const updated = prev.map((item) =>
                 item.id === entryId
                   ? {
                       ...item,
@@ -182,15 +327,26 @@ export function TerminalView({ agentId, sessionId, sessionName }: TerminalViewPr
                       exitCode: 1,
                     }
                   : item
-              )
-            );
+              );
+              sessionTerminalCache.set(sessionId, {
+                history: updated,
+                cwd,
+                commandHistoryList: updatedHistoryList,
+                lastCommandTimestamp: eventTime,
+                isExecuting: false,
+              });
+              return updated;
+            });
             setIsExecuting(false);
             abortControllerRef.current = null;
+            focusInput();
           }
         },
         (err: Error) => {
-          setHistory((prev) =>
-            prev.map((item) =>
+          const errTime = Date.now();
+          setLastCommandTime(errTime);
+          setHistory((prev) => {
+            const updated = prev.map((item) =>
               item.id === entryId
                 ? {
                     ...item,
@@ -199,24 +355,31 @@ export function TerminalView({ agentId, sessionId, sessionName }: TerminalViewPr
                     exitCode: 1,
                   }
                 : item
-            )
-          );
+            );
+            sessionTerminalCache.set(sessionId, {
+              history: updated,
+              cwd,
+              commandHistoryList: updatedHistoryList,
+              lastCommandTimestamp: errTime,
+              isExecuting: false,
+            });
+            return updated;
+          });
           setIsExecuting(false);
           abortControllerRef.current = null;
+          focusInput();
         }
       );
 
       abortControllerRef.current = cancelFn;
     },
-    [agentId, sessionId, cwd]
+    [agentId, sessionId, cwd, history, isExecuting, commandHistoryList, focusInput]
   );
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      if (!isExecuting) {
-        executeCommand(inputCommand);
-      }
+      executeCommand(inputCommand);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       if (commandHistoryList.length > 0) {
@@ -242,6 +405,24 @@ export function TerminalView({ agentId, sessionId, sessionName }: TerminalViewPr
     } else if ((e.ctrlKey || e.metaKey) && e.key === "l") {
       e.preventDefault();
       setHistory([]);
+      if (sessionId) {
+        sessionTerminalCache.set(sessionId, {
+          history: [],
+          cwd,
+          commandHistoryList,
+          lastCommandTimestamp: Date.now(),
+          isExecuting: false,
+        });
+      }
+      focusInput();
+    }
+  };
+
+  const handleContainerClick = () => {
+    // Only auto-focus if the user is not actively selecting text
+    const selection = window.getSelection();
+    if (!selection || selection.toString().length === 0) {
+      focusInput();
     }
   };
 
@@ -256,7 +437,7 @@ export function TerminalView({ agentId, sessionId, sessionName }: TerminalViewPr
   }
 
   return (
-    <div className="terminal-container">
+    <div className="terminal-container" onClick={handleContainerClick}>
       {/* Terminal Top Control Bar */}
       <div className="terminal-header-bar">
         <div className="terminal-header-left">
@@ -273,7 +454,10 @@ export function TerminalView({ agentId, sessionId, sessionName }: TerminalViewPr
             <button
               type="button"
               className="terminal-btn terminal-btn-interrupt"
-              onClick={handleInterrupt}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleInterrupt();
+              }}
               title="Interrupt running command (Ctrl+C)"
             >
               <Square className="size-3.5 fill-current" />
@@ -283,7 +467,20 @@ export function TerminalView({ agentId, sessionId, sessionName }: TerminalViewPr
             <button
               type="button"
               className="terminal-btn"
-              onClick={() => setHistory([])}
+              onClick={(e) => {
+                e.stopPropagation();
+                setHistory([]);
+                if (sessionId) {
+                  sessionTerminalCache.set(sessionId, {
+                    history: [],
+                    cwd,
+                    commandHistoryList,
+                    lastCommandTimestamp: Date.now(),
+                    isExecuting: false,
+                  });
+                }
+                focusInput();
+              }}
               title="Clear terminal buffer (Ctrl+L)"
             >
               <RotateCcw className="size-3.5" />
@@ -302,7 +499,10 @@ export function TerminalView({ agentId, sessionId, sessionName }: TerminalViewPr
             type="button"
             className="terminal-quick-btn"
             disabled={isExecuting}
-            onClick={() => executeCommand(q.cmd)}
+            onClick={(e) => {
+              e.stopPropagation();
+              executeCommand(q.cmd);
+            }}
           >
             {q.label}
           </button>
@@ -313,11 +513,13 @@ export function TerminalView({ agentId, sessionId, sessionName }: TerminalViewPr
       <div
         className="terminal-body"
         ref={terminalBodyRef}
-        onClick={() => inputRef.current?.focus()}
+        onClick={handleContainerClick}
       >
         <div className="terminal-welcome-banner">
           <div>Seamus Interactive Sandbox Shell & Process Inspector</div>
-          <div className="text-muted">Type commands or click quick actions below. Streams in real-time.</div>
+          <div className="text-muted">
+            Live session retained across tab switches (5m inactivity timeout). Output streams in real-time.
+          </div>
         </div>
 
         {history.map((item) => (
@@ -366,8 +568,8 @@ export function TerminalView({ agentId, sessionId, sessionName }: TerminalViewPr
           </div>
         ))}
 
-        {/* Current Active Command Input Line */}
-        <div className="terminal-input-row">
+        {/* Current Active Command Input Line - NEVER DISABLED */}
+        <div className="terminal-input-row" onClick={(e) => e.stopPropagation()}>
           <span className="terminal-prompt-user">sandbox</span>
           <span className="terminal-prompt-colon">:</span>
           <span className="terminal-prompt-dir">{cwd}</span>
@@ -379,8 +581,13 @@ export function TerminalView({ agentId, sessionId, sessionName }: TerminalViewPr
             value={inputCommand}
             onChange={(e) => setInputCommand(e.target.value)}
             onKeyDown={handleKeyDown}
-            disabled={isExecuting}
-            placeholder={isExecuting ? "Executing command..." : "Type command and press Enter..."}
+            disabled={false}
+            readOnly={false}
+            placeholder={
+              isExecuting
+                ? "Command executing (Ctrl+C to cancel)..."
+                : "Type command and press Enter..."
+            }
             autoFocus
             spellCheck={false}
             autoComplete="off"
