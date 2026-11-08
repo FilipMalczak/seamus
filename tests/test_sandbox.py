@@ -219,6 +219,29 @@ def test_session_agent_runner_builds_deep_agent_with_opensandbox_and_prompt(
     assert ("/workspace/skills", "Session") in captured_kwargs["skills"]
 
 
+def test_session_agent_runner_uses_configured_sandbox_image(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SEAMUS_PERSISTENCE_ENABLED", "false")
+    monkeypatch.setenv("SEAMUS_WORKSPACE_DIR", str(tmp_path / "ws"))
+    from seamus.persistence.config import get_persistence_settings
+
+    get_persistence_settings.cache_clear()
+
+    config = AgentConfig(
+        inference=InferenceConfig(api_key="test-key"),
+        sandbox_image="custom-agent-sandbox:v2",
+    )
+    agent = Agent(config=config, name="sandboxed-agent")
+    session = agent.create_session(name="sandboxed-session")
+
+    with patch("seamus.harness.runner.create_deep_agent", return_value=MagicMock()):
+        runner = SessionAgentRunner(session=session, agent_entity=agent)
+
+    assert runner._sandbox_backend is not None
+    assert runner._sandbox_backend.settings.image == "custom-agent-sandbox:v2"
+
+
 def test_session_agent_runner_includes_resolved_system_skills(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

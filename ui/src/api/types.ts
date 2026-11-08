@@ -26,6 +26,7 @@ export type AgentConfig = {
   skills_implementation?: SkillsImplementation;
   thread_message_overlap?: number;
   repositories?: ExternalRepositoryConfig[];
+  sandbox_image?: string | null;
 };
 
 export type ConfigTemplateResponse = {

@@ -115,10 +115,11 @@ class AgentConfig(BaseModel):
     skills_implementation: SkillsImplementation = SkillsImplementation.DEEPAGENTS
     thread_message_overlap: int = 5
     repositories: list[ExternalRepositoryConfig] = Field(default_factory=list)
+    sandbox_image: str | None = None
 
     @model_validator(mode="after")
     def _validate_secret_refs(self) -> Self:
-        for field_name in ("model_name", "system_prompt"):
+        for field_name in ("model_name", "system_prompt", "sandbox_image"):
             val = getattr(self, field_name)
             if isinstance(val, str) and "${" in val:
                 try:
@@ -192,6 +193,11 @@ class AgentConfig(BaseModel):
                     [r.model_copy(deep=True) for r in overrides.repositories]
                     if "repositories" in overrides.model_fields_set
                     else [r.model_copy(deep=True) for r in self.repositories]
+                ),
+                "sandbox_image": (
+                    overrides.sandbox_image
+                    if "sandbox_image" in overrides.model_fields_set
+                    else self.sandbox_image
                 ),
             },
             deep=True,

@@ -707,6 +707,10 @@ class SessionAgentRunner:
         mount_policy = resolve_mount_policy(mode, phase)
 
         sandbox_settings = get_sandbox_settings()
+        if self.session.config.sandbox_image:
+            sandbox_settings = sandbox_settings.model_copy(
+                update={"image": self.session.config.sandbox_image}
+            )
         system_settings = get_system_settings_store().get_settings()
         sandbox_backend = SeamusOpenSandboxBackend(
             agent_id=self.session.agent_id,

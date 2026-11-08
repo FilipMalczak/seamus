@@ -4,16 +4,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## Next
 
-
-### Dedicated First-Party Developer Sandbox Container Image & Environment Inspection
-- **Description**: Design and build a proper first-party developer sandbox Docker image for agent execution (e.g. `seamus-agent-sandbox:latest`), replacing the interim bare `ubuntu` default:
-  1. Core developer runtimes: pre-installed Python 3.12+, Astral `uv`, Node.js (LTS) + npm, Git, curl, wget, jq, tree, and build essentials.
-  2. Workspace permission alignment: configure user / group permissions so file creation under `/workspace` and `/projects` matches host user ownership without permission errors.
-  3. Self-introspecting environment metadata: embed the Dockerfile or a declarative capability manifest (e.g. at `/etc/seamus-sandbox.json`) so the agent and system prompt can accurately inspect installed packages, tools, and runtimes.
-  4. Per-agent/session configuration: add `sandbox_image: str | None = None` to `AgentConfig` (and `ConfigTemplate`), allowing custom images to be configured per agent/session falling back to `OPENSANDBOX_IMAGE`.
-- **Rationale**: Bare `ubuntu` provides a clean base but lacks standard tools required by coding agents out of the box (e.g. Python, uv, Git, npm), forcing agents to install packages at runtime or fail commands. A pre-built, tested development image ensures immediate productivity, deterministic execution, and transparent tool introspection.
-- **Provenance**: `src/seamus/config/models.py`, `src/seamus/harness/sandbox.py`, `src/seamus/harness/prompt.py`, `Dockerfile.sandbox`, `0042-mount-external-git-repositories.md`.
-
 ### Interactive Web Terminal & Shell Emulator for Agent Sandbox
 - **Description**: Implement an interactive browser-based terminal emulator (e.g. using `xterm.js` and WebSockets or SSE streaming via OpenSandbox's interactive exec API) inside the Seamus UI:
   1. Terminal tab or drawer: embed a collapsible terminal drawer in the session view alongside Chat, Changes, Artifacts, and Inspector.

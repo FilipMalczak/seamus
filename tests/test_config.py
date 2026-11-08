@@ -217,3 +217,14 @@ def test_config_template_load_from_environment_preserves_secret_reference(
 
     loaded = ConfigTemplateStore._load_from_environment(env_file=env_file)
     assert loaded.inference.api_key == "${secret('/api-key/inference/openrouter')}"
+
+
+def test_agent_config_sandbox_image() -> None:
+    cfg = AgentConfig()
+    assert cfg.sandbox_image is None
+
+    custom = AgentConfig(sandbox_image="custom-sandbox:v1")
+    assert custom.sandbox_image == "custom-sandbox:v1"
+
+    derived = cfg.copy_with_overrides(custom)
+    assert derived.sandbox_image == "custom-sandbox:v1"

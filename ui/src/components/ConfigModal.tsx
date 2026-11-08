@@ -484,6 +484,37 @@ export function ConfigModal({
 
               <div className="config-field">
                 <div className="config-label-row">
+                  <label className="config-label">Sandbox Container Image</label>
+                  {parsedDraft.sandbox_image && (
+                    <button
+                      type="button"
+                      className="config-clear-btn"
+                      onClick={() =>
+                        updateDraft((d) => {
+                          d.sandbox_image = null;
+                        })
+                      }
+                    >
+                      Reset to default
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  className="config-input"
+                  value={parsedDraft.sandbox_image || ""}
+                  placeholder="seamus-sandbox:latest (default)"
+                  onChange={(e) => {
+                    const val = e.target.value.trim();
+                    updateDraft((d) => {
+                      d.sandbox_image = val === "" ? null : val;
+                    });
+                  }}
+                />
+              </div>
+
+              <div className="config-field">
+                <div className="config-label-row">
                   <label className="config-label">Custom System Prompt</label>
                   {currentSystemPrompt !== null && (
                     <button
