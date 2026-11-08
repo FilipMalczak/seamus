@@ -99,6 +99,12 @@ export function App() {
       api_key: "${secret('/api-key/inference/openrouter')}",
     },
     model_name: "openai/gpt-oss-120b",
+    daemons: {
+      naming: {
+        enabled: true,
+        model: "openai/gpt-oss-20b",
+      },
+    },
   });
   const [modalSaveFn, setModalSaveFn] = useState<(cfg: AgentConfig) => Promise<void>>(
     () => async () => {}
@@ -309,6 +315,12 @@ export function App() {
           api_key: "${secret('/api-key/inference/openrouter')}",
         },
         model_name: "openai/gpt-oss-120b",
+        daemons: {
+          naming: {
+            enabled: true,
+            model: "openai/gpt-oss-20b",
+          },
+        },
       }
     );
     setModalSaveFn(() => async (updated: AgentConfig) => {

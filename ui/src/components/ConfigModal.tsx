@@ -12,6 +12,7 @@ interface ConfigModalProps {
 
 const MODEL_PRESETS = [
   "openai/gpt-oss-120b",
+  "openai/gpt-oss-20b",
   "anthropic/claude-sonnet-4",
   "openai/gpt-4.1",
   "openai/gpt-4.1-mini",
@@ -19,6 +20,14 @@ const MODEL_PRESETS = [
   "google/gemini-2.5-flash",
   "deepseek/deepseek-r1",
   "gemma4:e4b",
+  "llama3.2:3b",
+  "qwen3.8:latest",
+];
+
+const DAEMON_MODEL_PRESETS = [
+  "openai/gpt-oss-20b",
+  "openai/gpt-4.1-mini",
+  "google/gemini-2.5-flash",
   "llama3.2:3b",
   "qwen3.8:latest",
 ];
@@ -40,6 +49,7 @@ export function ConfigModal({
   const [mode, setMode] = useState<"form" | "json">("form");
   const [jsonText, setJsonText] = useState<string>("");
   const [showApiKey, setShowApiKey] = useState<boolean>(false);
+  const [showDaemonApiKey, setShowDaemonApiKey] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
@@ -50,6 +60,7 @@ export function ConfigModal({
       setError(null);
       setSuccess(false);
       setShowApiKey(false);
+      setShowDaemonApiKey(false);
     }
   }, [isOpen, initialConfig]);
 
@@ -136,6 +147,14 @@ export function ConfigModal({
       return;
     }
 
+    if (
+      parsed.daemons?.naming?.enabled &&
+      (!parsed.daemons?.naming?.model || !parsed.daemons.naming.model.trim())
+    ) {
+      setError("Naming daemon model must be specified when naming daemon is enabled.");
+      return;
+    }
+
     setSaving(true);
     try {
       await onSave(parsed as AgentConfig);
@@ -169,6 +188,15 @@ export function ConfigModal({
     parsedDraft?.system_prompt !== undefined
       ? parsedDraft.system_prompt
       : initialConfig.system_prompt ?? null;
+
+  const daemonNaming = parsedDraft?.daemons?.naming ?? initialConfig.daemons?.naming;
+  const isNamingEnabled = daemonNaming?.enabled ?? true;
+  const namingModel = daemonNaming?.model ?? "openai/gpt-oss-20b";
+  const namingProvider = daemonNaming?.provider ?? null;
+  const hasCustomDaemonProvider = namingProvider !== null && typeof namingProvider === "object";
+  const daemonFormat = namingProvider?.format ?? "openai";
+  const daemonBaseUrl = namingProvider?.base_url ?? "";
+  const daemonApiKey = namingProvider?.api_key ?? null;
 
   const isPresetModel = MODEL_PRESETS.includes(currentModel);
 
@@ -404,6 +432,236 @@ export function ConfigModal({
                   </select>
                 </div>
               </div>
+
+              <div className="config-section-divider">
+                <div className="config-section-title">Background Daemons (Automated Naming)</div>
+              </div>
+
+              <div className="config-form-row">
+                <div className="config-field">
+                  <label className="config-label">Naming Daemon Status</label>
+                  <select
+                    className="config-select"
+                    value={isNamingEnabled ? "enabled" : "disabled"}
+                    onChange={(e) => {
+                      const enabled = e.target.value === "enabled";
+                      updateDraft((d) => {
+                        if (!d.daemons) d.daemons = {};
+                        if (!d.daemons.naming) d.daemons.naming = {};
+                        d.daemons.naming.enabled = enabled;
+                        if (enabled && !d.daemons.naming.model) {
+                          d.daemons.naming.model = "openai/gpt-oss-20b";
+                        }
+                      });
+                    }}
+                  >
+                    <option value="enabled">Enabled (Auto-name threads and sessions)</option>
+                    <option value="disabled">Disabled</option>
+                  </select>
+                </div>
+
+                <div className="config-field">
+                  <div className="config-label-row">
+                    <label className="config-label">Naming Model Identifier</label>
+                    <div className="config-preset-pills">
+                      {DAEMON_MODEL_PRESETS.map((p) => (
+                        <button
+                          key={p}
+                          type="button"
+                          className={`config-preset-pill ${namingModel === p ? "active" : ""}`}
+                          onClick={() =>
+                            updateDraft((d) => {
+                              if (!d.daemons) d.daemons = {};
+                              if (!d.daemons.naming) d.daemons.naming = {};
+                              d.daemons.naming.model = p;
+                            })
+                          }
+                        >
+                          {p.split("/").pop()}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <input
+                    type="text"
+                    className="config-input"
+                    value={namingModel}
+                    placeholder="e.g. openai/gpt-oss-20b"
+                    onChange={(e) =>
+                      updateDraft((d) => {
+                        if (!d.daemons) d.daemons = {};
+                        if (!d.daemons.naming) d.daemons.naming = {};
+                        d.daemons.naming.model = e.target.value;
+                      })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="config-field">
+                <div className="config-label-row">
+                  <label className="config-label">
+                    Daemon Inference Provider:{" "}
+                    <span className="config-label-subtle">
+                      {hasCustomDaemonProvider
+                        ? "Custom provider configured"
+                        : "Inherits agent-level provider"}
+                    </span>
+                  </label>
+                  {hasCustomDaemonProvider ? (
+                    <button
+                      type="button"
+                      className="config-clear-btn"
+                      onClick={() =>
+                        updateDraft((d) => {
+                          if (d.daemons?.naming) {
+                            d.daemons.naming.provider = null;
+                          }
+                        })
+                      }
+                    >
+                      Reset to Agent Provider
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="config-clear-btn"
+                      onClick={() =>
+                        updateDraft((d) => {
+                          if (!d.daemons) d.daemons = {};
+                          if (!d.daemons.naming) d.daemons.naming = {};
+                          d.daemons.naming.provider = {
+                            format: "openai",
+                            base_url: "https://openrouter.ai/api/v1",
+                            api_key: "${secret('/api-key/inference/openrouter')}",
+                          };
+                        })
+                      }
+                    >
+                      + Use Custom Daemon Provider
+                    </button>
+                  )}
+                </div>
+                <div className="text-xs text-zinc-400">
+                  Automated thread naming triggers on 1st, 3rd, 7th, 15th, ... completed exchange.
+                </div>
+              </div>
+
+              {hasCustomDaemonProvider && (
+                <>
+                  <div className="config-form-row">
+                    <div className="config-field">
+                      <label className="config-label">Daemon Provider Format</label>
+                      <select
+                        className="config-select"
+                        value={daemonFormat}
+                        onChange={(e) =>
+                          updateDraft((d) => {
+                            if (!d.daemons) d.daemons = {};
+                            if (!d.daemons.naming) d.daemons.naming = {};
+                            if (!d.daemons.naming.provider) d.daemons.naming.provider = {};
+                            d.daemons.naming.provider.format = e.target.value;
+                          })
+                        }
+                      >
+                        <option value="openai">openai (OpenAI-compatible)</option>
+                        <option value="ollama">ollama (Local Ollama)</option>
+                      </select>
+                    </div>
+
+                    <div className="config-field">
+                      <div className="config-label-row">
+                        <label className="config-label">Daemon Base URL</label>
+                        <div className="config-preset-pills">
+                          {BASE_URL_PRESETS.map((p) => (
+                            <button
+                              key={p.label}
+                              type="button"
+                              className={`config-preset-pill ${
+                                daemonBaseUrl === p.url ? "active" : ""
+                              }`}
+                              onClick={() =>
+                                updateDraft((d) => {
+                                  if (!d.daemons) d.daemons = {};
+                                  if (!d.daemons.naming) d.daemons.naming = {};
+                                  if (!d.daemons.naming.provider) d.daemons.naming.provider = {};
+                                  d.daemons.naming.provider.base_url = p.url;
+                                })
+                              }
+                            >
+                              {p.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <input
+                        type="text"
+                        className="config-input"
+                        value={daemonBaseUrl}
+                        placeholder="https://openrouter.ai/api/v1"
+                        onChange={(e) =>
+                          updateDraft((d) => {
+                            if (!d.daemons) d.daemons = {};
+                            if (!d.daemons.naming) d.daemons.naming = {};
+                            if (!d.daemons.naming.provider) d.daemons.naming.provider = {};
+                            d.daemons.naming.provider.base_url = e.target.value;
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="config-field">
+                    <div className="config-label-row">
+                      <label className="config-label">Daemon API Key</label>
+                      {daemonApiKey !== null && (
+                        <button
+                          type="button"
+                          className="config-clear-btn"
+                          onClick={() =>
+                            updateDraft((d) => {
+                              if (d.daemons?.naming?.provider) {
+                                d.daemons.naming.provider.api_key = null;
+                              }
+                            })
+                          }
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                    <div className="config-input-with-action">
+                      <input
+                        type={showDaemonApiKey ? "text" : "password"}
+                        className="config-input"
+                        value={daemonApiKey ?? ""}
+                        placeholder="Daemon API key or ${secret('/api-key/...')}"
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          updateDraft((d) => {
+                            if (!d.daemons) d.daemons = {};
+                            if (!d.daemons.naming) d.daemons.naming = {};
+                            if (!d.daemons.naming.provider) d.daemons.naming.provider = {};
+                            d.daemons.naming.provider.api_key = val === "" ? null : val;
+                          });
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        onClick={() => setShowDaemonApiKey((v) => !v)}
+                        title={showDaemonApiKey ? "Hide daemon API key" : "Show daemon API key"}
+                      >
+                        {showDaemonApiKey ? (
+                          <EyeOff className="size-4" />
+                        ) : (
+                          <Eye className="size-4" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
 
               <div className="config-field">
                 <div className="config-label-row">

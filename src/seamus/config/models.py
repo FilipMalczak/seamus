@@ -110,9 +110,9 @@ class ExternalRepositoryConfig(BaseModel):
 class DaemonNamingConfig(BaseModel):
     """Configuration for thread and session naming daemons."""
 
-    enabled: bool = False
+    enabled: bool = True
     provider: InferenceConfig | None = None
-    model: str | None = None
+    model: str | None = "openai/gpt-oss-20b"
 
     @model_validator(mode="after")
     def _validate_model_if_enabled(self) -> Self:

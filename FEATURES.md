@@ -443,9 +443,9 @@ class AgentConfig(BaseModel):
 - `inference.format`: Format of inference API (`openai` or `ollama`).
 - `inference.base_url`: Target endpoint URL for inference API requests (presets: OpenRouter, OpenAI, and local Ollama `http://localhost:11434/v1`).
 - `inference.api_key`: API key or symbolic vault reference (`${secret('/path')}`). Optional when using Ollama (`ollama` format or port `11434`).
-- `daemons.naming.enabled`: Enables automated thread and session naming daemons (default: `false`).
+- `daemons.naming.enabled`: Enables automated thread and session naming daemons (default: `true`).
 - `daemons.naming.provider`: Optional provider configuration for naming daemons; if unset, inherits the agent's main `inference` settings.
-- `daemons.naming.model`: Dedicated model identifier for naming daemons (e.g. `openai/gpt-4o-mini`, `llama3.2:3b`), keeping naming costs and latency minimal.
+- `daemons.naming.model`: Dedicated model identifier for naming daemons (default: `openai/gpt-oss-20b`), keeping naming costs and latency minimal.
 - `model_name`: Provider model identifier (e.g. `anthropic/claude-3.5-sonnet`, `openai/gpt-4o`, `openai/gpt-oss-120b`, `llama3.2:3b`, `qwen3.8:latest`, `gemma4:e4b`). When targeting Ollama, Seamus actively verifies daemon health and loads the requested model into memory prior to execution.
 - `mode`: Initial operational mode for sessions (`chat` or `plan`).
 - `system_prompt`: Optional custom prompt instructions appended to the dynamic LM-XML scaffold.

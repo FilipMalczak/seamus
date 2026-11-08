@@ -24,15 +24,15 @@ from seamus.harness.daemons.parser import parse_loose_slug
 
 
 def test_daemon_config_validation() -> None:
-    # 1. Default disabled
+    # 1. Default enabled with openai/gpt-oss-20b and agent-level provider
     d_cfg = DaemonNamingConfig()
-    assert d_cfg.enabled is False
+    assert d_cfg.enabled is True
     assert d_cfg.provider is None
-    assert d_cfg.model is None
+    assert d_cfg.model == "openai/gpt-oss-20b"
 
     # 2. Enabled without model raises ValueError
     with pytest.raises(ValueError, match="daemons.naming.model must be specified"):
-        DaemonNamingConfig(enabled=True)
+        DaemonNamingConfig(enabled=True, model=None)
 
     # 3. Enabled with model succeeds
     valid_cfg = DaemonNamingConfig(enabled=True, model="openai/gpt-4o-mini")
@@ -52,18 +52,17 @@ def test_daemon_config_validation() -> None:
 
     # 5. AgentConfig daemons container and copy_with_overrides
     base_agent = AgentConfig(model_name="openai/gpt-oss-120b")
-    assert base_agent.daemons.naming.enabled is False
+    assert base_agent.daemons.naming.enabled is True
+    assert base_agent.daemons.naming.model == "openai/gpt-oss-20b"
 
     overridden_agent = base_agent.copy_with_overrides(
         AgentConfig(
-            daemons=DaemonsConfig(
-                naming=DaemonNamingConfig(enabled=True, model="openai/gpt-4o-mini")
-            )
+            daemons=DaemonsConfig(naming=DaemonNamingConfig(enabled=False, model="llama3.2:3b"))
         )
     )
-    assert overridden_agent.daemons.naming.enabled is True
-    assert overridden_agent.daemons.naming.model == "openai/gpt-4o-mini"
-    assert base_agent.daemons.naming.enabled is False
+    assert overridden_agent.daemons.naming.enabled is False
+    assert overridden_agent.daemons.naming.model == "llama3.2:3b"
+    assert base_agent.daemons.naming.enabled is True
 
 
 def test_parse_loose_slug_basic_and_normalization() -> None:

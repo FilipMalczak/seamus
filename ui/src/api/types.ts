@@ -17,6 +17,16 @@ export type ExternalRepositoryConfig = {
   credentials?: string | null;
 };
 
+export type DaemonNamingConfig = {
+  enabled?: boolean;
+  provider?: InferenceConfig | null;
+  model?: string | null;
+};
+
+export type DaemonsConfig = {
+  naming?: DaemonNamingConfig;
+};
+
 export type AgentConfig = {
   inference: InferenceConfig;
   model_name: string;
@@ -27,6 +37,7 @@ export type AgentConfig = {
   thread_message_overlap?: number;
   repositories?: ExternalRepositoryConfig[];
   sandbox_image?: string | null;
+  daemons?: DaemonsConfig;
 };
 
 export type ConfigTemplateResponse = {
