@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Eye, FileText, GitPullRequest, MessageSquare } from "lucide-react";
+import { Eye, FileText, GitPullRequest, MessageSquare, Terminal as TerminalIcon } from "lucide-react";
 import {
   getConfigTemplate,
   getSystemInfo,
@@ -23,6 +23,7 @@ import { ConfigModal } from "./components/ConfigModal";
 import { Header } from "./components/Header";
 import { SettingsModal } from "./components/SettingsModal";
 import { Sidebar } from "./components/Sidebar";
+import { TerminalView } from "./components/TerminalView";
 import { useAgentsTree } from "./hooks/useAgentsTree";
 import "./App.css";
 
@@ -34,6 +35,7 @@ function parseTabFromSearch(search: string): string {
   if (
     tab === "inspector" ||
     tab === "changes" ||
+    tab === "terminal" ||
     tab === "chat" ||
     (tab && tab.startsWith("artifact:"))
   ) {
@@ -406,6 +408,15 @@ export function App() {
               <GitPullRequest className="size-4" />
               <span>Changes</span>
             </button>
+            <button
+              type="button"
+              className={`main-tab ${activeMainTab === "terminal" ? "active" : ""}`}
+              onClick={() => setActiveMainTab("terminal")}
+            >
+              <TerminalIcon className="size-4" />
+              <span>Terminal</span>
+              {selectedSessionId && <span className="main-tab-badge">Live</span>}
+            </button>
             {openTabbedArtifacts.map((art) => {
               const tabKey = `artifact:${art.kind}:${art.name}`;
               const tabTitle =
@@ -547,6 +558,14 @@ export function App() {
                     setActiveMainTab("chat");
                   }
                 }}
+              />
+            )}
+
+            {activeMainTab === "terminal" && (
+              <TerminalView
+                agentId={selectedAgentId}
+                sessionId={selectedSessionId}
+                sessionName={activeSession?.name || null}
               />
             )}
 

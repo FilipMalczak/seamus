@@ -349,4 +349,24 @@ export interface AgentInspectReport {
   workspace: WorkspaceInspectInfo;
 }
 
+export interface TerminalStreamRequest {
+  command: string;
+  working_directory?: string | null;
+  timeout?: number | null;
+}
+
+export type TerminalStreamEvent =
+  | { type: "stdout"; data: string }
+  | { type: "stderr"; data: string }
+  | { type: "exit"; exit_code: number; working_directory: string }
+  | { type: "error"; message: string };
+
+export interface TerminalInfoResponse {
+  agent_id: string;
+  session_id: string;
+  operational_dir: string;
+  status: string;
+}
+
+
 

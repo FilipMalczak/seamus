@@ -18,6 +18,8 @@ from seamus.server.schemas import (
     SessionDiffResponse,
     SessionModeSwitchRequest,
     SessionUpdateRequest,
+    TerminalInfoResponse,
+    TerminalStreamRequest,
     ThreadResponse,
     UserInputRequest,
 )
@@ -342,4 +344,61 @@ async def get_session_diff(
         pr_number=pr_number,
         pr_url=pr_url,
         diff=diff_text,
+    )
+
+
+@router.post("/{session_identifier}/terminal/stream")
+async def stream_terminal_command(
+    agent_identifier: str,
+    session_identifier: str,
+    payload: TerminalStreamRequest,
+) -> StreamingResponse:
+    """Stream shell command execution inside the session's sandbox container via SSE."""
+    store = get_harness_store()
+    try:
+        agent = store.resolve_agent(agent_identifier)
+        session = resolve_session(agent, session_identifier)
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    registry = get_runner_registry()
+    runner = registry.get_runner(session, agent=agent)
+
+    return StreamingResponse(
+        runner.stream_terminal_command(
+            command=payload.command,
+            working_directory=payload.working_directory,
+            timeout=payload.timeout,
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.get("/{session_identifier}/terminal/info", response_model=TerminalInfoResponse)
+async def get_terminal_info(
+    agent_identifier: str,
+    session_identifier: str,
+) -> TerminalInfoResponse:
+    """Return status and working directory information for the session sandbox terminal."""
+    store = get_harness_store()
+    try:
+        agent = store.resolve_agent(agent_identifier)
+        session = resolve_session(agent, session_identifier)
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    registry = get_runner_registry()
+    runner = registry.get_runner(session, agent=agent)
+    backend = runner.get_sandbox_backend()
+
+    return TerminalInfoResponse(
+        agent_id=session.agent_id,
+        session_id=session.id,
+        operational_dir=backend.settings.workdir,
+        status=session.status,
     )
