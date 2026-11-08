@@ -232,6 +232,12 @@ Properties and rules that must always hold across the repository.
 - **Enforcement**: `seamus.harness.runner.SessionAgentRunner.stream_terminal_command`, `seamus.server.routes.sessions.stream_terminal_command`, `ui/src/components/TerminalView.tsx`, and tests in `tests/test_terminal.py`.
 
 
+### INV-048: Ollama Healthcheck and Active Model Execution Management
+- **Statement**: When an agent configuration targets Ollama (`InferenceFormat.OLLAMA` or base URL port `11434`), API keys are optional. Before instantiating or updating the inference client, the runner must execute an HTTP healthcheck against the Ollama daemon (probing candidate endpoints: configured `base_url`, `http://ollama:11434`, and `http://host.docker.internal:11434` when localhost is specified), actively verify/load the specified model into memory (`POST /api/generate` with `{"model": model_name}`), and automatically pull missing models (`POST /api/pull` with `stream: False`). If the daemon is unreachable on all candidate endpoints or the model cannot be loaded, execution must immediately fail with a descriptive `RuntimeError`.
+- **Justification**: [REQ-038](./requirements.md#req-038-ollama-local-model-provider-support--active-model-execution-management), [0045-ollama-local-model-provider.md](../decisions/0045-ollama-local-model-provider.md).
+- **Enforcement**: `seamus.harness.runner._ensure_ollama_model`, `seamus.config.models.InferenceConfig.is_complete`, `seamus.config.models.AgentConfig.validate_complete`, `docker-compose.yml`, `tests/test_config.py`, `tests/test_runner.py`.
+
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [requirements.md](./requirements.md)
@@ -273,4 +279,5 @@ Properties and rules that must always hold across the repository.
 - [0039-loose-artifact-normalization-and-mutation-log.md](../decisions/0039-loose-artifact-normalization-and-mutation-log.md)
 - [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md)
 - [0042-mount-external-git-repositories.md](../decisions/0042-mount-external-git-repositories.md)
+- [0045-ollama-local-model-provider.md](../decisions/0045-ollama-local-model-provider.md)
 - [persistence.md](./persistence.md)

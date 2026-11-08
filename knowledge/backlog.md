@@ -2,15 +2,13 @@
 
 Persistent record of work intentionally left outstanding across the project, maintained in accordance with [AGENTS.md](../AGENTS.md).
 
-## Next
-
-### Ollama Local Model Provider Support
-- **Description**: Add first-class support for Ollama as a local model provider in Seamus, allowing agents to run against locally hosted models without requiring external API keys. Configure base URLs, model selection presets, and streaming adapters compatible with Ollama's API.
-- **Rationale**: Expands Seamus to support fully offline, private, and zero-cost local LLM development workflows.
-- **Provenance**: `src/seamus/config/models.py`, `src/seamus/harness/runner.py`, `ui/src/components/ConfigModal.tsx`.
-
-
 ## Deferred
+
+### GPU Passthrough Acceleration for Containerized Ollama
+- **Description**: Add GPU acceleration support (e.g. NVIDIA Container Toolkit `--gpus all` directives in `docker-compose.yml` or ROCm runtime for AMD) and direct host socket bridging for Ollama inference in Seamus.
+- **Why Deferred**: Running Ollama in CPU mode via containerized `ollama/ollama:latest` on the internal Docker network provides out-of-the-box local inference without requiring host GPU drivers, CUDA setups, or NVIDIA Container Toolkit installation.
+- **Revisit Trigger**: When executing larger parameter models (e.g. 20B+) or when users require hardware-accelerated local inference for reduced turn latency.
+- **Provenance**: [0045-ollama-local-model-provider.md](../decisions/0045-ollama-local-model-provider.md), `docker-compose.yml`.
 
 ### Multi-Thread Conversational History Inclusion Strategy
 - **Description**: Expand thread history overlap beyond the immediate predecessor thread (`currentSession.threads[-1].messages[-n:]`) to a multi-thread sliding window budget across all historical session threads. For example, budgeting up to 20 messages total from prior threads across arbitrary thread boundaries (e.g., 10 from $T_1$, 7 from $T_2$, 3 from $T_3$ when initializing $T_4$).
@@ -253,6 +251,20 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Description**: Perform in-depth end-to-end testing of the thread acceptance lifecycle and Gitea Sync PR merges across complex multi-turn trajectories, concurrent operations, and error states following the resolution of tool call rendering in [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md).
 - **Rationale**: Ensures the automated Sync PR merge, thread closure, and branch synchronization are robust under realistic usage before full operational release.
 - **Provenance**: [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md), [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md).
+
+### Robust Testing and Usability Hardening for Ollama Integration
+- **Description**: Conduct comprehensive automated and manual testing of Ollama integration across realistic workloads, focusing on both edge-case reliability and developer usability:
+  1. **Usability & UX**:
+     - Provide visual UI indicators/progress states during slow model loading or downloading phases so users understand cold-start latency (especially for CPU execution of multi-gigabyte models like `gemma4:e4b`).
+     - Surface clearer model download progress or timeout warnings in the UI instead of generic stream delays.
+     - Explore dynamic enumeration and auto-completion of downloaded models directly by querying Ollama's `/api/tags` endpoint in the UI configuration modal.
+  2. **Reliability & Edge Cases**:
+     - Test behavior when Ollama runs out of memory (OOM), model loading times out, or the host/container daemon is killed mid-stream.
+     - Test switching between cloud providers (e.g. OpenAI/OpenRouter) and local Ollama within the same session or across branched sessions.
+     - Verify auto-pull behavior under network interruptions or invalid model tags.
+     - Test concurrent sessions/threads hitting the local Ollama instance simultaneously and verify request queuing and CPU contention.
+- **Rationale**: While baseline containerized execution, candidate endpoint probing, model pre-loading, and auto-pull work correctly, local inference introduces unique latencies and resource constraints. Usability enhancements and thorough test coverage will ensure seamless day-to-day developer workflows.
+- **Provenance**: [0045-ollama-local-model-provider.md](../decisions/0045-ollama-local-model-provider.md), `src/seamus/harness/runner.py`, `ui/src/components/ConfigModal.tsx`.
 
 ### Entity Auto-Naming and UX Daemons Architecture
 - **Description**: Implement automated naming for entities across Seamus:

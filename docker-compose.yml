@@ -136,10 +136,24 @@ services:
     restart: "no"
     entrypoint: ["echo", "seamus-sandbox image ready"]
 
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 3s
+
   backend:
     build:
       context: .
       dockerfile: Dockerfile
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - HOST=0.0.0.0
       - PORT=8000
@@ -180,6 +194,8 @@ services:
         condition: service_healthy
       sandbox-image:
         condition: service_completed_successfully
+      ollama:
+        condition: service_healthy
 
   frontend:
     build:
@@ -199,3 +215,4 @@ volumes:
   opensandbox-data:
   opensandbox-auth:
   openbao-auth:
+  ollama-data:

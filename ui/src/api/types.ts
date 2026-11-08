@@ -1,5 +1,5 @@
 export type InferenceConfig = {
-  format: "openai";
+  format: "openai" | "ollama";
   base_url: string;
   api_key?: string | null;
 };

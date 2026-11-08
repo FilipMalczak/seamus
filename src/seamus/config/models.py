@@ -14,6 +14,7 @@ class InferenceFormat(StrEnum):
     """Supported inference API format shapes."""
 
     OPENAI = "openai"
+    OLLAMA = "ollama"
 
 
 class TodoImplementation(StrEnum):
@@ -57,12 +58,14 @@ class InferenceConfig(BaseModel):
 
     def is_complete(self) -> bool:
         """Return True if all required inference fields are present and non-empty."""
+        requires_api_key = self.format != InferenceFormat.OLLAMA and "11434" not in (
+            self.base_url or ""
+        )
         return bool(
             self.format
             and self.base_url
             and self.base_url.strip()
-            and self.api_key
-            and self.api_key.strip()
+            and (not requires_api_key or (self.api_key and self.api_key.strip()))
         )
 
 
@@ -140,7 +143,12 @@ class AgentConfig(BaseModel):
                 missing.append("model_name")
             if not self.inference.base_url or not self.inference.base_url.strip():
                 missing.append("inference.base_url")
-            if not self.inference.api_key or not self.inference.api_key.strip():
+            requires_api_key = self.inference.format != InferenceFormat.OLLAMA and "11434" not in (
+                self.inference.base_url or ""
+            )
+            if requires_api_key and (
+                not self.inference.api_key or not self.inference.api_key.strip()
+            ):
                 missing.append("inference.api_key")
             msg = f"Agent configuration is incomplete. Missing or empty: {', '.join(missing)}"
             raise ValueError(msg)

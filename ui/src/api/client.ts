@@ -294,7 +294,14 @@ export function subscribeToThreadStream(
       });
 
       if (!res.ok) {
-        throw new Error(`SSE stream failed with status ${res.status}`);
+        let detail = "";
+        try {
+          const errData = await res.json();
+          detail = errData?.detail ? `: ${errData.detail}` : "";
+        } catch {
+          // ignore
+        }
+        throw new Error(`SSE stream failed with status ${res.status}${detail}`);
       }
 
       if (!res.body) {
@@ -361,7 +368,14 @@ export function subscribeToSessionStream(
       });
 
       if (!res.ok) {
-        throw new Error(`SSE session stream failed with status ${res.status}`);
+        let detail = "";
+        try {
+          const errData = await res.json();
+          detail = errData?.detail ? `: ${errData.detail}` : "";
+        } catch {
+          // ignore
+        }
+        throw new Error(`SSE session stream failed with status ${res.status}${detail}`);
       }
 
       if (!res.body) {
