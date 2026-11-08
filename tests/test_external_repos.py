@@ -125,6 +125,16 @@ def test_dual_index_checkpoint_and_restoration(tmp_path: Path) -> None:
     assert (repo_dir / ".git").exists()
     assert (repo_dir / "README.md").exists()
 
+    # Verify active branch matches the configured branch ('main'), not a session rename
+    active_branch = subprocess.run(
+        ["git", "symbolic-ref", "--short", "HEAD"],
+        cwd=repo_dir,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert active_branch == "main"
+
     # 2. Add a .gitignore file
     (repo_dir / ".gitignore").write_text("*.log\nnode_modules/\n", encoding="utf-8")
     subprocess.run(["git", "add", ".gitignore"], cwd=repo_dir, check=True)
@@ -169,6 +179,7 @@ def test_dual_index_checkpoint_and_restoration(tmp_path: Path) -> None:
     assert record.snapshot_tree
     assert record.staged_tree
     assert record.semantic_head
+    assert record.semantic_branch == "main"
     assert record.gitea_repo_name == f"project-{derive_project_id(repo_cfg.url)}"
 
     # 5. VERIFY AGENT INDEX UNTOUCHED INVARIANT:
@@ -215,3 +226,31 @@ def test_dual_index_checkpoint_and_restoration(tmp_path: Path) -> None:
     assert (repo_dir / "staged.txt").read_text(encoding="utf-8") == "Staged content"
     assert (repo_dir / "README.md").read_text(encoding="utf-8") == "# Updated Title\n"
     assert (repo_dir / "untracked.py").read_text(encoding="utf-8") == "print('hello')\n"
+
+
+def test_provision_session_working_copy_checks_out_configured_branch(tmp_path: Path) -> None:
+    ws_root = tmp_path / "workspaces"
+    settings = PersistenceSettings(workspace_dir=ws_root, enabled=False)
+    manager = ExternalRepositoryManager(workspace_root=ws_root, settings=settings)
+
+    agent_id = uuid4()
+    session_id = uuid4()
+    repo_cfg = ExternalRepositoryConfig(
+        id="att-master",
+        url="https://github.com/example/my-project.git",
+        branch="master",
+    )
+    repo_dir = manager.provision_session_working_copy(
+        agent_id=agent_id,
+        session_id=session_id,
+        repo_config=repo_cfg,
+        mount_name="my-project",
+    )
+    active_branch = subprocess.run(
+        ["git", "symbolic-ref", "--short", "HEAD"],
+        cwd=repo_dir,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert active_branch == "master"

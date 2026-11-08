@@ -76,7 +76,7 @@ We implement external Git repository mounting and persistence across the configu
 
 7. **Ephemeral Working-Tree Semantics Across Unmount/Remount**:
    - If a repository is unmounted from a session (removed from configuration) and later remounted, uncommitted working-tree modifications are discarded.
-   - The remounted working copy starts clean from the project's semantic branch (`session/{session_id}`).
+   - The remounted working copy starts clean from the project's configured branch (`repo_config.branch`, e.g. `master` or `main`).
 
 8. **Skill Discovery Integration (INV-035)**:
    - Skills located inside mounted projects (`/projects/{name}/skills` and `/projects/{name}/.skills`) are automatically discovered and loaded into the agent's operating environment.

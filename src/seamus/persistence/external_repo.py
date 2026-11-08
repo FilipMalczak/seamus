@@ -288,7 +288,6 @@ class ExternalRepositoryManager:
         """Create or checkout a session working copy for a mounted repository."""
         project_id = self.ensure_project_repo_in_gitea(repo_config)
         working_copy = self.get_working_copy_path(agent_id, session_id, mount_name)
-        session_branch = f"session/{session_id}"
 
         if not self.settings.enabled:
             # Local offline fallback
@@ -303,40 +302,32 @@ class ExternalRepositoryManager:
 
         repo_name = self.get_project_repo_name(project_id)
         clone_url = self.client.get_authenticated_clone_url(repo_name)
+        target_branch = repo_config.branch
 
         if not (working_copy / ".git").exists():
             working_copy.parent.mkdir(parents=True, exist_ok=True)
             self._run_git(working_copy.parent, ["clone", clone_url, working_copy.name])
             self._configure_git_identity(working_copy)
 
-            # Check if session branch exists on remote
-            remote_branches = self.client.list_branches(repo_name)
-            if session_branch in remote_branches and not start_commit:
-                self._run_git(working_copy, ["checkout", session_branch])
+            if start_commit:
+                self._run_git(working_copy, ["checkout", "-B", target_branch, start_commit])
             else:
-                target_start = start_commit or f"origin/{repo_config.branch}"
                 try:
-                    self._run_git(working_copy, ["checkout", "-b", session_branch, target_start])
+                    self._run_git(working_copy, ["checkout", target_branch])
                 except Exception:
-                    # Fallback to origin/main or HEAD if configured branch wasn't found
-                    self._run_git(working_copy, ["checkout", "-b", session_branch, "origin/main"])
-                try:
-                    self._run_git(working_copy, ["push", "-u", "origin", session_branch])
-                except Exception:
-                    logger.debug(
-                        "Failed to push initial session branch %s to Gitea", session_branch
-                    )
+                    try:
+                        self._run_git(
+                            working_copy,
+                            ["checkout", "-B", target_branch, f"origin/{target_branch}"],
+                        )
+                    except Exception:
+                        logger.warning(
+                            "Failed to checkout configured branch %s for %s",
+                            target_branch,
+                            mount_name,
+                        )
         else:
             self._configure_git_identity(working_copy)
-            try:
-                self._run_git(
-                    working_copy, ["pull", "--rebase", "--autostash", "origin", session_branch]
-                )
-            except Exception:
-                logger.debug(
-                    "Failed to pull session branch for %s; continuing with local state",
-                    mount_name,
-                )
 
         return working_copy
 
@@ -424,10 +415,12 @@ class ExternalRepositoryManager:
                 f"+{checkpoint_sha}:refs/heads/seamus/checkpoints/{session_id}/{mount_name}"
             )
             try:
-                self._run_git(working_copy, ["push", "origin", ref_spec, latest_ref, branch_ref])
-                # If the agent made semantic commits, also push the session branch
-                if semantic_branch.startswith("session/"):
-                    self._run_git(working_copy, ["push", "origin", semantic_branch], check=False)
+                push_refs = [ref_spec, latest_ref, branch_ref]
+                if semantic_head:
+                    push_refs.append(
+                        f"+{semantic_head}:refs/heads/seamus/semantic/{session_id}/{mount_name}"
+                    )
+                self._run_git(working_copy, ["push", "origin", *push_refs])
             except Exception:
                 logger.exception("Failed to push checkpoint ref to Gitea for %s", mount_name)
                 raise

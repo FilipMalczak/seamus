@@ -222,7 +222,7 @@ Properties and rules that must always hold across the repository.
 - **Enforcement**: `seamus.persistence.checkpointer.GitCheckpointSaver._checkpoint_external_repositories`, `seamus.persistence.workspace.GitWorkspaceManager.save_thread_external_checkpoints`, `seamus.harness.store.HarnessStore.branch_session`, `tests/test_external_repos.py`.
 
 ### INV-045: Ephemeral Working-Tree Semantics Across Repository Unmount/Remount
-- **Statement**: If an external repository is unmounted from an active session (by removing it from `session.config.repositories` and reloading configuration) and subsequently remounted, any uncommitted working-tree modifications and untracked files are discarded. The remounted working copy starts clean from the project repository's semantic session branch (`session/{session_id}`).
+- **Statement**: If an external repository is unmounted from an active session (by removing it from `session.config.repositories` and reloading configuration) and subsequently remounted, any uncommitted working-tree modifications and untracked files are discarded. The remounted working copy starts clean from the project repository's configured branch (`repo_config.branch`, e.g. `master` or `main`).
 - **Justification**: [REQ-036](./requirements.md#req-036-mount-external-git-repositories-into-agent-sandboxes-with-dual-index-persistence), [0042-mount-external-git-repositories.md](../decisions/0042-mount-external-git-repositories.md).
 - **Enforcement**: `seamus.harness.runner.SessionAgentRunner.reload_config`, `seamus.persistence.external_repo.ExternalRepositoryManager.unmount_working_copy`, `tests/test_external_repos.py`.
 
