@@ -122,8 +122,9 @@ Seamus organizes work into a clean three-tiered entity hierarchy:
 
 Never trust an LLM to run arbitrary commands on your host workstation. Seamus delegates all execution to **OpenSandbox**:
 
-- **Strict Container Isolation**: Agents execute inside containerized Linux environments (default `python:3.12-slim`, fully customizable). Commands outside the sandbox cannot touch host files or networks.
+- **Strict Container Isolation**: Agents execute inside containerized Linux environments (default `seamus-sandbox:latest` based on Ubuntu 24.04 with Python 3 and Git, fully customizable). Commands outside the sandbox cannot touch host files or networks.
 - **Sandboxed Operational Directory (`/workspace`)**: The agent's persistent workspace is mounted at `/workspace`, mapped directly to the session's Git-tracked `data/` directory. Files created or modified inside `/workspace` are tracked, committed, and version-controlled. Everything outside `/workspace` inside the container is transient.
+- **Mounted External Git Repositories (`/projects/{name}`)**: Arbitrary user-configured Git repositories are mounted under `/projects/{name}`. Each directory contains a fully functional Git working copy with `.git/`, allowing agents to run `git status`, `git diff`, `git add`, `git commit`, and `git branch` directly inside the container without modifying the host or commingling project code with agent harness internals.
 - **Dynamic Mount Policies**: Mount permissions adapt dynamically according to the active mode and plan phase:
   - In `chat` and `plan/discuss`: `/workspace` is mounted read-write.
   - In `plan/make`: `/workspace` is mounted strictly **read-only**, preventing unauthorized code mutations while authoring the plan.
@@ -139,6 +140,7 @@ Seamus eliminates complex relational databases for harness state. Gitea is the s
 - **Gitea Sync Pull Requests**: Upon session creation, an automated Sync PR is opened from `session/{session_id}` targeting `main`. The PR status and live deliverable diff are tracked in real-time.
 - **Atomic Thread Acceptance**: Clicking "Accept" in the top bar merges the session's deliverables into `main`, closes the active thread, spawns a fresh thread, and opens a renewed Sync PR.
 - **Deliverable Isolation**: Git commits strictly distinguish between agent state metadata (`agent/config/`, `agent/state/`) and actual code deliverables (`data/`). Sync PR merges exclusively target `data/`.
+- **Dual-Index External Repository Checkpointing**: Mounted external repositories are snapshotted automatically into internal Gitea repositories (`project-{project_id}`) under `refs/seamus/checkpoints/...` before each agent repository commit. Using Git's alternate index mechanism (`GIT_INDEX_FILE`), Seamus captures full working-tree snapshots without altering the agent's staged `.git/index`, `HEAD`, or branch history. Session branching restores exact historical states (`semantic_head`, `staged_tree`, and `snapshot_tree`).
 
 ### 4. Operational Modes & Structured Plan Lifecycle
 
@@ -351,7 +353,7 @@ Seamus reads environment variables from the host environment and your local `.en
 | :--- | :---: | :--- | :--- |
 | `OPENSANDBOX_DOMAIN` | `string` | `localhost:8080` | Hostname and port for the OpenSandbox lifecycle management server (in Docker: `opensandbox:8080`). |
 | `OPENSANDBOX_PROTOCOL` | `string` | `http` | HTTP protocol scheme for OpenSandbox (`http` or `https`). |
-| `OPENSANDBOX_IMAGE` | `string` | `python:3.12-slim` | Base container image instantiated for each agent session execution sandbox. |
+| `OPENSANDBOX_IMAGE` | `string` | `seamus-sandbox:latest` | Base container image instantiated for each agent session execution sandbox (Ubuntu 24.04 with Python 3 and Git). |
 | `OPENSANDBOX_WORKDIR` | `string` | `/workspace` | Target mount point inside the sandbox container for Git-tracked session data deliverables. |
 | `OPENSANDBOX_TIMEOUT` | `integer` | `300` | Default execution timeout in seconds for individual shell commands and tool calls. |
 | `OPENSANDBOX_SANDBOX_TIMEOUT` | `integer` | `3600` | Inactivity TTL in seconds before an idle sandbox container is automatically destroyed. |
@@ -394,6 +396,13 @@ class InferenceConfig(BaseModel):
     api_key: str | None = None
 
 
+class ExternalRepositoryConfig(BaseModel):
+    id: str = Field(default_factory=lambda: uuid4().hex)
+    url: str
+    branch: str = "main"
+    credentials_ref: str | None = None
+
+
 class AgentConfig(BaseModel):
     inference: InferenceConfig = Field(default_factory=InferenceConfig)
     model_name: str = "openai/gpt-oss-120b"
@@ -402,6 +411,7 @@ class AgentConfig(BaseModel):
     todo_implementation: TodoImplementation = TodoImplementation.DEEPAGENTS
     skills_implementation: SkillsImplementation = SkillsImplementation.DEEPAGENTS
     thread_message_overlap: int = 5
+    repositories: list[ExternalRepositoryConfig] = Field(default_factory=list)
 ```
 
 #### Field Details
@@ -465,6 +475,7 @@ Inside every OpenSandbox execution container, the filesystem is structured as fo
 | Container Path | Host / Session Source | Permissions | Purpose |
 | :--- | :--- | :---: | :--- |
 | `/workspace` | `<session_workspace>/data/` | **Read-Write** (or **Read-Only** in `plan/make`) | Agent code deliverables and Git-tracked workspace files. |
+| `/projects/{name}` | `<session_workspace>/projects/{name}/` | **Read-Write** | Mounted external Git repositories with normal `.git/` working tree. |
 | `/artifacts` | `<session_workspace>/artifacts/` | **Read-Only** (`readOnly=True`) | Persisted A2UI artifacts, questionnaires, and implementation plans. |
 | `/skills/bundled` | Shared Volume (`seamus/skills/bundled/`) | **Read-Only** (`readOnly=True`) | Core platform skills provided by Seamus harness. |
 | `/skills/system/{idx}` | Configured Host Directory (`~/.skills`, etc.) | **Read-Only** (`readOnly=True`) | System-wide external skills mounted from developer host. |

@@ -33,6 +33,12 @@ def _make_execution(
     return SimpleNamespace(logs=logs, exit_code=exit_code)
 
 
+def test_sandbox_settings_default_image(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OPENSANDBOX_IMAGE", raising=False)
+    settings = SandboxSettings()
+    assert settings.image == "seamus-sandbox:latest"
+
+
 def test_get_or_create_sandbox_api_key_autogenerates_and_reuses(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

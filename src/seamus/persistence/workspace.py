@@ -1001,6 +1001,39 @@ class GitWorkspaceManager:
             logger.exception("Failed to load thread todos from %s", todos_file)
             return []
 
+    def save_thread_external_checkpoints(
+        self,
+        agent_id: UUID,
+        session_id: UUID,
+        thread_id: UUID,
+        manifest_data: dict[str, Any],
+    ) -> Path:
+        """Save mounted repository checkpoint metadata to thread state directory."""
+        thread_dir = self.get_thread_state_dir(agent_id, session_id, thread_id)
+        thread_dir.mkdir(parents=True, exist_ok=True)
+        ext_cp_file = thread_dir / "external_checkpoints.json"
+        ext_cp_file.write_text(json.dumps(manifest_data, indent=2), encoding="utf-8")
+        return ext_cp_file
+
+    def load_thread_external_checkpoints(
+        self,
+        agent_id: UUID,
+        session_id: UUID,
+        thread_id: UUID,
+    ) -> dict[str, Any] | None:
+        """Load mounted repository checkpoint metadata from thread state directory."""
+        ext_cp_file = (
+            self.get_thread_state_dir(agent_id, session_id, thread_id) / "external_checkpoints.json"
+        )
+        if not ext_cp_file.exists():
+            return None
+        try:
+            content = ext_cp_file.read_text(encoding="utf-8")
+            return json.loads(content)  # type: ignore[no-any-return]
+        except Exception:
+            logger.exception("Failed to load thread external checkpoints from %s", ext_cp_file)
+            return None
+
     def get_session_git_info(
         self,
         agent_id: UUID,

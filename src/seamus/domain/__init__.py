@@ -7,6 +7,10 @@ from seamus.domain.entities import (
     Thread,
     validate_slug,
 )
+from seamus.domain.repositories import (
+    MountedRepositoryCheckpointRecord,
+    MultiRepoCheckpointManifest,
+)
 from seamus.domain.resolution import (
     EntityNotFoundError,
     parse_uuid,
@@ -18,6 +22,8 @@ __all__ = [
     "Agent",
     "AgentStatus",
     "EntityNotFoundError",
+    "MountedRepositoryCheckpointRecord",
+    "MultiRepoCheckpointManifest",
     "Session",
     "Thread",
     "parse_uuid",

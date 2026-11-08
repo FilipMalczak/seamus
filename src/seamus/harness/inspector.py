@@ -31,6 +31,8 @@ from seamus.harness.runner import (
 from seamus.harness.sandbox import BUNDLED_SKILLS_DIR, get_sandbox_settings
 from seamus.harness.store import get_harness_store
 from seamus.persistence import (
+    calculate_mount_paths,
+    derive_project_id,
     extract_readable_messages,
     get_workspace_manager,
 )
@@ -77,6 +79,19 @@ class SubAgentInspectInfo(BaseModel):
     description: str
     subagent_type: str | None = None
     model: str | None = None
+
+
+class MountedRepoInspectInfo(BaseModel):
+    """Information about a mounted external Git repository."""
+
+    id: str
+    mount_path: str
+    url: str
+    branch: str
+    credentials_configured: bool = False
+    project_id: str = ""
+    gitea_repo_name: str | None = None
+    gitea_repo_url: str | None = None
 
 
 class GitInspectInfo(BaseModel):
@@ -152,6 +167,7 @@ class AgentInspectReport(BaseModel):
     skills: list[SkillInspectInfo] = Field(default_factory=list)
     skills_implementation: SkillsImplementation = SkillsImplementation.DEEPAGENTS
     subagents: list[SubAgentInspectInfo] = Field(default_factory=list)
+    mounted_repositories: list[MountedRepoInspectInfo] = Field(default_factory=list)
     history: HistoryInspectInfo
     workspace: WorkspaceInspectInfo
 
@@ -927,6 +943,33 @@ def build_agent_inspect_report(
         files=files,
     )
 
+    mounted_repositories: list[MountedRepoInspectInfo] = []
+    if session.config.repositories:
+        ws_mgr = get_workspace_manager()
+        mount_paths = calculate_mount_paths(session.config.repositories)
+        for repo in session.config.repositories:
+            mount_name = mount_paths.get(repo.id, "repo")
+            p_id = derive_project_id(repo.url)
+            g_name = f"project-{p_id}"
+            g_url = (
+                f"{ws_mgr.settings.gitea_url.rstrip('/')}/"
+                f"{ws_mgr.settings.gitea_admin_user}/{g_name}"
+                if ws_mgr.settings.enabled
+                else None
+            )
+            mounted_repositories.append(
+                MountedRepoInspectInfo(
+                    id=repo.id,
+                    mount_path=f"/projects/{mount_name}",
+                    url=repo.url,
+                    branch=repo.branch,
+                    credentials_configured=bool(repo.credentials and repo.credentials.strip()),
+                    project_id=p_id,
+                    gitea_repo_name=g_name,
+                    gitea_repo_url=g_url,
+                )
+            )
+
     return AgentInspectReport(
         agent_id=agent.id,
         agent_name=agent.name,
@@ -944,6 +987,7 @@ def build_agent_inspect_report(
         skills=skills,
         skills_implementation=session.config.skills_implementation,
         subagents=[],
+        mounted_repositories=mounted_repositories,
         history=history_info,
         workspace=workspace_info,
     )

@@ -26,6 +26,8 @@ class OperatingEnvironment(BaseModel):
 
     workspace_directory: str = DEFAULT_OPERATIONAL_DIR
     workspace_access: str = "read-write"
+    projects_directory: str = "/projects"
+    projects_access: str = "read-write"
     notes_directory: str | None = None
     notes_access: str | None = None
     artifacts_directory: str = "/artifacts"
@@ -173,7 +175,13 @@ def build_operating_environment(
         "The repository contains a `.gitignore` file that determines which files and directories "
         "are tracked and persisted across commits and session branches. Untracked and ignored "
         "files (such as caches, build artifacts, and virtual environments) remain ephemeral "
-        "within the sandbox container."
+        "within the sandbox container.\n"
+        "Mounted external Git repositories are located under `/projects/<name>/`. "
+        "Each mounted project is an independent, fully functional Git repository with its own "
+        "`.git/`. You can execute standard Git commands (`git status`, `git diff`, `git add`, "
+        "`git commit`, `git log`, `git branch`, `git switch`) directly inside `/projects/<name>`. "
+        "Automatic persistence snapshots capture both staged and working-tree changes according "
+        "to the project's `.gitignore` rules."
     )
 
     sandbox_desc = (
@@ -184,6 +192,8 @@ def build_operating_environment(
     return OperatingEnvironment(
         workspace_directory=workdir,
         workspace_access=workspace_access,
+        projects_directory="/projects",
+        projects_access="read-write",
         notes_directory=notes_dir,
         notes_access=notes_access,
         artifacts_directory="/artifacts",

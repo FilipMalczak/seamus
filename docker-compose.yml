@@ -128,6 +128,14 @@ services:
       - opensandbox-data:/data
       - opensandbox-auth:/var/run/seamus-opensandbox
 
+  sandbox-image:
+    build:
+      context: ./opensandbox
+      dockerfile: Dockerfile.sandbox
+    image: seamus-sandbox:latest
+    restart: "no"
+    entrypoint: ["echo", "seamus-sandbox image ready"]
+
   backend:
     build:
       context: .
@@ -142,7 +150,7 @@ services:
       - SEAMUS_WORKSPACE_DIR=/app/workspaces
       - OPENSANDBOX_DOMAIN=${OPENSANDBOX_DOMAIN:-opensandbox:8080}
       - OPENSANDBOX_PROTOCOL=${OPENSANDBOX_PROTOCOL:-http}
-      - OPENSANDBOX_IMAGE=${OPENSANDBOX_IMAGE:-python:3.12-slim}
+      - OPENSANDBOX_IMAGE=${OPENSANDBOX_IMAGE:-seamus-sandbox:latest}
       - OPENSANDBOX_WORKDIR=${OPENSANDBOX_WORKDIR:-/workspace}
       - OPENSANDBOX_WORKSPACE_VOLUME=seamus-workspaces
       - SEAMUS_OPENSANDBOX_KEY_FILE=/var/run/seamus-opensandbox/api_key
@@ -170,6 +178,8 @@ services:
         condition: service_completed_successfully
       opensandbox:
         condition: service_healthy
+      sandbox-image:
+        condition: service_completed_successfully
 
   frontend:
     build:

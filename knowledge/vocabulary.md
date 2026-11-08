@@ -133,6 +133,18 @@ A symbolic string interpolation expression (`${secret('/path')}` or `${secret(pa
 ### Exploded Secret Reference
 The canonical, version-pinned form of a secret reference (`${secret(path='/path', field='value', version=N)}`) written exclusively to on-disk `agent/config/config.json` during checkpoint commits to record the exact OpenBao secret version active prior to that checkpoint while keeping live in-memory session configs unversioned. See [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md).
 
+### External Repository
+A user-configured remote Git repository mounted into an agent session's OpenSandbox environment under `/projects/{mount_name}`. Unlike the agent repository (`agent-{agent_id}`), external repositories represent third-party or existing codebases where the agent can run normal Git commands (`git status`, `git commit`, `git diff`) without polluting or coupling the project's semantic history to Seamus harness internals.
+
+### Dual-Index Checkpoint
+An automated filesystem snapshot mechanism that stages the working tree into an isolated, out-of-tree Git index (`.seamus_indexes/{attachment_id}.idx`) via `GIT_INDEX_FILE` and creates snapshot commits pushed to Gitea (`refs/seamus/checkpoints/...`). Dual-index checkpointing ensures that Seamus snapshots capture all modified and untracked files (respecting `.gitignore`) without altering the agent's active `.git/index`, `HEAD`, or working tree.
+
+### Project Repository (Internal)
+A dedicated, internal Gitea repository (`project-{project_id}`) mirrored from a remote Git URL, holding the project's upstream branches, session working branches (`session/{session_id}`), and durable Seamus checkpoint references.
+
+### Project Attachment ID
+A unique identifier (`uuid4().hex`) distinguishing a specific repository attachment in a session's configuration (`ExternalRepositoryConfig.id`) from the underlying project identity (`project_id = sha256(canonical_url)[:12]`), allowing independent mount configurations and collision-free index storage.
+
 ## Cross-References
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
@@ -151,8 +163,10 @@ The canonical, version-pinned form of a secret reference (`${secret(path='/path'
 - [0031-SUPERSEDED-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-SUPERSEDED-migrate-a2ui-to-adaptive-cards.md)
 - [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md)
 - [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md)
+- [0042-mount-external-git-repositories.md](../decisions/0042-mount-external-git-repositories.md)
 - [artifacts.md](./artifacts.md)
 - [threads_modes_personas.md](./threads_modes_personas.md)
 - [architecture.md](./architecture.md)
+- [persistence.md](./persistence.md)
 - [abstractions.md](./abstractions.md)
 - [backlog.md](./backlog.md)

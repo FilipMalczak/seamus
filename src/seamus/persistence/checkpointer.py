@@ -17,7 +17,13 @@ from langgraph.checkpoint.base import (
 from langgraph.checkpoint.memory import MemorySaver
 
 from seamus.domain.entities import Session
+from seamus.domain.repositories import MountedRepositoryCheckpointRecord
 from seamus.domain.resolution import parse_uuid
+from seamus.persistence.external_repo import (
+    ExternalRepositoryManager,
+    calculate_mount_paths,
+    get_external_repo_manager,
+)
 from seamus.persistence.workspace import GitWorkspaceManager, get_workspace_manager
 from seamus.vault.interpolator import explode_secret_references
 
@@ -81,6 +87,7 @@ class GitCheckpointSaver(MemorySaver):
         inner: BaseCheckpointSaver[Any] | None = None,
         session: Session | None = None,
         secret_versions_provider: Callable[[], Mapping[tuple[str, str], int]] | None = None,
+        external_repo_manager: ExternalRepositoryManager | None = None,
     ) -> None:
         super().__init__()
         self.agent_id = agent_id
@@ -89,6 +96,8 @@ class GitCheckpointSaver(MemorySaver):
         self.inner = inner
         self.session = session
         self.secret_versions_provider = secret_versions_provider
+        self.external_repo_manager = external_repo_manager
+        self._last_repo_checkpoints: dict[str, MountedRepositoryCheckpointRecord] = {}
         self._load_from_workspace()
 
     def copy_thread(self, source_thread_id: str, target_thread_id: str) -> None:
@@ -310,6 +319,51 @@ class GitCheckpointSaver(MemorySaver):
                 self.session_id,
             )
 
+    def _checkpoint_external_repositories(
+        self,
+        config: RunnableConfig,
+        checkpoint: Checkpoint,
+    ) -> None:
+        """Capture snapshots for all mounted external repositories before agent repo commit."""
+        if self.session is None or not self.session.config.repositories:
+            return
+
+        configurable = config.get("configurable", {}) if isinstance(config, dict) else {}
+        thread_raw = configurable.get("thread_id")
+        thread_uuid = parse_uuid(thread_raw) if thread_raw else self.session_id
+        target_uuid = thread_uuid or self.session_id
+        cp_id = str(checkpoint.get("id") or "none") if isinstance(checkpoint, dict) else "none"
+
+        ext_mgr = self.external_repo_manager or get_external_repo_manager()
+        mount_paths = calculate_mount_paths(self.session.config.repositories)
+        manifest_records: dict[str, Any] = {}
+
+        for repo_cfg in self.session.config.repositories:
+            mount_name = mount_paths.get(repo_cfg.id, "repo")
+            prev_rec = self._last_repo_checkpoints.get(repo_cfg.id)
+            rec = ext_mgr.checkpoint_working_copy(
+                agent_id=self.agent_id,
+                session_id=self.session_id,
+                repo_config=repo_cfg,
+                mount_name=mount_name,
+                checkpoint_id=cp_id,
+                prev_record=prev_rec,
+            )
+            self._last_repo_checkpoints[repo_cfg.id] = rec
+            manifest_records[repo_cfg.id] = rec.model_dump(mode="json")
+
+        if manifest_records:
+            manifest_dict = {
+                "checkpoint_id": cp_id,
+                "repositories": manifest_records,
+            }
+            self.workspace_manager.save_thread_external_checkpoints(
+                self.agent_id,
+                self.session_id,
+                target_uuid,
+                manifest_dict,
+            )
+
     def put(
         self,
         config: RunnableConfig,
@@ -322,6 +376,7 @@ class GitCheckpointSaver(MemorySaver):
             if self.inner is not None
             else super().put(config, checkpoint, metadata, new_versions)
         )
+        self._checkpoint_external_repositories(config, checkpoint)
         self._save_checkpoint_to_disk(config, checkpoint)
         self._trigger_git_commit(config, checkpoint)
         return res
@@ -335,6 +390,7 @@ class GitCheckpointSaver(MemorySaver):
     ) -> RunnableConfig:
         if self.inner is not None:
             res = await self.inner.aput(config, checkpoint, metadata, new_versions)
+            self._checkpoint_external_repositories(config, checkpoint)
             self._save_checkpoint_to_disk(config, checkpoint)
             self._trigger_git_commit(config, checkpoint)
             return res

@@ -75,7 +75,12 @@ from seamus.harness.sandbox import (
     SeamusOpenSandboxBackend,
     get_sandbox_settings,
 )
-from seamus.persistence import GitCheckpointSaver, get_workspace_manager
+from seamus.persistence import (
+    GitCheckpointSaver,
+    calculate_mount_paths,
+    get_external_repo_manager,
+    get_workspace_manager,
+)
 from seamus.vault import (
     collect_secret_references,
     get_default_vault_client,
@@ -673,6 +678,25 @@ class SessionAgentRunner:
         notes_dir = ws_mgr.get_session_notes_dir(self.session.agent_id, self.session.id)
         notes_dir.mkdir(parents=True, exist_ok=True)
 
+        ext_mgr = get_external_repo_manager()
+        if self.session.config.repositories:
+            mount_paths = calculate_mount_paths(self.session.config.repositories)
+            for repo_cfg in self.session.config.repositories:
+                mount_name = mount_paths.get(repo_cfg.id, "repo")
+                try:
+                    ext_mgr.provision_session_working_copy(
+                        agent_id=self.session.agent_id,
+                        session_id=self.session.id,
+                        repo_config=repo_cfg,
+                        mount_name=mount_name,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to provision working copy for %s in session %s",
+                        mount_name,
+                        self.session.id,
+                    )
+
         open_thread = (
             self.session.get_open_thread()
             if self.session.is_active or self.session.threads
@@ -696,6 +720,7 @@ class SessionAgentRunner:
             notes_readonly=mount_policy.notes_readonly,
             settings=sandbox_settings,
             skill_directories=system_settings.skill_directories,
+            repositories=self.session.config.repositories,
         )
         self._sandbox_backend = sandbox_backend
         sandbox_prompt = build_scaffold_prompt(
@@ -723,6 +748,7 @@ class SessionAgentRunner:
             workspace_manager=ws_mgr,
             session=self.session,
             secret_versions_provider=lambda: dict(self._loaded_secret_versions),
+            external_repo_manager=ext_mgr,
         )
         self.checkpointer = checkpointer
 
@@ -1103,6 +1129,7 @@ class SessionAgentRunner:
             workspace_readonly=policy.workspace_readonly,
             notes_mounted=policy.notes_mounted,
             notes_readonly=policy.notes_readonly,
+            repositories=self.session.config.repositories,
         )
 
     def build_effective_system_prompt(
@@ -1163,6 +1190,15 @@ class SessionAgentRunner:
     def reload_config(self, session: Session | None = None) -> None:
         """Recompile agent graph with updated session config while preserving SSE and state."""
         if session is not None:
+            old_repos = {r.id: r for r in self.session.config.repositories}
+            new_repos = {r.id: r for r in session.config.repositories}
+            removed_ids = set(old_repos.keys()) - set(new_repos.keys())
+            if removed_ids:
+                old_mounts = calculate_mount_paths(self.session.config.repositories)
+                ext_mgr = get_external_repo_manager()
+                for rem_id in removed_ids:
+                    mount_name = old_mounts.get(rem_id, "repo")
+                    ext_mgr.unmount_working_copy(self.session.agent_id, self.session.id, mount_name)
             self.session = session
         self._agent = self._build_deep_agent()
 

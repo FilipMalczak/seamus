@@ -19,7 +19,7 @@ Usage: $0 [OPTIONS]
 Ensure Seamus services (FastAPI backend, React UI, OpenSandbox, Gitea, OpenBao, and PostgreSQL) are running and open in the default browser.
 
 Options:
-  -r, --restart    Restart application containers for which we own the image (backend, frontend, opensandbox)
+  -r, --restart    Restart application containers for which we own the image (backend, frontend, opensandbox, sandbox-image)
                    and rebuild to update code while preserving data and infrastructure containers
   -c, --clean      Reset Gitea, workspaces, and sandbox state while preserving OpenBao secrets, and start fresh
   -h, --help       Show this help message and exit
@@ -116,8 +116,8 @@ if [ "$CLEAN" = true ]; then
   echo "Starting all services from clean state..."
   docker compose up -d --build
 elif [ "$RESTART" = true ]; then
-  echo "Restart requested. Rebuilding application containers (backend, frontend, opensandbox) while preserving persistent data..."
-  docker compose up -d --build opensandbox backend frontend
+  echo "Restart requested. Rebuilding application containers (backend, frontend, opensandbox, sandbox-image) while preserving persistent data..."
+  docker compose up -d --build opensandbox sandbox-image backend frontend
 elif check_service_up "$UI_URL" && check_service_up "$BACKEND_HEALTH_URL" && check_service_up "$GITEA_HEALTH_URL"; then
   echo "Seamus services are already running at $UI_URL."
   echo "Opening Seamus UI in default web browser ($UI_URL)..."

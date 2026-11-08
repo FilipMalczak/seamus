@@ -401,6 +401,89 @@ export function ConfigModal({
 
               <div className="config-field">
                 <div className="config-label-row">
+                  <label className="config-label">Mounted Git Repositories (/projects/)</label>
+                  <button
+                    type="button"
+                    className="config-clear-btn"
+                    onClick={() =>
+                      updateDraft((d) => {
+                        if (!Array.isArray(d.repositories)) {
+                          d.repositories = [];
+                        }
+                        d.repositories.push({
+                          url: "",
+                          branch: "main",
+                          credentials: "",
+                        });
+                      })
+                    }
+                  >
+                    + Add Repository
+                  </button>
+                </div>
+                <div className="text-xs text-zinc-400 mb-2">
+                  External Git repositories mounted under <code>/projects/&lt;name&gt;</code>.
+                  Credentials should reference an OpenBao secret like <code>{"${secret('/git/token')}"}</code>.
+                </div>
+                {Array.isArray(parsedDraft.repositories) && parsedDraft.repositories.length > 0 ? (
+                  <div className="space-y-2 mb-2">
+                    {parsedDraft.repositories.map((repo: any, idx: number) => (
+                      <div key={repo.id || idx} className="flex items-center gap-2 bg-zinc-900/60 p-2 rounded border border-zinc-800">
+                        <input
+                          type="text"
+                          className="config-input flex-1"
+                          placeholder="Git URL (e.g. https://github.com/org/repo.git)"
+                          value={repo.url || ""}
+                          onChange={(e) =>
+                            updateDraft((d) => {
+                              d.repositories[idx].url = e.target.value;
+                            })
+                          }
+                        />
+                        <input
+                          type="text"
+                          className="config-input w-28"
+                          placeholder="Branch"
+                          value={repo.branch || "main"}
+                          onChange={(e) =>
+                            updateDraft((d) => {
+                              d.repositories[idx].branch = e.target.value;
+                            })
+                          }
+                        />
+                        <input
+                          type="text"
+                          className="config-input w-48"
+                          placeholder="${secret('/git/token')}"
+                          value={repo.credentials || ""}
+                          onChange={(e) =>
+                            updateDraft((d) => {
+                              d.repositories[idx].credentials = e.target.value || null;
+                            })
+                          }
+                        />
+                        <button
+                          type="button"
+                          className="icon-btn text-rose-400 hover:text-rose-300"
+                          title="Remove repository"
+                          onClick={() =>
+                            updateDraft((d) => {
+                              d.repositories.splice(idx, 1);
+                            })
+                          }
+                        >
+                          <X className="size-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-xs text-zinc-500 italic mb-2">No external repositories mounted.</div>
+                )}
+              </div>
+
+              <div className="config-field">
+                <div className="config-label-row">
                   <label className="config-label">Custom System Prompt</label>
                   {currentSystemPrompt !== null && (
                     <button

@@ -2,9 +2,6 @@
 
 Persistent record of work intentionally left outstanding across the project, maintained in accordance with [AGENTS.md](../AGENTS.md).
 
-> Next goal: mounting external repos;
-> for that we need secrets management, to be able to store git checkout creds safely
-
 ## Deferred
 
 ### Multi-Thread Conversational History Inclusion Strategy
@@ -43,23 +40,28 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Revisit Trigger**: When introducing custom agent generative UI authoring workflows.
 - **Provenance**: [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [0037-validate-a2ui-surface-render-on-make-artifact.md](../decisions/0037-validate-a2ui-surface-render-on-make-artifact.md), [0038-a2ui-root-component-and-incomplete-structure-warning.md](../decisions/0038-a2ui-root-component-and-incomplete-structure-warning.md), [0039-loose-artifact-normalization-and-mutation-log.md](../decisions/0039-loose-artifact-normalization-and-mutation-log.md), [artifacts.md](./artifacts.md).
 
-### Multi-Mount Repository Support and Dynamic Skill Discovery
-- **Description**: When Seamus introduces support for mounting multiple repositories/projects (e.g., existing user codebases) into the agent's sandbox container, dynamically discover and track both `<mount>/skills` and `<mount>/.skills` directories present across all mounted workspaces as project-level skill sources. In accordance with the established skill precedence hierarchy, non-dotted `skills` takes precedence over dotted `.skills`, and project mounts take precedence after the operational `/workspace` but before ambient system-wide skills.
-- **Why Deferred**: Requires establishing multi-mount repository architecture first; single agent repository mounting is the current model.
-- **Revisit Trigger**: When multi-repository mounting is implemented in Seamus.
-- **Provenance**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md), [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md).
+### Pushing External Repository Semantic Commits Back to Remote Upstream
+- **Description**: Provide an explicit mechanism, command, or agent tool for pushing semantic commits created on `/projects/{mount_name}` back to the remote upstream repository (e.g., creating feature branches and opening pull requests on GitHub or GitLab).
+- **Why Deferred**: External repositories are currently cloned and checkpointed into internal Gitea storage (`project-{project_id}`). Upstream push integration requires managing push credentials and remote PR lifecycle management.
+- **Revisit Trigger**: When agents are tasked with publishing completed features directly to remote upstream hosts.
+- **Provenance**: [0042-mount-external-git-repositories.md](../decisions/0042-mount-external-git-repositories.md).
+
+### Extended Manual Testing of External Git Mounts (Especially Multiple Concurrent Mounts)
+- **Description**: Conduct comprehensive manual end-to-end testing of external repository mounting across edge cases:
+  1. Multiple concurrent mounts in a single session (including naming collisions producing `_0`, `_1` suffixes).
+  2. Large upstream repositories (multi-gigabyte histories, binary objects, deeply nested directory structures).
+  3. Concurrent sessions sharing the same underlying Gitea mirror repository (`project-{project_id}`).
+  4. Dynamic unmounting, remounting, and branch reconfiguration mid-session.
+  5. Multi-repo checkpointing performance and atomic rollback if one repository fails to snapshot.
+- **Why Deferred**: Core dual-index snapshotting, URL derivation, Gitea mirroring, and single-mount execution were verified through automated unit tests (`tests/test_external_repos.py`) and single-repo manual verification. Extended manual scenarios require setting up multiple mock/real remote repositories with varying commit topologies and stress-testing container I/O.
+- **Revisit Trigger**: Before running production agents tasked with complex, multi-repository monorepo or microservice refactorings.
+- **Provenance**: [0042-mount-external-git-repositories.md](../decisions/0042-mount-external-git-repositories.md), `tests/test_external_repos.py`.
 
 ### Granular Gitea Commit Authors, Organizations, and Team Ownership
 - **Description**: All Git repositories created in Gitea are owned by the system service user `seamus`, and automated commits use the single author identity `Seamus Agent <agent@seamus.local>`. Per-agent, per-session, or per-user commit authors, organizations, and team permissions were postponed.
 - **Why Deferred**: Kept persistence initialization and API interaction simple and single-tenant for early development.
 - **Revisit Trigger**: When introducing multi-tenant support, team access controls, or distinct audit identities per agent or human turn.
 - **Provenance**: [0008-git-persistence.md](../decisions/0008-git-persistence.md#8-deferred-tasks), [vocabulary.md](./vocabulary.md#agent-repository).
-
-### Mounting Custom User-Provided Git Repositories
-- **Description**: Seamus currently manages its own internal Gitea repositories per agent (`agent-{agent_id}`). Mounting or connecting existing external Git repositories (e.g., GitHub, GitLab, or preexisting host Git repos) was postponed.
-- **Why Deferred**: Prioritized establishing the internal repository layout (`main`, `session/{session_id}`, `agent/state/`, `data/`) and verification mechanisms before supporting external remote topologies.
-- **Revisit Trigger**: When users require agents to work directly on existing external codebases without manual file copying or importing.
-- **Provenance**: [0008-git-persistence.md](../decisions/0008-git-persistence.md#8-deferred-tasks).
 
 ### Gitea Repository Branch Protection Rules
 - **Description**: Configure branch protection rules on all agent and system Git repositories in Gitea to restrict direct pushes to session and main branches. Workspaces are not a freely accessible content base; all modifications must be authorized (such as administrator intervention or verified agent turns).
@@ -255,10 +257,23 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Accommodates both lightweight conversational workflows focused on getting tasks done and deep engineering/debugging sessions requiring full inspectability.
 - **Provenance**: [0003-react-web-ui.md](../decisions/0003-react-web-ui.md), [architecture.md](./architecture.md#system-overview).
 
-### Configurable Sandbox Container Image, Bundled Dev Image, and Environment Inspection
-- **Description**: Add `sandbox_image: str | None = None` to `AgentConfig` (and `ConfigTemplate`), allowing custom container images to be configured per agent/session (falling back to environment variable `OPENSANDBOX_IMAGE` or default). Bundle a dedicated Seamus development sandbox image pre-installed with standard developer tooling (Git, uv, Node, build tools) rather than relying on bare `python:3.12-slim`. In addition, explain the sandbox image's capabilities in the system prompt and/or expose the Dockerfile within the image itself (e.g. at `/etc/Dockerfile`) so the agent can inspect what tools and libraries are installed in its environment.
-- **Rationale**: The minimal `python:3.12-slim` base image lacks standard tools required by coding agents, and the agent needs clear self-knowledge of its container environment and available binaries.
-- **Provenance**: `src/seamus/config/models.py`, `src/seamus/harness/sandbox.py`, `src/seamus/harness/prompt.py`, `Dockerfile.sandbox`.
+### Dedicated First-Party Developer Sandbox Container Image & Environment Inspection
+- **Description**: Design and build a proper first-party developer sandbox Docker image for agent execution (e.g. `seamus-agent-sandbox:latest`), replacing the interim bare `ubuntu` default:
+  1. Core developer runtimes: pre-installed Python 3.12+, Astral `uv`, Node.js (LTS) + npm, Git, curl, wget, jq, tree, and build essentials.
+  2. Workspace permission alignment: configure user / group permissions so file creation under `/workspace` and `/projects` matches host user ownership without permission errors.
+  3. Self-introspecting environment metadata: embed the Dockerfile or a declarative capability manifest (e.g. at `/etc/seamus-sandbox.json`) so the agent and system prompt can accurately inspect installed packages, tools, and runtimes.
+  4. Per-agent/session configuration: add `sandbox_image: str | None = None` to `AgentConfig` (and `ConfigTemplate`), allowing custom images to be configured per agent/session falling back to `OPENSANDBOX_IMAGE`.
+- **Rationale**: Bare `ubuntu` provides a clean base but lacks standard tools required by coding agents out of the box (e.g. Python, uv, Git, npm), forcing agents to install packages at runtime or fail commands. A pre-built, tested development image ensures immediate productivity, deterministic execution, and transparent tool introspection.
+- **Provenance**: `src/seamus/config/models.py`, `src/seamus/harness/sandbox.py`, `src/seamus/harness/prompt.py`, `Dockerfile.sandbox`, `0042-mount-external-git-repositories.md`.
+
+### Interactive Web Terminal & Shell Emulator for Agent Sandbox
+- **Description**: Implement an interactive browser-based terminal emulator (e.g. using `xterm.js` and WebSockets or SSE streaming via OpenSandbox's interactive exec API) inside the Seamus UI:
+  1. Terminal tab or drawer: embed a collapsible terminal drawer in the session view alongside Chat, Changes, Artifacts, and Inspector.
+  2. Live container shell: establish an interactive, bidirectional pseudo-terminal (`pty`) session connected directly to `/bin/bash` inside the session's active OpenSandbox container.
+  3. Context awareness: launch the shell with the working directory set to `/workspace` (or `/projects/{mount_name}`), matching the container's environment, mounted volumes, and user permissions.
+  4. Non-intrusive developer intervention: allow developers to inspect running processes, check installed tools, manually run tests, debug environment issues, or inspect Git state directly inside the container without switching to a host terminal.
+- **Rationale**: Developers currently have to find container IDs on the Docker host (`docker exec -it sandbox-... bash`) to inspect sandbox state or test commands. A built-in terminal emulator provides an immediate, seamless developer experience inside the Seamus Web UI.
+- **Provenance**: `src/seamus/harness/sandbox.py`, `ui/src/components/`, [0003-react-web-ui.md](../decisions/0003-react-web-ui.md).
 
 ### Granular Branch Action Placement in Chat Bubble UI
 - **Description**: Redesign the message branch action layout in `MessageItem.tsx`. Move the branch action icon/button to the right of message bubbles (e.g., in a hover/action gutter) rather than placing it in the bottom footer below the bubble content, and review branch point indicators to ensure they are visually intuitive and unambiguous.
@@ -302,7 +317,7 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 - if a field in config or config template would be masked and contains ${} expression, it doesn't need to be masked
 
-- are we sure that we recognize v2? [CRITICAL]
+- are we sure that we recognize v2? [CRITICAL] WTF did I mean? oO
 
 - way, waaaaay forward: disablability of more layers and components; 
   - for sure context compaction, I dont like it

@@ -80,6 +80,9 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 12. **Secrets Vault Subsystem (`seamus.vault`, `openbao`)**:
    - Location: `src/seamus/vault/`, `src/seamus/server/routes/vault.py`, `openbao/`
    - Responsibility: OpenBao KV v2 secrets vault client (`VaultClient`), symbolic `${secret(...)}` parser (`parse_secret_reference`, `find_secret_references`), in-memory configuration interpolation (`resolve_secrets_with_versions`), session branch and checkpoint version explosion (`explode_secret_references`, `strip_secret_versions`, `get_secret_versions_for_references_sync`), and REST endpoints (`/api/v-alpha/vault/secrets`, `/api/v-alpha/vault/token`). Orchestrates per-inference secret version watching in `SessionAgentRunner` and persistent config explosion in `GitWorkspaceManager` and `GitCheckpointSaver`.
+13. **External Git Repositories Subsystem (`seamus.persistence.external_repo`)**:
+   - Location: `src/seamus/persistence/external_repo.py`, `src/seamus/domain/repositories.py`
+   - Responsibility: Orchestrates the mounting, Gitea mirroring, dual-index snapshotting, and restoration of user-configured external Git repositories (`ExternalRepositoryConfig`). Derives deterministic project IDs (`sha256(canonical_url)[:12]`) and safe collision-free mount paths (`/projects/{mount_name}`), provisions internal Gitea mirrors (`project-{project_id}`), isolates credentials via OpenBao without sandbox exposure, executes out-of-tree dual-index checkpoints preserving agent-facing `.git/index` and `HEAD`, pushes checkpoint refs to Gitea, and restores exact historical working copy states upon session branching and crash recovery.
 
 ## Cross-References
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
@@ -118,8 +121,10 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 - [0039-loose-artifact-normalization-and-mutation-log.md](../decisions/0039-loose-artifact-normalization-and-mutation-log.md)
 - [0040-session-level-ui-view-and-unified-thread-feed.md](../decisions/0040-session-level-ui-view-and-unified-thread-feed.md)
 - [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md)
+- [0042-mount-external-git-repositories.md](../decisions/0042-mount-external-git-repositories.md)
 - [artifacts.md](./artifacts.md)
 - [threads_modes_personas.md](./threads_modes_personas.md)
 - [abstractions.md](./abstractions.md)
+- [persistence.md](./persistence.md)
 - [backlog.md](./backlog.md)
 - [vocabulary.md](./vocabulary.md)

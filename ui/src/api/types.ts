@@ -10,6 +10,13 @@ export type SkillsImplementation = "none" | "deepagents";
 
 export type OperationalMode = "chat" | "plan";
 
+export type ExternalRepositoryConfig = {
+  id?: string;
+  url: string;
+  branch?: string;
+  credentials?: string | null;
+};
+
 export type AgentConfig = {
   inference: InferenceConfig;
   model_name: string;
@@ -17,6 +24,8 @@ export type AgentConfig = {
   system_prompt?: string | null;
   todo_implementation?: TodoImplementation;
   skills_implementation?: SkillsImplementation;
+  thread_message_overlap?: number;
+  repositories?: ExternalRepositoryConfig[];
 };
 
 export type ConfigTemplateResponse = {
@@ -306,6 +315,17 @@ export interface SkillInspectInfo {
   active: boolean;
 }
 
+export interface MountedRepoInspectInfo {
+  id: string;
+  mount_path: string;
+  url: string;
+  branch: string;
+  credentials_configured: boolean;
+  project_id?: string;
+  gitea_repo_name?: string | null;
+  gitea_repo_url?: string | null;
+}
+
 export interface AgentInspectReport {
   agent_id: string;
   agent_name: string | null;
@@ -323,6 +343,7 @@ export interface AgentInspectReport {
   skills?: SkillInspectInfo[];
   skills_implementation?: SkillsImplementation;
   subagents: SubAgentInspectInfo[];
+  mounted_repositories?: MountedRepoInspectInfo[];
   history: HistoryInspectInfo;
   workspace: WorkspaceInspectInfo;
 }
