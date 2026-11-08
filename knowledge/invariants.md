@@ -242,6 +242,11 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-039](./requirements.md#req-039-non-agentic-daemons--geometric-stepback-threadsession-naming), [0046-daemons-naming.md](../decisions/0046-daemons-naming.md).
 - **Enforcement**: `seamus.harness.daemons.naming.is_stepback_trigger`, `seamus.harness.daemons.parser.parse_loose_slug`, `seamus.domain.entities.Thread.name`, `seamus.domain.entities.Session.name`, `seamus.harness.runner._run_loop`, `tests/test_daemons.py`.
 
+### INV-050: Deterministic Agent Slug Generation and Parallel Fallback
+- **Statement**: Every agent must have a non-empty `generated_name` generated via `coolname`. If `custom_name` is provided, `agent.name` evaluates to `custom_name`; otherwise, `agent.name` evaluates to `generated_name`. When `custom_name` is cleared (`name=None`), `agent.name` automatically reverts to `generated_name`. Both `custom_name` and `generated_name` must conform to `SLUG_PATTERN`, and the effective slug must be unique among registered agents.
+- **Justification**: [REQ-040](./requirements.md#req-040-deterministic-agent-slug-generation-via-coolname), [0046-daemons-naming.md](../decisions/0046-daemons-naming.md).
+- **Enforcement**: `seamus.domain.entities.Agent.name`, `seamus.harness.store.HarnessStore.create_agent`, `seamus.harness.store.HarnessStore.update_agent`, `tests/test_daemons.py`.
+
 
 ## Cross-References
 - [backlog.md](./backlog.md)

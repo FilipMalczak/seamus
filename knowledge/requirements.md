@@ -231,6 +231,12 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0046-daemons-naming.md](../decisions/0046-daemons-naming.md), `src/seamus/harness/daemons/`.
 - **Linked Invariants**: [INV-049](./invariants.md#inv-049-non-agentic-daemon-execution-geometric-stepback-and-parallel-slug-priority).
 
+### REQ-040: Deterministic Agent Slug Generation via Coolname
+- **Description**: When an agent is created, a URL-safe slug must be generated deterministically using `coolname` (e.g. `sticky-grinning-skua-of-camouflage`). The agent entity adopts the parallel slug model where `custom_name` takes precedence over `generated_name`, and clearing `custom_name` automatically falls back to `generated_name`. Slug uniqueness is strictly enforced across registered agents upon creation and updates.
+- **Rationale**: Ensures every agent has a readable, friendly, URL-safe identifier out-of-the-box without requiring manual naming, while preserving full user customization and seamless fallback.
+- **Provenance**: [0046-daemons-naming.md](../decisions/0046-daemons-naming.md), `src/seamus/domain/entities.py`, `src/seamus/harness/store.py`.
+- **Linked Invariants**: [INV-050](./invariants.md#inv-050-deterministic-agent-slug-generation-and-parallel-fallback).
+
 
 ## Cross-References
 - [backlog.md](./backlog.md)

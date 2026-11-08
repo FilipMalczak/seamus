@@ -34,9 +34,9 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `AgentStatus`: Enumeration of thread states (`AWAITING_USER`, `AWAITING_LLM`, `EXECUTING_TOOL`, `ERROR`).
 - `SessionStatus`: Enumeration of session lifecycle states (`ACTIVE`, `KILLED`, `FAILED`).
 - `SessionBranchProvenance`: Data model recording branching lineage (`parent_session_id`, `parent_message_id`, `parent_session_name`, `branched_at`).
-- `Thread`: Models conversation thread state, open/closed flag, creation and touched timestamps, active `mode`, optional `phase`, computed `mode_label`, empty check `is_empty`, and past AG-UI event records.
-- `Session`: Models an ongoing conversation with an agent, holding an isolated `AgentConfig`, lifecycle `status`, `active_plan_id`, optional `provenance` (immediate parent), cumulative `lineage` (multi-level branch provenance chain), a dedicated runner, and child threads with `create_thread(reuse_empty=True)` empty-thread reuse.
-- `Agent`: Models an agent entity holding a complete `AgentConfig` and child sessions.
+- `Thread`: Models conversation thread state, parallel slugs (`custom_name`, `daemon_name`), `exchange_count`, open/closed flag, creation and touched timestamps, active `mode`, optional `phase`, computed `mode_label`, empty check `is_empty`, and past AG-UI event records.
+- `Session`: Models an ongoing conversation with an agent, holding an isolated `AgentConfig`, parallel slugs (`custom_name`, `daemon_name`), `total_exchange_count`, lifecycle `status`, `active_plan_id`, optional `provenance` (immediate parent), cumulative `lineage` (multi-level branch provenance chain), a dedicated runner, and child threads with `create_thread(reuse_empty=True)` empty-thread reuse.
+- `Agent`: Models an agent entity holding a complete `AgentConfig`, parallel slugs (`custom_name`, deterministic `generated_name` via `coolname`), and child sessions.
 - `Resolution`: Identifier resolution functions mapping UUID or slug strings to entities within their scope.
 - `Operational Modes` (`seamus.domain.modes`): Declarative descriptors (`ModeDescriptor`, `PhaseDescriptor`, `MountPolicy`) defining operational modes (`CHAT_MODE`, `PLAN_MODE` with `discuss`, `make`, `execute` phases), tool gating, and hardware container mount policies.
 
