@@ -206,6 +206,12 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md).
 - **Linked Invariants**: [INV-042](./invariants.md#inv-042-in-memory-secret-evaluation-per-inference-version-watching-and-checkpoint-explosion).
 
+### REQ-036: Mount External Git Repositories into Agent Sandboxes with Dual-Index Persistence
+- **Description**: The system must allow users to configure an arbitrary number of external Git repositories in `AgentConfig`, `SessionConfig`, and `ConfigTemplate` using `ExternalRepositoryConfig` (defining `id`, `url`, `branch`, and optional OpenBao secret reference `credentials_ref`). Repositories are mounted into OpenSandbox containers under `/projects/{mount_name}` (with mount names derived from URL trailing components, disambiguating collisions by appending `_0`, `_1`, ... to all colliding names). Agents inside `/projects/{mount_name}` retain standard, full Git capabilities (`git status`, `git diff`, `git add`, `git commit`, `git branch`). Seamus automated filesystem checkpointing must persist snapshots into dedicated internal Gitea repositories (`project-{project_id}`) under `refs/seamus/checkpoints/{session_id}/{checkpoint_id}` using a dual-index architecture (alternate out-of-tree index for working-tree snapshots, capturing `staged_tree` via `git write-tree` against `.git/index`) without polluting semantic project Git history or modifying the agent's index or `HEAD`. Project snapshots are pushed to Gitea before the agent repository checkpoint is committed, recording snapshot SHAs in `agent/state/external_checkpoints.json`. Session branching restores exact historical state (semantic `HEAD`, staged index, and working tree). Unmounting and remounting a repository discards uncommitted changes, starting clean from the project session branch.
+- **Rationale**: Enables agents to work directly on existing, multi-repository codebases with fully functional Git workflows while guaranteeing strict sandbox isolation, non-intrusive checkpointing, credential security via OpenBao, and exact time-travel reproducibility.
+- **Provenance**: [0042-mount-external-git-repositories.md](../decisions/0042-mount-external-git-repositories.md).
+- **Linked Invariants**: [INV-043](./invariants.md#inv-043-external-git-repository-sandbox-isolation-dual-index-persistence-and-credential-safety), [INV-044](./invariants.md#inv-044-multi-repository-checkpoint-ordering-atomic-manifest-commit-and-exact-historical-restoration), [INV-045](./invariants.md#inv-045-ephemeral-working-tree-semantics-across-repository-unmountremount).
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [invariants.md](./invariants.md)
@@ -243,3 +249,4 @@ Requirements, rationale, provenance, and stable IDs.
 - [0036-mount-bundled-skills-via-shared-volume.md](../decisions/0036-mount-bundled-skills-via-shared-volume.md)
 - [0037-validate-a2ui-surface-render-on-make-artifact.md](../decisions/0037-validate-a2ui-surface-render-on-make-artifact.md)
 - [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md)
+- [0042-mount-external-git-repositories.md](../decisions/0042-mount-external-git-repositories.md)

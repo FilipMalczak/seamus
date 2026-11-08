@@ -2,8 +2,9 @@
 
 from enum import StrEnum
 from typing import Self
+from uuid import uuid4
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from seamus.vault.models import SecretSyntaxError
 from seamus.vault.parser import find_secret_references
@@ -65,6 +66,44 @@ class InferenceConfig(BaseModel):
         )
 
 
+class ExternalRepositoryConfig(BaseModel):
+    """Configuration for an external Git repository mounted into the sandbox."""
+
+    id: str = Field(default_factory=lambda: uuid4().hex[:8])
+    url: str
+    branch: str = "main"
+    credentials: str | None = None
+
+    @field_validator("url")
+    @classmethod
+    def _validate_url(cls, v: str) -> str:
+        trimmed = v.strip()
+        if not trimmed:
+            raise ValueError("Git repository URL cannot be empty.")
+        return trimmed
+
+    @field_validator("branch")
+    @classmethod
+    def _validate_branch(cls, v: str) -> str:
+        trimmed = v.strip()
+        if not trimmed:
+            raise ValueError("Branch name cannot be empty.")
+        if trimmed.startswith("-") or ".." in trimmed or " " in trimmed:
+            raise ValueError(f"Invalid git branch name: '{trimmed}'")
+        return trimmed
+
+    @model_validator(mode="after")
+    def _validate_secret_refs(self) -> Self:
+        for field_name in ("url", "credentials"):
+            val = getattr(self, field_name)
+            if isinstance(val, str) and "${" in val:
+                try:
+                    find_secret_references(val, allow_version=False)
+                except SecretSyntaxError as exc:
+                    raise ValueError(str(exc)) from exc
+        return self
+
+
 class AgentConfig(BaseModel):
     """Full configuration for an agent or session instance."""
 
@@ -75,6 +114,7 @@ class AgentConfig(BaseModel):
     todo_implementation: TodoImplementation = TodoImplementation.DEEPAGENTS
     skills_implementation: SkillsImplementation = SkillsImplementation.DEEPAGENTS
     thread_message_overlap: int = 5
+    repositories: list[ExternalRepositoryConfig] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _validate_secret_refs(self) -> Self:
@@ -147,6 +187,11 @@ class AgentConfig(BaseModel):
                     overrides.thread_message_overlap
                     if "thread_message_overlap" in overrides.model_fields_set
                     else self.thread_message_overlap
+                ),
+                "repositories": (
+                    [r.model_copy(deep=True) for r in overrides.repositories]
+                    if "repositories" in overrides.model_fields_set
+                    else [r.model_copy(deep=True) for r in self.repositories]
                 ),
             },
             deep=True,

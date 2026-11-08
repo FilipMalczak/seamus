@@ -2,9 +2,6 @@
 
 Persistent record of work intentionally left outstanding across the project, maintained in accordance with [AGENTS.md](../AGENTS.md).
 
-> Next goal: mounting external repos;
-> for that we need secrets management, to be able to store git checkout creds safely
-
 ## Deferred
 
 ### Multi-Thread Conversational History Inclusion Strategy
@@ -43,23 +40,17 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Revisit Trigger**: When introducing custom agent generative UI authoring workflows.
 - **Provenance**: [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [0037-validate-a2ui-surface-render-on-make-artifact.md](../decisions/0037-validate-a2ui-surface-render-on-make-artifact.md), [0038-a2ui-root-component-and-incomplete-structure-warning.md](../decisions/0038-a2ui-root-component-and-incomplete-structure-warning.md), [0039-loose-artifact-normalization-and-mutation-log.md](../decisions/0039-loose-artifact-normalization-and-mutation-log.md), [artifacts.md](./artifacts.md).
 
-### Multi-Mount Repository Support and Dynamic Skill Discovery
-- **Description**: When Seamus introduces support for mounting multiple repositories/projects (e.g., existing user codebases) into the agent's sandbox container, dynamically discover and track both `<mount>/skills` and `<mount>/.skills` directories present across all mounted workspaces as project-level skill sources. In accordance with the established skill precedence hierarchy, non-dotted `skills` takes precedence over dotted `.skills`, and project mounts take precedence after the operational `/workspace` but before ambient system-wide skills.
-- **Why Deferred**: Requires establishing multi-mount repository architecture first; single agent repository mounting is the current model.
-- **Revisit Trigger**: When multi-repository mounting is implemented in Seamus.
-- **Provenance**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md), [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md).
+### Pushing External Repository Semantic Commits Back to Remote Upstream
+- **Description**: Provide an explicit mechanism, command, or agent tool for pushing semantic commits created on `/projects/{mount_name}` back to the remote upstream repository (e.g., creating feature branches and opening pull requests on GitHub or GitLab).
+- **Why Deferred**: External repositories are currently cloned and checkpointed into internal Gitea storage (`project-{project_id}`). Upstream push integration requires managing push credentials and remote PR lifecycle management.
+- **Revisit Trigger**: When agents are tasked with publishing completed features directly to remote upstream hosts.
+- **Provenance**: [0042-mount-external-git-repositories.md](../decisions/0042-mount-external-git-repositories.md).
 
 ### Granular Gitea Commit Authors, Organizations, and Team Ownership
 - **Description**: All Git repositories created in Gitea are owned by the system service user `seamus`, and automated commits use the single author identity `Seamus Agent <agent@seamus.local>`. Per-agent, per-session, or per-user commit authors, organizations, and team permissions were postponed.
 - **Why Deferred**: Kept persistence initialization and API interaction simple and single-tenant for early development.
 - **Revisit Trigger**: When introducing multi-tenant support, team access controls, or distinct audit identities per agent or human turn.
 - **Provenance**: [0008-git-persistence.md](../decisions/0008-git-persistence.md#8-deferred-tasks), [vocabulary.md](./vocabulary.md#agent-repository).
-
-### Mounting Custom User-Provided Git Repositories
-- **Description**: Seamus currently manages its own internal Gitea repositories per agent (`agent-{agent_id}`). Mounting or connecting existing external Git repositories (e.g., GitHub, GitLab, or preexisting host Git repos) was postponed.
-- **Why Deferred**: Prioritized establishing the internal repository layout (`main`, `session/{session_id}`, `agent/state/`, `data/`) and verification mechanisms before supporting external remote topologies.
-- **Revisit Trigger**: When users require agents to work directly on existing external codebases without manual file copying or importing.
-- **Provenance**: [0008-git-persistence.md](../decisions/0008-git-persistence.md#8-deferred-tasks).
 
 ### Gitea Repository Branch Protection Rules
 - **Description**: Configure branch protection rules on all agent and system Git repositories in Gitea to restrict direct pushes to session and main branches. Workspaces are not a freely accessible content base; all modifications must be authorized (such as administrator intervention or verified agent turns).

@@ -153,6 +153,10 @@ Store session-specific skills inside the agent's Git-tracked repository under:
 ```
 Inside the isolated sandbox container, this directory is accessible at `/workspace/.skills`. Agent-level skills are automatically versioned, committed to Git branches, pushed to Gitea, and preserved with complete session provenance.
 
+### Project-Level Skills
+
+When external repositories are mounted under `/projects/{name}`, skills placed in `<project>/skills` or `<project>/.skills` are automatically discovered and loaded into the agent's environment.
+
 ### System-Wide Skills (Disrecommended)
 
 System-wide skill directories can be configured in system settings (`/settings` API) and are mounted live into the agent's sandbox container as read-only volumes (`readOnly=True`).
@@ -162,6 +166,37 @@ System-wide skill directories can be configured in system settings (`/settings` 
 > System-level skills allow mounting external host directories directly into agent sandboxes outside Git versioning and provenance tracking. This directly conflicts with Seamus's core design tenets of **heavy isolation, reproducible state, and Git-backed provenance**.
 >
 > System-level skills are provided strictly as an escape hatch for local development and rapid experimentation, but they are **strongly disrecommended** and subject to future deprecation and removal. Always prefer agent-level skills stored in `<workspace>/data/.skills/`.
+
+---
+
+## Mounted External Git Repositories (`/projects`)
+
+Seamus supports mounting an arbitrary number of external Git repositories into an agent's sandbox container under `/projects/{name}`. This allows agents to inspect, develop, test, and commit code directly on existing repositories without treating them as part of the agent's internal workspace repository.
+
+### Workspace vs. Projects Layout
+
+- `/workspace`: The agent's dedicated operational workspace, backed by `agent-{agent_id}` in Gitea. Holds agent deliverables and research notes.
+- `/projects/{name}`: Independent external Git repositories, each containing a fully functional Git working tree and ordinary `.git/` directory.
+
+Inside `/projects/{name}`, agents can run standard Git commands:
+```bash
+git status
+git diff
+git diff --cached
+git add .
+git commit -m "feat: implement payment webhook handler"
+git branch
+git switch -c feature/payments
+```
+
+### Dual-Index Persistence & Snapshot Isolation
+
+Seamus automatically snapshots working copies to internal Gitea storage (`project-{project_id}`) at every checkpoint using an alternate, out-of-tree Git index (`GIT_INDEX_FILE`):
+- **Clean Project History**: Automatic Seamus snapshots never create ordinary commits on the project's semantic branches and never advance `HEAD`.
+- **Intact Agent Index**: The agent's normal staged index (`.git/index`) and working tree remain completely untouched by checkpointing. `git status` inside the sandbox accurately reflects only the changes made by the agent.
+- **Gitignore Compliance**: Project `.gitignore` rules apply to checkpoint snapshots; ignored files remain ephemeral and are not snapshotted.
+- **Unmount / Remount Semantics**: If a repository is unmounted from a session and later remounted, uncommitted working-tree modifications are discarded and the repository restarts clean from its semantic branch.
+- **OpenBao Credential Safety**: Git checkout credentials use OpenBao symbolic secret references (`${secret('/path')}`), resolved strictly in memory on the host and never written to container environment variables or `.git/config`.
 
 ---
 

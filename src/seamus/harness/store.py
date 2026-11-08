@@ -19,6 +19,7 @@ from seamus.domain.entities import (
     Thread,
 )
 from seamus.domain.modes import normalize_mode_and_phase
+from seamus.domain.repositories import MountedRepositoryCheckpointRecord
 from seamus.domain.resolution import (
     EntityNotFoundError,
     parse_uuid,
@@ -26,7 +27,12 @@ from seamus.domain.resolution import (
     resolve_thread,
 )
 from seamus.harness.artifacts import ArtifactResolver, PlanBuilder
-from seamus.persistence import get_workspace_manager, parse_stored_event
+from seamus.persistence import (
+    calculate_mount_paths,
+    get_external_repo_manager,
+    get_workspace_manager,
+    parse_stored_event,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -578,6 +584,28 @@ class HarnessStore:
                         agent.id, new_session.id, new_thread.id, new_thread.events
                     )
                     ws_mgr.open_sync_pr(new_session, agent)
+
+                    # Restore or provision mounted external repositories for the branched session
+                    if new_session.config.repositories:
+                        ext_mgr = get_external_repo_manager()
+                        ext_cp = ws_mgr.load_thread_external_checkpoints(
+                            agent.id, new_session.id, target_thread.id
+                        )
+                        mount_paths = calculate_mount_paths(new_session.config.repositories)
+                        for repo_cfg in new_session.config.repositories:
+                            mount_name = mount_paths.get(repo_cfg.id, "repo")
+                            rec_data = (
+                                ext_cp.get("repositories", {}).get(repo_cfg.id) if ext_cp else None
+                            )
+                            if rec_data:
+                                record = MountedRepositoryCheckpointRecord.model_validate(rec_data)
+                                ext_mgr.restore_working_copy_checkpoint(
+                                    agent.id, new_session.id, record
+                                )
+                            else:
+                                ext_mgr.provision_session_working_copy(
+                                    agent.id, new_session.id, repo_cfg, mount_name
+                                )
                 except Exception:
                     logger.exception(
                         "Failed to initialize git workspace for branched session %s",

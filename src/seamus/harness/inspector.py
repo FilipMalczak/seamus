@@ -31,6 +31,7 @@ from seamus.harness.runner import (
 from seamus.harness.sandbox import BUNDLED_SKILLS_DIR, get_sandbox_settings
 from seamus.harness.store import get_harness_store
 from seamus.persistence import (
+    calculate_mount_paths,
     extract_readable_messages,
     get_workspace_manager,
 )
@@ -77,6 +78,16 @@ class SubAgentInspectInfo(BaseModel):
     description: str
     subagent_type: str | None = None
     model: str | None = None
+
+
+class MountedRepoInspectInfo(BaseModel):
+    """Information about a mounted external Git repository."""
+
+    id: str
+    mount_path: str
+    url: str
+    branch: str
+    credentials_configured: bool = False
 
 
 class GitInspectInfo(BaseModel):
@@ -152,6 +163,7 @@ class AgentInspectReport(BaseModel):
     skills: list[SkillInspectInfo] = Field(default_factory=list)
     skills_implementation: SkillsImplementation = SkillsImplementation.DEEPAGENTS
     subagents: list[SubAgentInspectInfo] = Field(default_factory=list)
+    mounted_repositories: list[MountedRepoInspectInfo] = Field(default_factory=list)
     history: HistoryInspectInfo
     workspace: WorkspaceInspectInfo
 
@@ -927,6 +939,21 @@ def build_agent_inspect_report(
         files=files,
     )
 
+    mounted_repositories: list[MountedRepoInspectInfo] = []
+    if session.config.repositories:
+        mount_paths = calculate_mount_paths(session.config.repositories)
+        for repo in session.config.repositories:
+            mount_name = mount_paths.get(repo.id, "repo")
+            mounted_repositories.append(
+                MountedRepoInspectInfo(
+                    id=repo.id,
+                    mount_path=f"/projects/{mount_name}",
+                    url=repo.url,
+                    branch=repo.branch,
+                    credentials_configured=bool(repo.credentials and repo.credentials.strip()),
+                )
+            )
+
     return AgentInspectReport(
         agent_id=agent.id,
         agent_name=agent.name,
@@ -944,6 +971,7 @@ def build_agent_inspect_report(
         skills=skills,
         skills_implementation=session.config.skills_implementation,
         subagents=[],
+        mounted_repositories=mounted_repositories,
         history=history_info,
         workspace=workspace_info,
     )

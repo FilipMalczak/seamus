@@ -17,8 +17,10 @@ from opensandbox.config.connection_sync import ConnectionConfigSync
 from opensandbox.models.sandboxes import PVC, Host, Volume
 from pydantic import BaseModel, Field
 
+from seamus.config.models import ExternalRepositoryConfig
 from seamus.config.settings import resolve_skill_path
 from seamus.harness.prompt import build_scaffold_prompt
+from seamus.persistence.external_repo import calculate_mount_paths
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +123,7 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
         notes_readonly: bool = True,
         settings: SandboxSettings | None = None,
         skill_directories: list[str] | None = None,
+        repositories: list[ExternalRepositoryConfig] | None = None,
         sandbox: SandboxSync | None = None,
     ) -> None:
         self.agent_id = agent_id
@@ -133,6 +136,7 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
         self.notes_readonly = notes_readonly
         self.settings = settings or get_sandbox_settings()
         self.skill_directories = skill_directories if skill_directories is not None else []
+        self.repositories = list(repositories) if repositories else []
         self._active_sandbox: SandboxSync | None = sandbox
         if workspace_root is not None:
             self.workspace_root = workspace_root
@@ -151,24 +155,30 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
         workspace_readonly: bool,
         notes_mounted: bool = False,
         notes_readonly: bool = True,
+        repositories: list[ExternalRepositoryConfig] | None = None,
     ) -> None:
-        """Update volume mount flags and recycle the active sandbox if flags changed."""
+        """Update volume mount flags and recycle the active sandbox if flags or repos changed."""
         changed = (
             self.workspace_readonly != workspace_readonly
             or self.notes_mounted != notes_mounted
             or self.notes_readonly != notes_readonly
         )
+        if repositories is not None and repositories != self.repositories:
+            self.repositories = list(repositories)
+            changed = True
+
         self.workspace_readonly = workspace_readonly
         self.notes_mounted = notes_mounted
         self.notes_readonly = notes_readonly
         if changed and self._active_sandbox is not None:
             logger.info(
                 "Reconfiguring OpenSandbox mounts for session %s "
-                "(workspace_ro=%s, notes_mounted=%s, notes_ro=%s)",
+                "(workspace_ro=%s, notes_mounted=%s, notes_ro=%s, repos=%d)",
                 self.session_id,
                 workspace_readonly,
                 notes_mounted,
                 notes_readonly,
+                len(self.repositories),
             )
             self.destroy()
 
@@ -299,6 +309,45 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
             )
         return volumes
 
+    def build_repository_volumes(self) -> list[Volume]:
+        """Build read-write OpenSandbox Volumes for mounted Git repositories under /projects/."""
+        volumes: list[Volume] = []
+        if not self.repositories:
+            return volumes
+
+        mount_paths = calculate_mount_paths(self.repositories)
+        projects_dir = self.workspace_root / str(self.agent_id) / str(self.session_id) / "projects"
+
+        for repo in self.repositories:
+            mount_name = mount_paths.get(repo.id, "repo")
+            repo_dir = projects_dir / mount_name
+            repo_dir.mkdir(parents=True, exist_ok=True)
+
+            if self.settings.workspace_volume:
+                volumes.append(
+                    Volume(
+                        name=f"project-{mount_name}",
+                        mountPath=f"/projects/{mount_name}",
+                        readOnly=False,
+                        pvc=PVC(
+                            claimName=self.settings.workspace_volume,
+                            createIfNotExists=True,
+                            deleteOnSandboxTermination=False,
+                        ),
+                        subPath=f"{self.agent_id}/{self.session_id}/projects/{mount_name}",
+                    )
+                )
+            else:
+                volumes.append(
+                    Volume(
+                        name=f"project-{mount_name}",
+                        mountPath=f"/projects/{mount_name}",
+                        readOnly=False,
+                        host=Host(path=str(repo_dir.resolve())),
+                    )
+                )
+        return volumes
+
     def get_skill_sources(self) -> list[tuple[str, str]]:
         """Return the prioritized list of in-sandbox skill sources for DeepAgents.
 
@@ -306,9 +355,10 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
         list override earlier ones). To enforce the precedence hierarchy:
         1. /workspace/skills (top priority: explicit session workspace skills)
         2. /workspace/.skills (session background/default skills)
-        3. system[0] (highest priority system default, mounted at /skills/system/0)
-        4. system[1] ...
-        5. system[last] (lowest priority system default)
+        3. auxiliary project mounts (/projects/<repo>/skills, then /projects/<repo>/.skills)
+        4. system[0] (highest priority system default, mounted at /skills/system/0)
+        5. system[1] ...
+        6. system[last] (lowest priority system default)
 
         The source list is ordered from lowest to highest priority:
         [
@@ -316,6 +366,8 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
             ...,
             system[1],
             system[0],
+            ("/projects/<repo>/.skills", "Project <repo> (.skills)"),
+            ("/projects/<repo>/skills", "Project <repo>"),
             ("/workspace/.skills", "Session (.skills)"),
             ("/workspace/skills", "Session"),
         ]
@@ -330,6 +382,16 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
 
         # Reverse system sources: system[last] lowest priority, system[0] highest among system
         sources: list[tuple[str, str]] = list(reversed(system_sources))
+
+        # Append auxiliary project skills (dotted first, non-dotted last so non-dotted wins)
+        if self.repositories:
+            mount_paths = calculate_mount_paths(self.repositories)
+            for repo in self.repositories:
+                mount_name = mount_paths.get(repo.id, "repo")
+                sources.append(
+                    (f"/projects/{mount_name}/.skills", f"Project {mount_name} (.skills)")
+                )
+                sources.append((f"/projects/{mount_name}/skills", f"Project {mount_name}"))
 
         # Append session workspace skills (dotted first, non-dotted last so non-dotted wins)
         sources.append((f"{self.settings.workdir}/.skills", "Session (.skills)"))
@@ -360,19 +422,21 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
             notes_volume = self.build_notes_volume()
             bundled_volume = self.build_bundled_skill_volume()
             skill_volumes = self.build_skill_volumes()
+            repository_volumes = self.build_repository_volumes()
             all_volumes = [
                 workspace_volume,
                 artifact_volume,
                 *([notes_volume] if notes_volume is not None else []),
                 *([bundled_volume] if bundled_volume is not None else []),
                 *skill_volumes,
+                *repository_volumes,
             ]
             logger.info(
-                "Creating OpenSandbox (image=%s, domain=%s, mount=%s, skills=%d) for session %s",
+                "Creating OpenSandbox (image=%s, domain=%s, workdir=%s, repos=%d) for session %s",
                 self.settings.image,
                 self.settings.domain,
                 self.settings.workdir,
-                len(skill_volumes) + (1 if bundled_volume else 0),
+                len(repository_volumes),
                 self.session_id,
             )
             self._active_sandbox = SandboxSync.create(

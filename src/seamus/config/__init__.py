@@ -2,6 +2,7 @@
 
 from seamus.config.models import (
     AgentConfig,
+    ExternalRepositoryConfig,
     InferenceConfig,
     InferenceFormat,
     OperationalMode,
@@ -26,6 +27,7 @@ __all__ = [
     "AgentConfig",
     "ConfigTemplateStore",
     "DEFAULT_SKILL_DIRECTORIES",
+    "ExternalRepositoryConfig",
     "InferenceConfig",
     "InferenceFormat",
     "OperationalMode",
