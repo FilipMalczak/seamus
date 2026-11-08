@@ -296,3 +296,20 @@ class SessionDiffResponse(BaseModel):
     pr_number: int | None = None
     pr_url: str | None = None
     diff: str = ""
+
+
+class TerminalStreamRequest(BaseModel):
+    """Request payload for streaming shell command execution inside the agent sandbox."""
+
+    command: str
+    working_directory: str | None = None
+    timeout: int | None = Field(default=300, ge=1, le=3600)
+
+
+class TerminalInfoResponse(BaseModel):
+    """Information about the active sandbox terminal environment."""
+
+    agent_id: UUID
+    session_id: UUID
+    operational_dir: str
+    status: str

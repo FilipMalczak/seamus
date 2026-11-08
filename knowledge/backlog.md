@@ -4,16 +4,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## Next
 
-### Interactive Web Terminal & Shell Emulator for Agent Sandbox
-- **Description**: Implement an interactive browser-based terminal emulator (e.g. using `xterm.js` and WebSockets or SSE streaming via OpenSandbox's interactive exec API) inside the Seamus UI:
-  1. Terminal tab or drawer: embed a collapsible terminal drawer in the session view alongside Chat, Changes, Artifacts, and Inspector.
-  2. Live container shell: establish an interactive, bidirectional pseudo-terminal (`pty`) session connected directly to `/bin/bash` inside the session's active OpenSandbox container.
-  3. Context awareness: launch the shell with the working directory set to `/workspace` (or `/projects/{mount_name}`), matching the container's environment, mounted volumes, and user permissions.
-  4. Non-intrusive developer intervention: allow developers to inspect running processes, check installed tools, manually run tests, debug environment issues, or inspect Git state directly inside the container without switching to a host terminal.
-- **Rationale**: Developers currently have to find container IDs on the Docker host (`docker exec -it sandbox-... bash`) to inspect sandbox state or test commands. A built-in terminal emulator provides an immediate, seamless developer experience inside the Seamus Web UI.
-- **Provenance**: `src/seamus/harness/sandbox.py`, `ui/src/components/`, [0003-react-web-ui.md](../decisions/0003-react-web-ui.md).
-
-
 ### Ollama Local Model Provider Support
 - **Description**: Add first-class support for Ollama as a local model provider in Seamus, allowing agents to run against locally hosted models without requiring external API keys. Configure base URLs, model selection presets, and streaming adapters compatible with Ollama's API.
 - **Rationale**: Expands Seamus to support fully offline, private, and zero-cost local LLM development workflows.
@@ -112,6 +102,11 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Provenance**: [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md), [vocabulary.md](./vocabulary.md#sync-pr).
 
 ## Technical debt
+
+### Configurable or Heartbeat-Driven Terminal Session Lifecycle (Replacing Arbitrary 5m Timeout)
+- **Current Problem**: Live sandbox terminal emulator sessions in the Web UI currently rely on a hardcoded 5-minute client-side inactivity timer (`TERMINAL_INACTIVITY_TIMEOUT_MS = 300_000`) since the last executed command to determine when to expire and reset the terminal buffer and working state across tab switches. An arbitrary fixed duration does not account for long-running batch jobs, active user reading pauses, or user-configured session retention preferences.
+- **Improvement**: Replace the client-side 5-minute timeout with a robust server-side heartbeat or configurable session lifecycle mechanism (e.g. `terminal_session_timeout` in `AgentConfig` or system settings, persistent session exec IDs via OpenSandbox session management, or WebSocket/SSE ping heartbeats) with explicit UI notifications when a session is detached, suspended, or reconnected.
+- **Provenance**: `ui/src/components/TerminalView.tsx`, `src/seamus/harness/runner.py`, [0044-interactive-web-terminal.md](../decisions/0044-interactive-web-terminal.md).
 
 ### [CRITICAL] Dedicated PostgreSQL User/Database or Instance for OpenBao Storage
 - **Current Problem**: In the MVP OpenBao integration (`openbao/config.hcl` and `docker-compose.yml`), OpenBao shares the `gitea` PostgreSQL user and `gitea` database (`postgres://gitea:gitea@postgres:5432/gitea?sslmode=disable`) for its `vault_kv_store` and `vault_ha_locks` tables. Sharing database credentials and schema namespace between Gitea and the secrets vault violates least-privilege isolation.

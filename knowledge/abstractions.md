@@ -91,6 +91,8 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `ConfigModal`: Modal editor for agent and session configuration supporting both a structured Form view (model presets + custom identifier, inference format, base URL presets, API key toggle/clear, middleware implementation selectors, and system prompt) and a Raw JSON editor with syntax validation and formatting.
 - `SettingsModal`: Modal editor for system settings featuring `General` (managing `skill_directories` via path list and raw JSON with a prominent warning against system-level skills) and `Secrets` (revealing the OpenBao login token, listing secrets with copyable `${secret(...)}` pills, and creating/updating secrets in OpenBao).
 - `A2UIArtifactRenderer`: Front-end component rendering A2UI basic component surfaces (`body.json`) within chat message bubbles and dedicated panel tabs, handling evaluated button clicks, comment review pushes, and disabled state for closed/read-only artifacts.
+- `TerminalView`: Front-end interactive shell emulator and process inspector embedded in the session view alongside Chat, Inspector, and Changes. Consumes real-time SSE execution events (`ReadableStream`), manages scrollable monospaced output buffer, provides command history navigation (`↑`/`↓`), quick action shortcuts, live process interruption via `AbortController`, and displays dynamic working directory state.
+
 
 ### Secrets Vault Subsystem (`seamus.vault`)
 - `SecretReference`: Immutable dataclass (`path`, `field="value"`, `version=None`, `raw_expression=""`) providing `normalized_path`, `to_exploded_expression(resolved_version)`, and `to_unversioned_expression()`.
@@ -156,6 +158,7 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - [0040-session-level-ui-view-and-unified-thread-feed.md](../decisions/0040-session-level-ui-view-and-unified-thread-feed.md)
 - [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md)
 - [0042-mount-external-git-repositories.md](../decisions/0042-mount-external-git-repositories.md)
+- [0044-interactive-web-terminal.md](../decisions/0044-interactive-web-terminal.md)
 - [artifacts.md](./artifacts.md)
 - [architecture.md](./architecture.md)
 - [persistence.md](./persistence.md)

@@ -1136,6 +1136,127 @@ class SessionAgentRunner:
             repositories=self.session.config.repositories,
         )
 
+    def get_sandbox_backend(self) -> SeamusOpenSandboxBackend:
+        """Return or lazily initialize the SeamusOpenSandboxBackend for this session."""
+        if self._sandbox_backend is None:
+            self._agent = self._build_deep_agent()
+        if self._sandbox_backend is None:
+            msg = f"Sandbox backend was not initialized for session {self.session.id}"
+            raise RuntimeError(msg)
+        return self._sandbox_backend
+
+    async def stream_terminal_command(
+        self,
+        command: str,
+        working_directory: str | None = None,
+        timeout: int | None = 300,
+    ) -> AsyncGenerator[str, None]:
+        """Stream command execution inside the sandbox container via SSE events.
+
+        Yields SSE formatted data lines:
+        - data: {"type": "stdout", "data": line}
+        - data: {"type": "stderr", "data": line}
+        - data: {"type": "exit", "exit_code": int, "working_directory": str}
+        - data: {"type": "error", "message": str}
+        """
+        backend = self.get_sandbox_backend()
+        effective_timeout = timeout if timeout is not None else 300
+        initial_workdir = (working_directory or "").strip() or backend.settings.workdir
+
+        cmd_stripped = command.strip()
+        if not cmd_stripped:
+            exit_data = {
+                "type": "exit",
+                "exit_code": 0,
+                "working_directory": initial_workdir,
+            }
+            yield f"data: {json.dumps(exit_data)}\n\n"
+            return
+
+        wrapped_command = (
+            f"{command}\n"
+            f"__SEAMUS_STATUS__=$?\n"
+            f'echo "__SEAMUS_CWD__=$(pwd)"\n'
+            f"exit $__SEAMUS_STATUS__"
+        )
+
+        queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+        current_workdir = initial_workdir
+        delivered_any = False
+
+        def on_stdout(msg: Any) -> None:
+            nonlocal current_workdir, delivered_any
+            text = getattr(msg, "text", str(msg))
+            if text.startswith("__SEAMUS_CWD__="):
+                current_workdir = text.split("__SEAMUS_CWD__=", 1)[1].strip()
+                return
+            delivered_any = True
+            loop.call_soon_threadsafe(queue.put_nowait, {"type": "stdout", "data": text})
+
+        def on_stderr(msg: Any) -> None:
+            nonlocal delivered_any
+            text = getattr(msg, "text", str(msg))
+            delivered_any = True
+            loop.call_soon_threadsafe(queue.put_nowait, {"type": "stderr", "data": text})
+
+        def run_sync() -> None:
+            try:
+                from datetime import timedelta
+
+                from opensandbox.models.execd import RunCommandOpts
+                from opensandbox.models.execd_sync import ExecutionHandlersSync
+
+                sandbox = backend._sandbox
+                handlers = ExecutionHandlersSync(
+                    on_stdout=on_stdout,
+                    on_stderr=on_stderr,
+                )
+                opts = RunCommandOpts(
+                    working_directory=initial_workdir,
+                    timeout=timedelta(seconds=effective_timeout) if effective_timeout else None,
+                )
+                execution = sandbox.commands.run(wrapped_command, opts=opts, handlers=handlers)
+
+                # Fallback delivery for mocked / non-streaming execution handlers in tests
+                if not delivered_any and hasattr(execution, "logs"):
+                    for m in getattr(execution.logs, "stdout", []):
+                        on_stdout(m)
+                    for m in getattr(execution.logs, "stderr", []):
+                        on_stderr(m)
+
+                exit_code = getattr(execution, "exit_code", 0)
+                if exit_code is None:
+                    exit_code = 0
+
+                loop.call_soon_threadsafe(
+                    queue.put_nowait,
+                    {
+                        "type": "exit",
+                        "exit_code": int(exit_code),
+                        "working_directory": current_workdir,
+                    },
+                )
+            except Exception as exc:
+                logger.error("Terminal command execution failed: %s", exc, exc_info=True)
+                loop.call_soon_threadsafe(
+                    queue.put_nowait,
+                    {"type": "error", "message": str(exc)},
+                )
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, None)
+
+        task = asyncio.create_task(asyncio.to_thread(run_sync))
+        try:
+            while True:
+                item = await queue.get()
+                if item is None:
+                    break
+                yield f"data: {json.dumps(item)}\n\n"
+        finally:
+            if not task.done():
+                task.cancel()
+
     def build_effective_system_prompt(
         self,
         include_dynamic_context: bool = True,

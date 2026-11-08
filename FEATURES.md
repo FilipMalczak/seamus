@@ -230,6 +230,7 @@ A desktop-grade React 19 single-page application built with Vite and TypeScript:
 - **URL State Synchronization**: Active agent, session, thread, and workspace tab are synchronized with browser URL query parameters (`?agent=...&session=...&thread=...&tab=...`), enabling browser back/forward history navigation and shareable deep links.
 - **Real-Time SSE Streaming**: Live AG-UI event streaming with token-by-token text generation, expandable reasoning blocks, and lifecycle state badges.
 - **Changes Diff Viewer**: Dedicated `[Changes]` tab with hierarchical directory tree navigation, flat list view, git status badges (`[A]` Added, `[M]` Modified, `[D]` Deleted, `[R]` Renamed), diff stats (`+N / -M`), and syntax-highlighted unified diffs.
+- **Interactive Web Terminal & Shell Emulator**: Dedicated `[Terminal]` tab connected directly to the active session's OpenSandbox container. Features real-time Server-Sent Events (SSE) streaming output, command history navigation (`↑`/`↓`), quick action shortcuts, process interruption (Cancel / `Ctrl+C`), and dynamic working directory tracking across commands.
 - **Interactive Markdown Renderer**: GitHub Flavored Markdown (GFM) with one-click code block copying, responsive tables, and sanitized external links.
 - **Dual-Mode Config Editor**: Edit agent and session configurations using either a guided form interface or a raw JSON editor with client-side syntax validation.
 
@@ -532,6 +533,8 @@ The backend exposes a clean, typed REST API under prefix `/api/v-alpha/`:
 - `GET /api/v-alpha/agents/{agent_id}/sessions/{session_id}/diff`: Returns live unified git diff of `data/` deliverables.
 - `GET /api/v-alpha/agents/{agent_id}/sessions/{session_id}/inspect`: Surfaces complete Agent Inspector runtime manifest.
 - `GET /api/v-alpha/agents/{agent_id}/sessions/{session_id}/stream`: Session-level SSE feed streaming unified multi-thread events.
+- `POST /api/v-alpha/agents/{agent_id}/sessions/{session_id}/terminal/stream`: Streams shell command execution inside the session's sandbox container via SSE.
+- `GET /api/v-alpha/agents/{agent_id}/sessions/{session_id}/terminal/info`: Returns active sandbox terminal status and operational directory.
 - `POST /api/v-alpha/agents/{agent_id}/sessions/{session_id}/branch`: Branches a new child session from a historical assistant turn.
 
 #### Threads

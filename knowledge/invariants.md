@@ -226,6 +226,12 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-036](./requirements.md#req-036-mount-external-git-repositories-into-agent-sandboxes-with-dual-index-persistence), [0042-mount-external-git-repositories.md](../decisions/0042-mount-external-git-repositories.md).
 - **Enforcement**: `seamus.harness.runner.SessionAgentRunner.reload_config`, `seamus.persistence.external_repo.ExternalRepositoryManager.unmount_working_copy`, `tests/test_external_repos.py`.
 
+### INV-046: Real-Time Sandbox Terminal Streaming and Working Directory Continuity
+- **Statement**: Terminal command execution dispatched via `POST /agent/{agent_id}/session/{session_id}/terminal/stream` must stream standard output and standard error lines in real-time as Server-Sent Events (`text/event-stream`) without intermediate line or execution buffering. The runner must deliver chunked output lines as they arrive from OpenSandbox `sandbox.commands.run()`, track working directory transitions across `cd` commands (`__SEAMUS_CWD__=$(pwd)` sentinel), and yield a terminal `exit` event containing the exact exit code and updated working directory.
+- **Justification**: [REQ-037](./requirements.md#req-037-real-time-interactive-web-terminal--shell-emulator-for-agent-sandbox), [0044-interactive-web-terminal.md](../decisions/0044-interactive-web-terminal.md).
+- **Enforcement**: `seamus.harness.runner.SessionAgentRunner.stream_terminal_command`, `seamus.server.routes.sessions.stream_terminal_command`, `ui/src/components/TerminalView.tsx`, and tests in `tests/test_terminal.py`.
+
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [requirements.md](./requirements.md)

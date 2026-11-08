@@ -212,6 +212,13 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0042-mount-external-git-repositories.md](../decisions/0042-mount-external-git-repositories.md).
 - **Linked Invariants**: [INV-043](./invariants.md#inv-043-external-git-repository-sandbox-isolation-dual-index-persistence-and-credential-safety), [INV-044](./invariants.md#inv-044-multi-repository-checkpoint-ordering-atomic-manifest-commit-and-exact-historical-restoration), [INV-045](./invariants.md#inv-045-ephemeral-working-tree-semantics-across-repository-unmountremount).
 
+### REQ-037: Real-Time Interactive Web Terminal & Shell Emulator for Agent Sandbox
+- **Description**: The system must provide an interactive, real-time browser-based terminal emulator inside the Seamus Web UI alongside Chat, Inspector, and Changes. The terminal connects to the session's active OpenSandbox container, streaming stdout and stderr chunks in real time via Server-Sent Events (`POST /agent/{agent_id}/session/{session_id}/terminal/stream`). It supports client-side command interruption (`AbortController`), command history navigation (`↑`/`↓`), quick action shortcuts (`ls -la`, `git status`, `pwd`, etc.), buffer clearing (`Ctrl+L`), and tracks dynamic working directory transitions across `cd` commands (`__SEAMUS_CWD__=$(pwd)` sentinel) while preserving command exit codes.
+- **Rationale**: Eliminates the need for developers to find container IDs on the Docker host (`docker exec -it sandbox-... bash`) to inspect running processes, check installed tools, examine mounted volumes, test commands, or diagnose environment state. Real-time streaming guarantees immediate visibility into verbose builds, tests, and scripts without waiting for command termination.
+- **Provenance**: [0044-interactive-web-terminal.md](../decisions/0044-interactive-web-terminal.md), `src/seamus/harness/runner.py`, `ui/src/components/TerminalView.tsx`.
+- **Linked Invariants**: [INV-046](./invariants.md#inv-046-real-time-sandbox-terminal-streaming-and-working-directory-continuity).
+
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [invariants.md](./invariants.md)

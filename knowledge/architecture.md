@@ -84,6 +84,11 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
    - Location: `src/seamus/persistence/external_repo.py`, `src/seamus/domain/repositories.py`
    - Responsibility: Orchestrates the mounting, Gitea mirroring, dual-index snapshotting, and restoration of user-configured external Git repositories (`ExternalRepositoryConfig`). Derives deterministic project IDs (`sha256(canonical_url)[:12]`) and safe collision-free mount paths (`/projects/{mount_name}`), provisions internal Gitea mirrors (`project-{project_id}`), isolates credentials via OpenBao without sandbox exposure, executes out-of-tree dual-index checkpoints preserving agent-facing `.git/index` and `HEAD`, pushes checkpoint refs to Gitea, and restores exact historical working copy states upon session branching and crash recovery.
 
+
+14. **Interactive Sandbox Terminal Subsystem (`TerminalView`, `runner.stream_terminal_command`)**:
+    - Location: `src/seamus/harness/runner.py`, `src/seamus/server/routes/sessions.py`, `ui/src/components/TerminalView.tsx`
+    - Responsibility: Provides a real-time shell emulator and process inspector embedded in the Web UI. Dispatches shell commands over Server-Sent Events (`POST /agent/{agent_id}/session/{session_id}/terminal/stream`) via OpenSandbox synchronous execution handlers (`ExecutionHandlersSync`) without intermediate line or execution buffering. Preserves dynamic working directory state across `cd` commands via sentinel evaluation and handles client-side command interruption via `AbortController`.
+
 ## Cross-References
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
@@ -122,6 +127,7 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 - [0040-session-level-ui-view-and-unified-thread-feed.md](../decisions/0040-session-level-ui-view-and-unified-thread-feed.md)
 - [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md)
 - [0042-mount-external-git-repositories.md](../decisions/0042-mount-external-git-repositories.md)
+- [0044-interactive-web-terminal.md](../decisions/0044-interactive-web-terminal.md)
 - [artifacts.md](./artifacts.md)
 - [threads_modes_personas.md](./threads_modes_personas.md)
 - [abstractions.md](./abstractions.md)

@@ -12,6 +12,9 @@ import type {
   SystemInfoResponse,
   SystemSettings,
   SystemSettingsResponse,
+  TerminalInfoResponse,
+  TerminalStreamEvent,
+  TerminalStreamRequest,
   ThreadInfo,
   VaultSecretDetailResponse,
   VaultSecretListResponse,
@@ -514,5 +517,96 @@ export async function getVaultToken(): Promise<VaultTokenResponse> {
   const res = await fetch(`${BASE_URL}/vault/token`);
   return handleResponse<VaultTokenResponse>(res);
 }
+
+export async function getTerminalInfo(
+  agentId: string,
+  sessionId: string
+): Promise<TerminalInfoResponse> {
+  const res = await fetch(
+    `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/terminal/info`
+  );
+  return handleResponse<TerminalInfoResponse>(res);
+}
+
+export function streamTerminalCommand(
+  agentId: string,
+  sessionId: string,
+  request: TerminalStreamRequest,
+  onEvent: (event: TerminalStreamEvent) => void,
+  onError?: (err: Error) => void
+): () => void {
+  const controller = new AbortController();
+  const url = `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/terminal/stream`;
+
+  (async () => {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+        },
+        body: JSON.stringify(request),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Terminal stream failed with status ${res.status}`);
+      }
+
+      if (!res.body) {
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (!controller.signal.aborted) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          const dataStr = trimmed.slice(5).trim();
+          if (!dataStr) continue;
+
+          try {
+            const event: TerminalStreamEvent = JSON.parse(dataStr);
+            onEvent(event);
+          } catch (e) {
+            console.warn("Failed to parse terminal stream event:", dataStr, e);
+          }
+        }
+      }
+
+      if (buffer.trim().startsWith("data:")) {
+        try {
+          const dataStr = buffer.trim().slice(5).trim();
+          if (dataStr) {
+            const event: TerminalStreamEvent = JSON.parse(dataStr);
+            onEvent(event);
+          }
+        } catch (e) {
+          console.warn("Failed to parse final terminal stream event:", buffer, e);
+        }
+      }
+    } catch (err: any) {
+      if (err.name !== "AbortError" && onError) {
+        onError(err);
+      }
+    }
+  })();
+
+  return () => {
+    controller.abort();
+  };
+}
+
 
 
