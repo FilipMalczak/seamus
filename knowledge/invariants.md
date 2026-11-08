@@ -267,3 +267,4 @@ Properties and rules that must always hold across the repository.
 - [0039-loose-artifact-normalization-and-mutation-log.md](../decisions/0039-loose-artifact-normalization-and-mutation-log.md)
 - [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md)
 - [0042-mount-external-git-repositories.md](../decisions/0042-mount-external-git-repositories.md)
+- [persistence.md](./persistence.md)

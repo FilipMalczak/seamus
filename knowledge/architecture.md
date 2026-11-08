@@ -125,5 +125,6 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 - [artifacts.md](./artifacts.md)
 - [threads_modes_personas.md](./threads_modes_personas.md)
 - [abstractions.md](./abstractions.md)
+- [persistence.md](./persistence.md)
 - [backlog.md](./backlog.md)
 - [vocabulary.md](./vocabulary.md)

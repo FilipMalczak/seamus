@@ -52,7 +52,7 @@ Ensure the entire application stack is running and open it in your default brows
   - Opens `http://localhost:3000` in the system default browser (supporting Linux `xdg-open` / `sensible-browser`, macOS `open`, and Windows/WSL `powershell.exe` / `cmd.exe`).
 
 - **Restart (`-r`, `--restart`)**:
-  - Rebuilds and recreates only the application containers for which Seamus owns the Docker image (`backend`, `frontend`, `opensandbox`) via `docker compose up -d --build opensandbox backend frontend`.
+  - Rebuilds and recreates only the application containers for which Seamus owns the Docker image (`backend`, `frontend`, `opensandbox`, `sandbox-image`) via `docker compose up -d --build opensandbox sandbox-image backend frontend`.
   - Updates application code changes immediately while preserving all persistent data volumes and infrastructure services (`gitea`, `postgres`).
   - Waits for service health checks and opens the UI in your browser.
 

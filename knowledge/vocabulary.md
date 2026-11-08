@@ -167,5 +167,6 @@ A unique identifier (`uuid4().hex`) distinguishing a specific repository attachm
 - [artifacts.md](./artifacts.md)
 - [threads_modes_personas.md](./threads_modes_personas.md)
 - [architecture.md](./architecture.md)
+- [persistence.md](./persistence.md)
 - [abstractions.md](./abstractions.md)
 - [backlog.md](./backlog.md)

@@ -46,6 +46,17 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Revisit Trigger**: When agents are tasked with publishing completed features directly to remote upstream hosts.
 - **Provenance**: [0042-mount-external-git-repositories.md](../decisions/0042-mount-external-git-repositories.md).
 
+### Extended Manual Testing of External Git Mounts (Especially Multiple Concurrent Mounts)
+- **Description**: Conduct comprehensive manual end-to-end testing of external repository mounting across edge cases:
+  1. Multiple concurrent mounts in a single session (including naming collisions producing `_0`, `_1` suffixes).
+  2. Large upstream repositories (multi-gigabyte histories, binary objects, deeply nested directory structures).
+  3. Concurrent sessions sharing the same underlying Gitea mirror repository (`project-{project_id}`).
+  4. Dynamic unmounting, remounting, and branch reconfiguration mid-session.
+  5. Multi-repo checkpointing performance and atomic rollback if one repository fails to snapshot.
+- **Why Deferred**: Core dual-index snapshotting, URL derivation, Gitea mirroring, and single-mount execution were verified through automated unit tests (`tests/test_external_repos.py`) and single-repo manual verification. Extended manual scenarios require setting up multiple mock/real remote repositories with varying commit topologies and stress-testing container I/O.
+- **Revisit Trigger**: Before running production agents tasked with complex, multi-repository monorepo or microservice refactorings.
+- **Provenance**: [0042-mount-external-git-repositories.md](../decisions/0042-mount-external-git-repositories.md), `tests/test_external_repos.py`.
+
 ### Granular Gitea Commit Authors, Organizations, and Team Ownership
 - **Description**: All Git repositories created in Gitea are owned by the system service user `seamus`, and automated commits use the single author identity `Seamus Agent <agent@seamus.local>`. Per-agent, per-session, or per-user commit authors, organizations, and team permissions were postponed.
 - **Why Deferred**: Kept persistence initialization and API interaction simple and single-tenant for early development.
@@ -255,6 +266,15 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Bare `ubuntu` provides a clean base but lacks standard tools required by coding agents out of the box (e.g. Python, uv, Git, npm), forcing agents to install packages at runtime or fail commands. A pre-built, tested development image ensures immediate productivity, deterministic execution, and transparent tool introspection.
 - **Provenance**: `src/seamus/config/models.py`, `src/seamus/harness/sandbox.py`, `src/seamus/harness/prompt.py`, `Dockerfile.sandbox`, `0042-mount-external-git-repositories.md`.
 
+### Interactive Web Terminal & Shell Emulator for Agent Sandbox
+- **Description**: Implement an interactive browser-based terminal emulator (e.g. using `xterm.js` and WebSockets or SSE streaming via OpenSandbox's interactive exec API) inside the Seamus UI:
+  1. Terminal tab or drawer: embed a collapsible terminal drawer in the session view alongside Chat, Changes, Artifacts, and Inspector.
+  2. Live container shell: establish an interactive, bidirectional pseudo-terminal (`pty`) session connected directly to `/bin/bash` inside the session's active OpenSandbox container.
+  3. Context awareness: launch the shell with the working directory set to `/workspace` (or `/projects/{mount_name}`), matching the container's environment, mounted volumes, and user permissions.
+  4. Non-intrusive developer intervention: allow developers to inspect running processes, check installed tools, manually run tests, debug environment issues, or inspect Git state directly inside the container without switching to a host terminal.
+- **Rationale**: Developers currently have to find container IDs on the Docker host (`docker exec -it sandbox-... bash`) to inspect sandbox state or test commands. A built-in terminal emulator provides an immediate, seamless developer experience inside the Seamus Web UI.
+- **Provenance**: `src/seamus/harness/sandbox.py`, `ui/src/components/`, [0003-react-web-ui.md](../decisions/0003-react-web-ui.md).
+
 ### Granular Branch Action Placement in Chat Bubble UI
 - **Description**: Redesign the message branch action layout in `MessageItem.tsx`. Move the branch action icon/button to the right of message bubbles (e.g., in a hover/action gutter) rather than placing it in the bottom footer below the bubble content, and review branch point indicators to ensure they are visually intuitive and unambiguous.
 - **Rationale**: Footer placement below the bubble text is visually misleading and occupies unnecessary vertical space across conversational streams.
@@ -297,7 +317,7 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 - if a field in config or config template would be masked and contains ${} expression, it doesn't need to be masked
 
-- are we sure that we recognize v2? [CRITICAL]
+- are we sure that we recognize v2? [CRITICAL] WTF did I mean? oO
 
 - way, waaaaay forward: disablability of more layers and components; 
   - for sure context compaction, I dont like it

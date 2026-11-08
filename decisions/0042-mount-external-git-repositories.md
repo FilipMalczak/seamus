@@ -32,13 +32,13 @@ We implement external Git repository mounting and persistence across the configu
    - Repositories are mounted into OpenSandbox at `/projects/{mount_name}`. The existing `/workspace` mapping remains unchanged.
    - Mount names are derived deterministically from the final path component of the repository URL (stripping `.git` and trailing slashes, converted to alphanumeric + hyphens/underscores).
    - If multiple repositories produce the same base name, numeric suffixes (`_0`, `_1`, `_2`, ...) are appended to **all** colliding entries. Unique names receive no suffix.
-   - Host storage path: `~/.local/share/seamus/workspaces/{agent_id}/{session_id}/projects/{mount_name}`.
+   - Host storage path: `<workspace_root>/{agent_id}/{session_id}/projects/{mount_name}`.
 
 3. **Gitea Internal Repository Topology (`project-{project_id}`)**:
    - Each unique upstream repository has a deterministic internal identity:
      `project_id = sha256(canonical_url)[:12]`.
    - On the self-hosted Gitea instance, an internal mirror repository `project-{project_id}` is provisioned and mirrored from the upstream remote using resolved credentials.
-   - Each session checks out its own working branch `session/{session_id}` tracking the configured upstream branch.
+   - Each session clones from `project-{project_id}` and checks out the configured branch (`repo_config.branch`, e.g. `master` or `main`), tracking `origin/{repo_config.branch}` so the agent observes the true upstream branch name inside the sandbox.
 
 4. **Dual-Index Snapshot Architecture**:
    - Inside `/projects/{mount_name}`, the agent interacts directly with `.git/index` and the working tree.
@@ -53,6 +53,7 @@ We implement external Git repository mounting and persistence across the configu
         `refs/seamus/sessions/{session_id}/attachments/{attachment_id}/checkpoints/{checkpoint_id}`,
         `refs/seamus/snapshots/{session_id}/{attachment_id}`, and visible branch
         `refs/heads/seamus/checkpoints/{session_id}/{mount_name}` (so checkpoints are directly browseable and inspectable in the Gitea UI).
+     8. Pushes semantic commits created by the agent to `refs/heads/seamus/semantic/{session_id}/{mount_name}` in Gitea so semantic work is never lost.
    - Project checkpoint commits have independent ancestry and never fast-forward or modify the agent's semantic Git branch.
 
 5. **Multi-Repository Checkpoint Ordering & Agent Manifest**:
@@ -86,6 +87,11 @@ We implement external Git repository mounting and persistence across the configu
 9. **Web UI Support**:
    - The Agent Configuration Modal (`ConfigModal.tsx`) includes a "Mounted Git Repositories (/projects/)" section with dynamic add/remove, URL, branch, and OpenBao credentials secret reference inputs.
    - The Session Inspector (`InspectorModal.tsx`) displays mounted repository status, canonical project IDs, active semantic commits, and checkpoint snapshot references.
+
+10. **Developer Sandbox Environment (`seamus-sandbox:latest`)**:
+    - OpenSandbox containers execute using a first-party Ubuntu 24.04 image (`opensandbox/Dockerfile.sandbox`) with pre-installed `python3`, `git`, `ca-certificates`, `curl`, `less`, and `procps`.
+    - `python3` ensures DeepAgents filesystem tools (`ls`, `read_file`, `write_file`, `edit_file`) function without silent failures, while `git` enables standard Git operations within `/projects/{mount_name}`.
+    - An automated build via the `sandbox-image` service in `docker-compose.yml` ensures the image is tagged on the host Docker daemon prior to backend initialization.
 
 ## Consequences
 
