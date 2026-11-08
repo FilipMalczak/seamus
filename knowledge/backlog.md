@@ -2,6 +2,34 @@
 
 Persistent record of work intentionally left outstanding across the project, maintained in accordance with [AGENTS.md](../AGENTS.md).
 
+## Next
+
+
+### Dedicated First-Party Developer Sandbox Container Image & Environment Inspection
+- **Description**: Design and build a proper first-party developer sandbox Docker image for agent execution (e.g. `seamus-agent-sandbox:latest`), replacing the interim bare `ubuntu` default:
+  1. Core developer runtimes: pre-installed Python 3.12+, Astral `uv`, Node.js (LTS) + npm, Git, curl, wget, jq, tree, and build essentials.
+  2. Workspace permission alignment: configure user / group permissions so file creation under `/workspace` and `/projects` matches host user ownership without permission errors.
+  3. Self-introspecting environment metadata: embed the Dockerfile or a declarative capability manifest (e.g. at `/etc/seamus-sandbox.json`) so the agent and system prompt can accurately inspect installed packages, tools, and runtimes.
+  4. Per-agent/session configuration: add `sandbox_image: str | None = None` to `AgentConfig` (and `ConfigTemplate`), allowing custom images to be configured per agent/session falling back to `OPENSANDBOX_IMAGE`.
+- **Rationale**: Bare `ubuntu` provides a clean base but lacks standard tools required by coding agents out of the box (e.g. Python, uv, Git, npm), forcing agents to install packages at runtime or fail commands. A pre-built, tested development image ensures immediate productivity, deterministic execution, and transparent tool introspection.
+- **Provenance**: `src/seamus/config/models.py`, `src/seamus/harness/sandbox.py`, `src/seamus/harness/prompt.py`, `Dockerfile.sandbox`, `0042-mount-external-git-repositories.md`.
+
+### Interactive Web Terminal & Shell Emulator for Agent Sandbox
+- **Description**: Implement an interactive browser-based terminal emulator (e.g. using `xterm.js` and WebSockets or SSE streaming via OpenSandbox's interactive exec API) inside the Seamus UI:
+  1. Terminal tab or drawer: embed a collapsible terminal drawer in the session view alongside Chat, Changes, Artifacts, and Inspector.
+  2. Live container shell: establish an interactive, bidirectional pseudo-terminal (`pty`) session connected directly to `/bin/bash` inside the session's active OpenSandbox container.
+  3. Context awareness: launch the shell with the working directory set to `/workspace` (or `/projects/{mount_name}`), matching the container's environment, mounted volumes, and user permissions.
+  4. Non-intrusive developer intervention: allow developers to inspect running processes, check installed tools, manually run tests, debug environment issues, or inspect Git state directly inside the container without switching to a host terminal.
+- **Rationale**: Developers currently have to find container IDs on the Docker host (`docker exec -it sandbox-... bash`) to inspect sandbox state or test commands. A built-in terminal emulator provides an immediate, seamless developer experience inside the Seamus Web UI.
+- **Provenance**: `src/seamus/harness/sandbox.py`, `ui/src/components/`, [0003-react-web-ui.md](../decisions/0003-react-web-ui.md).
+
+
+### Ollama Local Model Provider Support
+- **Description**: Add first-class support for Ollama as a local model provider in Seamus, allowing agents to run against locally hosted models without requiring external API keys. Configure base URLs, model selection presets, and streaming adapters compatible with Ollama's API.
+- **Rationale**: Expands Seamus to support fully offline, private, and zero-cost local LLM development workflows.
+- **Provenance**: `src/seamus/config/models.py`, `src/seamus/harness/runner.py`, `ui/src/components/ConfigModal.tsx`.
+
+
 ## Deferred
 
 ### Multi-Thread Conversational History Inclusion Strategy
@@ -257,24 +285,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Accommodates both lightweight conversational workflows focused on getting tasks done and deep engineering/debugging sessions requiring full inspectability.
 - **Provenance**: [0003-react-web-ui.md](../decisions/0003-react-web-ui.md), [architecture.md](./architecture.md#system-overview).
 
-### Dedicated First-Party Developer Sandbox Container Image & Environment Inspection
-- **Description**: Design and build a proper first-party developer sandbox Docker image for agent execution (e.g. `seamus-agent-sandbox:latest`), replacing the interim bare `ubuntu` default:
-  1. Core developer runtimes: pre-installed Python 3.12+, Astral `uv`, Node.js (LTS) + npm, Git, curl, wget, jq, tree, and build essentials.
-  2. Workspace permission alignment: configure user / group permissions so file creation under `/workspace` and `/projects` matches host user ownership without permission errors.
-  3. Self-introspecting environment metadata: embed the Dockerfile or a declarative capability manifest (e.g. at `/etc/seamus-sandbox.json`) so the agent and system prompt can accurately inspect installed packages, tools, and runtimes.
-  4. Per-agent/session configuration: add `sandbox_image: str | None = None` to `AgentConfig` (and `ConfigTemplate`), allowing custom images to be configured per agent/session falling back to `OPENSANDBOX_IMAGE`.
-- **Rationale**: Bare `ubuntu` provides a clean base but lacks standard tools required by coding agents out of the box (e.g. Python, uv, Git, npm), forcing agents to install packages at runtime or fail commands. A pre-built, tested development image ensures immediate productivity, deterministic execution, and transparent tool introspection.
-- **Provenance**: `src/seamus/config/models.py`, `src/seamus/harness/sandbox.py`, `src/seamus/harness/prompt.py`, `Dockerfile.sandbox`, `0042-mount-external-git-repositories.md`.
-
-### Interactive Web Terminal & Shell Emulator for Agent Sandbox
-- **Description**: Implement an interactive browser-based terminal emulator (e.g. using `xterm.js` and WebSockets or SSE streaming via OpenSandbox's interactive exec API) inside the Seamus UI:
-  1. Terminal tab or drawer: embed a collapsible terminal drawer in the session view alongside Chat, Changes, Artifacts, and Inspector.
-  2. Live container shell: establish an interactive, bidirectional pseudo-terminal (`pty`) session connected directly to `/bin/bash` inside the session's active OpenSandbox container.
-  3. Context awareness: launch the shell with the working directory set to `/workspace` (or `/projects/{mount_name}`), matching the container's environment, mounted volumes, and user permissions.
-  4. Non-intrusive developer intervention: allow developers to inspect running processes, check installed tools, manually run tests, debug environment issues, or inspect Git state directly inside the container without switching to a host terminal.
-- **Rationale**: Developers currently have to find container IDs on the Docker host (`docker exec -it sandbox-... bash`) to inspect sandbox state or test commands. A built-in terminal emulator provides an immediate, seamless developer experience inside the Seamus Web UI.
-- **Provenance**: `src/seamus/harness/sandbox.py`, `ui/src/components/`, [0003-react-web-ui.md](../decisions/0003-react-web-ui.md).
-
 ### Granular Branch Action Placement in Chat Bubble UI
 - **Description**: Redesign the message branch action layout in `MessageItem.tsx`. Move the branch action icon/button to the right of message bubbles (e.g., in a hover/action gutter) rather than placing it in the bottom footer below the bubble content, and review branch point indicators to ensure they are visually intuitive and unambiguous.
 - **Rationale**: Footer placement below the bubble text is visually misleading and occupies unnecessary vertical space across conversational streams.
@@ -284,11 +294,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Description**: Automatically detect in-flight or interrupted agent sessions upon harness server restart/startup, recovering execution from the latest checkpoint and auto-resuming the agent's run loop.
 - **Rationale**: If the host or server container is restarted or killed mid-turn, active runs currently stall without resuming, requiring manual user intervention.
 - **Provenance**: `src/seamus/harness/store.py`, `src/seamus/harness/runner.py`, `src/seamus/server/app.py`.
-
-### Ollama Local Model Provider Support
-- **Description**: Add first-class support for Ollama as a local model provider in Seamus, allowing agents to run against locally hosted models without requiring external API keys. Configure base URLs, model selection presets, and streaming adapters compatible with Ollama's API.
-- **Rationale**: Expands Seamus to support fully offline, private, and zero-cost local LLM development workflows.
-- **Provenance**: `src/seamus/config/models.py`, `src/seamus/harness/runner.py`, `ui/src/components/ConfigModal.tsx`.
 
 ### Expand A2UI Basic Catalog Widgets Documentation in Skill
 - **Description**: Expand the bundled `a2ui_components` skill (`src/seamus/skills/bundled/a2ui_components/SKILL.md`) with comprehensive documentation, schema specifications, and JSON examples for the remaining supported A2UI basic catalog components:
