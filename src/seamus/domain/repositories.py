@@ -18,6 +18,8 @@ class MountedRepositoryCheckpointRecord(BaseModel):
     semantic_head: str
     semantic_branch: str
     staged_tree: str
+    gitea_repo_name: str | None = None
+    gitea_repo_url: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

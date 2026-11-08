@@ -320,6 +320,12 @@ class ExternalRepositoryManager:
                 except Exception:
                     # Fallback to origin/main or HEAD if configured branch wasn't found
                     self._run_git(working_copy, ["checkout", "-b", session_branch, "origin/main"])
+                try:
+                    self._run_git(working_copy, ["push", "-u", "origin", session_branch])
+                except Exception:
+                    logger.debug(
+                        "Failed to push initial session branch %s to Gitea", session_branch
+                    )
         else:
             self._configure_git_identity(working_copy)
             try:
@@ -401,14 +407,24 @@ class ExternalRepositoryManager:
         checkpoint_sha = cp_commit_res.stdout.strip()
 
         # 6. Push checkpoint commit and session branch to durable Gitea storage
+        repo_name = self.get_project_repo_name(project_id)
+        gitea_url: str | None = None
         if self.settings.enabled:
+            gitea_url = (
+                f"{self.settings.gitea_url.rstrip('/')}/"
+                f"{self.settings.gitea_admin_user}/{repo_name}"
+            )
             ref_spec = (
                 f"{checkpoint_sha}:refs/seamus/sessions/{session_id}/"
                 f"attachments/{repo_config.id}/checkpoints/{checkpoint_id}"
             )
-            latest_ref = f"{checkpoint_sha}:refs/seamus/snapshots/{session_id}/{repo_config.id}"
+            latest_ref = f"+{checkpoint_sha}:refs/seamus/snapshots/{session_id}/{repo_config.id}"
+            # Also push as a visible branch in Gitea so users can inspect it in the Gitea UI
+            branch_ref = (
+                f"+{checkpoint_sha}:refs/heads/seamus/checkpoints/{session_id}/{mount_name}"
+            )
             try:
-                self._run_git(working_copy, ["push", "origin", ref_spec, latest_ref])
+                self._run_git(working_copy, ["push", "origin", ref_spec, latest_ref, branch_ref])
                 # If the agent made semantic commits, also push the session branch
                 if semantic_branch.startswith("session/"):
                     self._run_git(working_copy, ["push", "origin", semantic_branch], check=False)
@@ -427,6 +443,8 @@ class ExternalRepositoryManager:
             semantic_head=semantic_head,
             semantic_branch=semantic_branch,
             staged_tree=staged_tree,
+            gitea_repo_name=repo_name,
+            gitea_repo_url=gitea_url,
         )
 
     def restore_working_copy_checkpoint(

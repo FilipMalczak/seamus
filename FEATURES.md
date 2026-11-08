@@ -122,7 +122,7 @@ Seamus organizes work into a clean three-tiered entity hierarchy:
 
 Never trust an LLM to run arbitrary commands on your host workstation. Seamus delegates all execution to **OpenSandbox**:
 
-- **Strict Container Isolation**: Agents execute inside containerized Linux environments (default `python:3.12-slim`, fully customizable). Commands outside the sandbox cannot touch host files or networks.
+- **Strict Container Isolation**: Agents execute inside containerized Linux environments (default `ubuntu`, fully customizable). Commands outside the sandbox cannot touch host files or networks.
 - **Sandboxed Operational Directory (`/workspace`)**: The agent's persistent workspace is mounted at `/workspace`, mapped directly to the session's Git-tracked `data/` directory. Files created or modified inside `/workspace` are tracked, committed, and version-controlled. Everything outside `/workspace` inside the container is transient.
 - **Mounted External Git Repositories (`/projects/{name}`)**: Arbitrary user-configured Git repositories are mounted under `/projects/{name}`. Each directory contains a fully functional Git working copy with `.git/`, allowing agents to run `git status`, `git diff`, `git add`, `git commit`, and `git branch` directly inside the container without modifying the host or commingling project code with agent harness internals.
 - **Dynamic Mount Policies**: Mount permissions adapt dynamically according to the active mode and plan phase:
@@ -353,7 +353,7 @@ Seamus reads environment variables from the host environment and your local `.en
 | :--- | :---: | :--- | :--- |
 | `OPENSANDBOX_DOMAIN` | `string` | `localhost:8080` | Hostname and port for the OpenSandbox lifecycle management server (in Docker: `opensandbox:8080`). |
 | `OPENSANDBOX_PROTOCOL` | `string` | `http` | HTTP protocol scheme for OpenSandbox (`http` or `https`). |
-| `OPENSANDBOX_IMAGE` | `string` | `python:3.12-slim` | Base container image instantiated for each agent session execution sandbox. |
+| `OPENSANDBOX_IMAGE` | `string` | `ubuntu` | Base container image instantiated for each agent session execution sandbox. |
 | `OPENSANDBOX_WORKDIR` | `string` | `/workspace` | Target mount point inside the sandbox container for Git-tracked session data deliverables. |
 | `OPENSANDBOX_TIMEOUT` | `integer` | `300` | Default execution timeout in seconds for individual shell commands and tool calls. |
 | `OPENSANDBOX_SANDBOX_TIMEOUT` | `integer` | `3600` | Inactivity TTL in seconds before an idle sandbox container is automatically destroyed. |

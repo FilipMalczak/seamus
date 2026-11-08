@@ -32,6 +32,7 @@ from seamus.harness.sandbox import BUNDLED_SKILLS_DIR, get_sandbox_settings
 from seamus.harness.store import get_harness_store
 from seamus.persistence import (
     calculate_mount_paths,
+    derive_project_id,
     extract_readable_messages,
     get_workspace_manager,
 )
@@ -88,6 +89,9 @@ class MountedRepoInspectInfo(BaseModel):
     url: str
     branch: str
     credentials_configured: bool = False
+    project_id: str = ""
+    gitea_repo_name: str | None = None
+    gitea_repo_url: str | None = None
 
 
 class GitInspectInfo(BaseModel):
@@ -941,9 +945,18 @@ def build_agent_inspect_report(
 
     mounted_repositories: list[MountedRepoInspectInfo] = []
     if session.config.repositories:
+        ws_mgr = get_workspace_manager()
         mount_paths = calculate_mount_paths(session.config.repositories)
         for repo in session.config.repositories:
             mount_name = mount_paths.get(repo.id, "repo")
+            p_id = derive_project_id(repo.url)
+            g_name = f"project-{p_id}"
+            g_url = (
+                f"{ws_mgr.settings.gitea_url.rstrip('/')}/"
+                f"{ws_mgr.settings.gitea_admin_user}/{g_name}"
+                if ws_mgr.settings.enabled
+                else None
+            )
             mounted_repositories.append(
                 MountedRepoInspectInfo(
                     id=repo.id,
@@ -951,6 +964,9 @@ def build_agent_inspect_report(
                     url=repo.url,
                     branch=repo.branch,
                     credentials_configured=bool(repo.credentials and repo.credentials.strip()),
+                    project_id=p_id,
+                    gitea_repo_name=g_name,
+                    gitea_repo_url=g_url,
                 )
             )
 

@@ -49,8 +49,10 @@ We implement external Git repository mounting and persistence across the configu
      4. Stages working-tree modifications into the alternate index: `git add -A -- .` (respecting `.gitignore`).
      5. Writes the working-tree snapshot tree: `git write-tree` $\to$ `snapshot_tree`.
      6. Creates an independent checkpoint commit: `git commit-tree snapshot_tree -p prev_cp_sha` $\to$ `checkpoint_sha`.
-     7. Pushes the checkpoint commit and tree to Gitea under a dedicated ref:
-        `refs/seamus/checkpoints/{session_id}/{checkpoint_id}`.
+     7. Pushes the checkpoint commit and tree to Gitea under dedicated refs:
+        `refs/seamus/sessions/{session_id}/attachments/{attachment_id}/checkpoints/{checkpoint_id}`,
+        `refs/seamus/snapshots/{session_id}/{attachment_id}`, and visible branch
+        `refs/heads/seamus/checkpoints/{session_id}/{mount_name}` (so checkpoints are directly browseable and inspectable in the Gitea UI).
    - Project checkpoint commits have independent ancestry and never fast-forward or modify the agent's semantic Git branch.
 
 5. **Multi-Repository Checkpoint Ordering & Agent Manifest**:
@@ -61,6 +63,7 @@ We implement external Git repository mounting and persistence across the configu
      - `staged_tree` (agent's staged state)
      - `snapshot_tree` (agent's uncommitted working tree)
      - `checkpoint_sha` (durable checkpoint commit in Gitea)
+     - `gitea_repo_name` and `gitea_repo_url` (explicitly mapping internal Gitea repositories to external projects)
    - These records are written to `agent/state/external_checkpoints.json` and committed directly to the agent repository's session branch, guaranteeing atomic provenance.
 
 6. **Historical State Reconstruction & Session Branching**:
@@ -90,3 +93,4 @@ We implement external Git repository mounting and persistence across the configu
 - Agent Git operations inside `/projects/` remain completely standard (`git status` and `git diff` accurately reflect the agent's work).
 - Checkpoint persistence is non-intrusive, crash-resilient, and fully auditable in Gitea.
 - Credentials remain secure in OpenBao with zero container exposure.
+

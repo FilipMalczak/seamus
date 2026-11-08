@@ -246,10 +246,14 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Accommodates both lightweight conversational workflows focused on getting tasks done and deep engineering/debugging sessions requiring full inspectability.
 - **Provenance**: [0003-react-web-ui.md](../decisions/0003-react-web-ui.md), [architecture.md](./architecture.md#system-overview).
 
-### Configurable Sandbox Container Image, Bundled Dev Image, and Environment Inspection
-- **Description**: Add `sandbox_image: str | None = None` to `AgentConfig` (and `ConfigTemplate`), allowing custom container images to be configured per agent/session (falling back to environment variable `OPENSANDBOX_IMAGE` or default). Bundle a dedicated Seamus development sandbox image pre-installed with standard developer tooling (Git, uv, Node, build tools) rather than relying on bare `python:3.12-slim`. In addition, explain the sandbox image's capabilities in the system prompt and/or expose the Dockerfile within the image itself (e.g. at `/etc/Dockerfile`) so the agent can inspect what tools and libraries are installed in its environment.
-- **Rationale**: The minimal `python:3.12-slim` base image lacks standard tools required by coding agents, and the agent needs clear self-knowledge of its container environment and available binaries.
-- **Provenance**: `src/seamus/config/models.py`, `src/seamus/harness/sandbox.py`, `src/seamus/harness/prompt.py`, `Dockerfile.sandbox`.
+### Dedicated First-Party Developer Sandbox Container Image & Environment Inspection
+- **Description**: Design and build a proper first-party developer sandbox Docker image for agent execution (e.g. `seamus-agent-sandbox:latest`), replacing the interim bare `ubuntu` default:
+  1. Core developer runtimes: pre-installed Python 3.12+, Astral `uv`, Node.js (LTS) + npm, Git, curl, wget, jq, tree, and build essentials.
+  2. Workspace permission alignment: configure user / group permissions so file creation under `/workspace` and `/projects` matches host user ownership without permission errors.
+  3. Self-introspecting environment metadata: embed the Dockerfile or a declarative capability manifest (e.g. at `/etc/seamus-sandbox.json`) so the agent and system prompt can accurately inspect installed packages, tools, and runtimes.
+  4. Per-agent/session configuration: add `sandbox_image: str | None = None` to `AgentConfig` (and `ConfigTemplate`), allowing custom images to be configured per agent/session falling back to `OPENSANDBOX_IMAGE`.
+- **Rationale**: Bare `ubuntu` provides a clean base but lacks standard tools required by coding agents out of the box (e.g. Python, uv, Git, npm), forcing agents to install packages at runtime or fail commands. A pre-built, tested development image ensures immediate productivity, deterministic execution, and transparent tool introspection.
+- **Provenance**: `src/seamus/config/models.py`, `src/seamus/harness/sandbox.py`, `src/seamus/harness/prompt.py`, `Dockerfile.sandbox`, `0042-mount-external-git-repositories.md`.
 
 ### Granular Branch Action Placement in Chat Bubble UI
 - **Description**: Redesign the message branch action layout in `MessageItem.tsx`. Move the branch action icon/button to the right of message bubbles (e.g., in a hover/action gutter) rather than placing it in the bottom footer below the bubble content, and review branch point indicators to ensure they are visually intuitive and unambiguous.

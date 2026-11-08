@@ -321,6 +321,9 @@ export interface MountedRepoInspectInfo {
   url: string;
   branch: string;
   credentials_configured: boolean;
+  project_id?: string;
+  gitea_repo_name?: string | null;
+  gitea_repo_url?: string | null;
 }
 
 export interface AgentInspectReport {

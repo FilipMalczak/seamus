@@ -169,6 +169,7 @@ def test_dual_index_checkpoint_and_restoration(tmp_path: Path) -> None:
     assert record.snapshot_tree
     assert record.staged_tree
     assert record.semantic_head
+    assert record.gitea_repo_name == f"project-{derive_project_id(repo_cfg.url)}"
 
     # 5. VERIFY AGENT INDEX UNTOUCHED INVARIANT:
     # git status after checkpoint MUST BE 100% IDENTICAL to before checkpoint!

@@ -47,7 +47,9 @@ class SandboxSettings(BaseModel):
 
     domain: str = Field(default_factory=lambda: os.getenv("OPENSANDBOX_DOMAIN", "localhost:8080"))
     protocol: str = Field(default_factory=lambda: os.getenv("OPENSANDBOX_PROTOCOL", "http"))
-    image: str = Field(default_factory=lambda: os.getenv("OPENSANDBOX_IMAGE", "python:3.12-slim"))
+    image: str = Field(
+        default_factory=lambda: os.getenv("OPENSANDBOX_IMAGE", "seamus-sandbox:latest")
+    )
     timeout: int = Field(default_factory=lambda: int(os.getenv("OPENSANDBOX_TIMEOUT", "300")))
     sandbox_timeout: int = Field(
         default_factory=lambda: int(os.getenv("OPENSANDBOX_SANDBOX_TIMEOUT", "3600"))
