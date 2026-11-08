@@ -497,6 +497,9 @@ export function App() {
                     selectThread(selectedAgentId, selectedSessionId, toThreadId);
                   }
                 }}
+                onNamed={async () => {
+                  await refreshTree();
+                }}
                 onArtifactsSync={handleArtifactsSync}
                 onBranchMessage={async (
                   targetId: string | null,

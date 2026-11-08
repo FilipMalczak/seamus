@@ -54,7 +54,8 @@ export function useThreadStream(
   sessionId: string | null,
   threadId: string | null,
   sessionStatus?: string,
-  onThreadTransition?: (toThreadId: string, mode?: string, phase?: string | null) => void
+  onThreadTransition?: (toThreadId: string, mode?: string, phase?: string | null) => void,
+  onNamed?: (event: any) => void
 ) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<AgentStatus>("AWAITING_USER");
@@ -67,6 +68,8 @@ export function useThreadStream(
 
   const onThreadTransitionRef = useRef(onThreadTransition);
   onThreadTransitionRef.current = onThreadTransition;
+  const onNamedRef = useRef(onNamed);
+  onNamedRef.current = onNamed;
 
   // Keep ref of messages for mutable updates during streaming chunks
   const messagesRef = useRef<ChatMessage[]>([]);
@@ -405,6 +408,8 @@ export function useThreadStream(
             }
             onThreadTransitionRef.current?.(toThreadId, event.mode, event.phase);
           }
+        } else if (type === "THREAD_NAMED" || type === "SESSION_NAMED") {
+          onNamedRef.current?.(event);
         } else if (type === "STATUS_CHANGED") {
           const nextStatus = event.status as AgentStatus;
           if (nextStatus) {

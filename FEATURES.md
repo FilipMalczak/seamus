@@ -25,6 +25,7 @@ Seamus is an open, self-hosted, deep agent execution harness and developer works
    - [10. Telemetry & Observability (Pydantic Logfire & OpenTelemetry)](#10-telemetry--observability-pydantic-logfire--opentelemetry)
    - [11. 1-Click Zero-Friction Stack Launch](#11-1-click-zero-friction-stack-launch)
    - [12. Local Model Inference & Active Ollama Lifecycle Management](#12-local-model-inference--active-ollama-lifecycle-management)
+   - [13. Non-Agentic Daemons & Automated Naming](#13-non-agentic-daemons--automated-naming)
 3. [Every Goddamn Flag (Exhaustive Configuration & Reference Manual)](#every-goddamn-flag-exhaustive-configuration--reference-manual)
    - [CLI Flags & Scripts (`run.sh`)](#cli-flags--scripts-runsh)
    - [Complete Environment Variables Reference](#complete-environment-variables-reference)
@@ -276,6 +277,15 @@ Run agents completely offline without external cloud API dependencies or recurri
 - **Active Model Verification & Pre-Loading**: Dispatches healthchecks and pre-loads the model into memory (`POST /api/generate`) before agent execution starts.
 - **Automated Model Pulling**: When the target model is not present, automatically triggers Ollama's model pull API (`POST /api/pull` with `stream: False`) and retries the load, providing zero-configuration setup for local models.
 
+### 13. Non-Agentic Daemons & Automated Naming
+
+Lightweight, non-agentic one-shot LLM utilities using plain `Instructions: ... Input: ... Output:` prefill prompts on fast, cheap, or local models:
+
+- **Automated Thread & Session Naming**: Automatically generates descriptive, URL-safe slugs for threads and sessions from conversational exchanges and constituent thread topics.
+- **Geometric Stepback Scheduling**: Triggers daemon runs on full completed user/assistant exchanges at doubling intervals ($N = 2^k - 1$: $1, 3, 7, 15, \dots$), balancing fresh naming with low token consumption.
+- **Parallel Slug Model**: User-assigned custom names take precedence over daemon-generated slugs while auto-naming continues running in the background, providing instantaneous fallback if the user clears their custom slug.
+- **Defensive Preemptive Output Parsing**: Resiliently cleans markdown code fences, triple quotes, blockquotes, and conversational prefixes from small or local model outputs into valid slug strings.
+
 ---
 
 ## Every Goddamn Flag (Exhaustive Configuration & Reference Manual)
@@ -424,6 +434,8 @@ class AgentConfig(BaseModel):
     skills_implementation: SkillsImplementation = SkillsImplementation.DEEPAGENTS
     thread_message_overlap: int = 5
     repositories: list[ExternalRepositoryConfig] = Field(default_factory=list)
+    sandbox_image: str | None = None
+    daemons: DaemonsConfig = Field(default_factory=DaemonsConfig)
 ```
 
 #### Field Details
@@ -431,6 +443,9 @@ class AgentConfig(BaseModel):
 - `inference.format`: Format of inference API (`openai` or `ollama`).
 - `inference.base_url`: Target endpoint URL for inference API requests (presets: OpenRouter, OpenAI, and local Ollama `http://localhost:11434/v1`).
 - `inference.api_key`: API key or symbolic vault reference (`${secret('/path')}`). Optional when using Ollama (`ollama` format or port `11434`).
+- `daemons.naming.enabled`: Enables automated thread and session naming daemons (default: `false`).
+- `daemons.naming.provider`: Optional provider configuration for naming daemons; if unset, inherits the agent's main `inference` settings.
+- `daemons.naming.model`: Dedicated model identifier for naming daemons (e.g. `openai/gpt-4o-mini`, `llama3.2:3b`), keeping naming costs and latency minimal.
 - `model_name`: Provider model identifier (e.g. `anthropic/claude-3.5-sonnet`, `openai/gpt-4o`, `openai/gpt-oss-120b`, `llama3.2:3b`, `qwen3.8:latest`, `gemma4:e4b`). When targeting Ollama, Seamus actively verifies daemon health and loads the requested model into memory prior to execution.
 - `mode`: Initial operational mode for sessions (`chat` or `plan`).
 - `system_prompt`: Optional custom prompt instructions appended to the dynamic LM-XML scaffold.

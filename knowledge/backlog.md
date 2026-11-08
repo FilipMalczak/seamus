@@ -4,6 +4,12 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## Deferred
 
+### Daemon Manifest Normalization, Generic Event Filters, and Custom Selection Strategies
+- **Description**: Extracting and normalizing daemon manifests, defining arbitrary trigger event types and filter pipelines, and supporting customizable daemon execution selection strategies beyond the initial geometric step-off ($2^k - 1$).
+- **Why Deferred**: One-shot daemons are currently scoped specifically to thread and session naming using fixed geometric stepback and user-turn boundaries, keeping the engine minimal and focused.
+- **Revisit Trigger**: When additional background daemon capabilities are introduced (e.g. summarization, tag extraction, memory compaction) requiring varied trigger events and custom scheduling algorithms.
+- **Provenance**: [0046-daemons-naming.md](../decisions/0046-daemons-naming.md).
+
 ### GPU Passthrough Acceleration for Containerized Ollama
 - **Description**: Add GPU acceleration support (e.g. NVIDIA Container Toolkit `--gpus all` directives in `docker-compose.yml` or ROCm runtime for AMD) and direct host socket bridging for Ollama inference in Seamus.
 - **Why Deferred**: Running Ollama in CPU mode via containerized `ollama/ollama:latest` on the internal Docker network provides out-of-the-box local inference without requiring host GPU drivers, CUDA setups, or NVIDIA Container Toolkit installation.

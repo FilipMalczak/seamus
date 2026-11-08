@@ -58,6 +58,15 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `EventBroadcaster`: Fan-out pub-sub queue mechanism for multiplexing real-time AG-UI SSE events to multiple active thread consumers.
 - `HarnessStore`: In-memory repository managing agents, sessions, and threads with scope-bound slug uniqueness.
 
+### `seamus.harness.daemons` (`src/seamus/harness/daemons`)
+- Non-agentic background daemon utilities and naming services.
+- `DaemonNamingConfig` & `DaemonsConfig`: Configuration models under `AgentConfig` configuring daemon services (`enabled`, `provider` inheriting agent inference by default, explicit `model`).
+- `parse_loose_slug`: Preemptive loose parser unwrapping markdown code blocks, quotes, blockquotes, and label prefixes, sanitizing into valid slugs and resolving collisions against occupied slugs via numeric suffixes (`-2`, `-3`).
+- `format_thread_history`: Formats thread message trajectories, created artifacts (`[Artifact: <kind> "<title>"]`), and user actions (`[Artifact Action: ...]`) into clean prompt transcripts.
+- `invoke_daemon`: One-shot prompt runner using plain `Instructions: ... Input: ... Output:` prefill against OpenAI-compatible and Ollama endpoints without tools or multi-turn state.
+- `is_stepback_trigger`: Evaluates the doubling stepback condition $N = 2^k - 1$ ($1, 3, 7, 15, \dots$).
+- `execute_thread_naming` & `execute_session_naming`: Asynchronous background daemons generating and assigning thread and session slugs.
+
 ### `seamus.server` (`src/seamus/server`)
 - Web framework and protocol mapping.
 - `create_app`: Factory assembling FastAPI app, CORS middleware, and APIRouters under `/api/v-alpha/`. Optionally mounts built `ui/dist` directory for standalone web serving.

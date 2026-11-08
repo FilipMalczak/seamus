@@ -2614,6 +2614,22 @@ class SessionAgentRunner:
                         self._turn_created_artifact_ids.clear()
                         if thread.status != AgentStatus.ERROR and self.session.is_active:
                             thread.status = AgentStatus.AWAITING_USER
+                            thread.exchange_count += 1
+                            naming_cfg = self.session.config.daemons.naming
+                            if naming_cfg.enabled and naming_cfg.model:
+                                from seamus.harness.daemons.naming import (
+                                    execute_session_naming,
+                                    execute_thread_naming,
+                                    is_stepback_trigger,
+                                )
+
+                                if is_stepback_trigger(thread.exchange_count):
+                                    asyncio.create_task(execute_thread_naming(self, thread))
+
+                                if len(self.session.threads) > 1 and is_stepback_trigger(
+                                    self.session.total_exchange_count
+                                ):
+                                    asyncio.create_task(execute_session_naming(self))
                         thread.touch()
                         self.session.touch()
                         try:

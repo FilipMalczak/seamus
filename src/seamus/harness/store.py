@@ -544,14 +544,14 @@ class HarnessStore:
         ):
             new_session = Session(
                 agent_id=agent.id,
-                name=name,
+                custom_name=name,
                 config=parent_session.config.model_copy(deep=True),
                 status=SessionStatus.ACTIVE,
                 provenance=provenance,
                 lineage=inherited_lineage,
             )
             new_thread = Thread(
-                name=None,
+                custom_name=None,
                 is_open=True,
                 status=AgentStatus.AWAITING_LLM if retry_inference else AgentStatus.AWAITING_USER,
                 events=sliced_events,
@@ -1031,7 +1031,10 @@ class HarnessStore:
                         session = Session(
                             id=session_id,
                             agent_id=agent.id,
-                            name=session_payload.get("name"),
+                            custom_name=(
+                                session_payload.get("custom_name") or session_payload.get("name")
+                            ),
+                            daemon_name=session_payload.get("daemon_name"),
                             config=session_config,
                             status=session_status,
                             active_plan_id=session_payload.get("active_plan_id"),
@@ -1063,7 +1066,9 @@ class HarnessStore:
                                 )
                                 thread = Thread(
                                     id=t_id,
-                                    name=t_data.get("name"),
+                                    custom_name=t_data.get("custom_name") or t_data.get("name"),
+                                    daemon_name=t_data.get("daemon_name"),
+                                    exchange_count=int(t_data.get("exchange_count", 0)),
                                     is_open=bool(t_data.get("is_open", False)),
                                     status=status_enum,
                                     mode=t_mode,

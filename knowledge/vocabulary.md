@@ -51,6 +51,23 @@ A sub-conversation segment within a session representing a discrete execution ph
 ### Slug (Name)
 A human-readable, URL-safe identifier formatted as lowercase words separated by hyphens (e.g. `foo-bar-baz`, regex: `^[a-z0-9]+(?:-[a-z0-9]+)*$`). Slugs can be assigned to agents, sessions, and threads as alternative identifiers to UUIDs.
 
+### Daemon
+A lightweight, non-agentic, one-shot LLM utility executing a plain `Instructions: ... Input: ... Output:` prefill prompt without tools, conversational history, or multi-turn agentic loops. Configured per-agent under `agent_config.daemons`.
+
+### Naming Daemon
+A specialized daemon service generating concise, descriptive slugs:
+- **Thread Naming Daemon**: Synthesizes a thread slug from user and assistant exchanges (including created artifacts and actions) while avoiding occupied slugs in the session.
+- **Session Naming Daemon**: Synthesizes an overarching session slug from the constituent thread slugs while avoiding occupied session slugs under the agent.
+
+### Full Exchange
+A completed conversational interaction spanning from the start of a user input (or unblocking artifact action) to either the end of an assistant text response (`TextMessageEndEvent`) or the moment an artifact blocks the conversation (`manifest.blocking = True`). Rounds down so in-progress turns are excluded.
+
+### Geometric Stepback Schedule
+An execution schedule where triggers fire at full exchange counts $N \in \{2^k - 1 \mid k \ge 1\} = \{1, 3, 7, 15, 31, \dots\}$, doubling the step interval between consecutive daemon runs.
+
+### Parallel Slug Model
+The architecture storing both user-defined slugs (`custom_name`) and daemon-generated slugs (`daemon_name`) in parallel on `Thread` and `Session` entities. The effective `name` prioritizes `custom_name`, while daemon naming continues running in the background to provide instant fallback if the user clears their custom slug.
+
 ### Agent Status
 The operational state of a thread's agent:
 - `AWAITING_USER`: Idle, awaiting user input.

@@ -237,6 +237,11 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-038](./requirements.md#req-038-ollama-local-model-provider-support--active-model-execution-management), [0045-ollama-local-model-provider.md](../decisions/0045-ollama-local-model-provider.md).
 - **Enforcement**: `seamus.harness.runner._ensure_ollama_model`, `seamus.config.models.InferenceConfig.is_complete`, `seamus.config.models.AgentConfig.validate_complete`, `docker-compose.yml`, `tests/test_config.py`, `tests/test_runner.py`.
 
+### INV-049: Non-Agentic Daemon Execution, Geometric Stepback, and Parallel Slug Priority
+- **Statement**: Daemons must execute as plain, one-shot prompt prefills without tools, multi-turn message history, or agentic loop constructs. Exchange counting strictly counts completed full user/assistant interactions (spanning user input start to assistant text end or blocking artifact moment, rounding down to exclude in-progress turns), triggering daemon execution if and only if exchange counts match the doubling stepback sequence $2^k - 1$ ($1, 3, 7, 15, \dots$). Slugs on `Thread` and `Session` are maintained in parallel (`custom_name` and `daemon_name`), where effective `name` always prioritizes `custom_name` over `daemon_name`, and clearing `custom_name` automatically falls back to `daemon_name`. LLM output parsing must preemptively unwrap markdown, quotes, and prefixes before slug validation.
+- **Justification**: [REQ-039](./requirements.md#req-039-non-agentic-daemons--geometric-stepback-threadsession-naming), [0046-daemons-naming.md](../decisions/0046-daemons-naming.md).
+- **Enforcement**: `seamus.harness.daemons.naming.is_stepback_trigger`, `seamus.harness.daemons.parser.parse_loose_slug`, `seamus.domain.entities.Thread.name`, `seamus.domain.entities.Session.name`, `seamus.harness.runner._run_loop`, `tests/test_daemons.py`.
+
 
 ## Cross-References
 - [backlog.md](./backlog.md)
@@ -280,4 +285,5 @@ Properties and rules that must always hold across the repository.
 - [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md)
 - [0042-mount-external-git-repositories.md](../decisions/0042-mount-external-git-repositories.md)
 - [0045-ollama-local-model-provider.md](../decisions/0045-ollama-local-model-provider.md)
+- [0046-daemons-naming.md](../decisions/0046-daemons-naming.md)
 - [persistence.md](./persistence.md)

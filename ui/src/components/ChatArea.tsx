@@ -64,6 +64,7 @@ interface ChatAreaProps {
     options?: { retryInference?: boolean; promptToSend?: string }
   ) => void;
   onNavigateToSession?: (sessionId: string) => void;
+  onNamed?: (event: any) => void;
 }
 
 export function ChatArea({
@@ -82,6 +83,7 @@ export function ChatArea({
   onKillSession,
   onSwitchMode,
   onThreadTransition,
+  onNamed,
   onArtifactsSync,
   onBranchMessage,
   onNavigateToSession,
@@ -115,7 +117,8 @@ export function ChatArea({
     sessionId,
     isSessionView ? null : (thread?.id ?? null),
     sessionStatus,
-    onThreadTransition
+    onThreadTransition,
+    onNamed
   );
 
   const handleSubmitArtifact = useCallback(

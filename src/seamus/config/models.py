@@ -107,6 +107,38 @@ class ExternalRepositoryConfig(BaseModel):
         return self
 
 
+class DaemonNamingConfig(BaseModel):
+    """Configuration for thread and session naming daemons."""
+
+    enabled: bool = False
+    provider: InferenceConfig | None = None
+    model: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_model_if_enabled(self) -> Self:
+        if self.enabled and not (self.model and self.model.strip()):
+            msg = "daemons.naming.model must be specified when daemons.naming is enabled."
+            raise ValueError(msg)
+        return self
+
+    @model_validator(mode="after")
+    def _validate_secret_refs(self) -> Self:
+        for field_name in ("model",):
+            val = getattr(self, field_name)
+            if isinstance(val, str) and "${" in val:
+                try:
+                    find_secret_references(val, allow_version=False)
+                except SecretSyntaxError as exc:
+                    raise ValueError(str(exc)) from exc
+        return self
+
+
+class DaemonsConfig(BaseModel):
+    """Configuration container for all agent daemon services."""
+
+    naming: DaemonNamingConfig = Field(default_factory=DaemonNamingConfig)
+
+
 class AgentConfig(BaseModel):
     """Full configuration for an agent or session instance."""
 
@@ -119,6 +151,7 @@ class AgentConfig(BaseModel):
     thread_message_overlap: int = 5
     repositories: list[ExternalRepositoryConfig] = Field(default_factory=list)
     sandbox_image: str | None = None
+    daemons: DaemonsConfig = Field(default_factory=DaemonsConfig)
 
     @model_validator(mode="after")
     def _validate_secret_refs(self) -> Self:
@@ -206,6 +239,11 @@ class AgentConfig(BaseModel):
                     overrides.sandbox_image
                     if "sandbox_image" in overrides.model_fields_set
                     else self.sandbox_image
+                ),
+                "daemons": (
+                    overrides.daemons.model_copy(deep=True)
+                    if "daemons" in overrides.model_fields_set
+                    else self.daemons.model_copy(deep=True)
                 ),
             },
             deep=True,
