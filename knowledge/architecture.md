@@ -88,6 +88,9 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 14. **Interactive Sandbox Terminal Subsystem (`TerminalView`, `runner.stream_terminal_command`)**:
     - Location: `src/seamus/harness/runner.py`, `src/seamus/server/routes/sessions.py`, `ui/src/components/TerminalView.tsx`
     - Responsibility: Provides a real-time shell emulator and process inspector embedded in the Web UI. Dispatches shell commands over Server-Sent Events (`POST /agent/{agent_id}/session/{session_id}/terminal/stream`) via OpenSandbox synchronous execution handlers (`ExecutionHandlersSync`) without intermediate line or execution buffering. Preserves dynamic working directory state across `cd` commands via sentinel evaluation and handles client-side command interruption via `AbortController`.
+15. **Local Model Provider & Ollama Lifecycle Management (`seamus.harness.runner._ensure_ollama_model`, `docker-compose.yml`)**:
+    - Location: `src/seamus/harness/runner.py`, `docker-compose.yml`, `ui/src/components/ConfigModal.tsx`
+    - Responsibility: Manages local model inference execution against Ollama (`InferenceFormat.OLLAMA`). Supports containerized Ollama running in CPU mode as well as host-managed daemons. Executes automated candidate endpoint probing (`base_url`, `http://ollama:11434`, `http://host.docker.internal:11434`), performs HTTP healthchecks, actively pre-loads target models into memory (`POST /api/generate`), and automatically pulls missing models (`POST /api/pull`) before inference starts, relaxing API key requirements for local offline agent workflows.
 
 ## Cross-References
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)

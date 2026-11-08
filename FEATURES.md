@@ -24,6 +24,7 @@ Seamus is an open, self-hosted, deep agent execution harness and developer works
    - [9. DeepAgent Runtime Introspection & Inspector](#9-deepagent-runtime-introspection--inspector)
    - [10. Telemetry & Observability (Pydantic Logfire & OpenTelemetry)](#10-telemetry--observability-pydantic-logfire--opentelemetry)
    - [11. 1-Click Zero-Friction Stack Launch](#11-1-click-zero-friction-stack-launch)
+   - [12. Local Model Inference & Active Ollama Lifecycle Management](#12-local-model-inference--active-ollama-lifecycle-management)
 3. [Every Goddamn Flag (Exhaustive Configuration & Reference Manual)](#every-goddamn-flag-exhaustive-configuration--reference-manual)
    - [CLI Flags & Scripts (`run.sh`)](#cli-flags--scripts-runsh)
    - [Complete Environment Variables Reference](#complete-environment-variables-reference)
@@ -265,6 +266,16 @@ Start the entire multi-service stack with a single command:
 - **Auto-Provisioning**: Provisions default Gitea administrator (`seamus`) and initializes OpenBao database tables on first launch.
 - **Automatic Browser Launch**: Opens `http://localhost:3000` automatically in your system's default browser (supporting Linux `xdg-open` / `sensible-browser`, macOS `open`, and Windows/WSL `powershell.exe`).
 
+### 12. Local Model Inference & Active Ollama Lifecycle Management
+
+Run agents completely offline without external cloud API dependencies or recurring subscription fees:
+
+- **First-Class Ollama Provider**: Native `InferenceFormat.OLLAMA` support with optional API key validation and built-in model presets (`gemma4:e4b`, `llama3.2:3b`, `qwen3.8:latest`).
+- **Containerized Ollama Service**: Out-of-the-box `ollama` container running `ollama/ollama:latest` in CPU mode with persistent model volume `ollama-data`.
+- **Intelligent Candidate Probing**: Automatically attempts candidate endpoints (`base_url`, `http://ollama:11434`, `http://host.docker.internal:11434`) when localhost is configured, bridging container and host environments seamlessly.
+- **Active Model Verification & Pre-Loading**: Dispatches healthchecks and pre-loads the model into memory (`POST /api/generate`) before agent execution starts.
+- **Automated Model Pulling**: When the target model is not present, automatically triggers Ollama's model pull API (`POST /api/pull` with `stream: False`) and retries the load, providing zero-configuration setup for local models.
+
 ---
 
 ## Every Goddamn Flag (Exhaustive Configuration & Reference Manual)
@@ -457,6 +468,7 @@ The production stack orchestrated by `docker-compose.yml`:
 | `opensandbox` | `./opensandbox` (Dockerfile) | `8080` (internal) | Docker-in-Docker sandboxing engine managing isolated execution containers. |
 | `backend` | `.` (Dockerfile) | `8000:8000` | FastAPI server, DeepAgent runtime, Git workspace manager, and SSE streams. |
 | `frontend` | `./ui` (Dockerfile) | `3000:3000` | React 19 SPA served via Nginx reverse-proxy with SSE buffering disabled. |
+| `ollama` | `ollama/ollama:latest` | `11434` (internal) | Local model inference provider running in CPU mode. |
 
 #### Persistent Volumes
 
@@ -466,6 +478,7 @@ The production stack orchestrated by `docker-compose.yml`:
 - `opensandbox-data`: Persists runtime container images and Docker storage for sandboxes.
 - `opensandbox-auth`: Shared auth token file between OpenSandbox daemon and backend.
 - `openbao-auth`: Shared root token directory between OpenBao init and backend.
+- `ollama-data`: Persists downloaded Ollama local models across stack restarts.
 
 ---
 

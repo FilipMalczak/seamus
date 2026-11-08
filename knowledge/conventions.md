@@ -25,7 +25,7 @@ Project-specific implementation, tooling, and development conventions not fully 
 - Real-time event consumption uses standard SSE, gracefully handling past event replay and live event broadcast.
 
 ## Container Orchestration & Launch Conventions
-- Docker Compose defines `backend` (FastAPI), `frontend` (Nginx), `opensandbox` (local OpenSandbox lifecycle server with `/var/run/docker.sock` mounted), `gitea` (Git persistence service on port 3001), and `postgres` (intermediate database backing Gitea).
+- Docker Compose defines `backend` (FastAPI), `frontend` (Nginx), `opensandbox` (local OpenSandbox lifecycle server with `/var/run/docker.sock` mounted), `gitea` (Git persistence service on port 3001), `postgres` (intermediate database backing Gitea and OpenBao), `openbao` (KV v2 secrets vault), and `ollama` (local model provider in CPU mode).
 - `./run.sh` provides 1-click startup and opens UI in the default browser.
 - `./run.sh --restart` (`-r`) rebuilds application container images (`opensandbox`, `backend`, `frontend`) and recreates running application containers to apply code updates while preserving infrastructure containers (`postgres`, `gitea`) and persistent data volumes (`gitea-data`, `postgres-data`, `seamus-workspaces`).
 - `./run.sh --clean` (`-c`) stops all services, removes all persistent volumes and data storages, and restarts all services with clean data.

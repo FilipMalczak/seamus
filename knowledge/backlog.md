@@ -252,6 +252,20 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Ensures the automated Sync PR merge, thread closure, and branch synchronization are robust under realistic usage before full operational release.
 - **Provenance**: [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md), [0013-tool-call-lifecycle-ui.md](../decisions/0013-tool-call-lifecycle-ui.md).
 
+### Robust Testing and Usability Hardening for Ollama Integration
+- **Description**: Conduct comprehensive automated and manual testing of Ollama integration across realistic workloads, focusing on both edge-case reliability and developer usability:
+  1. **Usability & UX**:
+     - Provide visual UI indicators/progress states during slow model loading or downloading phases so users understand cold-start latency (especially for CPU execution of multi-gigabyte models like `gemma4:e4b`).
+     - Surface clearer model download progress or timeout warnings in the UI instead of generic stream delays.
+     - Explore dynamic enumeration and auto-completion of downloaded models directly by querying Ollama's `/api/tags` endpoint in the UI configuration modal.
+  2. **Reliability & Edge Cases**:
+     - Test behavior when Ollama runs out of memory (OOM), model loading times out, or the host/container daemon is killed mid-stream.
+     - Test switching between cloud providers (e.g. OpenAI/OpenRouter) and local Ollama within the same session or across branched sessions.
+     - Verify auto-pull behavior under network interruptions or invalid model tags.
+     - Test concurrent sessions/threads hitting the local Ollama instance simultaneously and verify request queuing and CPU contention.
+- **Rationale**: While baseline containerized execution, candidate endpoint probing, model pre-loading, and auto-pull work correctly, local inference introduces unique latencies and resource constraints. Usability enhancements and thorough test coverage will ensure seamless day-to-day developer workflows.
+- **Provenance**: [0045-ollama-local-model-provider.md](../decisions/0045-ollama-local-model-provider.md), `src/seamus/harness/runner.py`, `ui/src/components/ConfigModal.tsx`.
+
 ### Entity Auto-Naming and UX Daemons Architecture
 - **Description**: Implement automated naming for entities across Seamus:
   1. Agents: automatically generate randomized, memorable multi-word slugs (e.g., `brave-curie-42`).

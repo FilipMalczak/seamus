@@ -145,6 +145,12 @@ A dedicated, internal Gitea repository (`project-{project_id}`) mirrored from a 
 ### Project Attachment ID
 A unique identifier (`uuid4().hex`) distinguishing a specific repository attachment in a session's configuration (`ExternalRepositoryConfig.id`) from the underlying project identity (`project_id = sha256(canonical_url)[:12]`), allowing independent mount configurations and collision-free index storage.
 
+### Local Model Provider (Ollama)
+An inference backend running entirely locally (either via the Docker Compose `ollama` service or on the host machine) that does not require external cloud API keys and enables private, offline execution of open-weights models (`InferenceFormat.OLLAMA`).
+
+### Active Model Execution Management
+The harness responsibility of explicitly verifying daemon responsiveness via HTTP healthchecks, checking model availability, and pre-loading models into GPU/CPU memory (`POST /api/generate`)—including automated model pulling (`POST /api/pull`) when missing—prior to initializing LangChain execution, ensuring local models are immediately operational.
+
 ## Cross-References
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
@@ -164,6 +170,8 @@ A unique identifier (`uuid4().hex`) distinguishing a specific repository attachm
 - [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md)
 - [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md)
 - [0042-mount-external-git-repositories.md](../decisions/0042-mount-external-git-repositories.md)
+- [0044-interactive-web-terminal.md](../decisions/0044-interactive-web-terminal.md)
+- [0045-ollama-local-model-provider.md](../decisions/0045-ollama-local-model-provider.md)
 - [artifacts.md](./artifacts.md)
 - [threads_modes_personas.md](./threads_modes_personas.md)
 - [architecture.md](./architecture.md)

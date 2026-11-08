@@ -220,10 +220,10 @@ Requirements, rationale, provenance, and stable IDs.
 
 
 ### REQ-038: Ollama Local Model Provider Support & Active Model Execution Management
-- **Description**: The system must provide first-class support for Ollama as a local model inference provider (`InferenceFormat.OLLAMA` or local endpoint port `11434`), allowing agents to execute without mandatory API keys. When targeting an Ollama instance, the harness must perform an HTTP healthcheck to verify that the Ollama daemon is running in the background and actively ensure the target model is loaded and running in memory via `POST /api/generate` before initiating agent execution, failing fast with informative diagnostics if Ollama is unreachable or the model is missing.
+- **Description**: The system must provide first-class support for Ollama as a local model inference provider (`InferenceFormat.OLLAMA` or local endpoint port `11434`), allowing agents to execute without mandatory API keys. When targeting an Ollama instance, the harness must perform an HTTP healthcheck to verify that the Ollama daemon is running (supporting both host-managed daemons and the containerized `ollama` service in `docker-compose.yml` with candidate URL fallback probing), actively verify/load the target model into memory via `POST /api/generate`, and automatically pull missing models (`POST /api/pull`) when missing before initiating agent execution, failing fast with informative diagnostics if Ollama is unreachable.
 - **Rationale**: Enables private, offline, and zero-cost local LLM development workflows while actively managing model loading so agents do not fail due to uninitialized or missing local models.
-- **Provenance**: [0045-ollama-local-model-provider.md](../decisions/0045-ollama-local-model-provider.md), `src/seamus/config/models.py`, `src/seamus/harness/runner.py`, `ui/src/components/ConfigModal.tsx`.
-- **Linked Invariants**: [INV-047](./invariants.md#inv-047-ollama-healthcheck-and-active-model-execution-management).
+- **Provenance**: [0045-ollama-local-model-provider.md](../decisions/0045-ollama-local-model-provider.md), `src/seamus/config/models.py`, `src/seamus/harness/runner.py`, `docker-compose.yml`, `ui/src/components/ConfigModal.tsx`.
+- **Linked Invariants**: [INV-048](./invariants.md#inv-048-ollama-healthcheck-and-active-model-execution-management).
 
 
 ## Cross-References
