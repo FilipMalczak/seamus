@@ -66,7 +66,7 @@ A completed conversational interaction spanning from the start of a user input (
 An execution schedule where triggers fire at full exchange counts $N \in \{2^k - 1 \mid k \ge 1\} = \{1, 3, 7, 15, 31, \dots\}$, doubling the step interval between consecutive daemon runs.
 
 ### Parallel Slug Model
-The architecture storing both user-defined slugs (`custom_name`) and daemon-generated slugs (`daemon_name`) in parallel on `Thread` and `Session` entities. The effective `name` prioritizes `custom_name`, while daemon naming continues running in the background to provide instant fallback if the user clears their custom slug.
+The architecture storing both user-defined slugs (`custom_name`) and system-generated slugs (`daemon_name` for threads/sessions via LLM daemons, and `generated_name` for agents via deterministic `coolname` generation) in parallel on `Agent`, `Thread`, and `Session` entities. The effective `name` prioritizes `custom_name`, while generated slugs provide instant fallback if the user clears their custom slug.
 
 ### Agent Status
 The operational state of a thread's agent:

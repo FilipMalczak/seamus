@@ -282,6 +282,7 @@ Run agents completely offline without external cloud API dependencies or recurri
 Lightweight, non-agentic one-shot LLM utilities using plain `Instructions: ... Input: ... Output:` prefill prompts on fast, cheap, or local models:
 
 - **Automated Thread & Session Naming**: Automatically generates descriptive, URL-safe slugs for threads and sessions from conversational exchanges and constituent thread topics.
+- **Deterministic Agent Naming**: Automatically generates URL-safe agent slugs upon creation using `coolname` (e.g. `sticky-grinning-skua-of-camouflage`), following the same parallel slug fallback rules as threads and sessions.
 - **Geometric Stepback Scheduling**: Triggers daemon runs on full completed user/assistant exchanges at doubling intervals ($N = 2^k - 1$: $1, 3, 7, 15, \dots$), balancing fresh naming with low token consumption.
 - **Parallel Slug Model**: User-assigned custom names take precedence over daemon-generated slugs while auto-naming continues running in the background, providing instantaneous fallback if the user clears their custom slug.
 - **Defensive Preemptive Output Parsing**: Resiliently cleans markdown code fences, triple quotes, blockquotes, and conversational prefixes from small or local model outputs into valid slug strings.

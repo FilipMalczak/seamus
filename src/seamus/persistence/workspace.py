@@ -259,6 +259,8 @@ class GitWorkspaceManager:
         config_payload = {
             "id": str(agent.id),
             "name": agent.name,
+            "custom_name": agent.custom_name,
+            "generated_name": agent.generated_name,
             "created_at": agent.created_at.isoformat(),
             "config": agent.config.model_dump(),
         }

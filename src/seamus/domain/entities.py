@@ -6,6 +6,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
 
+import coolname
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from seamus.config.models import AgentConfig
@@ -262,15 +263,38 @@ class Agent(BaseModel):
     """An agent entity holding a complete configuration and managing sessions."""
 
     id: UUID = Field(default_factory=uuid4)
-    name: str | None = None
+    custom_name: str | None = None
+    generated_name: str | None = Field(default_factory=coolname.generate_slug)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     last_touched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     config: AgentConfig
     sessions: dict[UUID, Session] = Field(default_factory=dict)
 
-    @field_validator("name", mode="before")
+    def __init__(self, *args: Any, name: str | None = None, **kwargs: Any) -> None:
+        if name is not None and "custom_name" not in kwargs:
+            kwargs["custom_name"] = name
+        super().__init__(*args, **kwargs)
+
+    @model_validator(mode="before")
     @classmethod
-    def _validate_name(cls, v: str | None) -> str | None:
+    def _migrate_name_field(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "custom_name" not in data and "name" in data:
+                data["custom_name"] = data["name"]
+        return data
+
+    @property
+    def name(self) -> str | None:
+        """Present slug: custom_name takes precedence over generated_name."""
+        return self.custom_name or self.generated_name or None
+
+    @name.setter
+    def name(self, val: str | None) -> None:
+        self.custom_name = validate_slug(val)
+
+    @field_validator("custom_name", "generated_name", mode="before")
+    @classmethod
+    def _validate_name_slugs(cls, v: str | None) -> str | None:
         return validate_slug(v)
 
     def touch(self) -> None:

@@ -60,6 +60,11 @@ Key requirements for thread and session naming:
 6. **Deferred Backlog Entry (`knowledge/backlog.md`)**:
    - Record generic daemon manifest extraction, custom event filters, and alternative selection strategies under Deferred.
 
+7. **Deterministic Agent Slug Generation (`coolname`)**:
+   - Agents generate URL-safe slugs deterministically upon creation using `coolname.generate_slug()`.
+   - Adopts the parallel slug model: `custom_name` takes precedence over `generated_name`, while generated slugs provide automatic fallback if the user clears their custom slug.
+   - Uniqueness across registered agents is enforced during creation and updates.
+
 ## Consequences
 
 - Sessions and threads receive human-readable, context-aware slugs automatically without manual user naming.

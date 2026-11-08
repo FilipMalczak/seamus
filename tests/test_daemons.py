@@ -325,3 +325,27 @@ async def test_invoke_daemon_api_key_override_and_fallback(monkeypatch: pytest.M
     )
     assert slug == "test-slug-output"
     assert captured_kwargs["api_key"] == SecretStr("env-openrouter-key")
+
+
+def test_agent_coolname_slug_generation_and_fallback() -> None:
+    from seamus.domain.entities import Agent
+
+    cfg = AgentConfig()
+
+    # 1. Without name, coolname slug is generated automatically
+    a1 = Agent(config=cfg)
+    assert a1.custom_name is None
+    assert a1.generated_name is not None
+    assert len(a1.generated_name) > 0
+    assert a1.name == a1.generated_name
+
+    # 2. With explicit user name, user name takes precedence
+    a2 = Agent(config=cfg, name="my-custom-agent")
+    assert a2.custom_name == "my-custom-agent"
+    assert a2.generated_name is not None
+    assert a2.name == "my-custom-agent"
+
+    # 3. Clearing user name falls back to generated coolname slug
+    a2.name = None
+    assert a2.custom_name is None
+    assert a2.name == a2.generated_name
