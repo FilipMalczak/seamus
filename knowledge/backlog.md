@@ -4,6 +4,13 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## Core harness features
 
+
+### Custom Planning Toolset Integration
+- **Description**: Implement custom planning toolset alternatives alongside `none` and `deepagents` (e.g. customized task decomposition, plan verification, or milestone tracking), introducing corresponding `todo_implementation` enum values.
+- **Rationale**: Enables dedicated, customizable task planning architectures beyond the standard DeepAgents middleware.
+- **Provenance**: [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md), [invariants.md](./invariants.md#inv-033-configurable-todo-planning-and-system-prompt-composition).
+
+
 ### Operational Execution Modes and Thread Transition Triggers (act, analyse, routing)
 - **Description**: Following the initial implementation of `chat` and `plan` modes in [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), expand the operational mode set to include:
   1. `act`: Direct task execution; executes user commands and edits promptly without upfront planning cycles.
@@ -262,10 +269,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Mounting `/var/run/docker.sock` and provisioning sibling containers grants privileged daemon control to the sandbox server; hardening these boundaries is critical before untrusted or multi-tenant workloads run in sandboxes.
 - **Provenance**: [0010-opensandbox-filesystem-sandboxing.md](../decisions/0010-opensandbox-filesystem-sandboxing.md#5-containerized-local-opensandbox-server-opensandbox-docker-composeyml-runsh), [architecture.md](./architecture.md#component-boundaries).
 
-### Custom Planning Toolset Integration
-- **Description**: Implement custom planning toolset alternatives alongside `none` and `deepagents` (e.g. customized task decomposition, plan verification, or milestone tracking), introducing corresponding `todo_implementation` enum values.
-- **Rationale**: Enables dedicated, customizable task planning architectures beyond the standard DeepAgents middleware.
-- **Provenance**: [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md), [invariants.md](./invariants.md#inv-033-configurable-todo-planning-and-system-prompt-composition).
 
 ### Automated Integration Tests for Gitea Docker Compose Stack
 - **Description**: Existing test suites verify unit logic and persistence mechanics using mock clients and temporary Git directories. Add automated end-to-end integration tests that run against the live `docker-compose` environment (`backend`, `frontend`, `gitea`, `postgres`).
