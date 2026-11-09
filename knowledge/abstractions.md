@@ -24,7 +24,7 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `SkillsImplementation`: Supported skills discovery and disclosure middleware implementations (`none`, `deepagents`).
 - `OperationalMode`: Supported operational execution modes (`chat`, `plan`).
 - `ExternalRepositoryConfig`: External Git repository mount configuration (`id`, `url`, `branch`, optional `credentials_ref` referencing an OpenBao secret).
-- `AgentConfig`: Agent and session configuration model (inference settings, model name defaulting to `openai/gpt-oss-120b`, operational `mode` defaulting to `plan`, optional system prompt, `todo_implementation` and `skills_implementation` both defaulting to `deepagents`, `thread_message_overlap` defaulting to `5`, and `repositories: list[ExternalRepositoryConfig]` defaulting to `[]`). Provides `is_complete()`, `validate_complete()`, and `copy_with_overrides()` for inheritance.
+- `AgentConfig`: Agent and session configuration model (inference settings, model name defaulting to `openai/gpt-oss-120b`, operational `mode` defaulting to `plan`, optional system prompt, `todo_implementation` and `skills_implementation` both defaulting to `deepagents`, `thread_message_overlap` defaulting to `5`, `repositories: list[ExternalRepositoryConfig]` defaulting to `[]`, and `daemons: DaemonsConfig` defaulting to enabled naming via `openai/gpt-oss-20b`). Provides `is_complete()`, `validate_complete()`, and `copy_with_overrides()` for inheritance.
 - `SystemSettings`: System-wide configuration model (`skill_directories: list[str]`) not scoped to any agent or session.
 - `ConfigTemplateStore`: Persistent container for the service-wide singleton `AgentConfig` template, backed by Gitea repository `system` with first-run defaults.
 - `SystemSettingsStore`: Persistent container for service-wide `SystemSettings`, backed by Gitea repository `system` with first-run defaults.
@@ -169,6 +169,7 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - [0042-mount-external-git-repositories.md](../decisions/0042-mount-external-git-repositories.md)
 - [0044-interactive-web-terminal.md](../decisions/0044-interactive-web-terminal.md)
 - [0045-ollama-local-model-provider.md](../decisions/0045-ollama-local-model-provider.md)
+- [0046-daemons-naming.md](../decisions/0046-daemons-naming.md)
 - [artifacts.md](./artifacts.md)
 - [architecture.md](./architecture.md)
 - [persistence.md](./persistence.md)

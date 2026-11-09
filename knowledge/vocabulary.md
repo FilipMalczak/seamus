@@ -189,6 +189,7 @@ The harness responsibility of explicitly verifying daemon responsiveness via HTT
 - [0042-mount-external-git-repositories.md](../decisions/0042-mount-external-git-repositories.md)
 - [0044-interactive-web-terminal.md](../decisions/0044-interactive-web-terminal.md)
 - [0045-ollama-local-model-provider.md](../decisions/0045-ollama-local-model-provider.md)
+- [0046-daemons-naming.md](../decisions/0046-daemons-naming.md)
 - [artifacts.md](./artifacts.md)
 - [threads_modes_personas.md](./threads_modes_personas.md)
 - [architecture.md](./architecture.md)
