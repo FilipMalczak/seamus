@@ -106,6 +106,44 @@ class DiscoveredContextItem(BaseModel):
     content: str
 
 
+class AvailableSkillPromptItem(BaseModel):
+    """Metadata for an available skill rendered in LM-XML."""
+
+    name: str
+    description: str
+
+
+class ActiveSkillPromptItem(BaseModel):
+    """Active skill body rendered in LM-XML without XML attributes."""
+
+    name: str
+    instructions: str
+
+
+def build_default_skills_guidelines() -> list[str]:
+    """Default progressive disclosure guidelines for native skills in LM-XML."""
+    return [
+        "Skills provide specialized workflows and domain expertise.",
+        "Check available skills to see if one matches your current task.",
+        (
+            "Call `load_skill(name=...)` to load its full instructions and associated "
+            "tools into your system prompt."
+        ),
+        (
+            "Call `unload_skill(name=...)` once the specific skill workflow is completed "
+            "to conserve context tokens."
+        ),
+    ]
+
+
+class SkillsPromptDocument(BaseModel):
+    """Structured skills catalog and loaded instructions rendered in LM-XML."""
+
+    available_skills: list[AvailableSkillPromptItem]
+    active_skills: list[ActiveSkillPromptItem] | None = None
+    guidelines: list[str] = Field(default_factory=build_default_skills_guidelines)
+
+
 class SystemPromptDocument(BaseModel):
     """Complete structured system prompt for Seamus agents."""
 
@@ -118,6 +156,7 @@ class SystemPromptDocument(BaseModel):
     communication_style: list[str] = Field(default_factory=list)
     dynamic_context: DynamicContext | None = None
     discovered_context: list[DiscoveredContextItem] | None = None
+    skills: SkillsPromptDocument | None = None
     custom_instructions: str | None = None
 
 
@@ -868,6 +907,7 @@ def build_effective_system_prompt(
     active_plan_id: str | None = None,
     active_plan_title: str | None = None,
     discovered_context: Sequence[DiscoveredContextItem] | None = None,
+    skills: SkillsPromptDocument | None = None,
 ) -> str:
     """Assemble and serialize the complete effective LM-XML system prompt."""
     dynamic_ctx = (
@@ -901,6 +941,7 @@ def build_effective_system_prompt(
         communication_style=build_communication_style(),
         dynamic_context=dynamic_ctx,
         discovered_context=list(discovered_context) if discovered_context else None,
+        skills=skills,
         custom_instructions=custom_text,
     )
     dumped = doc.model_dump(mode="json", exclude_none=True)

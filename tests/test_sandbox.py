@@ -9,7 +9,7 @@ from uuid import uuid4
 import pytest
 from langchain_opensandbox import OpenSandboxBackend
 
-from seamus.config.models import AgentConfig, InferenceConfig
+from seamus.config.models import AgentConfig, InferenceConfig, SkillsImplementation
 from seamus.domain.entities import Agent
 from seamus.harness.runner import SessionAgentRunner
 from seamus.harness.sandbox import (
@@ -196,6 +196,7 @@ def test_session_agent_runner_builds_deep_agent_with_opensandbox_and_prompt(
     config = AgentConfig(
         inference=InferenceConfig(api_key="test-key", base_url="https://openrouter.ai/api/v1"),
         model_name="openai/gpt-oss-120b",
+        skills_implementation=SkillsImplementation.DEEPAGENTS,
     )
     agent = Agent(config=config, name="sandboxed-agent")
     session = agent.create_session(name="sandboxed-session")
@@ -273,6 +274,7 @@ def test_session_agent_runner_includes_resolved_system_skills(
     config = AgentConfig(
         inference=InferenceConfig(api_key="test-key", base_url="https://openrouter.ai/api/v1"),
         model_name="openai/gpt-oss-120b",
+        skills_implementation=SkillsImplementation.DEEPAGENTS,
     )
     agent = Agent(config=config, name="skills-agent")
     session = agent.create_session(name="skills-session")

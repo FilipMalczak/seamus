@@ -199,11 +199,15 @@ Move beyond text chat. Seamus implements the open **A2UI (Adaptive Agent User In
 - **Interactive Implementation Plans (`make_plan`)**: Markdown-rendered plan artifacts with section-level inline commenting, approval indicators, and the interactive **Proceed** action.
 - **Auto-Repair & Normalization**: The harness includes automatic component tree normalization (`normalize_a2ui_components`), button declaration auto-synthesis, pre-render surface validation, and structural warning checks to ensure invalid LLM UI JSON never breaks the frontend.
 
-### 6. Anthropic Skills System & Precedence Engine
+### 6. Native LM-XML Skills System & Precedence Engine
 
 Extend your agents using the open [Anthropic Agent Skills standard](https://docs.langchain.com/oss/python/deepagents/skills). Skills are self-contained directories with a `SKILL.md` file featuring YAML frontmatter:
 
-- **Multi-Tiered Precedence Engine**: Skills are resolved through a deterministic hierarchy where higher tiers override lower tiers on naming collisions:
+- **Native LM-XML Progressive Disclosure**: Available skills are rendered directly into the dynamic LM-XML system prompt (`<skills><available_skills>...</available_skills></skills>`), allowing the agent to discover capabilities without polluting the context window.
+- **Explicit Context Lifecycle (`load_skill` & `unload_skill`)**: The agent explicitly loads full skill instructions into its dynamic prompt using `load_skill(name=...)` when needed, and unloads them with `unload_skill(name=...)` once the workflow is completed to conserve context tokens.
+- **Dynamic Tool Gating**: Tools declared in a skill's `allowed_tools` metadata are gated until the skill is loaded via `load_skill`.
+- **Resilient Frontmatter Parsing**: Fault-tolerant parsing handles unquoted colons, JSON-like braces, folded multiline descriptions, and inline tool arrays without silently dropping real-world skills.
+- **Multi-Tiered Precedence Engine (INV-035)**: Skills are resolved through an implementation-agnostic hierarchy where higher tiers override lower tiers on naming collisions:
   1. **Bundled Platform Skills** (`/skills/bundled`): Core harness capabilities built directly into Seamus (Highest Priority).
   2. **Visible Session Skills** (`/workspace/skills`): Git-tracked skills inside the session repository.
   3. **Background Session Skills** (`/workspace/.skills`): Hidden, Git-tracked project skills.
@@ -432,7 +436,7 @@ class AgentConfig(BaseModel):
     mode: str = OperationalMode.PLAN.value
     system_prompt: str | None = None
     todo_implementation: TodoImplementation = TodoImplementation.DEEPAGENTS
-    skills_implementation: SkillsImplementation = SkillsImplementation.DEEPAGENTS
+    skills_implementation: SkillsImplementation = SkillsImplementation.SEAMUS
     thread_message_overlap: int = 5
     repositories: list[ExternalRepositoryConfig] = Field(default_factory=list)
     rules_patterns: list[str] = Field(default_factory=lambda: ["AGENTS.md", ".seamus/rules/**"])
@@ -454,7 +458,7 @@ class AgentConfig(BaseModel):
 - `mode`: Initial operational mode for sessions (`chat` or `plan`).
 - `system_prompt`: Optional custom prompt instructions appended to the dynamic LM-XML scaffold.
 - `todo_implementation`: Task list planning middleware (`deepagents` or `none`).
-- `skills_implementation`: Anthropic skills discovery middleware (`deepagents` or `none`).
+- `skills_implementation`: Skills discovery and disclosure implementation (`seamus` [default], `deepagents`, or `none`).
 - `thread_message_overlap`: Number of prior thread messages retained when branching or switching modes (default: `5`).
 
 ---

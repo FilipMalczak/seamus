@@ -3,7 +3,6 @@
 import logging
 import re
 from collections.abc import Sequence
-from pathlib import Path
 from typing import Any, cast
 from uuid import UUID
 
@@ -20,6 +19,9 @@ from seamus.domain.entities import AgentStatus, Thread
 from seamus.domain.modes import ALL_HARNESS_TOOLS, resolve_available_harness_tools
 from seamus.domain.resolution import resolve_session, resolve_thread
 from seamus.harness.prompt import (
+    ActiveSkillPromptItem,
+    AvailableSkillPromptItem,
+    SkillsPromptDocument,
     build_effective_system_prompt,
     build_scaffold_prompt,
     discover_context_files,
@@ -31,6 +33,7 @@ from seamus.harness.runner import (
     get_runner_registry,
 )
 from seamus.harness.sandbox import BUNDLED_SKILLS_DIR, get_sandbox_settings
+from seamus.harness.skills import discover_session_skills, parse_skill_markdown
 from seamus.harness.store import get_harness_store
 from seamus.persistence import (
     calculate_mount_paths,
@@ -73,6 +76,8 @@ class SkillInspectInfo(BaseModel):
     host_path: str | None = None
     content: str = ""
     active: bool = True
+    loaded: bool = False
+    allowed_tools: list[str] = Field(default_factory=list)
 
 
 class SubAgentInspectInfo(BaseModel):
@@ -626,32 +631,8 @@ _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*(?:\n(.*))?$", re.DOTALL)
 
 def _parse_skill_markdown(raw_text: str, default_name: str) -> tuple[str, str, str]:
     """Parse SKILL.md frontmatter and body resiliently, tolerating unquoted colons/braces."""
-    match = _FRONTMATTER_RE.match(raw_text)
-    if not match:
-        return default_name, "", raw_text.strip()
-
-    fm_text = match.group(1)
-    body = (match.group(2) or "").strip()
-
-    parsed: dict[str, str] = {}
-    current_key: str | None = None
-    current_val_lines: list[str] = []
-    for line in fm_text.splitlines():
-        key_match = re.match(r"^([A-Za-z0-9_-]+)\s*:\s*(.*)$", line)
-        if key_match:
-            if current_key is not None:
-                parsed[current_key] = " ".join(current_val_lines).strip().strip("\"'")
-            current_key = key_match.group(1)
-            val_part = key_match.group(2).strip()
-            current_val_lines = [] if val_part in (">", "|", ">-", "|-") else [val_part]
-        elif current_key is not None and (line.startswith(" ") or line.startswith("\t")):
-            current_val_lines.append(line.strip())
-    if current_key is not None:
-        parsed[current_key] = " ".join(current_val_lines).strip().strip("\"'")
-
-    name = str(parsed.get("name") or default_name).strip() or default_name
-    description = str(parsed.get("description") or "").strip()
-    return name, description, body
+    name, desc, body, _tools = parse_skill_markdown(raw_text, default_name)
+    return name, desc, body
 
 
 def extract_session_skills(
@@ -659,99 +640,30 @@ def extract_session_skills(
     session_id: UUID,
     skills_implementation: SkillsImplementation,
     repositories: Sequence[ExternalRepositoryConfig] | None = None,
+    active_skill_names: Sequence[str] | None = None,
 ) -> list[SkillInspectInfo]:
     """Discover skills across workspace, mounted projects, and system directories."""
-    if skills_implementation == SkillsImplementation.NONE:
-        return []
-
-    ws_mgr = get_workspace_manager()
-    sandbox_settings = get_sandbox_settings()
-    system_settings = get_system_settings_store().get_settings()
-    data_dir = ws_mgr.get_session_data_dir(agent_id, session_id)
-    workdir = sandbox_settings.workdir.rstrip("/")
-
-    # Precedence order (highest to lowest):
-    # 1. /skills/bundled (bundled platform skills)
-    # 2. /workspace/skills
-    # 3. /workspace/.skills
-    # 4. /projects/{mount_name}/skills, /projects/{mount_name}/.skills (in repository order)
-    # 5. /skills/system/0, /skills/system/1, ...
-    search_roots: list[tuple[Path, str, str, bool]] = []
-    if BUNDLED_SKILLS_DIR.is_dir():
-        search_roots.append((BUNDLED_SKILLS_DIR, "/skills/bundled", "Bundled", True))
-    search_roots.append((data_dir / "skills", f"{workdir}/skills", "Session (skills)", False))
-    search_roots.append((data_dir / ".skills", f"{workdir}/.skills", "Session (.skills)", False))
-
-    if repositories:
-        ext_mgr = get_external_repo_manager()
-        projects_dir = ext_mgr.get_session_projects_dir(agent_id, session_id)
-        mount_paths = calculate_mount_paths(list(repositories))
-        for repo in repositories:
-            mount_name = mount_paths.get(repo.id, "repo")
-            host_repo_dir = projects_dir / mount_name
-            search_roots.append(
-                (
-                    host_repo_dir / "skills",
-                    f"/projects/{mount_name}/skills",
-                    f"Project {mount_name}",
-                    False,
-                )
-            )
-            search_roots.append(
-                (
-                    host_repo_dir / ".skills",
-                    f"/projects/{mount_name}/.skills",
-                    f"Project {mount_name} (.skills)",
-                    False,
-                )
-            )
-
-    for idx, skill_dir_str in enumerate(system_settings.skill_directories):
-        resolved = resolve_skill_path(skill_dir_str)
-        if resolved is not None:
-            label = (
-                f"System #{idx} ({skill_dir_str})"
-                if len(system_settings.skill_directories) > 1
-                else f"System ({skill_dir_str})"
-            )
-            search_roots.append((resolved, f"/skills/system/{idx}", label, True))
-
-    seen_names: set[str] = set()
-    discovered: list[SkillInspectInfo] = []
-
-    for host_root, sandbox_root, origin_label, is_host_mounted in search_roots:
-        if not host_root.exists() or not host_root.is_dir():
-            continue
-
-        skill_files = sorted(
-            (p for p in host_root.rglob("SKILL.md") if p.is_file()),
-            key=lambda p: str(p.relative_to(host_root)),
+    skills = discover_session_skills(
+        agent_id=agent_id,
+        session_id=session_id,
+        skills_implementation=skills_implementation,
+        repositories=repositories,
+        active_skill_names=active_skill_names,
+    )
+    return [
+        SkillInspectInfo(
+            name=s.name,
+            description=s.description,
+            origin_layer=s.origin_layer,
+            sandbox_path=s.sandbox_path,
+            host_path=s.host_path,
+            content=s.content,
+            active=s.active,
+            loaded=s.loaded,
+            allowed_tools=s.allowed_tools,
         )
-        for skill_file in skill_files:
-            try:
-                raw_text = skill_file.read_text(encoding="utf-8")
-            except Exception:
-                continue
-            rel_path = skill_file.relative_to(host_root).as_posix()
-            default_name = (
-                skill_file.parent.name if skill_file.parent != host_root else skill_file.stem
-            )
-            name, description, body = _parse_skill_markdown(raw_text, default_name)
-            is_active = name not in seen_names
-            seen_names.add(name)
-            discovered.append(
-                SkillInspectInfo(
-                    name=name,
-                    description=description,
-                    origin_layer=origin_label,
-                    sandbox_path=f"{sandbox_root}/{rel_path}",
-                    host_path=str(skill_file) if is_host_mounted else None,
-                    content=body,
-                    active=is_active,
-                )
-            )
-
-    return discovered
+        for s in skills
+    ]
 
 
 def build_middleware_prompt_sections(
@@ -876,6 +788,14 @@ def build_agent_inspect_report(
                 "Could not instantiate runner for session %s during inspection", session.id
             )
 
+    skills = extract_session_skills(
+        agent.id,
+        session.id,
+        session.config.skills_implementation,
+        repositories=session.config.repositories,
+        active_skill_names=thread.active_skills if thread else None,
+    )
+
     if runner is not None:
         base_composite_prompt = runner.build_effective_system_prompt(thread=thread)
     else:
@@ -889,6 +809,23 @@ def build_agent_inspect_report(
             projects_dir=projects_dir,
             rules_patterns=session.config.rules_patterns,
         )
+        skills_doc: SkillsPromptDocument | None = None
+        if session.config.skills_implementation == SkillsImplementation.SEAMUS:
+            avail = [
+                AvailableSkillPromptItem(name=s.name, description=s.description)
+                for s in skills
+                if s.active
+            ]
+            active_items = [
+                ActiveSkillPromptItem(name=s.name, instructions=s.content)
+                for s in skills
+                if s.active and s.loaded
+            ]
+            if avail:
+                skills_doc = SkillsPromptDocument(
+                    available_skills=avail,
+                    active_skills=active_items if active_items else None,
+                )
         base_composite_prompt = build_effective_system_prompt(
             workdir=sandbox_settings.workdir,
             custom_prompt=custom_prompt or None,
@@ -898,14 +835,8 @@ def build_agent_inspect_report(
             phase=thread.phase,
             active_plan_id=session.active_plan_id,
             discovered_context=discovered_ctx,
+            skills=skills_doc,
         )
-
-    skills = extract_session_skills(
-        agent.id,
-        session.id,
-        session.config.skills_implementation,
-        repositories=session.config.repositories,
-    )
 
     middleware_prompt_sections = build_middleware_prompt_sections(
         todo_implementation=session.config.todo_implementation,

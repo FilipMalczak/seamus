@@ -500,7 +500,7 @@ def test_session_and_template_todo_implementation_config(client: TestClient) -> 
     assert tmpl_res.status_code == 200
     tmpl_data = tmpl_res.json()["config"]
     assert tmpl_data["todo_implementation"] == "deepagents"
-    assert tmpl_data["skills_implementation"] == "deepagents"
+    assert tmpl_data["skills_implementation"] == "seamus"
 
     # Invalid template value -> 422
     tmpl_data["todo_implementation"] = "invalid_choice"

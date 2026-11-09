@@ -249,6 +249,12 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0047-discovered-context-and-project-skills.md](../decisions/0047-discovered-context-and-project-skills.md), `src/seamus/harness/prompt.py`, `src/seamus/harness/runner.py`.
 - **Linked Invariants**: [INV-052](./invariants.md#inv-052-dynamic-workspace-and-project-context-discovery-and-lm-xml-injection).
 
+### REQ-043: Native LM-XML Skills System with Explicit Load/Unload Tools
+- **Description**: The harness must support a native skills engine based on dynamic LM-XML prompt structures (`<skills><available_skills>...</available_skills><active_skills>...</active_skills><guidelines>...</guidelines></skills>`) and explicit agent tools (`load_skill`, `unload_skill`). Skill discovery and layer precedence ([INV-035](./invariants.md#inv-035-skills-precedence-hierarchy)) must be strictly implementation-agnostic across `seamus`, `deepagents`, and the Inspector. Frontmatter must be parsed resiliently without failing on unquoted colons, braces, or multiline descriptions. Active skills must be scoped to the conversation thread (`thread.active_skills`), ensuring persistence within a thread while resetting cleanly on mode and thread transitions. Declared `allowed_tools` must be dynamically gated until the corresponding skill is loaded.
+- **Rationale**: Replaces DeepAgents' rigid system prompt string appending, implicit tool snooping, and strict PyYAML frontmatter parsing with explicit agent context window management and structured LM-XML.
+- **Provenance**: [0048-native-lmxml-skills-system.md](../decisions/0048-native-lmxml-skills-system.md), `src/seamus/harness/skills.py`, `src/seamus/harness/prompt.py`.
+- **Linked Invariants**: [INV-035](./invariants.md#inv-035-skills-precedence-hierarchy), [INV-053](./invariants.md#inv-053-pure-tag-structure-for-lm-xml-skills-serialization), [INV-054](./invariants.md#inv-054-thread-scoped-active-skills-lifecycle).
+
 
 ## Cross-References
 - [backlog.md](./backlog.md)
@@ -291,4 +297,5 @@ Requirements, rationale, provenance, and stable IDs.
 - [0045-ollama-local-model-provider.md](../decisions/0045-ollama-local-model-provider.md)
 - [0046-daemons-naming.md](../decisions/0046-daemons-naming.md)
 - [0047-discovered-context-and-project-skills.md](../decisions/0047-discovered-context-and-project-skills.md)
+- [0048-native-lmxml-skills-system.md](../decisions/0048-native-lmxml-skills-system.md)
 - [persistence.md](./persistence.md)

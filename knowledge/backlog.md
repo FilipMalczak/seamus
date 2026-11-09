@@ -4,12 +4,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## Core harness features
 
-
-### Native LM-XML Skills System with Load/Unload Skill Tools
-- **Description**: Replace the reliance on LangChain DeepAgents' built-in `SkillsMiddleware` with a first-party, native Seamus skills implementation. The native system will be built directly on `lmxml` dynamic prompt structures (integrating seamlessly with `DynamicSystemPromptMiddleware`) and explicit `load_skill` / `unload_skill` agent tools to disclose, activate, and deactivate skill instructions and associated tools on demand rather than relying on automatic middleware inspection and implicit prompt appending.
-- **Rationale**: DeepAgents' `SkillsMiddleware` operates as an external abstraction with rigid prompt formatting, strict PyYAML frontmatter parsing (which silently drops real-world skills with unquoted inline structures like colons or braces in descriptions, such as `bevy-assets`), and implicit disclosure rules. A native implementation based on `lmxml` dynamisms, relaxed/resilient YAML frontmatter parsing, and explicit `load_skill` / `unload_skill` tools will align directly with Seamus's structured XML system prompt architecture, provide tighter control over context window budgeting and prompt cache breakpoints, and avoid middleware ordering or prompt overriding frictions.
-- **Provenance**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md), [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md), [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md).
-
 ### Operational Execution Modes and Thread Transition Triggers (act, analyse, routing)
 - **Description**: Following the initial implementation of `chat` and `plan` modes in [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), expand the operational mode set to include:
   1. `act`: Direct task execution; executes user commands and edits promptly without upfront planning cycles.
@@ -218,6 +212,11 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## TODO
 
+### Skill Stashing Across Thread Transitions
+- **Description**: Allow operators and thread-switching tools (such as `plan` or mode transition commands) to accept a list of `retained_skills: list[str]` to copy specified active skills from the closing thread into the newly spawned thread.
+- **Rationale**: While starting fresh threads with clean active skills prevents token bloat by default, certain cross-phase skills (such as `artifacts` or domain-specific workflows) are often needed continuously across planning, discussion, and execution threads.
+- **Provenance**: [0048-native-lmxml-skills-system.md](../decisions/0048-native-lmxml-skills-system.md), `src/seamus/harness/skills.py`, `src/seamus/domain/entities.py`.
+
 ### Agent Runtime Warnings Panel in Web UI
 - **Description**: Add a runtime warnings panel or banner in the Web UI (and Agent Inspector) capturing and displaying non-fatal operational diagnostics. Candidate diagnostics include:
   1. Context discovery skips: files matched by `rules_patterns` that were skipped due to exceeding maximum size limits (e.g. > 1 MB) or failing UTF-8 binary decoding.
@@ -366,3 +365,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 - rethink styling and generally UI colors and shapes
   
+- deep-seamus variant of skills and todos (use normal skills/todos infra, but use LMXML to embed prompt parts, instead of simply appending markdown)
+
+- Tab autocomplete in shell emulator

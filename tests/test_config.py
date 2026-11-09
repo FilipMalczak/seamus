@@ -111,7 +111,10 @@ def test_agent_config_todo_and_skills_implementation_validation() -> None:
 
     cfg = AgentConfig()
     assert cfg.todo_implementation == TodoImplementation.DEEPAGENTS
-    assert cfg.skills_implementation == SkillsImplementation.DEEPAGENTS
+    assert cfg.skills_implementation == SkillsImplementation.SEAMUS
+
+    cfg_seamus = AgentConfig.model_validate({"skills_implementation": "seamus"})
+    assert cfg_seamus.skills_implementation == SkillsImplementation.SEAMUS
 
     cfg_none = AgentConfig(
         todo_implementation=TodoImplementation.NONE,
