@@ -69,7 +69,10 @@ from seamus.harness.artifacts import (
     validate_a2ui_surface,
 )
 from seamus.harness.prompt import (
+    ActiveSkillPromptItem,
+    AvailableSkillPromptItem,
     DynamicSystemPromptMiddleware,
+    SkillsPromptDocument,
     build_effective_system_prompt,
     build_scaffold_prompt,
     discover_context_files,
@@ -77,6 +80,11 @@ from seamus.harness.prompt import (
 from seamus.harness.sandbox import (
     SeamusOpenSandboxBackend,
     get_sandbox_settings,
+)
+from seamus.harness.skills import (
+    DiscoveredSkill,
+    SeamusSkillsMiddleware,
+    discover_session_skills,
 )
 from seamus.persistence import (
     GitCheckpointSaver,
@@ -888,6 +896,14 @@ class SessionAgentRunner:
         runner_middleware: list[Any] = [dynamic_prompt_middleware]
         if self.session.config.todo_implementation == TodoImplementation.DEEPAGENTS:
             runner_middleware.append(SeamusTodoListMiddleware())
+        if self.session.config.skills_implementation == SkillsImplementation.SEAMUS:
+            runner_middleware.append(
+                SeamusSkillsMiddleware(
+                    get_thread=lambda: self.session.get_open_thread(),
+                    discovered_skills_provider=lambda: self.get_discovered_skills(),
+                    on_skills_changed=lambda _skills: self.session.touch(),
+                )
+            )
 
         make_artifact_tool = StructuredTool.from_function(
             name="make_artifact",
@@ -1072,11 +1088,25 @@ class SessionAgentRunner:
             target_thread.phase,
             has_active_plan=has_active_plan,
         )
+
+        gated_tools: set[str] = set()
+        unlocked_tools: set[str] = set()
+        if self.session.config.skills_implementation == SkillsImplementation.SEAMUS:
+            all_skills = self.get_discovered_skills(thread=target_thread)
+            for s in all_skills:
+                if s.active:
+                    for t in s.allowed_tools:
+                        gated_tools.add(t)
+                        if s.loaded:
+                            unlocked_tools.add(t)
+
         filtered: list[Any] = []
         for tool_obj in request_tools:
             t_name = getattr(tool_obj, "name", None) or (
                 tool_obj.get("name") if isinstance(tool_obj, dict) else None
             )
+            if isinstance(t_name, str) and t_name in gated_tools and t_name not in unlocked_tools:
+                continue
             if isinstance(t_name, str) and t_name in ALL_HARNESS_TOOLS:
                 if t_name in allowed_harness:
                     filtered.append(tool_obj)
@@ -1419,6 +1449,25 @@ class SessionAgentRunner:
             rules_patterns=self.session.config.rules_patterns,
         )
 
+        skills_doc: SkillsPromptDocument | None = None
+        if self.session.config.skills_implementation == SkillsImplementation.SEAMUS:
+            all_skills = self.get_discovered_skills(thread=target_thread)
+            avail = [
+                AvailableSkillPromptItem(name=s.name, description=s.description)
+                for s in all_skills
+                if s.active
+            ]
+            active_items = [
+                ActiveSkillPromptItem(name=s.name, instructions=s.instructions)
+                for s in all_skills
+                if s.active and s.loaded
+            ]
+            if avail:
+                skills_doc = SkillsPromptDocument(
+                    available_skills=avail,
+                    active_skills=active_items if active_items else None,
+                )
+
         return build_effective_system_prompt(
             workdir=sandbox_settings.workdir,
             custom_prompt=custom_prompt or None,
@@ -1430,6 +1479,23 @@ class SessionAgentRunner:
             active_plan_id=self.session.active_plan_id,
             active_plan_title=self._get_active_plan_title(),
             discovered_context=discovered,
+            skills=skills_doc,
+        )
+
+    def get_discovered_skills(self, thread: Thread | None = None) -> list[DiscoveredSkill]:
+        """Return discovered skills for this session, reflecting precedence and load state."""
+        target_thread = thread or (
+            self.session.get_open_thread()
+            if self.session.is_active or self.session.threads
+            else None
+        )
+        active_skill_names = target_thread.active_skills if target_thread else []
+        return discover_session_skills(
+            agent_id=self.session.agent_id,
+            session_id=self.session.id,
+            skills_implementation=self.session.config.skills_implementation,
+            repositories=self.session.config.repositories,
+            active_skill_names=active_skill_names,
         )
 
     @property

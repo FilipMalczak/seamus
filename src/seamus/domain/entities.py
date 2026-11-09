@@ -70,6 +70,7 @@ class Thread(BaseModel):
     mode: str = ModeName.PLAN.value
     phase: str | None = PlanPhase.DISCUSS.value
     exchange_count: int = 0
+    active_skills: list[str] = Field(default_factory=list)
     events: list[Any] = Field(default_factory=list)
 
     def __init__(self, *args: Any, name: str | None = None, **kwargs: Any) -> None:

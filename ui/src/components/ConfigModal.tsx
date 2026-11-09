@@ -139,10 +139,10 @@ export function ConfigModal({
     if (
       "skills_implementation" in parsed &&
       parsed.skills_implementation !== null &&
-      !["none", "deepagents"].includes(parsed.skills_implementation)
+      !["none", "deepagents", "seamus"].includes(parsed.skills_implementation)
     ) {
       setError(
-        `Invalid skills_implementation '${parsed.skills_implementation}'. Allowed values: 'none', 'deepagents'.`
+        `Invalid skills_implementation '${parsed.skills_implementation}'. Allowed values: 'none', 'deepagents', 'seamus'.`
       );
       return;
     }
@@ -181,7 +181,7 @@ export function ConfigModal({
   const currentTodoImpl: TodoImplementation =
     parsedDraft?.todo_implementation ?? initialConfig.todo_implementation ?? "deepagents";
   const currentSkillsImpl: SkillsImplementation =
-    parsedDraft?.skills_implementation ?? initialConfig.skills_implementation ?? "deepagents";
+    parsedDraft?.skills_implementation ?? initialConfig.skills_implementation ?? "seamus";
   const currentOperationalMode =
     parsedDraft?.mode ?? initialConfig.mode ?? "plan";
   const currentSystemPrompt =
@@ -409,6 +409,7 @@ export function ConfigModal({
                       })
                     }
                   >
+                    <option value="seamus">seamus (Native LM-XML with load/unload)</option>
                     <option value="deepagents">deepagents (SkillsMiddleware)</option>
                     <option value="none">none (Disabled)</option>
                   </select>

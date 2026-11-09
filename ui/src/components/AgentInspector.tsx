@@ -525,13 +525,13 @@ export function AgentInspector({
             <div className="todos-panel-header">
               <div className="todos-setting-info">
                 <span className="text-xs text-neutral-400 font-medium">Skills Implementation:</span>
-                <span className={`todo-impl-badge impl-${report.skills_implementation || "deepagents"}`}>
-                  {report.skills_implementation || "deepagents"}
+                <span className={`todo-impl-badge impl-${report.skills_implementation || "seamus"}`}>
+                  {report.skills_implementation || "seamus"}
                 </span>
               </div>
               {report.skills && report.skills.length > 0 && (
                 <span className="text-xs text-neutral-400">
-                  {report.skills.filter((s) => s.active).length} active / {report.skills.length} discovered
+                  {report.skills.filter((s) => s.loaded).length} loaded / {report.skills.filter((s) => s.active).length} active / {report.skills.length} discovered
                 </span>
               )}
             </div>
@@ -580,6 +580,11 @@ export function AgentInspector({
                           >
                             {skill.active ? "Active" : "Shadowed"}
                           </span>
+                          {skill.loaded && (
+                            <span className="tool-backend-badge bg-sky-500/20 text-sky-400 border border-sky-500/30">
+                              Loaded
+                            </span>
+                          )}
                         </div>
 
                         <button
@@ -607,6 +612,14 @@ export function AgentInspector({
                           <>
                             <span className="param-label">Host Path:</span>
                             <code className="param-pill">{skill.host_path}</code>
+                          </>
+                        )}
+                        {skill.allowed_tools && skill.allowed_tools.length > 0 && (
+                          <>
+                            <span className="param-label">Tools:</span>
+                            {skill.allowed_tools.map((t) => (
+                              <code key={t} className="param-pill">{t}</code>
+                            ))}
                           </>
                         )}
                       </div>

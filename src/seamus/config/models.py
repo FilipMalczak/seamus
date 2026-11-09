@@ -29,6 +29,7 @@ class SkillsImplementation(StrEnum):
 
     NONE = "none"
     DEEPAGENTS = "deepagents"
+    SEAMUS = "seamus"
 
 
 class OperationalMode(StrEnum):
@@ -147,7 +148,7 @@ class AgentConfig(BaseModel):
     mode: str = OperationalMode.PLAN.value
     system_prompt: str | None = None
     todo_implementation: TodoImplementation = TodoImplementation.DEEPAGENTS
-    skills_implementation: SkillsImplementation = SkillsImplementation.DEEPAGENTS
+    skills_implementation: SkillsImplementation = SkillsImplementation.SEAMUS
     thread_message_overlap: int = 5
     repositories: list[ExternalRepositoryConfig] = Field(default_factory=list)
     sandbox_image: str | None = None

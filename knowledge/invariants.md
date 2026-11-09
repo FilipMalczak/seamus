@@ -257,6 +257,16 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-042](./requirements.md#req-042-dynamic-workspace-and-project-context-discovery-and-lm-xml-prompt-injection), [0047-discovered-context-and-project-skills.md](../decisions/0047-discovered-context-and-project-skills.md).
 - **Enforcement**: `seamus.harness.prompt.discover_context_files`, `seamus.harness.prompt.build_effective_system_prompt`, `SessionAgentRunner.build_effective_system_prompt`, `SessionAgentRunner._provide_prompt_for_request`, `extract_session_skills`, and unit tests in `tests/test_prompt.py` and `tests/test_inspector.py`.
 
+### INV-053: Pure Tag Structure for LM-XML Skills Serialization
+- **Statement**: Skills prompt documents must serialize into LM-XML using pure child element tag trees (`<skills><available_skills><list><item index="N"><name>...</name><description>...</description></item></list></available_skills><active_skills><list><item index="N"><name>...</name><instructions>...</instructions></item></list></active_skills><guidelines>...</guidelines></skills>`) with zero XML attributes. When no skills are loaded, `<active_skills>` must be omitted via `exclude_none=True`. When no skills exist across sources, the `<skills>` section must be completely omitted.
+- **Justification**: [REQ-043](./requirements.md#req-043-native-lm-xml-skills-system-with-explicit-loadunload-tools), [0048-native-lmxml-skills-system.md](../decisions/0048-native-lmxml-skills-system.md).
+- **Enforcement**: `seamus.harness.prompt.SkillsPromptDocument`, `seamus.harness.prompt.build_effective_system_prompt`, `tests/test_skills.py::test_lmxml_skills_prompt_serialization_no_attributes`.
+
+### INV-054: Thread-Scoped Active Skills Lifecycle and Dynamic Tool Gating
+- **Statement**: Active skill state must be stored on `Thread.active_skills`, persisting across checkpoints and persistence commits within a conversation thread, and resetting to empty upon operational mode switches or fresh thread spawning. When `skills_implementation == SkillsImplementation.SEAMUS`, DeepAgents `SkillsMiddleware` is bypassed (`skills=None`), `load_skill` and `unload_skill` are exposed via `SeamusSkillsMiddleware`, and tools declared in unshadowed skills' `allowed_tools` are gated from model requests until their owning skill is loaded into the active thread.
+- **Justification**: [REQ-043](./requirements.md#req-043-native-lm-xml-skills-system-with-explicit-loadunload-tools), [0048-native-lmxml-skills-system.md](../decisions/0048-native-lmxml-skills-system.md).
+- **Enforcement**: `seamus.domain.entities.Thread.active_skills`, `seamus.harness.skills.SeamusSkillsMiddleware`, `seamus.harness.runner.SessionAgentRunner.get_active_tools_for_request`, `tests/test_skills.py`.
+
 
 ## Cross-References
 - [backlog.md](./backlog.md)
@@ -302,4 +312,5 @@ Properties and rules that must always hold across the repository.
 - [0045-ollama-local-model-provider.md](../decisions/0045-ollama-local-model-provider.md)
 - [0046-daemons-naming.md](../decisions/0046-daemons-naming.md)
 - [0047-discovered-context-and-project-skills.md](../decisions/0047-discovered-context-and-project-skills.md)
+- [0048-native-lmxml-skills-system.md](../decisions/0048-native-lmxml-skills-system.md)
 - [persistence.md](./persistence.md)

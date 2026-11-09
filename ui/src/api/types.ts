@@ -6,7 +6,7 @@ export type InferenceConfig = {
 
 export type TodoImplementation = "none" | "deepagents";
 
-export type SkillsImplementation = "none" | "deepagents";
+export type SkillsImplementation = "none" | "deepagents" | "seamus";
 
 export type OperationalMode = "chat" | "plan";
 
@@ -326,6 +326,8 @@ export interface SkillInspectInfo {
   host_path?: string | null;
   content: string;
   active: boolean;
+  loaded?: boolean;
+  allowed_tools?: string[];
 }
 
 export interface MountedRepoInspectInfo {
