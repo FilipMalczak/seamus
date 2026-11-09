@@ -6,7 +6,8 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, field_validator
+import coolname
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from seamus.config.models import AgentConfig
 from seamus.domain.modes import ModeName, PlanPhase, normalize_mode_and_phase
@@ -60,14 +61,38 @@ class Thread(BaseModel):
     """A sub-conversation execution thread within a session."""
 
     id: UUID = Field(default_factory=uuid4)
-    name: str | None = None
+    custom_name: str | None = None
+    daemon_name: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     last_touched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     is_open: bool = True
     status: AgentStatus = AgentStatus.AWAITING_USER
     mode: str = ModeName.PLAN.value
     phase: str | None = PlanPhase.DISCUSS.value
+    exchange_count: int = 0
     events: list[Any] = Field(default_factory=list)
+
+    def __init__(self, *args: Any, name: str | None = None, **kwargs: Any) -> None:
+        if name is not None and "custom_name" not in kwargs:
+            kwargs["custom_name"] = name
+        super().__init__(*args, **kwargs)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_name(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "custom_name" not in data and "name" in data:
+                data["custom_name"] = data["name"]
+        return data
+
+    @property
+    def name(self) -> str | None:
+        """Effective thread slug, prioritizing user-defined slug over daemon slug."""
+        return self.custom_name or self.daemon_name or None
+
+    @name.setter
+    def name(self, val: str | None) -> None:
+        self.custom_name = validate_slug(val)
 
     @property
     def mode_label(self) -> str:
@@ -76,9 +101,9 @@ class Thread(BaseModel):
             return f"{self.mode}/{self.phase}"
         return self.mode
 
-    @field_validator("name", mode="before")
+    @field_validator("custom_name", "daemon_name", mode="before")
     @classmethod
-    def _validate_name(cls, v: str | None) -> str | None:
+    def _validate_slug_fields(cls, v: str | None) -> str | None:
         return validate_slug(v)
 
     def touch(self) -> None:
@@ -101,7 +126,8 @@ class Session(BaseModel):
 
     id: UUID = Field(default_factory=uuid4)
     agent_id: UUID
-    name: str | None = None
+    custom_name: str | None = None
+    daemon_name: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     last_touched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     config: AgentConfig
@@ -112,10 +138,37 @@ class Session(BaseModel):
     lineage: list[SessionBranchProvenance] = Field(default_factory=list)
     threads: dict[UUID, Thread] = Field(default_factory=dict)
 
-    @field_validator("name", mode="before")
+    def __init__(self, *args: Any, name: str | None = None, **kwargs: Any) -> None:
+        if name is not None and "custom_name" not in kwargs:
+            kwargs["custom_name"] = name
+        super().__init__(*args, **kwargs)
+
+    @model_validator(mode="before")
     @classmethod
-    def _validate_name(cls, v: str | None) -> str | None:
+    def _migrate_legacy_name(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "custom_name" not in data and "name" in data:
+                data["custom_name"] = data["name"]
+        return data
+
+    @property
+    def name(self) -> str | None:
+        """Effective session slug, prioritizing user-defined slug over daemon slug."""
+        return self.custom_name or self.daemon_name or None
+
+    @name.setter
+    def name(self, val: str | None) -> None:
+        self.custom_name = validate_slug(val)
+
+    @field_validator("custom_name", "daemon_name", mode="before")
+    @classmethod
+    def _validate_slug_fields(cls, v: str | None) -> str | None:
         return validate_slug(v)
+
+    @property
+    def total_exchange_count(self) -> int:
+        """Return the sum of full exchanges across all threads in the session."""
+        return sum(thread.exchange_count for thread in self.threads.values())
 
     @property
     def is_active(self) -> bool:
@@ -185,7 +238,7 @@ class Session(BaseModel):
             thread.is_open = False
 
         new_thread = Thread(
-            name=name,
+            custom_name=name,
             is_open=True,
             status=AgentStatus.AWAITING_USER,
             mode=resolved_mode,
@@ -210,15 +263,38 @@ class Agent(BaseModel):
     """An agent entity holding a complete configuration and managing sessions."""
 
     id: UUID = Field(default_factory=uuid4)
-    name: str | None = None
+    custom_name: str | None = None
+    generated_name: str | None = Field(default_factory=coolname.generate_slug)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     last_touched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     config: AgentConfig
     sessions: dict[UUID, Session] = Field(default_factory=dict)
 
-    @field_validator("name", mode="before")
+    def __init__(self, *args: Any, name: str | None = None, **kwargs: Any) -> None:
+        if name is not None and "custom_name" not in kwargs:
+            kwargs["custom_name"] = name
+        super().__init__(*args, **kwargs)
+
+    @model_validator(mode="before")
     @classmethod
-    def _validate_name(cls, v: str | None) -> str | None:
+    def _migrate_name_field(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "custom_name" not in data and "name" in data:
+                data["custom_name"] = data["name"]
+        return data
+
+    @property
+    def name(self) -> str | None:
+        """Present slug: custom_name takes precedence over generated_name."""
+        return self.custom_name or self.generated_name or None
+
+    @name.setter
+    def name(self, val: str | None) -> None:
+        self.custom_name = validate_slug(val)
+
+    @field_validator("custom_name", "generated_name", mode="before")
+    @classmethod
+    def _validate_name_slugs(cls, v: str | None) -> str | None:
         return validate_slug(v)
 
     def touch(self) -> None:
@@ -241,7 +317,7 @@ class Agent(BaseModel):
         resolved_lineage = lineage if lineage is not None else ([provenance] if provenance else [])
         session = Session(
             agent_id=self.id,
-            name=name,
+            custom_name=name,
             config=session_config,
             provenance=provenance,
             lineage=resolved_lineage,

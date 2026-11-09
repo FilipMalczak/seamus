@@ -24,7 +24,7 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `SkillsImplementation`: Supported skills discovery and disclosure middleware implementations (`none`, `deepagents`).
 - `OperationalMode`: Supported operational execution modes (`chat`, `plan`).
 - `ExternalRepositoryConfig`: External Git repository mount configuration (`id`, `url`, `branch`, optional `credentials_ref` referencing an OpenBao secret).
-- `AgentConfig`: Agent and session configuration model (inference settings, model name defaulting to `openai/gpt-oss-120b`, operational `mode` defaulting to `plan`, optional system prompt, `todo_implementation` and `skills_implementation` both defaulting to `deepagents`, `thread_message_overlap` defaulting to `5`, and `repositories: list[ExternalRepositoryConfig]` defaulting to `[]`). Provides `is_complete()`, `validate_complete()`, and `copy_with_overrides()` for inheritance.
+- `AgentConfig`: Agent and session configuration model (inference settings, model name defaulting to `openai/gpt-oss-120b`, operational `mode` defaulting to `plan`, optional system prompt, `todo_implementation` and `skills_implementation` both defaulting to `deepagents`, `thread_message_overlap` defaulting to `5`, `repositories: list[ExternalRepositoryConfig]` defaulting to `[]`, and `daemons: DaemonsConfig` defaulting to enabled naming via `openai/gpt-oss-20b`). Provides `is_complete()`, `validate_complete()`, and `copy_with_overrides()` for inheritance.
 - `SystemSettings`: System-wide configuration model (`skill_directories: list[str]`) not scoped to any agent or session.
 - `ConfigTemplateStore`: Persistent container for the service-wide singleton `AgentConfig` template, backed by Gitea repository `system` with first-run defaults.
 - `SystemSettingsStore`: Persistent container for service-wide `SystemSettings`, backed by Gitea repository `system` with first-run defaults.
@@ -34,9 +34,9 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `AgentStatus`: Enumeration of thread states (`AWAITING_USER`, `AWAITING_LLM`, `EXECUTING_TOOL`, `ERROR`).
 - `SessionStatus`: Enumeration of session lifecycle states (`ACTIVE`, `KILLED`, `FAILED`).
 - `SessionBranchProvenance`: Data model recording branching lineage (`parent_session_id`, `parent_message_id`, `parent_session_name`, `branched_at`).
-- `Thread`: Models conversation thread state, open/closed flag, creation and touched timestamps, active `mode`, optional `phase`, computed `mode_label`, empty check `is_empty`, and past AG-UI event records.
-- `Session`: Models an ongoing conversation with an agent, holding an isolated `AgentConfig`, lifecycle `status`, `active_plan_id`, optional `provenance` (immediate parent), cumulative `lineage` (multi-level branch provenance chain), a dedicated runner, and child threads with `create_thread(reuse_empty=True)` empty-thread reuse.
-- `Agent`: Models an agent entity holding a complete `AgentConfig` and child sessions.
+- `Thread`: Models conversation thread state, parallel slugs (`custom_name`, `daemon_name`), `exchange_count`, open/closed flag, creation and touched timestamps, active `mode`, optional `phase`, computed `mode_label`, empty check `is_empty`, and past AG-UI event records.
+- `Session`: Models an ongoing conversation with an agent, holding an isolated `AgentConfig`, parallel slugs (`custom_name`, `daemon_name`), `total_exchange_count`, lifecycle `status`, `active_plan_id`, optional `provenance` (immediate parent), cumulative `lineage` (multi-level branch provenance chain), a dedicated runner, and child threads with `create_thread(reuse_empty=True)` empty-thread reuse.
+- `Agent`: Models an agent entity holding a complete `AgentConfig`, parallel slugs (`custom_name`, deterministic `generated_name` via `coolname`), and child sessions.
 - `Resolution`: Identifier resolution functions mapping UUID or slug strings to entities within their scope.
 - `Operational Modes` (`seamus.domain.modes`): Declarative descriptors (`ModeDescriptor`, `PhaseDescriptor`, `MountPolicy`) defining operational modes (`CHAT_MODE`, `PLAN_MODE` with `discuss`, `make`, `execute` phases), tool gating, and hardware container mount policies.
 
@@ -57,6 +57,15 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `build_agent_inspect_report`: Harness inspection service extracting semi-live agent state from active `SessionAgentRunner` instances or persisted Gitea branch state.
 - `EventBroadcaster`: Fan-out pub-sub queue mechanism for multiplexing real-time AG-UI SSE events to multiple active thread consumers.
 - `HarnessStore`: In-memory repository managing agents, sessions, and threads with scope-bound slug uniqueness.
+
+### `seamus.harness.daemons` (`src/seamus/harness/daemons`)
+- Non-agentic background daemon utilities and naming services.
+- `DaemonNamingConfig` & `DaemonsConfig`: Configuration models under `AgentConfig` configuring daemon services (`enabled`, `provider` inheriting agent inference by default, explicit `model`).
+- `parse_loose_slug`: Preemptive loose parser unwrapping markdown code blocks, quotes, blockquotes, and label prefixes, sanitizing into valid slugs and resolving collisions against occupied slugs via numeric suffixes (`-2`, `-3`).
+- `format_thread_history`: Formats thread message trajectories, created artifacts (`[Artifact: <kind> "<title>"]`), and user actions (`[Artifact Action: ...]`) into clean prompt transcripts.
+- `invoke_daemon`: One-shot prompt runner using plain `Instructions: ... Input: ... Output:` prefill against OpenAI-compatible and Ollama endpoints without tools or multi-turn state.
+- `is_stepback_trigger`: Evaluates the doubling stepback condition $N = 2^k - 1$ ($1, 3, 7, 15, \dots$).
+- `execute_thread_naming` & `execute_session_naming`: Asynchronous background daemons generating and assigning thread and session slugs.
 
 ### `seamus.server` (`src/seamus/server`)
 - Web framework and protocol mapping.
@@ -160,6 +169,7 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - [0042-mount-external-git-repositories.md](../decisions/0042-mount-external-git-repositories.md)
 - [0044-interactive-web-terminal.md](../decisions/0044-interactive-web-terminal.md)
 - [0045-ollama-local-model-provider.md](../decisions/0045-ollama-local-model-provider.md)
+- [0046-daemons-naming.md](../decisions/0046-daemons-naming.md)
 - [artifacts.md](./artifacts.md)
 - [architecture.md](./architecture.md)
 - [persistence.md](./persistence.md)

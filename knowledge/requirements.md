@@ -225,6 +225,18 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0045-ollama-local-model-provider.md](../decisions/0045-ollama-local-model-provider.md), `src/seamus/config/models.py`, `src/seamus/harness/runner.py`, `docker-compose.yml`, `ui/src/components/ConfigModal.tsx`.
 - **Linked Invariants**: [INV-048](./invariants.md#inv-048-ollama-healthcheck-and-active-model-execution-management).
 
+### REQ-039: Non-Agentic Daemons & Geometric Stepback Thread/Session Naming
+- **Description**: The system must support non-agentic daemons (one-shot LLM invocations using plain `Instructions: ... Input: ... Output:` prefill prompts) configured per-agent under `agent_config.daemons.naming` (with `enabled`, optional `provider` inheriting the agent's main inference configuration, and explicit mandatory `model` when enabled; `enabled: false` with pre-configured details is valid). The harness must count full completed user/assistant exchanges (from user input to assistant text completion or blocking artifact moment, rounding down to exclude in-progress turns) and trigger naming on a geometric stepback schedule ($N \in \{2^k - 1 \mid k \ge 1\} = \{1, 3, 7, 15, \dots\}$). Thread naming runs per-thread, while session naming runs for multi-thread sessions based on aggregate session exchanges across all threads (with single-thread sessions mirroring the thread slug, sans conflicts). Entity slugs are stored using a parallel slug model (`custom_name` prioritized over `daemon_name`, falling back automatically when custom names are cleared). LLM outputs are defensively cleaned via preemptive loose parsing (`parse_loose_slug`) to unwrap markdown code fences, quotes, blockquotes, and label prefixes.
+- **Rationale**: Provides automatic, human-readable slug generation using fast, cheap models without the performance and latency overhead of full agent loops, while guaranteeing that manual user customizations are strictly preserved.
+- **Provenance**: [0046-daemons-naming.md](../decisions/0046-daemons-naming.md), `src/seamus/harness/daemons/`.
+- **Linked Invariants**: [INV-049](./invariants.md#inv-049-non-agentic-daemon-execution-geometric-stepback-and-parallel-slug-priority).
+
+### REQ-040: Deterministic Agent Slug Generation via Coolname
+- **Description**: When an agent is created, a URL-safe slug must be generated deterministically using `coolname` (e.g. `sticky-grinning-skua-of-camouflage`). The agent entity adopts the parallel slug model where `custom_name` takes precedence over `generated_name`, and clearing `custom_name` automatically falls back to `generated_name`. Slug uniqueness is strictly enforced across registered agents upon creation and updates.
+- **Rationale**: Ensures every agent has a readable, friendly, URL-safe identifier out-of-the-box without requiring manual naming, while preserving full user customization and seamless fallback.
+- **Provenance**: [0046-daemons-naming.md](../decisions/0046-daemons-naming.md), `src/seamus/domain/entities.py`, `src/seamus/harness/store.py`.
+- **Linked Invariants**: [INV-050](./invariants.md#inv-050-deterministic-agent-slug-generation-and-parallel-fallback).
+
 
 ## Cross-References
 - [backlog.md](./backlog.md)
@@ -265,4 +277,5 @@ Requirements, rationale, provenance, and stable IDs.
 - [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md)
 - [0042-mount-external-git-repositories.md](../decisions/0042-mount-external-git-repositories.md)
 - [0045-ollama-local-model-provider.md](../decisions/0045-ollama-local-model-provider.md)
+- [0046-daemons-naming.md](../decisions/0046-daemons-naming.md)
 - [persistence.md](./persistence.md)

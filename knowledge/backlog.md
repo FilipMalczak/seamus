@@ -4,6 +4,12 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## Deferred
 
+### Daemon Manifest Normalization, Generic Event Filters, and Custom Selection Strategies
+- **Description**: Extracting and normalizing daemon manifests, defining arbitrary trigger event types and filter pipelines, and supporting customizable daemon execution selection strategies beyond the initial geometric step-off ($2^k - 1$).
+- **Why Deferred**: One-shot daemons are currently scoped specifically to thread and session naming using fixed geometric stepback and user-turn boundaries, keeping the engine minimal and focused.
+- **Revisit Trigger**: When additional background daemon capabilities are introduced (e.g. summarization, tag extraction, memory compaction) requiring varied trigger events and custom scheduling algorithms.
+- **Provenance**: [0046-daemons-naming.md](../decisions/0046-daemons-naming.md).
+
 ### GPU Passthrough Acceleration for Containerized Ollama
 - **Description**: Add GPU acceleration support (e.g. NVIDIA Container Toolkit `--gpus all` directives in `docker-compose.yml` or ROCm runtime for AMD) and direct host socket bridging for Ollama inference in Seamus.
 - **Why Deferred**: Running Ollama in CPU mode via containerized `ollama/ollama:latest` on the internal Docker network provides out-of-the-box local inference without requiring host GPU drivers, CUDA setups, or NVIDIA Container Toolkit installation.
@@ -265,14 +271,6 @@ Persistent record of work intentionally left outstanding across the project, mai
      - Test concurrent sessions/threads hitting the local Ollama instance simultaneously and verify request queuing and CPU contention.
 - **Rationale**: While baseline containerized execution, candidate endpoint probing, model pre-loading, and auto-pull work correctly, local inference introduces unique latencies and resource constraints. Usability enhancements and thorough test coverage will ensure seamless day-to-day developer workflows.
 - **Provenance**: [0045-ollama-local-model-provider.md](../decisions/0045-ollama-local-model-provider.md), `src/seamus/harness/runner.py`, `ui/src/components/ConfigModal.tsx`.
-
-### Entity Auto-Naming and UX Daemons Architecture
-- **Description**: Implement automated naming for entities across Seamus:
-  1. Agents: automatically generate randomized, memorable multi-word slugs (e.g., `brave-curie-42`).
-  2. Sessions and Threads: automatically generate descriptive names using a lightweight, dedicated "namer" agent configured at the agent level.
-  This forms the first component of a broader "UX Daemons" initiative: lightweight, dedicated background agents that handle peripheral UX automation (entity naming, proactive todo management, branch summaries) without interfering with primary task execution.
-- **Rationale**: Manually naming agents, sessions, and threads creates unnecessary friction; automated descriptive naming keeps navigation clean and organized.
-- **Provenance**: [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md), [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [vocabulary.md](./vocabulary.md).
 
 ### Minimalistic Dashboard View for Agents and Sessions
 - **Description**: Implement an alternative, lightweight "Dashboard" view alongside the rich developer/IDE-like navigation tree and inspector:

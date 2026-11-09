@@ -259,6 +259,8 @@ class GitWorkspaceManager:
         config_payload = {
             "id": str(agent.id),
             "name": agent.name,
+            "custom_name": agent.custom_name,
+            "generated_name": agent.generated_name,
             "created_at": agent.created_at.isoformat(),
             "config": agent.config.model_dump(),
         }
@@ -562,6 +564,8 @@ class GitWorkspaceManager:
         config_payload = {
             "id": str(session.id),
             "agent_id": str(session.agent_id),
+            "custom_name": session.custom_name,
+            "daemon_name": session.daemon_name,
             "name": session.name,
             "created_at": session.created_at.isoformat(),
             "config": raw_config,
@@ -574,7 +578,10 @@ class GitWorkspaceManager:
             "threads": [
                 {
                     "id": str(t.id),
+                    "custom_name": t.custom_name,
+                    "daemon_name": t.daemon_name,
                     "name": t.name,
+                    "exchange_count": t.exchange_count,
                     "created_at": t.created_at.isoformat(),
                     "is_open": t.is_open,
                     "status": t.status.value,
