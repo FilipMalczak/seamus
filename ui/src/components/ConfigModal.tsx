@@ -665,6 +665,62 @@ export function ConfigModal({
 
               <div className="config-field">
                 <div className="config-label-row">
+                  <label className="config-label">Rules & Context Patterns (rules_patterns)</label>
+                  <button
+                    type="button"
+                    className="config-clear-btn"
+                    onClick={() =>
+                      updateDraft((d) => {
+                        if (!Array.isArray(d.rules_patterns)) {
+                          d.rules_patterns = ["AGENTS.md", ".seamus/rules/**"];
+                        }
+                        d.rules_patterns.push("");
+                      })
+                    }
+                  >
+                    + Add Pattern
+                  </button>
+                </div>
+                <div className="text-xs text-zinc-400 mb-2">
+                  Glob patterns searched in <code>/workspace</code> and mounted <code>/projects/*</code>, injected into dynamic prompt <code>&lt;discovered_context&gt;</code>.
+                </div>
+                {Array.isArray(parsedDraft.rules_patterns) && parsedDraft.rules_patterns.length > 0 ? (
+                  <div className="space-y-2 mb-2">
+                    {parsedDraft.rules_patterns.map((pat: string, idx: number) => (
+                      <div key={idx} className="flex items-center gap-2 bg-zinc-900/60 p-2 rounded border border-zinc-800">
+                        <input
+                          type="text"
+                          className="config-input flex-1"
+                          placeholder="e.g. AGENTS.md or .seamus/rules/**"
+                          value={pat || ""}
+                          onChange={(e) =>
+                            updateDraft((d) => {
+                              d.rules_patterns[idx] = e.target.value;
+                            })
+                          }
+                        />
+                        <button
+                          type="button"
+                          className="icon-btn text-rose-400 hover:text-rose-300"
+                          title="Remove pattern"
+                          onClick={() =>
+                            updateDraft((d) => {
+                              d.rules_patterns.splice(idx, 1);
+                            })
+                          }
+                        >
+                          <X className="size-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-xs text-zinc-500 italic mb-2">No rules patterns defined (defaults to AGENTS.md and .seamus/rules/**).</div>
+                )}
+              </div>
+
+              <div className="config-field">
+                <div className="config-label-row">
                   <label className="config-label">Mounted Git Repositories (/projects/)</label>
                   <button
                     type="button"

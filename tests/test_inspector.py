@@ -19,7 +19,7 @@ from seamus.harness.inspector import (
     get_default_tools_inspect_info,
 )
 from seamus.harness.runner import reset_runner_registry
-from seamus.harness.store import HarnessStore, reset_harness_store
+from seamus.harness.store import HarnessStore, get_harness_store, reset_harness_store
 from seamus.persistence import get_workspace_manager
 from seamus.server.app import create_app
 
@@ -439,3 +439,142 @@ def test_inspector_skills_discovery_and_project_rules(
     assert report_none.skills == []
     assert "## Skills System" not in report_none.prompts.composite
     assert "write_todos" not in report_none.prompts.composite
+
+
+def test_inspector_and_backend_mounted_project_skills_precedence(tmp_path: Path) -> None:
+    """Verify mounted project skills discovery, sandbox sources, and precedence hierarchy."""
+    from seamus.config.models import ExternalRepositoryConfig
+    from seamus.harness.inspector import extract_session_skills
+    from seamus.harness.sandbox import SandboxSettings, SeamusOpenSandboxBackend
+    from seamus.persistence import get_external_repo_manager
+
+    store = get_harness_store()
+    config = AgentConfig(
+        inference=InferenceConfig(api_key="key"),
+        model_name="test-model",
+        skills_implementation=SkillsImplementation.DEEPAGENTS,
+    )
+    agent = store.create_agent(config=config, name="repo-skills-agent")
+    session = list(agent.sessions.values())[0]
+
+    ws_mgr = get_workspace_manager()
+    ext_mgr = get_external_repo_manager()
+
+    data_dir = ws_mgr.get_session_data_dir(agent.id, session.id)
+    projects_dir = ext_mgr.get_session_projects_dir(agent.id, session.id)
+
+    # 1. Workspace defines "shared-skill"
+    ws_skills_dir = data_dir / "skills" / "shared-skill"
+    ws_skills_dir.mkdir(parents=True)
+    (ws_skills_dir / "SKILL.md").write_text(
+        "---\nname: shared-skill\ndescription: Workspace version\n---\nWorkspace body\n",
+        encoding="utf-8",
+    )
+
+    # 2. Project Alpha (first in config) defines "shared-skill" and "alpha-skill"
+    alpha_dir = projects_dir / "repo-alpha"
+    alpha_shared = alpha_dir / "skills" / "shared-skill"
+    alpha_shared.mkdir(parents=True)
+    (alpha_shared / "SKILL.md").write_text(
+        "---\nname: shared-skill\ndescription: Alpha version\n---\nAlpha body\n",
+        encoding="utf-8",
+    )
+    alpha_unique = alpha_dir / ".skills" / "alpha-unique"
+    alpha_unique.mkdir(parents=True)
+    (alpha_unique / "SKILL.md").write_text(
+        "---\nname: alpha-unique\ndescription: Alpha unique\n---\nAlpha unique body\n",
+        encoding="utf-8",
+    )
+
+    # 3. Project Beta (second in config) defines "shared-skill", "alpha-unique", and "beta-unique"
+    beta_dir = projects_dir / "repo-beta"
+    beta_shared = beta_dir / "skills" / "shared-skill"
+    beta_shared.mkdir(parents=True)
+    (beta_shared / "SKILL.md").write_text(
+        "---\nname: shared-skill\ndescription: Beta version\n---\nBeta body\n",
+        encoding="utf-8",
+    )
+    beta_colliding = beta_dir / "skills" / "alpha-unique"
+    beta_colliding.mkdir(parents=True)
+    (beta_colliding / "SKILL.md").write_text(
+        "---\nname: alpha-unique\ndescription: Beta overriding attempt\n---\nBeta colliding body\n",
+        encoding="utf-8",
+    )
+    beta_unique = beta_dir / "skills" / "beta-unique"
+    beta_unique.mkdir(parents=True)
+    (beta_unique / "SKILL.md").write_text(
+        "---\nname: beta-unique\ndescription: Beta unique\n---\nBeta unique body\n",
+        encoding="utf-8",
+    )
+
+    repos = [
+        ExternalRepositoryConfig(
+            id="alpha", url="https://github.com/org/repo-alpha.git", branch="main"
+        ),
+        ExternalRepositoryConfig(
+            id="beta", url="https://github.com/org/repo-beta.git", branch="main"
+        ),
+    ]
+    session.config.repositories = repos
+
+    # 4. Test extract_session_skills (Inspector discovery order: first-seen wins)
+    discovered = extract_session_skills(
+        agent.id,
+        session.id,
+        SkillsImplementation.DEEPAGENTS,
+        repositories=repos,
+    )
+
+    # shared-skill: Workspace is active, Alpha and Beta are shadowed
+    shared_matches = [s for s in discovered if s.name == "shared-skill"]
+    assert len(shared_matches) == 3
+    assert shared_matches[0].origin_layer == "Session (skills)"
+    assert shared_matches[0].active is True
+    assert shared_matches[1].origin_layer == "Project repo-alpha"
+    assert shared_matches[1].active is False
+    assert shared_matches[2].origin_layer == "Project repo-beta"
+    assert shared_matches[2].active is False
+
+    # alpha-unique: Project Alpha active, Project Beta shadowed (Alpha > Beta)
+    alpha_matches = [s for s in discovered if s.name == "alpha-unique"]
+    assert len(alpha_matches) == 2
+    assert alpha_matches[0].origin_layer == "Project repo-alpha (.skills)"
+    assert alpha_matches[0].active is True
+    assert alpha_matches[1].origin_layer == "Project repo-beta"
+    assert alpha_matches[1].active is False
+
+    # beta-unique: Project Beta is active
+    beta_matches = [s for s in discovered if s.name == "beta-unique"]
+    assert len(beta_matches) == 1
+    assert beta_matches[0].origin_layer == "Project repo-beta"
+    assert beta_matches[0].active is True
+
+    # 5. Test get_skill_sources (DeepAgents order: last-one-wins)
+    backend = SeamusOpenSandboxBackend(
+        agent_id=agent.id,
+        session_id=session.id,
+        data_dir=data_dir,
+        artifacts_dir=ws_mgr.get_session_artifacts_dir(agent.id, session.id),
+        settings=SandboxSettings(workdir="/workspace"),
+        skill_directories=[],
+        repositories=repos,
+    )
+    sources = backend.get_skill_sources()
+    source_paths = [s[0] for s in sources]
+
+    # Precedence order in DeepAgents (later in list overrides earlier):
+    # projects[last] (.skills then skills), projects[0] (.skills then skills), workspace, bundled
+    idx_beta_dot = source_paths.index("/projects/repo-beta/.skills")
+    idx_beta_plain = source_paths.index("/projects/repo-beta/skills")
+    idx_alpha_dot = source_paths.index("/projects/repo-alpha/.skills")
+    idx_alpha_plain = source_paths.index("/projects/repo-alpha/skills")
+    idx_ws_dot = source_paths.index("/workspace/.skills")
+    idx_ws_plain = source_paths.index("/workspace/skills")
+    idx_bundled = source_paths.index("/skills/bundled")
+
+    # repo-beta comes before repo-alpha (so repo-alpha wins against repo-beta)
+    assert idx_beta_dot < idx_beta_plain < idx_alpha_dot < idx_alpha_plain
+    # repo-alpha comes before workspace (so workspace wins against projects)
+    assert idx_alpha_plain < idx_ws_dot < idx_ws_plain
+    # workspace comes before bundled (so bundled wins against workspace)
+    assert idx_ws_plain < idx_bundled

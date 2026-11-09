@@ -385,10 +385,12 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
         # Reverse system sources: system[last] lowest priority, system[0] highest among system
         sources: list[tuple[str, str]] = list(reversed(system_sources))
 
-        # Append auxiliary project skills (dotted first, non-dotted last so non-dotted wins)
+        # Append auxiliary project skills in reverse order:
+        # projects[last] is lowest priority among projects, projects[0] is highest.
+        # Within each project, dotted (.skills) first, non-dotted (skills) last so non-dotted wins.
         if self.repositories:
             mount_paths = calculate_mount_paths(self.repositories)
-            for repo in self.repositories:
+            for repo in reversed(self.repositories):
                 mount_name = mount_paths.get(repo.id, "repo")
                 sources.append(
                     (f"/projects/{mount_name}/.skills", f"Project {mount_name} (.skills)")

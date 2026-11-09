@@ -11,6 +11,7 @@ from deepagents.middleware.skills import SKILLS_SYSTEM_PROMPT, SkillMetadata, Sk
 from pydantic import BaseModel, Field
 
 from seamus.config.models import (
+    ExternalRepositoryConfig,
     SkillsImplementation,
     TodoImplementation,
 )
@@ -21,6 +22,7 @@ from seamus.domain.resolution import resolve_session, resolve_thread
 from seamus.harness.prompt import (
     build_effective_system_prompt,
     build_scaffold_prompt,
+    discover_context_files,
 )
 from seamus.harness.runner import (
     SEAMUS_WRITE_TODOS_SYSTEM_PROMPT,
@@ -34,6 +36,7 @@ from seamus.persistence import (
     calculate_mount_paths,
     derive_project_id,
     extract_readable_messages,
+    get_external_repo_manager,
     get_workspace_manager,
 )
 
@@ -655,8 +658,9 @@ def extract_session_skills(
     agent_id: UUID,
     session_id: UUID,
     skills_implementation: SkillsImplementation,
+    repositories: Sequence[ExternalRepositoryConfig] | None = None,
 ) -> list[SkillInspectInfo]:
-    """Discover skills across workspace and system skill directories in precedence order."""
+    """Discover skills across workspace, mounted projects, and system directories."""
     if skills_implementation == SkillsImplementation.NONE:
         return []
 
@@ -670,12 +674,37 @@ def extract_session_skills(
     # 1. /skills/bundled (bundled platform skills)
     # 2. /workspace/skills
     # 3. /workspace/.skills
-    # 4. /skills/system/0, /skills/system/1, ...
+    # 4. /projects/{mount_name}/skills, /projects/{mount_name}/.skills (in repository order)
+    # 5. /skills/system/0, /skills/system/1, ...
     search_roots: list[tuple[Path, str, str, bool]] = []
     if BUNDLED_SKILLS_DIR.is_dir():
         search_roots.append((BUNDLED_SKILLS_DIR, "/skills/bundled", "Bundled", True))
     search_roots.append((data_dir / "skills", f"{workdir}/skills", "Session (skills)", False))
     search_roots.append((data_dir / ".skills", f"{workdir}/.skills", "Session (.skills)", False))
+
+    if repositories:
+        ext_mgr = get_external_repo_manager()
+        projects_dir = ext_mgr.get_session_projects_dir(agent_id, session_id)
+        mount_paths = calculate_mount_paths(list(repositories))
+        for repo in repositories:
+            mount_name = mount_paths.get(repo.id, "repo")
+            host_repo_dir = projects_dir / mount_name
+            search_roots.append(
+                (
+                    host_repo_dir / "skills",
+                    f"/projects/{mount_name}/skills",
+                    f"Project {mount_name}",
+                    False,
+                )
+            )
+            search_roots.append(
+                (
+                    host_repo_dir / ".skills",
+                    f"/projects/{mount_name}/.skills",
+                    f"Project {mount_name} (.skills)",
+                    False,
+                )
+            )
 
     for idx, skill_dir_str in enumerate(system_settings.skill_directories):
         resolved = resolve_skill_path(skill_dir_str)
@@ -847,10 +876,20 @@ def build_agent_inspect_report(
                 "Could not instantiate runner for session %s during inspection", session.id
             )
 
-    base_composite_prompt = (
-        runner.build_effective_system_prompt(thread=thread)
-        if runner is not None
-        else build_effective_system_prompt(
+    if runner is not None:
+        base_composite_prompt = runner.build_effective_system_prompt(thread=thread)
+    else:
+        ws_mgr = get_workspace_manager()
+        ext_mgr = get_external_repo_manager()
+        data_dir = ws_mgr.get_session_data_dir(agent.id, session.id)
+        projects_dir = ext_mgr.get_session_projects_dir(agent.id, session.id)
+        discovered_ctx = discover_context_files(
+            workspace_data_dir=data_dir,
+            repositories=session.config.repositories,
+            projects_dir=projects_dir,
+            rules_patterns=session.config.rules_patterns,
+        )
+        base_composite_prompt = build_effective_system_prompt(
             workdir=sandbox_settings.workdir,
             custom_prompt=custom_prompt or None,
             session_id=str(session.id),
@@ -858,10 +897,15 @@ def build_agent_inspect_report(
             mode=thread.mode,
             phase=thread.phase,
             active_plan_id=session.active_plan_id,
+            discovered_context=discovered_ctx,
         )
-    )
 
-    skills = extract_session_skills(agent.id, session.id, session.config.skills_implementation)
+    skills = extract_session_skills(
+        agent.id,
+        session.id,
+        session.config.skills_implementation,
+        repositories=session.config.repositories,
+    )
 
     middleware_prompt_sections = build_middleware_prompt_sections(
         todo_implementation=session.config.todo_implementation,

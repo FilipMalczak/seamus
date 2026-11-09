@@ -237,6 +237,18 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0046-daemons-naming.md](../decisions/0046-daemons-naming.md), `src/seamus/domain/entities.py`, `src/seamus/harness/store.py`.
 - **Linked Invariants**: [INV-050](./invariants.md#inv-050-deterministic-agent-slug-generation-and-parallel-fallback).
 
+### REQ-041: Configuration Model and UI Symmetry Across Scopes
+- **Description**: Configuration definitions and UI modal editing interfaces must maintain an identical shape across `ConfigTemplate`, `AgentConfig`, and `SessionConfig`. All three scopes must provide access to `rules_patterns`, `repositories`, `inference`, `mode`, `system_prompt`, `todo_implementation`, `skills_implementation`, `thread_message_overlap`, `sandbox_image`, and `daemons`. Config templates are permitted to remain partially complete (e.g. omitting API keys or base URLs), but must conform to the unified configuration schema.
+- **Rationale**: Eliminates cognitive friction and schema divergence between service-wide templates, agent defaults, and active session overrides.
+- **Provenance**: [0047-discovered-context-and-project-skills.md](../decisions/0047-discovered-context-and-project-skills.md), `src/seamus/config/models.py`, `ui/src/components/ConfigModal.tsx`.
+- **Linked Invariants**: [INV-051](./invariants.md#inv-051-configuration-model-and-ui-symmetry-across-scopes).
+
+### REQ-042: Dynamic Workspace and Project Context Discovery and LM-XML Prompt Injection
+- **Description**: The agent harness must dynamically evaluate configurable glob patterns (`rules_patterns`, defaulting to `["AGENTS.md", ".seamus/rules/**"]`) prior to model turns across `/workspace` and mounted external repositories (`/projects/{mount_name}` in the order configured in `session.config.repositories`). Regular files matching the patterns must be read as UTF-8 (skipping `.git/`, binary files, and files > 1 MB) and injected into the dynamic system prompt as `<discovered_context>`, sorted alphabetically per wildcard pattern with earliest matches preserved on duplicates. If no context files match, the section is completely omitted.
+- **Rationale**: Keeps agents synchronized with repository-level rules and guidelines dynamically and deterministically without confusing static project rules with mutable agent memory.
+- **Provenance**: [0047-discovered-context-and-project-skills.md](../decisions/0047-discovered-context-and-project-skills.md), `src/seamus/harness/prompt.py`, `src/seamus/harness/runner.py`.
+- **Linked Invariants**: [INV-052](./invariants.md#inv-052-dynamic-workspace-and-project-context-discovery-and-lm-xml-injection).
+
 
 ## Cross-References
 - [backlog.md](./backlog.md)
@@ -278,4 +290,5 @@ Requirements, rationale, provenance, and stable IDs.
 - [0042-mount-external-git-repositories.md](../decisions/0042-mount-external-git-repositories.md)
 - [0045-ollama-local-model-provider.md](../decisions/0045-ollama-local-model-provider.md)
 - [0046-daemons-naming.md](../decisions/0046-daemons-naming.md)
+- [0047-discovered-context-and-project-skills.md](../decisions/0047-discovered-context-and-project-skills.md)
 - [persistence.md](./persistence.md)

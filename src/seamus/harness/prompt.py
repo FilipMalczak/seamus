@@ -1,7 +1,9 @@
 """Dynamic, structured XML system prompt engineering and runtime middleware via lmxml."""
 
-from collections.abc import Awaitable, Callable
+import logging
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import lmxml
@@ -9,6 +11,7 @@ from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResp
 from langchain_core.messages import AIMessage, SystemMessage
 from pydantic import BaseModel, Field
 
+from seamus.config.models import ExternalRepositoryConfig
 from seamus.domain.modes import (
     ModeName,
     PlanPhase,
@@ -17,8 +20,12 @@ from seamus.domain.modes import (
     resolve_available_harness_tools,
     resolve_mount_policy,
 )
+from seamus.persistence.external_repo import calculate_mount_paths
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_OPERATIONAL_DIR = "/workspace"
+DEFAULT_RULES_PATTERNS: list[str] = ["AGENTS.md", ".seamus/rules/**"]
 
 
 class OperatingEnvironment(BaseModel):
@@ -92,6 +99,13 @@ class UserInquiry(BaseModel):
     interaction_rules: list[str] = Field(default_factory=list)
 
 
+class DiscoveredContextItem(BaseModel):
+    """File path and contents discovered from workspace and mounted external repositories."""
+
+    path: str
+    content: str
+
+
 class SystemPromptDocument(BaseModel):
     """Complete structured system prompt for Seamus agents."""
 
@@ -103,6 +117,7 @@ class SystemPromptDocument(BaseModel):
     user_inquiry: UserInquiry | None = None
     communication_style: list[str] = Field(default_factory=list)
     dynamic_context: DynamicContext | None = None
+    discovered_context: list[DiscoveredContextItem] | None = None
     custom_instructions: str | None = None
 
 
@@ -720,6 +735,127 @@ def build_scaffold_prompt(
     return lmxml.dumps(dumped)
 
 
+def _match_pattern_files(base_dir: Path, pattern: str) -> list[Path]:
+    """Find all regular files matching pattern under base_dir, sorted alphabetically.
+
+    Supports recursive wildcards (e.g. .seamus/rules/**), exact relative paths,
+    and excludes .git directories.
+    """
+    norm = pattern.strip().lstrip("/")
+    if not norm:
+        return []
+
+    # Map trailing /** to /**/* to match all files recursively
+    if norm.endswith("/**"):
+        glob_pat = norm[:-3] + "/**/*"
+    elif norm == "**":
+        glob_pat = "**/*"
+    else:
+        glob_pat = norm
+
+    results: list[Path] = []
+    # Fast path for non-wildcard patterns
+    if not any(char in glob_pat for char in "*?[]"):
+        target = base_dir / norm
+        if target.is_file():
+            rel = target.relative_to(base_dir).as_posix()
+            if not (rel == ".git" or rel.startswith(".git/")):
+                results.append(target)
+        return results
+
+    try:
+        for p in base_dir.glob(glob_pat):
+            if p.is_file():
+                rel = p.relative_to(base_dir).as_posix()
+                if not (rel == ".git" or rel.startswith(".git/")):
+                    results.append(p)
+    except Exception as exc:
+        logger.debug("Error evaluating glob pattern %r against %s: %s", pattern, base_dir, exc)
+
+    return sorted(results, key=lambda p: p.relative_to(base_dir).as_posix())
+
+
+def discover_context_files(
+    workspace_data_dir: Path,
+    repositories: Sequence[ExternalRepositoryConfig] | None = None,
+    projects_dir: Path | None = None,
+    rules_patterns: Sequence[str] | None = None,
+    max_file_size_bytes: int = 1_000_000,
+) -> list[DiscoveredContextItem]:
+    """Discover and read context/rule files from workspace and mounted external repositories.
+
+    Search order:
+    1. /workspace (workspace_data_dir)
+    2. /projects/{mount_name} for each repository in repositories in order
+
+    Within each root:
+    - Evaluated in the order of rules_patterns.
+    - Matches for wildcards (e.g. rules/**) are sorted alphabetically.
+    - Files are deduplicated preserving the earliest match.
+    - Files exceeding max_file_size_bytes or unparseable binary files are skipped.
+    """
+    patterns = list(rules_patterns) if rules_patterns is not None else DEFAULT_RULES_PATTERNS
+    if not patterns:
+        return []
+
+    roots: list[tuple[Path, str]] = []
+    if workspace_data_dir.is_dir():
+        roots.append((workspace_data_dir, "/workspace"))
+
+    if repositories and projects_dir:
+        mount_paths = calculate_mount_paths(list(repositories))
+        for repo in repositories:
+            mount_name = mount_paths.get(repo.id, "repo")
+            host_repo_dir = projects_dir / mount_name
+            if host_repo_dir.is_dir():
+                roots.append((host_repo_dir, f"/projects/{mount_name}"))
+
+    seen_sandbox_paths: set[str] = set()
+    discovered: list[DiscoveredContextItem] = []
+
+    for host_root, sandbox_root in roots:
+        for pattern in patterns:
+            matched_files = _match_pattern_files(host_root, pattern)
+            for file_path in matched_files:
+                rel = file_path.relative_to(host_root).as_posix()
+                sandbox_path = f"{sandbox_root}/{rel}"
+                if sandbox_path in seen_sandbox_paths:
+                    continue
+                seen_sandbox_paths.add(sandbox_path)
+
+                try:
+                    stat = file_path.stat()
+                    if stat.st_size > max_file_size_bytes:
+                        logger.warning(
+                            "Skipping context file %s (%d bytes exceeds limit %d)",
+                            sandbox_path,
+                            stat.st_size,
+                            max_file_size_bytes,
+                        )
+                        continue
+                except OSError:
+                    continue
+
+                try:
+                    content = file_path.read_text(encoding="utf-8").strip()
+                except (UnicodeDecodeError, OSError) as exc:
+                    logger.warning(
+                        "Skipping unreadable or binary context file %s: %s",
+                        sandbox_path,
+                        exc,
+                    )
+                    continue
+
+                discovered.append(
+                    DiscoveredContextItem(
+                        path=sandbox_path,
+                        content=content,
+                    )
+                )
+
+    return discovered
+
+
 def build_effective_system_prompt(
     workdir: str = DEFAULT_OPERATIONAL_DIR,
     custom_prompt: str | None = None,
@@ -731,6 +867,7 @@ def build_effective_system_prompt(
     phase: str | None = None,
     active_plan_id: str | None = None,
     active_plan_title: str | None = None,
+    discovered_context: Sequence[DiscoveredContextItem] | None = None,
 ) -> str:
     """Assemble and serialize the complete effective LM-XML system prompt."""
     dynamic_ctx = (
@@ -763,6 +900,7 @@ def build_effective_system_prompt(
         user_inquiry=build_user_inquiry(mode=mode, phase=phase),
         communication_style=build_communication_style(),
         dynamic_context=dynamic_ctx,
+        discovered_context=list(discovered_context) if discovered_context else None,
         custom_instructions=custom_text,
     )
     dumped = doc.model_dump(mode="json", exclude_none=True)

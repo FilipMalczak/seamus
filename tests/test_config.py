@@ -90,8 +90,20 @@ def test_agent_config_thread_message_overlap() -> None:
     custom = AgentConfig(thread_message_overlap=12)
     assert custom.thread_message_overlap == 12
 
+
+def test_agent_config_rules_patterns_defaults_and_overrides() -> None:
+    cfg = AgentConfig()
+    assert cfg.rules_patterns == ["AGENTS.md", ".seamus/rules/**"]
+
+    custom = AgentConfig(rules_patterns=["README.md", "guidelines/*.md"])
+    assert custom.rules_patterns == ["README.md", "guidelines/*.md"]
+
     derived = cfg.copy_with_overrides(custom)
-    assert derived.thread_message_overlap == 12
+    assert derived.rules_patterns == ["README.md", "guidelines/*.md"]
+
+    empty_overrides = AgentConfig()
+    derived_preserve = custom.copy_with_overrides(empty_overrides)
+    assert derived_preserve.rules_patterns == ["README.md", "guidelines/*.md"]
 
 
 def test_agent_config_todo_and_skills_implementation_validation() -> None:

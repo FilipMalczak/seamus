@@ -38,6 +38,7 @@ export type AgentConfig = {
   repositories?: ExternalRepositoryConfig[];
   sandbox_image?: string | null;
   daemons?: DaemonsConfig;
+  rules_patterns?: string[];
 };
 
 export type ConfigTemplateResponse = {

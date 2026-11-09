@@ -2,6 +2,7 @@
 
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -295,3 +296,147 @@ async def test_dynamic_prompt_with_todo_list_middleware_composition() -> None:
     content_str = str(final_sys.content)
     assert "<seamus_prompt/>" in content_str
     assert "write_todos" in content_str
+
+
+def test_discover_context_files_ordering_and_deduplication(tmp_path: Path) -> None:
+    """Verify discover_context_files ordering, sorting, and deduplication."""
+    from seamus.config.models import ExternalRepositoryConfig
+    from seamus.harness.prompt import (
+        DEFAULT_RULES_PATTERNS,
+        discover_context_files,
+    )
+
+    workspace_dir = tmp_path / "workspace"
+    projects_dir = tmp_path / "projects"
+    workspace_dir.mkdir(parents=True)
+    projects_dir.mkdir(parents=True)
+
+    # 1. Setup workspace files (with leading/trailing newlines to verify stripping)
+    (workspace_dir / "AGENTS.md").write_text(
+        "\n\nWorkspace AGENTS instructions\n\n", encoding="utf-8"
+    )
+    rules_dir = workspace_dir / ".seamus" / "rules"
+    rules_dir.mkdir(parents=True)
+    (rules_dir / "02-testing.md").write_text("Test rules", encoding="utf-8")
+    (rules_dir / "01-architecture.md").write_text("Architecture rules", encoding="utf-8")
+
+    # .git directory in workspace should be ignored
+    git_dir = workspace_dir / ".git"
+    git_dir.mkdir(parents=True)
+    (git_dir / "config").write_text("git config", encoding="utf-8")
+
+    # 2. Setup project files
+    repo1_dir = projects_dir / "repo-alpha"
+    repo1_dir.mkdir(parents=True)
+    (repo1_dir / "AGENTS.md").write_text("Repo Alpha AGENTS", encoding="utf-8")
+    repo1_rules = repo1_dir / ".seamus" / "rules"
+    repo1_rules.mkdir(parents=True)
+    (repo1_rules / "style.md").write_text("Alpha style", encoding="utf-8")
+
+    repo2_dir = projects_dir / "repo-beta"
+    repo2_dir.mkdir(parents=True)
+    (repo2_dir / "AGENTS.md").write_text("Repo Beta AGENTS", encoding="utf-8")
+
+    repos = [
+        ExternalRepositoryConfig(
+            id="alpha", url="https://github.com/org/repo-alpha.git", branch="main"
+        ),
+        ExternalRepositoryConfig(
+            id="beta", url="https://github.com/org/repo-beta.git", branch="main"
+        ),
+    ]
+
+    discovered = discover_context_files(
+        workspace_data_dir=workspace_dir,
+        repositories=repos,
+        projects_dir=projects_dir,
+        rules_patterns=DEFAULT_RULES_PATTERNS,
+    )
+
+    expected_paths = [
+        "/workspace/AGENTS.md",
+        "/workspace/.seamus/rules/01-architecture.md",
+        "/workspace/.seamus/rules/02-testing.md",
+        "/projects/repo-alpha/AGENTS.md",
+        "/projects/repo-alpha/.seamus/rules/style.md",
+        "/projects/repo-beta/AGENTS.md",
+    ]
+    actual_paths = [item.path for item in discovered]
+    assert actual_paths == expected_paths
+
+    assert discovered[0].content == "Workspace AGENTS instructions"
+    assert discovered[1].content == "Architecture rules"
+    assert discovered[2].content == "Test rules"
+    assert discovered[3].content == "Repo Alpha AGENTS"
+    assert discovered[4].content == "Alpha style"
+    assert discovered[5].content == "Repo Beta AGENTS"
+
+    # Test deduplication: overlapping patterns should keep earliest match
+    overlapping = discover_context_files(
+        workspace_data_dir=workspace_dir,
+        repositories=repos,
+        projects_dir=projects_dir,
+        rules_patterns=["AGENTS.md", "**/*.md"],
+    )
+    # /workspace/AGENTS.md should appear only once (under AGENTS.md, not again under **/*.md)
+    ws_agents_matches = [item for item in overlapping if item.path == "/workspace/AGENTS.md"]
+    assert len(ws_agents_matches) == 1
+
+
+def test_discover_context_files_size_and_binary_safeguards(tmp_path: Path) -> None:
+    """Verify large files (> max_file_size_bytes) and binary files are skipped safely."""
+    from seamus.harness.prompt import discover_context_files
+
+    workspace_dir = tmp_path / "workspace"
+    workspace_dir.mkdir(parents=True)
+
+    # Valid file
+    (workspace_dir / "AGENTS.md").write_text("Valid text", encoding="utf-8")
+
+    # Binary file that fails utf-8 decoding
+    rules_dir = workspace_dir / ".seamus" / "rules"
+    rules_dir.mkdir(parents=True)
+    (rules_dir / "binary.bin").write_bytes(b"\x80\xff\xfe\x00\x01\x02")
+
+    # Oversized file
+    (rules_dir / "large.md").write_text("X" * 200, encoding="utf-8")
+
+    discovered = discover_context_files(
+        workspace_data_dir=workspace_dir,
+        rules_patterns=["AGENTS.md", ".seamus/rules/**"],
+        max_file_size_bytes=100,  # lower limit for test
+    )
+
+    paths = [item.path for item in discovered]
+    assert paths == ["/workspace/AGENTS.md"]
+
+
+def test_discovered_context_prompt_xml_serialization() -> None:
+    """Verify system prompt includes <discovered_context> when items exist, omitted when empty."""
+    from seamus.harness.prompt import DiscoveredContextItem, build_effective_system_prompt
+
+    # 1. With items
+    items = [
+        DiscoveredContextItem(path="/workspace/AGENTS.md", content="Follow rules."),
+        DiscoveredContextItem(path="/projects/repo/style.md", content="Use snake_case."),
+    ]
+    prompt_with_items = build_effective_system_prompt(
+        discovered_context=items,
+        include_dynamic_context=False,
+    )
+    assert "<discovered_context>" in prompt_with_items
+    assert "<path>/workspace/AGENTS.md</path>" in prompt_with_items
+    assert "<content>Follow rules.</content>" in prompt_with_items
+    assert "<path>/projects/repo/style.md</path>" in prompt_with_items
+    assert "<content>Use snake_case.</content>" in prompt_with_items
+
+    # 2. With empty list or None
+    prompt_none = build_effective_system_prompt(
+        discovered_context=None, include_dynamic_context=False
+    )
+    assert "<discovered_context>" not in prompt_none
+
+    prompt_empty = build_effective_system_prompt(
+        discovered_context=[], include_dynamic_context=False
+    )
+    assert "<discovered_context>" not in prompt_empty

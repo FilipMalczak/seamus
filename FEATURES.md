@@ -435,6 +435,7 @@ class AgentConfig(BaseModel):
     skills_implementation: SkillsImplementation = SkillsImplementation.DEEPAGENTS
     thread_message_overlap: int = 5
     repositories: list[ExternalRepositoryConfig] = Field(default_factory=list)
+    rules_patterns: list[str] = Field(default_factory=lambda: ["AGENTS.md", ".seamus/rules/**"])
     sandbox_image: str | None = None
     daemons: DaemonsConfig = Field(default_factory=DaemonsConfig)
 ```
@@ -444,6 +445,8 @@ class AgentConfig(BaseModel):
 - `inference.format`: Format of inference API (`openai` or `ollama`).
 - `inference.base_url`: Target endpoint URL for inference API requests (presets: OpenRouter, OpenAI, and local Ollama `http://localhost:11434/v1`).
 - `inference.api_key`: API key or symbolic vault reference (`${secret('/path')}`). Optional when using Ollama (`ollama` format or port `11434`).
+- `rules_patterns`: Glob patterns evaluated per inference turn across `/workspace` and mounted `/projects/...`, injecting matching context files into `<discovered_context>`.
+- `repositories`: List of external Git repositories mounted into `/projects/{mount_name}`.
 - `daemons.naming.enabled`: Enables automated thread and session naming daemons (default: `true`).
 - `daemons.naming.provider`: Optional provider configuration for naming daemons; if unset, inherits the agent's main `inference` settings.
 - `daemons.naming.model`: Dedicated model identifier for naming daemons (default: `openai/gpt-oss-20b`), keeping naming costs and latency minimal.
