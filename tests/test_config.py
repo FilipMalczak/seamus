@@ -110,10 +110,13 @@ def test_agent_config_todo_and_skills_implementation_validation() -> None:
     from pydantic import ValidationError
 
     cfg = AgentConfig()
-    assert cfg.todo_implementation == TodoImplementation.DEEPAGENTS
+    assert cfg.todo_implementation == TodoImplementation.SEAMUS
     assert cfg.skills_implementation == SkillsImplementation.SEAMUS
 
-    cfg_seamus = AgentConfig.model_validate({"skills_implementation": "seamus"})
+    cfg_seamus = AgentConfig.model_validate(
+        {"todo_implementation": "seamus", "skills_implementation": "seamus"}
+    )
+    assert cfg_seamus.todo_implementation == TodoImplementation.SEAMUS
     assert cfg_seamus.skills_implementation == SkillsImplementation.SEAMUS
 
     cfg_none = AgentConfig(

@@ -346,6 +346,30 @@ def test_inspector_todo_implementation_toggle() -> None:
     report_deep = build_agent_inspect_report(str(agent.id), str(session.id))
     assert report_deep.todo_implementation == TodoImplementation.DEEPAGENTS
     assert any(t.name == "write_todos" for t in report_deep.tools)
+    assert not any(t.name == "create_todo_item" for t in report_deep.tools)
+
+    # Update session to seamus and add todos to active thread
+    from seamus.domain.entities import TodoItem
+
+    session.config.todo_implementation = TodoImplementation.SEAMUS
+    thread = session.get_open_thread()
+    assert thread is not None
+    thread.todos = [
+        TodoItem(id="abcd", content="Root task", status="wip", position=1),
+        TodoItem(id="1234", content="Child task", status="done", parent_id="abcd", position=1),
+    ]
+    reset_runner_registry()
+    report_seamus = build_agent_inspect_report(str(agent.id), str(session.id))
+    assert report_seamus.todo_implementation == TodoImplementation.SEAMUS
+    assert not any(t.name == "write_todos" for t in report_seamus.tools)
+    assert any(t.name == "create_todo_item" for t in report_seamus.tools)
+    assert any(t.name == "edit_todo_item" for t in report_seamus.tools)
+    assert any(t.name == "delete_todo_item" for t in report_seamus.tools)
+    assert len(report_seamus.todos) == 2
+    assert report_seamus.todos[0].path == "1."
+    assert report_seamus.todos[0].depth == 0
+    assert report_seamus.todos[1].path == "1.1."
+    assert report_seamus.todos[1].depth == 1
 
 
 def test_inspector_skills_discovery_and_project_rules(
@@ -387,6 +411,7 @@ def test_inspector_skills_discovery_and_project_rules(
         inference=InferenceConfig(api_key="key"),
         model_name="test-model",
         skills_implementation=SkillsImplementation.DEEPAGENTS,
+        todo_implementation=TodoImplementation.DEEPAGENTS,
     )
     agent = store.create_agent(config=config, name="skills-inspect-agent")
     session = list(agent.sessions.values())[0]
@@ -453,6 +478,7 @@ def test_inspector_and_backend_mounted_project_skills_precedence(tmp_path: Path)
         inference=InferenceConfig(api_key="key"),
         model_name="test-model",
         skills_implementation=SkillsImplementation.DEEPAGENTS,
+        todo_implementation=TodoImplementation.DEEPAGENTS,
     )
     agent = store.create_agent(config=config, name="repo-skills-agent")
     session = list(agent.sessions.values())[0]

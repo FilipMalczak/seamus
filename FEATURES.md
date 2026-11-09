@@ -435,7 +435,7 @@ class AgentConfig(BaseModel):
     model_name: str = "openai/gpt-oss-120b"
     mode: str = OperationalMode.PLAN.value
     system_prompt: str | None = None
-    todo_implementation: TodoImplementation = TodoImplementation.DEEPAGENTS
+    todo_implementation: TodoImplementation = TodoImplementation.SEAMUS
     skills_implementation: SkillsImplementation = SkillsImplementation.SEAMUS
     thread_message_overlap: int = 5
     repositories: list[ExternalRepositoryConfig] = Field(default_factory=list)
@@ -457,7 +457,7 @@ class AgentConfig(BaseModel):
 - `model_name`: Provider model identifier (e.g. `anthropic/claude-3.5-sonnet`, `openai/gpt-4o`, `openai/gpt-oss-120b`, `llama3.2:3b`, `qwen3.8:latest`, `gemma4:e4b`). When targeting Ollama, Seamus actively verifies daemon health and loads the requested model into memory prior to execution.
 - `mode`: Initial operational mode for sessions (`chat` or `plan`).
 - `system_prompt`: Optional custom prompt instructions appended to the dynamic LM-XML scaffold.
-- `todo_implementation`: Task list planning middleware (`deepagents` or `none`).
+- `todo_implementation`: Task list planning middleware (`seamus` [default], `deepagents`, or `none`).
 - `skills_implementation`: Skills discovery and disclosure implementation (`seamus` [default], `deepagents`, or `none`).
 - `thread_message_overlap`: Number of prior thread messages retained when branching or switching modes (default: `5`).
 
@@ -535,6 +535,9 @@ Harness tools are exposed dynamically based on the active operational mode and p
 | `plan` | `plan/discuss` | Lifecycle transition tool advancing session from `plan/discuss` to `plan/make`. |
 | `discard` | `plan/discuss`, `plan/make`, `plan/execute` | Aborts the active plan workflow and cleans up plan artifacts. |
 | `write_todos` | All (when `todo_implementation="deepagents"`) | Manages the agent's task planning checklist items. |
+| `create_todo_item` | All (when `todo_implementation="seamus"`) | Creates a new task or subtask item in the active plan. |
+| `edit_todo_item` | All (when `todo_implementation="seamus"`) | Updates content/status or moves an existing task item (reparenting, reordering). |
+| `delete_todo_item` | All (when `todo_implementation="seamus"`) | Deletes a task item and all of its subtasks. |
 
 ---
 

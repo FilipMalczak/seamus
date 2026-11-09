@@ -62,8 +62,12 @@ class ToolInspectInfo(BaseModel):
 class TodoInspectItem(BaseModel):
     """Information about a task todo item."""
 
+    id: str | None = None
     content: str
     status: str = "pending"
+    parent_id: str | None = None
+    path: str | None = None
+    depth: int = 0
 
 
 class SkillInspectInfo(BaseModel):
@@ -249,6 +253,11 @@ def get_default_tools_inspect_info() -> list[ToolInspectInfo]:
             UpdatePlanInput,
             WaitForClickInput,
         )
+        from seamus.harness.todos import (
+            CreateTodoItemInput,
+            DeleteTodoItemInput,
+            EditTodoItemInput,
+        )
 
         dummy_tools = [
             StructuredTool.from_function(
@@ -314,6 +323,24 @@ def get_default_tools_inspect_info() -> list[ToolInspectInfo]:
                 ),
                 func=lambda *args, **kwargs: "OK",
                 args_schema=DiscardInput,
+            ),
+            StructuredTool.from_function(
+                name="create_todo_item",
+                description="Create a new task item in your active plan.",
+                func=lambda *args, **kwargs: "OK",
+                args_schema=CreateTodoItemInput,
+            ),
+            StructuredTool.from_function(
+                name="edit_todo_item",
+                description="Update or move an existing task item.",
+                func=lambda *args, **kwargs: "OK",
+                args_schema=EditTodoItemInput,
+            ),
+            StructuredTool.from_function(
+                name="delete_todo_item",
+                description="Delete a task item and all of its subtasks.",
+                func=lambda *args, **kwargs: "OK",
+                args_schema=DeleteTodoItemInput,
             ),
         ]
 
@@ -454,6 +481,24 @@ def get_default_tools_inspect_info() -> list[ToolInspectInfo]:
                 parameters=WaitForClickInput.model_json_schema(),
                 backend="harness",
             ),
+            ToolInspectInfo(
+                name="create_todo_item",
+                description="Create a new task item in your active plan.",
+                parameters=CreateTodoItemInput.model_json_schema(),
+                backend="harness",
+            ),
+            ToolInspectInfo(
+                name="edit_todo_item",
+                description="Update or move an existing task item.",
+                parameters=EditTodoItemInput.model_json_schema(),
+                backend="harness",
+            ),
+            ToolInspectInfo(
+                name="delete_todo_item",
+                description="Delete a task item and all of its subtasks.",
+                parameters=DeleteTodoItemInput.model_json_schema(),
+                backend="harness",
+            ),
         ]
 
 
@@ -553,7 +598,24 @@ def extract_thread_todos(
     thread: Thread,
     runner: SessionAgentRunner | None = None,
 ) -> list[TodoInspectItem]:
-    """Extract task todos for a thread from live graph state, workspace, or checkpoints."""
+    """Extract task todos for a thread from live thread entities, workspace, or checkpoints."""
+    # 0. Try live thread.todos entity collection
+    if thread.todos:
+        from seamus.harness.todos import compute_hierarchical_paths
+
+        rendered = compute_hierarchical_paths(thread.todos)
+        return [
+            TodoInspectItem(
+                id=r.item.id,
+                content=r.item.content,
+                status=r.item.status,
+                parent_id=r.item.parent_id,
+                path=r.path,
+                depth=r.depth,
+            )
+            for r in rendered
+        ]
+
     # 1. Try runner active graph state
     if runner is not None and hasattr(runner, "agent") and hasattr(runner.agent, "graph"):
         try:
@@ -577,6 +639,25 @@ def extract_thread_todos(
     ws_mgr = get_workspace_manager()
     raw_todos = ws_mgr.load_thread_todos(agent_id, session_id, thread.id)
     if raw_todos:
+        if any("id" in t for t in raw_todos if isinstance(t, dict)):
+            from seamus.domain.entities import TodoItem
+            from seamus.harness.todos import compute_hierarchical_paths
+
+            items = [
+                TodoItem.model_validate(t) for t in raw_todos if isinstance(t, dict) and "id" in t
+            ]
+            rendered = compute_hierarchical_paths(items)
+            return [
+                TodoInspectItem(
+                    id=r.item.id,
+                    content=r.item.content,
+                    status=r.item.status,
+                    parent_id=r.item.parent_id,
+                    path=r.path,
+                    depth=r.depth,
+                )
+                for r in rendered
+            ]
         return [
             TodoInspectItem(
                 content=str(t.get("content", "")),
@@ -826,6 +907,12 @@ def build_agent_inspect_report(
                     available_skills=avail,
                     active_skills=active_items if active_items else None,
                 )
+        plan_str: str | None = None
+        if session.config.todo_implementation == TodoImplementation.SEAMUS and thread.todos:
+            from seamus.harness.todos import render_plan_text
+
+            plan_str = render_plan_text(thread.todos)
+
         base_composite_prompt = build_effective_system_prompt(
             workdir=sandbox_settings.workdir,
             custom_prompt=custom_prompt or None,
@@ -836,6 +923,7 @@ def build_agent_inspect_report(
             active_plan_id=session.active_plan_id,
             discovered_context=discovered_ctx,
             skills=skills_doc,
+            plan=plan_str,
         )
 
     middleware_prompt_sections = build_middleware_prompt_sections(
@@ -875,9 +963,32 @@ def build_agent_inspect_report(
     tools = [t for t in tools if t.name not in ALL_HARNESS_TOOLS or t.name in allowed_harness_tools]
 
     if session.config.todo_implementation == TodoImplementation.NONE:
-        tools = [t for t in tools if t.name != "write_todos"]
+        tools = [
+            t
+            for t in tools
+            if t.name
+            not in (
+                "write_todos",
+                "create_todo_item",
+                "edit_todo_item",
+                "delete_todo_item",
+            )
+        ]
         todos = []
-    else:
+    elif session.config.todo_implementation == TodoImplementation.DEEPAGENTS:
+        tools = [
+            t
+            for t in tools
+            if t.name
+            not in (
+                "create_todo_item",
+                "edit_todo_item",
+                "delete_todo_item",
+            )
+        ]
+        todos = extract_thread_todos(agent.id, session.id, thread, runner=runner)
+    else:  # SEAMUS
+        tools = [t for t in tools if t.name != "write_todos"]
         todos = extract_thread_todos(agent.id, session.id, thread, runner=runner)
 
     # Message History

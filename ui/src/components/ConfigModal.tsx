@@ -128,10 +128,10 @@ export function ConfigModal({
     if (
       "todo_implementation" in parsed &&
       parsed.todo_implementation !== null &&
-      !["none", "deepagents"].includes(parsed.todo_implementation)
+      !["none", "deepagents", "seamus"].includes(parsed.todo_implementation)
     ) {
       setError(
-        `Invalid todo_implementation '${parsed.todo_implementation}'. Allowed values: 'none', 'deepagents'.`
+        `Invalid todo_implementation '${parsed.todo_implementation}'. Allowed values: 'none', 'deepagents', 'seamus'.`
       );
       return;
     }
@@ -393,6 +393,7 @@ export function ConfigModal({
                       })
                     }
                   >
+                    <option value="seamus">seamus (Native LM-XML)</option>
                     <option value="deepagents">deepagents (TodoListMiddleware)</option>
                     <option value="none">none (Disabled)</option>
                   </select>

@@ -440,3 +440,39 @@ def test_discovered_context_prompt_xml_serialization() -> None:
         discovered_context=[], include_dynamic_context=False
     )
     assert "<discovered_context>" not in prompt_empty
+
+
+def test_plan_prompt_xml_serialization() -> None:
+    """Verify system prompt includes <plan> when plan is provided, omitted when empty."""
+    from seamus.domain.entities import TodoItem
+    from seamus.harness.prompt import build_effective_system_prompt
+    from seamus.harness.todos import render_plan_text
+
+    # 1. With plan items
+    items = [
+        TodoItem(id="abcd", content="Implement authentication", status="wip", position=1),
+        TodoItem(id="1abc", content="Write tests", status="done", parent_id="abcd", position=1),
+    ]
+    plan_str = render_plan_text(items)
+    prompt_with_plan = build_effective_system_prompt(
+        plan=plan_str,
+        include_dynamic_context=False,
+    )
+    assert "<plan>" in prompt_with_plan
+    assert "1. (abcd) [WIP] Implement authentication" in prompt_with_plan
+    assert "  1.1. (1abc) [DONE] Write tests" in prompt_with_plan
+    assert "</plan>" in prompt_with_plan
+
+    # 2. When plan is None or empty
+    prompt_no_plan = build_effective_system_prompt(
+        plan=None,
+        include_dynamic_context=False,
+    )
+    assert "<plan>" not in prompt_no_plan
+    assert "</plan>" not in prompt_no_plan
+
+    prompt_empty_plan = build_effective_system_prompt(
+        plan="",
+        include_dynamic_context=False,
+    )
+    assert "<plan>" not in prompt_empty_plan

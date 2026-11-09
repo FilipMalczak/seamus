@@ -4,7 +4,7 @@ export type InferenceConfig = {
   api_key?: string | null;
 };
 
-export type TodoImplementation = "none" | "deepagents";
+export type TodoImplementation = "none" | "deepagents" | "seamus";
 
 export type SkillsImplementation = "none" | "deepagents" | "seamus";
 
@@ -314,8 +314,12 @@ export interface WorkspaceInspectInfo {
 }
 
 export interface TodoInspectItem {
+  id?: string | null;
   content: string;
   status: string;
+  parent_id?: string | null;
+  path?: string | null;
+  depth?: number;
 }
 
 export interface SkillInspectInfo {

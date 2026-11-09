@@ -5,12 +5,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 ## Core harness features
 
 
-### Custom Planning Toolset Integration
-- **Description**: Implement custom planning toolset alternatives alongside `none` and `deepagents` (e.g. customized task decomposition, plan verification, or milestone tracking), introducing corresponding `todo_implementation` enum values.
-- **Rationale**: Enables dedicated, customizable task planning architectures beyond the standard DeepAgents middleware.
-- **Provenance**: [0025-todo-list-middleware.md](../decisions/0025-todo-list-middleware.md), [invariants.md](./invariants.md#inv-033-configurable-todo-planning-and-system-prompt-composition).
-
-
 ### Operational Execution Modes and Thread Transition Triggers (act, analyse, routing)
 - **Description**: Following the initial implementation of `chat` and `plan` modes in [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), expand the operational mode set to include:
   1. `act`: Direct task execution; executes user commands and edits promptly without upfront planning cycles.
@@ -47,6 +41,18 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 
 ## Deferred
+
+### Automated Plan Cleanup & Task Pruning Tool
+- **Description**: Add a specialized planning maintenance tool (e.g. `clean_todo_plan` / `prune_todos`) that automatically garbage-collects completed subtrees, purges abandoned tasks, and compacts the active task tree to conserve context tokens in long multi-turn sessions.
+- **Why Deferred**: The core planning toolset (`create_todo_item`, `edit_todo_item`, `delete_todo_item`) fully supports explicit task management and deletion. Automated pruning and garbage-collection policies require additional heuristics to ensure users and agents do not lose necessary audit context mid-session.
+- **Revisit Trigger**: When long, complex execution sessions with extensive task breakdowns produce bloated `<plan>` prompt sections that exceed token budgets.
+- **Provenance**: [0049-native-lmxml-todo-planning.md](../decisions/0049-native-lmxml-todo-planning.md).
+
+### Session-Level Task Plans vs. Thread-Scoped Plans
+- **Description**: Investigate promoting hierarchical task plans from thread-scoped collections (`thread.todos`) to session-level entities (`session.todos` or dedicated plan entity).
+- **Why Deferred**: Scoping todos to the thread aligns with `active_skills` and keeps thread contexts clean across operational mode changes. Cross-thread plan sharing requires formal migration and synchronization protocols.
+- **Revisit Trigger**: When multi-thread workflows (such as switching from `plan` mode to `act` mode across thread boundaries) frequently require continuing the same structured todo checklist without re-creating it.
+- **Provenance**: [0049-native-lmxml-todo-planning.md](../decisions/0049-native-lmxml-todo-planning.md), [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md).
 
 ### Daemon Manifest Normalization, Generic Event Filters, and Custom Selection Strategies
 - **Description**: Extracting and normalizing daemon manifests, defining arbitrary trigger event types and filter pipelines, and supporting customizable daemon execution selection strategies beyond the initial geometric step-off ($2^k - 1$).

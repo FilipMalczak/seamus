@@ -48,6 +48,26 @@ class SessionStatus(StrEnum):
     FAILED = "FAILED"
 
 
+class TodoStatus(StrEnum):
+    """Task status within a thread's hierarchical plan."""
+
+    PENDING = "pending"
+    WIP = "wip"
+    DONE = "done"
+    ABANDONED = "abandoned"
+
+
+class TodoItem(BaseModel):
+    """A task planning item within a thread's hierarchical todo list."""
+
+    id: str
+    content: str
+    status: str = TodoStatus.PENDING.value
+    parent_id: str | None = None
+    position: int = 1
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class SessionBranchProvenance(BaseModel):
     """Lineage provenance recording where a session branched from."""
 
@@ -71,6 +91,7 @@ class Thread(BaseModel):
     phase: str | None = PlanPhase.DISCUSS.value
     exchange_count: int = 0
     active_skills: list[str] = Field(default_factory=list)
+    todos: list[TodoItem] = Field(default_factory=list)
     events: list[Any] = Field(default_factory=list)
 
     def __init__(self, *args: Any, name: str | None = None, **kwargs: Any) -> None:

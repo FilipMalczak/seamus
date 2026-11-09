@@ -536,6 +536,23 @@ def test_session_agent_runner_todo_implementation_toggle() -> None:
         or {}
     )
     assert "write_todos" in tools_dict_reloaded
+    assert "create_todo_item" not in tools_dict_reloaded
+
+    # Reload with seamus
+    session.config.todo_implementation = TodoImplementation.SEAMUS
+    runner.reload_config()
+    graph_seamus = runner.agent.graph
+    tools_node_seamus = graph_seamus.nodes.get("tools")
+    bound_seamus = getattr(tools_node_seamus, "bound", None)
+    tools_dict_seamus = (
+        getattr(bound_seamus, "tools_by_name", None)
+        or getattr(bound_seamus, "_tools_by_name", None)
+        or {}
+    )
+    assert "write_todos" not in tools_dict_seamus
+    assert "create_todo_item" in tools_dict_seamus
+    assert "edit_todo_item" in tools_dict_seamus
+    assert "delete_todo_item" in tools_dict_seamus
 
 
 def test_runner_registry_reload_session_runner() -> None:

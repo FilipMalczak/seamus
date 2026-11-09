@@ -22,6 +22,7 @@ class TodoImplementation(StrEnum):
 
     NONE = "none"
     DEEPAGENTS = "deepagents"
+    SEAMUS = "seamus"
 
 
 class SkillsImplementation(StrEnum):
@@ -147,7 +148,7 @@ class AgentConfig(BaseModel):
     model_name: str = "openai/gpt-oss-120b"
     mode: str = OperationalMode.PLAN.value
     system_prompt: str | None = None
-    todo_implementation: TodoImplementation = TodoImplementation.DEEPAGENTS
+    todo_implementation: TodoImplementation = TodoImplementation.SEAMUS
     skills_implementation: SkillsImplementation = SkillsImplementation.SEAMUS
     thread_message_overlap: int = 5
     repositories: list[ExternalRepositoryConfig] = Field(default_factory=list)

@@ -86,6 +86,10 @@ from seamus.harness.skills import (
     SeamusSkillsMiddleware,
     discover_session_skills,
 )
+from seamus.harness.todos import (
+    SeamusTodoMiddleware,
+    render_plan_text,
+)
 from seamus.persistence import (
     GitCheckpointSaver,
     calculate_mount_paths,
@@ -896,6 +900,16 @@ class SessionAgentRunner:
         runner_middleware: list[Any] = [dynamic_prompt_middleware]
         if self.session.config.todo_implementation == TodoImplementation.DEEPAGENTS:
             runner_middleware.append(SeamusTodoListMiddleware())
+        elif self.session.config.todo_implementation == TodoImplementation.SEAMUS:
+            runner_middleware.append(
+                SeamusTodoMiddleware(
+                    get_thread=lambda: self.session.get_open_thread(),
+                    workspace_manager=ws_mgr,
+                    agent_id=self.session.agent_id,
+                    session_id=self.session.id,
+                    on_todos_changed=lambda: self.session.touch(),
+                )
+            )
         if self.session.config.skills_implementation == SkillsImplementation.SEAMUS:
             runner_middleware.append(
                 SeamusSkillsMiddleware(
@@ -1468,6 +1482,11 @@ class SessionAgentRunner:
                     active_skills=active_items if active_items else None,
                 )
 
+        plan_str: str | None = None
+        if self.session.config.todo_implementation == TodoImplementation.SEAMUS:
+            if target_thread and target_thread.todos:
+                plan_str = render_plan_text(target_thread.todos)
+
         return build_effective_system_prompt(
             workdir=sandbox_settings.workdir,
             custom_prompt=custom_prompt or None,
@@ -1480,6 +1499,7 @@ class SessionAgentRunner:
             active_plan_title=self._get_active_plan_title(),
             discovered_context=discovered,
             skills=skills_doc,
+            plan=plan_str,
         )
 
     def get_discovered_skills(self, thread: Thread | None = None) -> list[DiscoveredSkill]:

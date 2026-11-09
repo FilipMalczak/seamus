@@ -499,7 +499,7 @@ def test_session_and_template_todo_implementation_config(client: TestClient) -> 
     tmpl_res = client.get("/api/v-alpha/config-template")
     assert tmpl_res.status_code == 200
     tmpl_data = tmpl_res.json()["config"]
-    assert tmpl_data["todo_implementation"] == "deepagents"
+    assert tmpl_data["todo_implementation"] == "seamus"
     assert tmpl_data["skills_implementation"] == "seamus"
 
     # Invalid template value -> 422

@@ -18,6 +18,7 @@ import {
   ListTodo,
   Loader2,
   MessageSquare,
+  MinusCircle,
   RefreshCw,
   ShieldCheck,
   Terminal,
@@ -700,15 +701,41 @@ export function AgentInspector({
             ) : (
               <div className="todos-list">
                 {report.todos.map((todo, idx) => (
-                  <div key={idx} className={`todo-item-card status-${todo.status}`}>
+                  <div
+                    key={idx}
+                    className={`todo-item-card status-${todo.status}`}
+                    style={todo.depth ? { marginLeft: `${todo.depth * 16}px` } : undefined}
+                  >
                     <div className="todo-item-header">
                       <span className={`todo-status-badge status-${todo.status}`}>
-                        {todo.status === "completed" && <CheckCircle2 className="size-3.5" />}
-                        {todo.status === "in_progress" && <Loader2 className="size-3.5 animate-spin" />}
+                        {(todo.status === "completed" || todo.status === "done") && (
+                          <CheckCircle2 className="size-3.5" />
+                        )}
+                        {(todo.status === "in_progress" || todo.status === "wip") && (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        )}
                         {todo.status === "pending" && <AlertCircle className="size-3.5" />}
-                        <span>{todo.status.replace("_", " ")}</span>
+                        {todo.status === "abandoned" && <MinusCircle className="size-3.5" />}
+                        <span>
+                          {todo.status === "done"
+                            ? "DONE"
+                            : todo.status === "wip"
+                            ? "WIP"
+                            : todo.status === "pending"
+                            ? "TODO"
+                            : todo.status.toUpperCase()}
+                        </span>
                       </span>
-                      <span className="todo-index">#{idx + 1}</span>
+                      <div className="flex items-center gap-2">
+                        {todo.id && (
+                          <span className="font-mono text-[11px] text-neutral-400 bg-neutral-800 px-1.5 py-0.5 rounded border border-neutral-700">
+                            {todo.id}
+                          </span>
+                        )}
+                        <span className="todo-index">
+                          {todo.path || `#${idx + 1}`}
+                        </span>
+                      </div>
                     </div>
                     <div className="todo-content">{todo.content}</div>
                   </div>

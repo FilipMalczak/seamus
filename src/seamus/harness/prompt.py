@@ -157,6 +157,7 @@ class SystemPromptDocument(BaseModel):
     dynamic_context: DynamicContext | None = None
     discovered_context: list[DiscoveredContextItem] | None = None
     skills: SkillsPromptDocument | None = None
+    plan: str | None = None
     custom_instructions: str | None = None
 
 
@@ -622,6 +623,19 @@ def build_tool_usage() -> list[str]:
             "Tool call parallelism: Issue independent tool calls in parallel when possible; "
             "execute dependent tool calls sequentially."
         ),
+        (
+            "Task planning and execution: When task planning tools ('create_todo_item', "
+            "'edit_todo_item', 'delete_todo_item') are available, use them to maintain your "
+            "hierarchical task plan. Reference items strictly by their 4-hex 'id', "
+            "never by their advisory 'path'. Mark tasks as [WIP] when starting work and [DONE] "
+            "when verified. Tasks can be moved and reordered using 'edit_todo_item' with "
+            "'new_parent' and 'new_position'. Note the auto-state rules: closing a parent "
+            "(DONE or ABANDONED) auto-closes WIP children with the parent's status and "
+            "auto-abandons PENDING children; adding or reopening an item under a DONE parent "
+            "auto-reverts the parent (and any completed ancestors) to WIP; use "
+            "'new_status=\"abandoned\"' for dropped or skipped tasks (DONE tasks cannot be "
+            "abandoned)."
+        ),
     ]
 
 
@@ -908,6 +922,7 @@ def build_effective_system_prompt(
     active_plan_title: str | None = None,
     discovered_context: Sequence[DiscoveredContextItem] | None = None,
     skills: SkillsPromptDocument | None = None,
+    plan: str | None = None,
 ) -> str:
     """Assemble and serialize the complete effective LM-XML system prompt."""
     dynamic_ctx = (
@@ -925,6 +940,7 @@ def build_effective_system_prompt(
     )
 
     custom_text = custom_prompt.strip() if custom_prompt and custom_prompt.strip() else None
+    plan_text = plan.strip() if plan and plan.strip() else None
 
     doc = SystemPromptDocument(
         identity=build_default_identity(),
@@ -942,6 +958,7 @@ def build_effective_system_prompt(
         dynamic_context=dynamic_ctx,
         discovered_context=list(discovered_context) if discovered_context else None,
         skills=skills,
+        plan=plan_text,
         custom_instructions=custom_text,
     )
     dumped = doc.model_dump(mode="json", exclude_none=True)
