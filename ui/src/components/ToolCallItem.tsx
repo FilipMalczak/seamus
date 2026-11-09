@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronRight,
   Clock,
+  Globe,
   Loader2,
   Wrench,
   XCircle,
@@ -83,7 +84,11 @@ export function ToolCallItem({ toolCall }: { toolCall: ToolCallRecord }) {
         title="Toggle tool execution details"
       >
         <div className="tool-card-title">
-          <Wrench className="size-3.5 text-amber-400" />
+          {toolCall.name === "web_search" || toolCall.name === "fetch_web_page" ? (
+            <Globe className="size-3.5 text-emerald-400" />
+          ) : (
+            <Wrench className="size-3.5 text-amber-400" />
+          )}
           <span className="tool-name">{toolCall.name}</span>
           {renderBadge()}
         </div>

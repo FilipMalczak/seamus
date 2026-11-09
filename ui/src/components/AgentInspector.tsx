@@ -14,6 +14,7 @@ import {
   FileCode,
   FolderGit2,
   FolderOpen,
+  Globe,
   Layers,
   ListTodo,
   Loader2,
@@ -283,6 +284,16 @@ export function AgentInspector({
                 </span>
               </>
             )}
+
+            <span className="meta-sep">&bull;</span>
+
+            <span
+              className="meta-item"
+              title={`Web Search: ${report.web_search || "duckduckgo"}`}
+            >
+              <Globe className="size-3.5 text-emerald-400" />
+              <span className="meta-text">Web Search: {report.web_search || "duckduckgo"}</span>
+            </span>
           </div>
         </div>
 
@@ -433,11 +444,26 @@ export function AgentInspector({
         {subTab === "tools" && (
           <div className="inspector-tools-panel">
             <div className="tools-panel-header">
-              <p className="tools-lead">
-                The agent has access to <strong>{report.tools.length} active tools</strong> registered
-                with the model. Operations targeting the filesystem or shell execute inside the
-                isolated OpenSandbox container.
-              </p>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
+                <p className="tools-lead">
+                  The agent has access to <strong>{report.tools.length} active tools</strong> registered
+                  with the model. Operations targeting the filesystem or shell execute inside the
+                  isolated OpenSandbox container.
+                </p>
+                <span
+                  className={`todo-impl-badge ${
+                    report.web_search === "none" ? "impl-none" : "impl-seamus"
+                  }`}
+                  title="Web Search Capability"
+                >
+                  web: {report.web_search || "duckduckgo"}
+                </span>
+              </div>
+              {report.web_search === "none" && (
+                <div className="text-xs text-zinc-500 italic mt-1">
+                  Web search tools are disabled (<code>web_search: none</code>).
+                </div>
+              )}
             </div>
 
             <div className="tools-grid">
@@ -448,14 +474,26 @@ export function AgentInspector({
                   <div key={tool.name} className="tool-inspect-card">
                     <div className="tool-card-header">
                       <div className="tool-card-title-group">
-                        <Terminal className="size-4 text-sky-400" />
+                        {tool.backend === "web" ? (
+                          <Globe className="size-4 text-emerald-400" />
+                        ) : (
+                          <Terminal className="size-4 text-sky-400" />
+                        )}
                         <h4 className="tool-name">{tool.name}</h4>
                         <span
                           className={`tool-backend-badge ${
-                            tool.backend === "opensandbox" ? "backend-sandbox" : "backend-harness"
+                            tool.backend === "opensandbox"
+                              ? "backend-sandbox"
+                              : tool.backend === "web"
+                                ? "backend-web"
+                                : "backend-harness"
                           }`}
                         >
-                          {tool.backend === "opensandbox" ? "OpenSandbox" : "Harness"}
+                          {tool.backend === "opensandbox"
+                            ? "OpenSandbox"
+                            : tool.backend === "web"
+                              ? "Web"
+                              : "Harness"}
                         </span>
                       </div>
 
