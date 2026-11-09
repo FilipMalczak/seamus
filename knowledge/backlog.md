@@ -315,6 +315,19 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## Not formalized
 
+- Detailed testing of mounting protected repositories (that require credentials)
+- Testing of cases where secrets are mixed with other value, like: `user:${secret('/some/password')}`
+- automated E2E test suite, including UI test (might have dependency on configurable pesudo-LMM, to record what the model is supposed to respond with in certain test scenarios)
+- Add notifications (to indicate pending user interaction)
+- refactor config; we slapped new pieces there, it lost shape; there are better ways to organize the entries there
+- instructional documentation
+- web search tools
+- at least start tracking MCP integration, even if its waaaaay ahead
+- review available tools - there is still `ask` leftover
+- manage tool labels in inspector
+- agents sometimes use questionnaires/forms by both checking "writein" and providing "custom" option (so we have 'custom' and 'other'); strengthen the prompt
+- plan artifact is simply ugly
+- agent works in workspace even when working on mounted project; strentghten the prompt - workspace is personal, projects are for work
 
 - Detailed testing of mounting protected repositories (that require credentials)
 - Testing of cases where secrets are mixed with other value, like: `user:${secret('/some/password')}`
