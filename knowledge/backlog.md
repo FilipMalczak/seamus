@@ -36,13 +36,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 
 
-### Dynamic Project Rules Discovery from Workspace (.seamus/rules and AGENTS.md)
-- **Description**: Enhance `DynamicSystemPromptMiddleware` to inspect the agent workspace (via configurable rule globs such as `AGENTS.md` and `.seamus/rules/**/*.md`) prior to model turns, injecting project-specific guidelines into a dedicated `<project_rules>` XML tag.
-- **Note**: DeepAgents' built-in `AGENTS.md` support looks awkward for project rules because it is actually implemented as `MemoryMiddleware` (`<agent_memory>` + `<memory_guidelines>` instructing the agent to treat rule files as mutable agent memory and proactively rewrite them). We will likely want to go with a native Seamus implementation that loads configured rule files directly into the LM-XML system prompt.
-- **Rationale**: Keeps the agent automatically synchronized with repository-level conventions and rule files without requiring session re-initialization or conflating static project rules with mutable agent memory.
-- **Provenance**: [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md), [0027-skills-config-project-rules-and-inspector.md](../decisions/0027-skills-config-project-rules-and-inspector.md).
-
-
 ### Minimalistic Dashboard View for Agents and Sessions
 - **Description**: Implement an alternative, lightweight "Dashboard" view alongside the rich developer/IDE-like navigation tree and inspector:
   1. Plain agent grid: Displays all configured agents as a clean, uncluttered card grid.
@@ -224,6 +217,15 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Provenance**: `src/seamus/harness/sandbox.py`, `src/seamus/harness/prompt.py`, `opensandbox/`.
 
 ## TODO
+
+### Agent Runtime Warnings Panel in Web UI
+- **Description**: Add a runtime warnings panel or banner in the Web UI (and Agent Inspector) capturing and displaying non-fatal operational diagnostics. Candidate diagnostics include:
+  1. Context discovery skips: files matched by `rules_patterns` that were skipped due to exceeding maximum size limits (e.g. > 1 MB) or failing UTF-8 binary decoding.
+  2. Skill parser errors: malformed YAML frontmatter or unreadable `SKILL.md` documents.
+  3. Secret resolution issues: missing or unreadable OpenBao symbolic secret references.
+  4. Collision warnings: shadowed skills and project mount path collisions.
+- **Rationale**: Currently non-fatal discovery and runtime issues are logged to server stderr/debug logs, which makes it hard for users in the browser to diagnose why a specific rule or skill was omitted.
+- **Provenance**: [0047-discovered-context-and-project-skills.md](../decisions/0047-discovered-context-and-project-skills.md), `src/seamus/harness/prompt.py`.
 
 ### Polymorphic Input Request Specification for Predefined Artifact Builders
 - **Description**: Rephrase atomic inquiry builders from `make_questionnaire(questions: list[Question])` to generalized polymorphic builders `make_...(items: list[InputRequest]) -> ...`, where `InputRequest = SingleChoiceQuestion | MultipleChoiceQuestion | OpenQuestion | ColorChoice | DateChoice | ...` (or alternatively modeling the `answers` property of `Question` as an extensible enum/union of input widgets).

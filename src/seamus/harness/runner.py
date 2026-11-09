@@ -72,6 +72,7 @@ from seamus.harness.prompt import (
     DynamicSystemPromptMiddleware,
     build_effective_system_prompt,
     build_scaffold_prompt,
+    discover_context_files,
 )
 from seamus.harness.sandbox import (
     SeamusOpenSandboxBackend,
@@ -1406,6 +1407,18 @@ class SessionAgentRunner:
         )
         mode = target_thread.mode if target_thread else ModeName.CHAT.value
         phase = target_thread.phase if target_thread else None
+
+        ws_mgr = get_workspace_manager()
+        data_dir = ws_mgr.get_session_data_dir(self.session.agent_id, self.session.id)
+        ext_mgr = get_external_repo_manager()
+        projects_dir = ext_mgr.get_session_projects_dir(self.session.agent_id, self.session.id)
+        discovered = discover_context_files(
+            workspace_data_dir=data_dir,
+            repositories=self.session.config.repositories,
+            projects_dir=projects_dir,
+            rules_patterns=self.session.config.rules_patterns,
+        )
+
         return build_effective_system_prompt(
             workdir=sandbox_settings.workdir,
             custom_prompt=custom_prompt or None,
@@ -1416,6 +1429,7 @@ class SessionAgentRunner:
             phase=phase,
             active_plan_id=self.session.active_plan_id,
             active_plan_title=self._get_active_plan_title(),
+            discovered_context=discovered,
         )
 
     @property

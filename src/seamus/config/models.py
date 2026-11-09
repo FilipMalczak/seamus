@@ -152,6 +152,7 @@ class AgentConfig(BaseModel):
     repositories: list[ExternalRepositoryConfig] = Field(default_factory=list)
     sandbox_image: str | None = None
     daemons: DaemonsConfig = Field(default_factory=DaemonsConfig)
+    rules_patterns: list[str] = Field(default_factory=lambda: ["AGENTS.md", ".seamus/rules/**"])
 
     @model_validator(mode="after")
     def _validate_secret_refs(self) -> Self:
@@ -244,6 +245,11 @@ class AgentConfig(BaseModel):
                     overrides.daemons.model_copy(deep=True)
                     if "daemons" in overrides.model_fields_set
                     else self.daemons.model_copy(deep=True)
+                ),
+                "rules_patterns": (
+                    list(overrides.rules_patterns)
+                    if "rules_patterns" in overrides.model_fields_set
+                    else list(self.rules_patterns)
                 ),
             },
             deep=True,
