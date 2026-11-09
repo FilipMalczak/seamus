@@ -267,6 +267,11 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-043](./requirements.md#req-043-native-lm-xml-skills-system-with-explicit-loadunload-tools), [0048-native-lmxml-skills-system.md](../decisions/0048-native-lmxml-skills-system.md).
 - **Enforcement**: `seamus.domain.entities.Thread.active_skills`, `seamus.harness.skills.SeamusSkillsMiddleware`, `seamus.harness.runner.SessionAgentRunner.get_active_tools_for_request`, `tests/test_skills.py`.
 
+### INV-055: Web Search Capability Guard and Dynamic Tool Suppression
+- **Statement**: When `session.config.web_search == WebSearchImplementation.NONE`, web search tools (`web_search`, `fetch_web_page`) must not be bound to the session DeepAgent, must be filtered out of active tools returned by `get_active_tools_for_request()`, and must be excluded from `AgentInspectReport.tools`. When `web_search == WebSearchImplementation.DUCKDUCKGO`, both tools must be registered and annotated with backend `"web"` in the Inspector.
+- **Justification**: [REQ-044](./requirements.md#req-044-web-search-capability--enum-configuration-guard), [0050-web-search-tool.md](../decisions/0050-web-search-tool.md).
+- **Enforcement**: `src/seamus/harness/web_search.py`, `SessionAgentRunner.create_agent`, `SessionAgentRunner.get_active_tools_for_request`, `get_agent_inspect_report`, and unit tests in `tests/test_web_search.py`, `tests/test_runner.py`, and `tests/test_inspector.py`.
+
 
 ## Cross-References
 - [backlog.md](./backlog.md)
@@ -313,4 +318,6 @@ Properties and rules that must always hold across the repository.
 - [0046-daemons-naming.md](../decisions/0046-daemons-naming.md)
 - [0047-discovered-context-and-project-skills.md](../decisions/0047-discovered-context-and-project-skills.md)
 - [0048-native-lmxml-skills-system.md](../decisions/0048-native-lmxml-skills-system.md)
+- [0049-native-lmxml-todo-planning.md](../decisions/0049-native-lmxml-todo-planning.md)
+- [0050-web-search-tool.md](../decisions/0050-web-search-tool.md)
 - [persistence.md](./persistence.md)

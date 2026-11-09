@@ -13,6 +13,7 @@ from seamus.config.models import (
     ExternalRepositoryConfig,
     SkillsImplementation,
     TodoImplementation,
+    WebSearchImplementation,
 )
 from seamus.config.settings import get_system_settings_store, resolve_skill_path
 from seamus.domain.entities import AgentStatus, Thread
@@ -35,6 +36,10 @@ from seamus.harness.runner import (
 from seamus.harness.sandbox import BUNDLED_SKILLS_DIR, get_sandbox_settings
 from seamus.harness.skills import discover_session_skills, parse_skill_markdown
 from seamus.harness.store import get_harness_store
+from seamus.harness.web_search import (
+    WEB_SEARCH_TOOL_NAMES,
+    get_web_search_tools,
+)
 from seamus.persistence import (
     calculate_mount_paths,
     derive_project_id,
@@ -178,6 +183,7 @@ class AgentInspectReport(BaseModel):
     todo_implementation: TodoImplementation = TodoImplementation.DEEPAGENTS
     skills: list[SkillInspectInfo] = Field(default_factory=list)
     skills_implementation: SkillsImplementation = SkillsImplementation.DEEPAGENTS
+    web_search: WebSearchImplementation = WebSearchImplementation.DUCKDUCKGO
     subagents: list[SubAgentInspectInfo] = Field(default_factory=list)
     mounted_repositories: list[MountedRepoInspectInfo] = Field(default_factory=list)
     history: HistoryInspectInfo
@@ -218,7 +224,11 @@ def extract_tools_from_graph(graph: Any) -> list[ToolInspectInfo]:
         elif hasattr(tool, "args") and isinstance(tool.args, dict):
             params = tool.args
 
-        backend = "opensandbox" if name in SANDBOX_TOOL_NAMES else "harness"
+        backend = (
+            "opensandbox"
+            if name in SANDBOX_TOOL_NAMES
+            else ("web" if name in WEB_SEARCH_TOOL_NAMES else "harness")
+        )
         results.append(
             ToolInspectInfo(
                 name=name,
@@ -342,6 +352,7 @@ def get_default_tools_inspect_info() -> list[ToolInspectInfo]:
                 func=lambda *args, **kwargs: "OK",
                 args_schema=DeleteTodoItemInput,
             ),
+            *get_web_search_tools(),
         ]
 
         dummy_llm = ReasoningChatOpenAI(
@@ -370,7 +381,11 @@ def get_default_tools_inspect_info() -> list[ToolInspectInfo]:
                     params = args_schema.model_json_schema()
                 except Exception:
                     params = {}
-            backend = "opensandbox" if name in SANDBOX_TOOL_NAMES else "harness"
+            backend = (
+                "opensandbox"
+                if name in SANDBOX_TOOL_NAMES
+                else ("web" if name in WEB_SEARCH_TOOL_NAMES else "harness")
+            )
             extracted.append(
                 ToolInspectInfo(
                     name=name,
@@ -991,6 +1006,9 @@ def build_agent_inspect_report(
         tools = [t for t in tools if t.name != "write_todos"]
         todos = extract_thread_todos(agent.id, session.id, thread, runner=runner)
 
+    if session.config.web_search == WebSearchImplementation.NONE:
+        tools = [t for t in tools if t.name not in WEB_SEARCH_TOOL_NAMES]
+
     # Message History
     messages, checkpoint_step = extract_thread_messages(agent.id, session.id, thread)
     history_info = HistoryInspectInfo(
@@ -1072,6 +1090,7 @@ def build_agent_inspect_report(
         todo_implementation=session.config.todo_implementation,
         skills=skills,
         skills_implementation=session.config.skills_implementation,
+        web_search=session.config.web_search,
         subagents=[],
         mounted_repositories=mounted_repositories,
         history=history_info,

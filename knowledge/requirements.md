@@ -255,6 +255,12 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0048-native-lmxml-skills-system.md](../decisions/0048-native-lmxml-skills-system.md), `src/seamus/harness/skills.py`, `src/seamus/harness/prompt.py`.
 - **Linked Invariants**: [INV-035](./invariants.md#inv-035-skills-precedence-hierarchy), [INV-053](./invariants.md#inv-053-pure-tag-structure-for-lm-xml-skills-serialization), [INV-054](./invariants.md#inv-054-thread-scoped-active-skills-lifecycle).
 
+### REQ-044: Web Search Capability & Enum Configuration Guard
+- **Description**: The agent harness must provide a discrete web search and page content extraction toolset (`web_search`, `fetch_web_page`) powered by DuckDuckGo (`ddgs`), operating without external API keys or credentials. The capability must be guarded by an enum configuration property (`web_search: "none" | "duckduckgo"` on `AgentConfig`), defaulting to `"duckduckgo"`. When set to `"none"`, web search tools must be excluded from agent tool binding, omitted from LLM request tool schemas, and hidden from the Inspector. When set to `"duckduckgo"`, both tools are available and surfaced under backend `"web"`.
+- **Rationale**: Empowers agents with real-time web documentation and article extraction capabilities with zero setup friction while providing full operational control to disable web queries per template, agent, or session.
+- **Provenance**: [0050-web-search-tool.md](../decisions/0050-web-search-tool.md), `src/seamus/harness/web_search.py`, `src/seamus/harness/runner.py`, `src/seamus/harness/inspector.py`.
+- **Linked Invariants**: [INV-055](./invariants.md#inv-055-web-search-capability-guard-and-dynamic-tool-suppression).
+
 
 ## Cross-References
 - [backlog.md](./backlog.md)
@@ -298,4 +304,6 @@ Requirements, rationale, provenance, and stable IDs.
 - [0046-daemons-naming.md](../decisions/0046-daemons-naming.md)
 - [0047-discovered-context-and-project-skills.md](../decisions/0047-discovered-context-and-project-skills.md)
 - [0048-native-lmxml-skills-system.md](../decisions/0048-native-lmxml-skills-system.md)
+- [0049-native-lmxml-todo-planning.md](../decisions/0049-native-lmxml-todo-planning.md)
+- [0050-web-search-tool.md](../decisions/0050-web-search-tool.md)
 - [persistence.md](./persistence.md)

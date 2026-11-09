@@ -329,7 +329,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - Add notifications (to indicate pending user interaction)
 - refactor config; we slapped new pieces there, it lost shape; there are better ways to organize the entries there
 - instructional documentation
-- web search tools
 - at least start tracking MCP integration, even if its waaaaay ahead
 - review available tools - there is still `ask` leftover
 - manage tool labels in inspector
@@ -343,7 +342,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - Add notifications (to indicate pending user interaction)
 - refactor config; we slapped new pieces there, it lost shape; there are better ways to organize the entries there
 - instructional documentation
-- web search tools
 - at least start tracking MCP integration, even if its waaaaay ahead
 - review available tools - there is still `ask` leftover
 - manage tool labels in inspector

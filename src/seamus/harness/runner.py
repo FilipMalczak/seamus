@@ -37,7 +37,12 @@ from langchain_openai import ChatOpenAI
 from langgraph.types import Command
 from pydantic import BaseModel, Field, SecretStr, model_validator
 
-from seamus.config.models import InferenceFormat, SkillsImplementation, TodoImplementation
+from seamus.config.models import (
+    InferenceFormat,
+    SkillsImplementation,
+    TodoImplementation,
+    WebSearchImplementation,
+)
 from seamus.config.settings import get_system_settings_store
 from seamus.domain.artifacts import (
     SYNTHETIC_MESSAGE_INDICATOR,
@@ -89,6 +94,10 @@ from seamus.harness.skills import (
 from seamus.harness.todos import (
     SeamusTodoMiddleware,
     render_plan_text,
+)
+from seamus.harness.web_search import (
+    WEB_SEARCH_TOOL_NAMES,
+    get_web_search_tools,
 )
 from seamus.persistence import (
     GitCheckpointSaver,
@@ -1058,6 +1067,9 @@ class SessionAgentRunner:
             discard_tool,
         ]
 
+        if self.session.config.web_search == WebSearchImplementation.DUCKDUCKGO:
+            artifact_tools.extend(get_web_search_tools())
+
         graph = create_deep_agent(
             model=llm,
             tools=artifact_tools,
@@ -1115,10 +1127,17 @@ class SessionAgentRunner:
                             unlocked_tools.add(t)
 
         filtered: list[Any] = []
+        is_web_search_enabled = self.session.config.web_search == WebSearchImplementation.DUCKDUCKGO
         for tool_obj in request_tools:
             t_name = getattr(tool_obj, "name", None) or (
                 tool_obj.get("name") if isinstance(tool_obj, dict) else None
             )
+            if (
+                isinstance(t_name, str)
+                and not is_web_search_enabled
+                and t_name in WEB_SEARCH_TOOL_NAMES
+            ):
+                continue
             if isinstance(t_name, str) and t_name in gated_tools and t_name not in unlocked_tools:
                 continue
             if isinstance(t_name, str) and t_name in ALL_HARNESS_TOOLS:

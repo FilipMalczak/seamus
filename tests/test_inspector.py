@@ -12,6 +12,7 @@ from seamus.config.models import (
     InferenceFormat,
     SkillsImplementation,
     TodoImplementation,
+    WebSearchImplementation,
 )
 from seamus.config.template import ConfigTemplateStore, reset_config_template_store
 from seamus.harness.inspector import (
@@ -81,6 +82,8 @@ def test_get_default_tools_inspect_info() -> None:
     for tool in tools:
         if tool.name in sandbox_tools:
             assert tool.backend == "opensandbox"
+        elif tool.name in {"web_search", "fetch_web_page"}:
+            assert tool.backend == "web"
         elif tool.name in {"task", "write_todos"}:
             assert tool.backend == "harness"
 
@@ -604,3 +607,53 @@ def test_inspector_and_backend_mounted_project_skills_precedence(tmp_path: Path)
     assert idx_alpha_plain < idx_ws_dot < idx_ws_plain
     # workspace comes before bundled (so bundled wins against workspace)
     assert idx_ws_plain < idx_bundled
+
+
+def test_inspector_web_search_filtering() -> None:
+    """Verify that web search tools are included when enabled and excluded when set to none."""
+    store = HarnessStore()
+    reset_harness_store(store)
+
+    config_enabled = AgentConfig(
+        inference=InferenceConfig(
+            format=InferenceFormat.OPENAI,
+            base_url="https://openrouter.ai/api/v1",
+            api_key="sk-secret-key-12345",
+        ),
+        model_name="openai/gpt-oss-120b",
+        web_search=WebSearchImplementation.DUCKDUCKGO,
+    )
+    agent = store.create_agent(config_enabled, name="web-search-agent")
+    session_enabled = store.create_session(str(agent.id))
+    thread_enabled = store.create_thread(str(agent.id), str(session_enabled.id))
+
+    report_enabled = build_agent_inspect_report(
+        str(agent.id), str(session_enabled.id), str(thread_enabled.id)
+    )
+    assert report_enabled.web_search == WebSearchImplementation.DUCKDUCKGO
+    enabled_tool_names = {t.name for t in report_enabled.tools}
+    assert "web_search" in enabled_tool_names
+    assert "fetch_web_page" in enabled_tool_names
+
+    # Create session with web_search disabled
+    session_disabled = store.create_session(
+        str(agent.id),
+        config=AgentConfig(
+            inference=InferenceConfig(
+                format=InferenceFormat.OPENAI,
+                base_url="https://openrouter.ai/api/v1",
+                api_key="sk-secret-key-12345",
+            ),
+            model_name="openai/gpt-oss-120b",
+            web_search=WebSearchImplementation.NONE,
+        ),
+    )
+    thread_disabled = store.create_thread(str(agent.id), str(session_disabled.id))
+
+    report_disabled = build_agent_inspect_report(
+        str(agent.id), str(session_disabled.id), str(thread_disabled.id)
+    )
+    assert report_disabled.web_search == WebSearchImplementation.NONE
+    disabled_tool_names = {t.name for t in report_disabled.tools}
+    assert "web_search" not in disabled_tool_names
+    assert "fetch_web_page" not in disabled_tool_names

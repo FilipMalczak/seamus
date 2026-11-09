@@ -2464,6 +2464,12 @@ body {
   border: 1px solid rgba(56, 189, 248, 0.3);
 }
 
+.backend-web {
+  background: rgba(20, 184, 166, 0.15);
+  color: #2dd4bf;
+  border: 1px solid rgba(20, 184, 166, 0.3);
+}
+
 .btn-tool-toggle {
   display: flex;
   align-items: center;

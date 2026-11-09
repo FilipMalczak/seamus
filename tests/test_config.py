@@ -10,6 +10,7 @@ from seamus.config.models import (
     InferenceFormat,
     SkillsImplementation,
     TodoImplementation,
+    WebSearchImplementation,
 )
 from seamus.config.settings import (
     SystemSettings,
@@ -89,6 +90,20 @@ def test_agent_config_thread_message_overlap() -> None:
 
     custom = AgentConfig(thread_message_overlap=12)
     assert custom.thread_message_overlap == 12
+
+
+def test_agent_config_web_search_defaults_and_overrides() -> None:
+    cfg = AgentConfig()
+    assert cfg.web_search == WebSearchImplementation.DUCKDUCKGO
+
+    disabled = AgentConfig(web_search=WebSearchImplementation.NONE)
+    assert disabled.web_search == WebSearchImplementation.NONE
+
+    derived = cfg.copy_with_overrides(disabled)
+    assert derived.web_search == WebSearchImplementation.NONE
+
+    # Base unchanged
+    assert cfg.web_search == WebSearchImplementation.DUCKDUCKGO
 
 
 def test_agent_config_rules_patterns_defaults_and_overrides() -> None:

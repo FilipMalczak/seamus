@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, Code, Eye, EyeOff, Save, Sliders, Wand2, X } from "lucide-react";
-import type { AgentConfig, SkillsImplementation, TodoImplementation } from "../api/types";
+import type {
+  AgentConfig,
+  SkillsImplementation,
+  TodoImplementation,
+  WebSearchImplementation,
+} from "../api/types";
 
 interface ConfigModalProps {
   title: string;
@@ -148,6 +153,17 @@ export function ConfigModal({
     }
 
     if (
+      "web_search" in parsed &&
+      parsed.web_search !== null &&
+      !["none", "duckduckgo"].includes(parsed.web_search)
+    ) {
+      setError(
+        `Invalid web_search '${parsed.web_search}'. Allowed values: 'none', 'duckduckgo'.`
+      );
+      return;
+    }
+
+    if (
       parsed.daemons?.naming?.enabled &&
       (!parsed.daemons?.naming?.model || !parsed.daemons.naming.model.trim())
     ) {
@@ -184,6 +200,8 @@ export function ConfigModal({
     parsedDraft?.skills_implementation ?? initialConfig.skills_implementation ?? "seamus";
   const currentOperationalMode =
     parsedDraft?.mode ?? initialConfig.mode ?? "plan";
+  const currentWebSearch: WebSearchImplementation =
+    parsedDraft?.web_search ?? initialConfig.web_search ?? "duckduckgo";
   const currentSystemPrompt =
     parsedDraft?.system_prompt !== undefined
       ? parsedDraft.system_prompt
@@ -431,6 +449,22 @@ export function ConfigModal({
                   >
                     <option value="plan">plan (3-phase Discuss &gt; Make &gt; Execute workflow)</option>
                     <option value="chat">chat (Direct conversational/coding mode)</option>
+                  </select>
+                </div>
+
+                <div className="config-field">
+                  <label className="config-label">Web Search</label>
+                  <select
+                    className="config-select"
+                    value={currentWebSearch}
+                    onChange={(e) =>
+                      updateDraft((d) => {
+                        d.web_search = e.target.value;
+                      })
+                    }
+                  >
+                    <option value="duckduckgo">duckduckgo (DuckDuckGo Search & Extraction)</option>
+                    <option value="none">none (Disabled)</option>
                   </select>
                 </div>
               </div>

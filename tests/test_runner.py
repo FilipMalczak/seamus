@@ -30,8 +30,9 @@ from seamus.config.models import (
     InferenceConfig,
     SkillsImplementation,
     TodoImplementation,
+    WebSearchImplementation,
 )
-from seamus.domain.entities import Agent, AgentStatus
+from seamus.domain.entities import Agent, AgentStatus, Session, Thread
 from seamus.harness.runner import (
     EventBroadcaster,
     ReasoningChatOpenAI,
@@ -40,6 +41,7 @@ from seamus.harness.runner import (
     SessionAgentRunner,
     SessionBusyError,
 )
+from seamus.harness.web_search import get_web_search_tools
 
 
 class FakeAgent:
@@ -948,3 +950,26 @@ def test_ensure_ollama_model_error_response(monkeypatch: pytest.MonkeyPatch) -> 
 
     with pytest.raises(RuntimeError, match="Failed to run model 'not-found' on Ollama"):
         _ensure_ollama_model("http://localhost:11434/v1", "not-found")
+
+
+def test_runner_get_active_tools_web_search_filtering() -> None:
+    """Verify get_active_tools_for_request dynamically filters web search tools on config."""
+    cfg_enabled = AgentConfig(web_search=WebSearchImplementation.DUCKDUCKGO)
+    agent = Agent(name="test-agent", config=cfg_enabled)
+    session_enabled = Session(agent_id=agent.id, config=cfg_enabled)
+    thread = Thread(session_id=session_enabled.id, mode="chat")
+    session_enabled.threads[thread.id] = thread
+
+    runner = SessionAgentRunner(session=session_enabled, agent=FakeAgent())
+    web_tools = get_web_search_tools()
+
+    # When web_search is DUCKDUCKGO, tools are retained
+    active_tools = runner.get_active_tools_for_request(web_tools, thread=thread)
+    active_names = {t.name for t in active_tools}
+    assert "web_search" in active_names
+    assert "fetch_web_page" in active_names
+
+    # When web_search is switched to NONE, tools are filtered out
+    session_enabled.config.web_search = WebSearchImplementation.NONE
+    active_tools_disabled = runner.get_active_tools_for_request(web_tools, thread=thread)
+    assert len(active_tools_disabled) == 0

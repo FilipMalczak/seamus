@@ -437,6 +437,7 @@ class AgentConfig(BaseModel):
     system_prompt: str | None = None
     todo_implementation: TodoImplementation = TodoImplementation.SEAMUS
     skills_implementation: SkillsImplementation = SkillsImplementation.SEAMUS
+    web_search: WebSearchImplementation = WebSearchImplementation.DUCKDUCKGO
     thread_message_overlap: int = 5
     repositories: list[ExternalRepositoryConfig] = Field(default_factory=list)
     rules_patterns: list[str] = Field(default_factory=lambda: ["AGENTS.md", ".seamus/rules/**"])
@@ -459,6 +460,7 @@ class AgentConfig(BaseModel):
 - `system_prompt`: Optional custom prompt instructions appended to the dynamic LM-XML scaffold.
 - `todo_implementation`: Task list planning middleware (`seamus` [default], `deepagents`, or `none`).
 - `skills_implementation`: Skills discovery and disclosure implementation (`seamus` [default], `deepagents`, or `none`).
+- `web_search`: Web search and page extraction implementation (`duckduckgo` [default] or `none`). Powered by DuckDuckGo with zero API keys or external credentials required.
 - `thread_message_overlap`: Number of prior thread messages retained when branching or switching modes (default: `5`).
 
 ---
@@ -538,6 +540,8 @@ Harness tools are exposed dynamically based on the active operational mode and p
 | `create_todo_item` | All (when `todo_implementation="seamus"`) | Creates a new task or subtask item in the active plan. |
 | `edit_todo_item` | All (when `todo_implementation="seamus"`) | Updates content/status or moves an existing task item (reparenting, reordering). |
 | `delete_todo_item` | All (when `todo_implementation="seamus"`) | Deletes a task item and all of its subtasks. |
+| `web_search` | All (when `web_search="duckduckgo"`) | Queries DuckDuckGo for top web results, returning titles, links, and snippets. |
+| `fetch_web_page` | All (when `web_search="duckduckgo"`) | Fetches page content and extracts readable Markdown via DuckDuckGo extraction. |
 
 ---
 
