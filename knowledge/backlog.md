@@ -2,6 +2,56 @@
 
 Persistent record of work intentionally left outstanding across the project, maintained in accordance with [AGENTS.md](../AGENTS.md).
 
+## Core harness features
+
+
+### Native LM-XML Skills System with Load/Unload Skill Tools
+- **Description**: Replace the reliance on LangChain DeepAgents' built-in `SkillsMiddleware` with a first-party, native Seamus skills implementation. The native system will be built directly on `lmxml` dynamic prompt structures (integrating seamlessly with `DynamicSystemPromptMiddleware`) and explicit `load_skill` / `unload_skill` agent tools to disclose, activate, and deactivate skill instructions and associated tools on demand rather than relying on automatic middleware inspection and implicit prompt appending.
+- **Rationale**: DeepAgents' `SkillsMiddleware` operates as an external abstraction with rigid prompt formatting, strict PyYAML frontmatter parsing (which silently drops real-world skills with unquoted inline structures like colons or braces in descriptions, such as `bevy-assets`), and implicit disclosure rules. A native implementation based on `lmxml` dynamisms, relaxed/resilient YAML frontmatter parsing, and explicit `load_skill` / `unload_skill` tools will align directly with Seamus's structured XML system prompt architecture, provide tighter control over context window budgeting and prompt cache breakpoints, and avoid middleware ordering or prompt overriding frictions.
+- **Provenance**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md), [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md), [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md).
+
+### Operational Execution Modes and Thread Transition Triggers (act, analyse, routing)
+- **Description**: Following the initial implementation of `chat` and `plan` modes in [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), expand the operational mode set to include:
+  1. `act`: Direct task execution; executes user commands and edits promptly without upfront planning cycles.
+  2. `analyse`: Read-only workspace investigation; answers questions and analyzes code without modifying persistent files.
+  3. `routing`: Uses a classifier model (such as Jev or an LLM wrapped in dedicated tools) to triage user input and dispatch to an appropriate operational mode.
+  Switching between operational modes closes non-empty threads and opens a fresh thread (reusing empty initial threads).
+- **Rationale**: Aligns agent behavior with specific user intents while using threads as deterministic boundaries between planning, discussion, analysis, and execution.
+- **Provenance**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), [threads_modes_personas.md](./threads_modes_personas.md), [REQ-025](./requirements.md#req-025-operational-modes-and-thread-transition-triggers), [INV-028](./invariants.md#inv-028-mode-transition-thread-spawning-boundary).
+
+
+### Pluggable Agent Personas (Coder, Office Worker, Designer, etc.)
+- **Description**: Support an extensible architecture for agent personas, with immediate near-term focus on the `Coder` persona to support self-hosting / dogfooding development (developing Seamus with Seamus), while supporting custom persona registration in the long term. Personas establish baseline `<identity>`, domain instructions, and specialized tool suites/backends (exact rules for persona switching/inheritance across sessions remain TBD).
+- **Rationale**: Expands Seamus from a purely code-focused assistant into a versatile multi-domain autonomous harness while prioritizing autonomous coding for Seamus self-development.
+- **Provenance**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [threads_modes_personas.md](./threads_modes_personas.md), [REQ-024](./requirements.md#req-024-agent-personas-and-baseline-archetypes).
+
+
+### Subagent Architecture: Prompts, Sandbox Isolation, and UI Representation
+- **Description**: Investigate and define Seamus subagent integration using DeepAgents subagents (`SubAgentMiddleware` / `AsyncSubAgent`). Specifically determine:
+  1. System prompt composition: whether subagents inherit parent workspace rules and engineering discipline or use specialized task prompts.
+  2. Execution isolation: whether subagents operate in the parent session's container workspace or spin up isolated workspace subtrees/ephemeral containers.
+  3. UI visualization: design how delegated subagent runs, parallel executions, and returns are rendered in the SPA (e.g., collapsible child execution cards within the chat bubble or dedicated sub-threads).
+- **Rationale**: Delegation to specialized subagents is central to autonomous harness scaling; clear execution boundaries and user visibility must be established before enabling subagents.
+- **Provenance**: `src/seamus/harness/runner.py`, `deepagents.middleware.subagents`, [abstractions.md](./abstractions.md).
+
+
+
+### Dynamic Project Rules Discovery from Workspace (.seamus/rules and AGENTS.md)
+- **Description**: Enhance `DynamicSystemPromptMiddleware` to inspect the agent workspace (via configurable rule globs such as `AGENTS.md` and `.seamus/rules/**/*.md`) prior to model turns, injecting project-specific guidelines into a dedicated `<project_rules>` XML tag.
+- **Note**: DeepAgents' built-in `AGENTS.md` support looks awkward for project rules because it is actually implemented as `MemoryMiddleware` (`<agent_memory>` + `<memory_guidelines>` instructing the agent to treat rule files as mutable agent memory and proactively rewrite them). We will likely want to go with a native Seamus implementation that loads configured rule files directly into the LM-XML system prompt.
+- **Rationale**: Keeps the agent automatically synchronized with repository-level conventions and rule files without requiring session re-initialization or conflating static project rules with mutable agent memory.
+- **Provenance**: [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md), [0027-skills-config-project-rules-and-inspector.md](../decisions/0027-skills-config-project-rules-and-inspector.md).
+
+
+### Minimalistic Dashboard View for Agents and Sessions
+- **Description**: Implement an alternative, lightweight "Dashboard" view alongside the rich developer/IDE-like navigation tree and inspector:
+  1. Plain agent grid: Displays all configured agents as a clean, uncluttered card grid.
+  2. Session grid: Selecting an agent transitions to a grid of its sessions. Each session card displays rows showing a `(...)`-collapsed preview of the last couple task/thread names.
+  3. Seamless view transitions: Provides a quick, distraction-free conversational interface for goal-oriented interaction, with prominent links to navigate into the "hydrated" developer/IDE view when in-depth runtime inspection or advanced configuration is required.
+- **Rationale**: Accommodates both lightweight conversational workflows focused on getting tasks done and deep engineering/debugging sessions requiring full inspectability.
+- **Provenance**: [0003-react-web-ui.md](../decisions/0003-react-web-ui.md), [architecture.md](./architecture.md#system-overview).
+
+
 ## Deferred
 
 ### Daemon Manifest Normalization, Generic Event Filters, and Custom Selection Strategies
@@ -190,19 +240,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Greatly streamlines local manual verification of UI features (like interactive A2UI questionnaires, diff viewers, and error handling) and reduces turnaround time for frontend and harness developers.
 - **Provenance**: `src/seamus/harness/runner.py`, `tests/test_runner.py`, [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md).
 
-### Native LM-XML Skills System with Load/Unload Skill Tools
-- **Description**: Replace the reliance on LangChain DeepAgents' built-in `SkillsMiddleware` with a first-party, native Seamus skills implementation. The native system will be built directly on `lmxml` dynamic prompt structures (integrating seamlessly with `DynamicSystemPromptMiddleware`) and explicit `load_skill` / `unload_skill` agent tools to disclose, activate, and deactivate skill instructions and associated tools on demand rather than relying on automatic middleware inspection and implicit prompt appending.
-- **Rationale**: DeepAgents' `SkillsMiddleware` operates as an external abstraction with rigid prompt formatting, strict PyYAML frontmatter parsing (which silently drops real-world skills with unquoted inline structures like colons or braces in descriptions, such as `bevy-assets`), and implicit disclosure rules. A native implementation based on `lmxml` dynamisms, relaxed/resilient YAML frontmatter parsing, and explicit `load_skill` / `unload_skill` tools will align directly with Seamus's structured XML system prompt architecture, provide tighter control over context window budgeting and prompt cache breakpoints, and avoid middleware ordering or prompt overriding frictions.
-- **Provenance**: [0024-anthropic-skills-and-system-settings.md](../decisions/0024-anthropic-skills-and-system-settings.md), [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md), [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md).
-
-### Operational Execution Modes and Thread Transition Triggers (act, analyse, routing)
-- **Description**: Following the initial implementation of `chat` and `plan` modes in [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), expand the operational mode set to include:
-  1. `act`: Direct task execution; executes user commands and edits promptly without upfront planning cycles.
-  2. `analyse`: Read-only workspace investigation; answers questions and analyzes code without modifying persistent files.
-  3. `routing`: Uses a classifier model (such as Jev or an LLM wrapped in dedicated tools) to triage user input and dispatch to an appropriate operational mode.
-  Switching between operational modes closes non-empty threads and opens a fresh thread (reusing empty initial threads).
-- **Rationale**: Aligns agent behavior with specific user intents while using threads as deterministic boundaries between planning, discussion, analysis, and execution.
-- **Provenance**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), [threads_modes_personas.md](./threads_modes_personas.md), [REQ-025](./requirements.md#req-025-operational-modes-and-thread-transition-triggers), [INV-028](./invariants.md#inv-028-mode-transition-thread-spawning-boundary).
 
 ### Configuration Synchronization (Template-to-Agent and Agent-to-Session)
 - **Description**: Implement mechanisms to synchronize configurations across entity hierarchies:
@@ -211,19 +248,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Agents and sessions currently take snapshot copies of configs during creation. When a template or agent configuration is updated, existing downstream entities remain on stale configuration snapshots with no automated or selective synchronization path.
 - **Provenance**: `src/seamus/config/models.py`, `src/seamus/domain/entities.py`, `src/seamus/server/routes/config.py`.
 
-### Pluggable Agent Personas (Coder, Office Worker, Designer, etc.)
-- **Description**: Support an extensible architecture for agent personas, with immediate near-term focus on the `Coder` persona to support self-hosting / dogfooding development (developing Seamus with Seamus), while supporting custom persona registration in the long term. Personas establish baseline `<identity>`, domain instructions, and specialized tool suites/backends (exact rules for persona switching/inheritance across sessions remain TBD).
-- **Rationale**: Expands Seamus from a purely code-focused assistant into a versatile multi-domain autonomous harness while prioritizing autonomous coding for Seamus self-development.
-- **Provenance**: [0019-threads-modes-personas-architecture.md](../decisions/0019-threads-modes-personas-architecture.md), [threads_modes_personas.md](./threads_modes_personas.md), [REQ-024](./requirements.md#req-024-agent-personas-and-baseline-archetypes).
-
-### Subagent Architecture: Prompts, Sandbox Isolation, and UI Representation
-- **Description**: Investigate and define Seamus subagent integration using DeepAgents subagents (`SubAgentMiddleware` / `AsyncSubAgent`). Specifically determine:
-  1. System prompt composition: whether subagents inherit parent workspace rules and engineering discipline or use specialized task prompts.
-  2. Execution isolation: whether subagents operate in the parent session's container workspace or spin up isolated workspace subtrees/ephemeral containers.
-  3. UI visualization: design how delegated subagent runs, parallel executions, and returns are rendered in the SPA (e.g., collapsible child execution cards within the chat bubble or dedicated sub-threads).
-- **Rationale**: Delegation to specialized subagents is central to autonomous harness scaling; clear execution boundaries and user visibility must be established before enabling subagents.
-- **Provenance**: `src/seamus/harness/runner.py`, `deepagents.middleware.subagents`, [abstractions.md](./abstractions.md).
-
 
 ### Agent Artifacts Protocol and Dedicated UI Viewer Panel
 - **Description**: Introduce an Artifacts abstraction for persistent, high-density outputs (plans, reports, architecture diagrams, code diffs, standalone scripts). Establish:
@@ -231,12 +255,6 @@ Persistent record of work intentionally left outstanding across the project, mai
   2. UI Experience: a dedicated Artifacts tab or split-pane viewer alongside Chat, Changes, and Inspector, supporting Markdown rendering, syntax highlighting, and export.
 - **Rationale**: Keeps chat conversations clean and scannable while giving persistent, dedicated visibility to substantial engineering deliverables.
 - **Provenance**: `ui/src/components/`, [abstractions.md](./abstractions.md), [architecture.md](./architecture.md).
-
-### Dynamic Project Rules Discovery from Workspace (.seamus/rules and AGENTS.md)
-- **Description**: Enhance `DynamicSystemPromptMiddleware` to inspect the agent workspace (via configurable rule globs such as `AGENTS.md` and `.seamus/rules/**/*.md`) prior to model turns, injecting project-specific guidelines into a dedicated `<project_rules>` XML tag.
-- **Note**: DeepAgents' built-in `AGENTS.md` support looks awkward for project rules because it is actually implemented as `MemoryMiddleware` (`<agent_memory>` + `<memory_guidelines>` instructing the agent to treat rule files as mutable agent memory and proactively rewrite them). We will likely want to go with a native Seamus implementation that loads configured rule files directly into the LM-XML system prompt.
-- **Rationale**: Keeps the agent automatically synchronized with repository-level conventions and rule files without requiring session re-initialization or conflating static project rules with mutable agent memory.
-- **Provenance**: [0018-dynamic-system-prompt-architecture.md](../decisions/0018-dynamic-system-prompt-architecture.md), [0027-skills-config-project-rules-and-inspector.md](../decisions/0027-skills-config-project-rules-and-inspector.md).
 
 ### Thorough Security Review of Containerized OpenSandbox Server & Docker Socket Configuration
 - **Description**: Perform an in-depth security review and hardening pass on the containerized `opensandbox-server` deployment (`opensandbox/Dockerfile`, `opensandbox/sandbox.toml`, and `docker-compose.yml`). Review the security implications of mounting `/var/run/docker.sock`, tighten `allowed_host_paths` in `[storage]`, evaluate Docker socket proxies or rootless/gVisor (`runsc`)/Kata isolation runtimes (`[secure_runtime]`), review container capability drops/seccomp/AppArmor profiles, and audit sandbox network egress policies and port range exposure.
@@ -271,14 +289,6 @@ Persistent record of work intentionally left outstanding across the project, mai
      - Test concurrent sessions/threads hitting the local Ollama instance simultaneously and verify request queuing and CPU contention.
 - **Rationale**: While baseline containerized execution, candidate endpoint probing, model pre-loading, and auto-pull work correctly, local inference introduces unique latencies and resource constraints. Usability enhancements and thorough test coverage will ensure seamless day-to-day developer workflows.
 - **Provenance**: [0045-ollama-local-model-provider.md](../decisions/0045-ollama-local-model-provider.md), `src/seamus/harness/runner.py`, `ui/src/components/ConfigModal.tsx`.
-
-### Minimalistic Dashboard View for Agents and Sessions
-- **Description**: Implement an alternative, lightweight "Dashboard" view alongside the rich developer/IDE-like navigation tree and inspector:
-  1. Plain agent grid: Displays all configured agents as a clean, uncluttered card grid.
-  2. Session grid: Selecting an agent transitions to a grid of its sessions. Each session card displays rows showing a `(...)`-collapsed preview of the last couple task/thread names.
-  3. Seamless view transitions: Provides a quick, distraction-free conversational interface for goal-oriented interaction, with prominent links to navigate into the "hydrated" developer/IDE view when in-depth runtime inspection or advanced configuration is required.
-- **Rationale**: Accommodates both lightweight conversational workflows focused on getting tasks done and deep engineering/debugging sessions requiring full inspectability.
-- **Provenance**: [0003-react-web-ui.md](../decisions/0003-react-web-ui.md), [architecture.md](./architecture.md#system-overview).
 
 ### Granular Branch Action Placement in Chat Bubble UI
 - **Description**: Redesign the message branch action layout in `MessageItem.tsx`. Move the branch action icon/button to the right of message bubbles (e.g., in a hover/action gutter) rather than placing it in the bottom footer below the bubble content, and review branch point indicators to ensure they are visually intuitive and unambiguous.
