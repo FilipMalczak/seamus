@@ -837,7 +837,7 @@ def discover_context_files(
                     continue
 
                 try:
-                    content = file_path.read_text(encoding="utf-8")
+                    content = file_path.read_text(encoding="utf-8").strip()
                 except (UnicodeDecodeError, OSError) as exc:
                     logger.warning(
                         "Skipping unreadable or binary context file %s: %s",

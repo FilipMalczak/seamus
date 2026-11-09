@@ -32,6 +32,7 @@ Additionally:
        - Sort matched files alphabetically by relative path.
        - Deduplicate across patterns and roots preserving the earliest match.
        - Skip binary/unreadable files and files exceeding 1 MB.
+       - Strip leading and trailing whitespace/newlines from content to prevent prompt pollution.
        - Construct in-sandbox paths (`/workspace/...`, `/projects/{mount_name}/...`).
    - In `SystemPromptDocument`, when `discovered_context` is empty or `None`, it is excluded via `model_dump(exclude_none=True)` and omitted from serialized LM-XML. When populated, it serializes cleanly under `<discovered_context>` as a list of item objects.
    - Inject discovered context dynamically per model turn in `SessionAgentRunner._provide_prompt_for_request()` and `build_effective_system_prompt()`, and render it in the Agent Inspector's System Prompt tab.

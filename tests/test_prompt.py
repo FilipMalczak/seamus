@@ -311,8 +311,10 @@ def test_discover_context_files_ordering_and_deduplication(tmp_path: Path) -> No
     workspace_dir.mkdir(parents=True)
     projects_dir.mkdir(parents=True)
 
-    # 1. Setup workspace files
-    (workspace_dir / "AGENTS.md").write_text("Workspace AGENTS instructions", encoding="utf-8")
+    # 1. Setup workspace files (with leading/trailing newlines to verify stripping)
+    (workspace_dir / "AGENTS.md").write_text(
+        "\n\nWorkspace AGENTS instructions\n\n", encoding="utf-8"
+    )
     rules_dir = workspace_dir / ".seamus" / "rules"
     rules_dir.mkdir(parents=True)
     (rules_dir / "02-testing.md").write_text("Test rules", encoding="utf-8")
