@@ -358,9 +358,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 - a way to attach to button (in artifact) both data from inputs and comments [low]
 - comments need to be saved in artifact state, not just "review" append log [low]
-- multiple mounted repos; this will require us to figure out squashing strategies and how to track which commit corresponds to which across repos [high, but complicated]
-
-- default implementation selection: decide on system-wide defaults for `todo_implementation` and `skills_implementation` once alternative/native implementations are stabilized
 
 - if a field in config or config template would be masked and contains ${} expression, it doesn't need to be masked
 
@@ -375,3 +372,9 @@ Persistent record of work intentionally left outstanding across the project, mai
 - deep-seamus variant of skills and todos (use normal skills/todos infra, but use LMXML to embed prompt parts, instead of simply appending markdown)
 
 - Tab autocomplete in shell emulator
+
+- add session tracking when using openrouter (so we can see sessions on provider side and see their costs); capture generation ID and expose it in chat bubble details
+- add costs tracking
+- recognize tool failures, start gathering telemetry
+- track "session health score"; it slowly recovers over time; things like tool errors or the same tool calls repeated without meaningful gap between calls diminish health; once health falls below some level, we pause the session and ask the user if he wants to continue or switch model
+- add reasoning level to model config
