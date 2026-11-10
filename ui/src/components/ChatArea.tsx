@@ -19,6 +19,7 @@ import {
   Wrench,
 } from "lucide-react";
 import {
+  BUBBLE_SEQUENCE_THRESHOLD,
   SYNTHETIC_MESSAGE_INDICATOR,
   type AgentStatus,
   type ArtifactInfo,
@@ -29,6 +30,7 @@ import {
   type ThreadInfo,
 } from "../api/types";
 import { useThreadStream } from "../hooks/useThreadStream";
+import { computeBubbleSequenceIndices } from "../utils/sequence";
 import { MessageItem } from "./MessageItem";
 
 interface ChatAreaProps {
@@ -65,6 +67,7 @@ interface ChatAreaProps {
   ) => void;
   onNavigateToSession?: (sessionId: string) => void;
   onNamed?: (event: any) => void;
+  sequenceThreshold?: number;
 }
 
 export function ChatArea({
@@ -78,6 +81,7 @@ export function ChatArea({
   sessionLineage,
   thread,
   isSessionView = false,
+  sequenceThreshold = BUBBLE_SEQUENCE_THRESHOLD,
   onSelectThread,
   onStatusChange,
   onKillSession,
@@ -302,6 +306,11 @@ export function ChatArea({
     }
     return map;
   }, [sessionLineage, sessionProvenance, messages]);
+
+  // Compute 1-based index for each bubble if part of a streak exceeding the threshold
+  const sequenceIndices = useMemo(() => {
+    return computeBubbleSequenceIndices(messages, sequenceThreshold);
+  }, [messages, sequenceThreshold]);
 
   // Notify parent of active thread status changes
   useEffect(() => {
@@ -651,6 +660,8 @@ export function ChatArea({
               <React.Fragment key={msg.id}>
                 <MessageItem
                   message={msg}
+                  sequenceIndex={sequenceIndices.get(msg.id)}
+                  sequenceIndices={sequenceIndices}
                   onBranch={onBranchMessage ? () => handleBranchItem(msg) : undefined}
                   onBranchTool={
                     onBranchMessage && msg.role === "assistant" && msg.toolCalls && msg.toolCalls.length > 0

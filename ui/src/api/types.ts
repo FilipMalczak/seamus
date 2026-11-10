@@ -133,9 +133,16 @@ export type ToolCallRecord = {
   args?: Record<string, unknown> | string;
   rawArgs?: string;
   result?: unknown;
+  timestamp?: string;
 };
 
 export const SYNTHETIC_MESSAGE_INDICATOR = "<SYNTHETIC MESSAGE INDICATOR>";
+
+/**
+ * Minimum number of consecutive messages/bubbles in a streak required before
+ * displaying top-left sequence indices (#1, #2, ...).
+ */
+export const BUBBLE_SEQUENCE_THRESHOLD = 5;
 
 export interface ManifestButton {
   id: string;
@@ -182,10 +189,10 @@ export interface ArtifactInfo {
 }
 
 export type MessagePart =
-  | { type: "reasoning"; id: string; content: string; isStreaming?: boolean }
-  | { type: "tool_call"; id: string; toolCall: ToolCallRecord }
-  | { type: "artifact"; id: string; artifact: ArtifactInfo }
-  | { type: "text"; id: string; content: string };
+  | { type: "reasoning"; id: string; content: string; isStreaming?: boolean; timestamp?: string }
+  | { type: "tool_call"; id: string; toolCall: ToolCallRecord; timestamp?: string }
+  | { type: "artifact"; id: string; artifact: ArtifactInfo; timestamp?: string }
+  | { type: "text"; id: string; content: string; timestamp?: string };
 
 export interface ThreadTransitionInfo {
   threadId: string;

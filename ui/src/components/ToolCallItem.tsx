@@ -10,8 +10,15 @@ import {
   XCircle,
 } from "lucide-react";
 import type { ToolCallRecord } from "../api/types";
+import { formatBubbleTime, formatFullDate } from "../utils/sequence";
 
-export function ToolCallItem({ toolCall }: { toolCall: ToolCallRecord }) {
+export function ToolCallItem({
+  toolCall,
+  sequenceIndex,
+}: {
+  toolCall: ToolCallRecord;
+  sequenceIndex?: number;
+}) {
   const status = toolCall.status || (toolCall.result !== undefined ? "done" : "pending");
   const isDone = status === "done" || status === "error";
 
@@ -84,6 +91,14 @@ export function ToolCallItem({ toolCall }: { toolCall: ToolCallRecord }) {
         title="Toggle tool execution details"
       >
         <div className="tool-card-title">
+          {sequenceIndex !== undefined && (
+            <span
+              className="bubble-sequence-badge"
+              title={`Step #${sequenceIndex} in sequence`}
+            >
+              #{sequenceIndex}
+            </span>
+          )}
           {toolCall.name === "web_search" || toolCall.name === "fetch_web_page" ? (
             <Globe className="size-3.5 text-emerald-400" />
           ) : (
@@ -91,6 +106,14 @@ export function ToolCallItem({ toolCall }: { toolCall: ToolCallRecord }) {
           )}
           <span className="tool-name">{toolCall.name}</span>
           {renderBadge()}
+          {toolCall.timestamp && (
+            <span
+              className="part-timestamp"
+              title={formatFullDate(toolCall.timestamp)}
+            >
+              {formatBubbleTime(toolCall.timestamp)}
+            </span>
+          )}
         </div>
         {isOpen ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
       </button>

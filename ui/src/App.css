@@ -1185,6 +1185,64 @@ body {
   border-top-left-radius: 2px;
 }
 
+/* Bubble Header & Footer (Index Badge & Timestamps) */
+.bubble-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin-bottom: 0.35rem;
+}
+
+.bubble-sequence-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.15rem 0.35rem;
+  border-radius: 4px;
+  user-select: none;
+}
+
+.assistant-bubble .bubble-sequence-badge,
+.assistant-row .bubble-sequence-badge {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
+.user-bubble .bubble-sequence-badge,
+.user-row .bubble-sequence-badge {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.bubble-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 0.35rem;
+  padding-top: 0.15rem;
+}
+
+.bubble-timestamp {
+  font-size: 0.68rem;
+  line-height: 1;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.user-bubble .bubble-timestamp {
+  color: rgba(240, 253, 244, 0.7);
+}
+
+.assistant-bubble .bubble-timestamp {
+  color: var(--text-muted);
+}
+
 /* Markdown Content & Typography */
 .markdown-content {
   font-size: 0.9rem;

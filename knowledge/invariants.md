@@ -272,6 +272,11 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-044](./requirements.md#req-044-web-search-capability--enum-configuration-guard), [0050-web-search-tool.md](../decisions/0050-web-search-tool.md).
 - **Enforcement**: `src/seamus/harness/web_search.py`, `SessionAgentRunner.create_agent`, `SessionAgentRunner.get_active_tools_for_request`, `get_agent_inspect_report`, and unit tests in `tests/test_web_search.py`, `tests/test_runner.py`, and `tests/test_inspector.py`.
 
+### INV-056: Chat Bubble Timestamps and Autonomous Sequence Indexing
+- **Statement**: All conversational message bubbles rendered in the Web UI must render timestamps with seconds precision (`HH:MM:SS`) in the bubble footer or message header. Whenever a contiguous sequence of messages by the same sender role exceeds `BUBBLE_SEQUENCE_THRESHOLD` (default 5, configurable), each message in that sequence must render a 1-based index badge (`#1`, `#2`, ..., `#N`) at its top-left corner (or in the header if text content is absent). Thread transitions and synthetic event notifications must break sequence continuity.
+- **Justification**: [REQ-045](./requirements.md#req-045-chat-bubble-timestamps-and-autonomous-sequence-indexing), [0051-chat-bubble-timestamps-and-sequence-indexing.md](../decisions/0051-chat-bubble-timestamps-and-sequence-indexing.md).
+- **Enforcement**: `ui/src/utils/sequence.ts`, `ui/src/components/ChatArea.tsx`, `ui/src/components/MessageItem.tsx`, and automated tests in `ui/tests/sequence.test.mjs`.
+
 
 ## Cross-References
 - [backlog.md](./backlog.md)
