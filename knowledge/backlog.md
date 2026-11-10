@@ -155,6 +155,20 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Revisit Trigger**: When multi-operator review requirements, automated compliance checks, or CI-based test gating are introduced for agent repository merges.
 - **Provenance**: [0012-sync-prs-and-thread-accept.md](../decisions/0012-sync-prs-and-thread-accept.md), [vocabulary.md](./vocabulary.md#sync-pr).
 
+### Model Context Protocol (MCP) Client and Subprocess Server Integration
+- **Description**: Add MCP client capabilities to Seamus agents.
+  > [!IMPORTANT]
+  > MCP support requires not only connecting over remote HTTP/SSE transports to external services, but orchestrating local stdio subprocess servers, managing server process lifecycles and environment variables, and configuring scoped local filesystem access boundaries safely.
+- **Why Deferred**: Native tools, OpenSandbox container execution, and bundled skills cover current capabilities cleanly; protocol integration and local stdio process orchestration add substantial runtime surface.
+- **Revisit Trigger**: When external tools or data sources required by Seamus agents are exposed primarily as MCP servers, or when users request running local stdio-based MCP servers alongside agent sandboxes.
+- **Provenance**: `src/seamus/harness/runner.py`, `knowledge/backlog.md`.
+
+### Modular Disablement of Harness Layers and Components
+- **Description**: Provide fine-grained switches to disable specific harness subsystems (e.g. context compaction, specific artifact types) while retaining generic capabilities.
+- **Why Deferred**: Subsystems currently have unified configuration toggles; granular layer-by-layer disablement requires deep modularization.
+- **Revisit Trigger**: When custom deployment profiles require stripping down harness capabilities to minimal subsets.
+- **Provenance**: `knowledge/backlog.md`.
+
 ## Technical debt
 
 ### Configurable or Heartbeat-Driven Terminal Session Lifecycle (Replacing Arbitrary 5m Timeout)
@@ -222,6 +236,21 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Current Problem**: System packages, libraries, and tools installed by the agent during sandbox execution (e.g. via `apt`, `pip`, or `npm`) are ephemeral and discarded across container restarts. While the operational workspace files are persisted via Git, the execution environment state itself resets, breaking multi-turn agent workflows that depend on installed dependencies.
 - **Improvement**: Ensure sandbox environment state and installed tooling persist across session turns and container restarts, rather than resetting to a clean base image.
 - **Provenance**: `src/seamus/harness/sandbox.py`, `src/seamus/harness/prompt.py`, `opensandbox/`.
+
+### Compound Symbolic Secret Reference Test Coverage
+- **Current Problem**: Test coverage for OpenBao secret resolution focuses on standalone `${secret(...)` expressions. Cases where secrets are embedded inside compound strings (e.g. `user:${secret('/some/password')}@host`) are undertested.
+- **Improvement**: Add dedicated test suites in `tests/vault/` verifying parsing, interpolation, version explosion, and stripping in compound strings.
+- **Provenance**: `src/seamus/vault/interpolator.py`, `src/seamus/vault/parser.py`.
+
+### Config Model Modularization & Grouping
+- **Current Problem**: `AgentConfig` in `src/seamus/config/models.py` has grown into a flat list of diverse concerns (inference, planning, skills, search, git mounts, daemons, sandbox image, rules, thread overlap) with fragile manual copying in `copy_with_overrides`.
+- **Improvement**: Refactor `AgentConfig` into cohesive sub-models (e.g. `HarnessConfig`, `EnvironmentConfig`, `PlanningConfig`) and streamline override merging.
+- **Provenance**: `src/seamus/config/models.py`, `ui/src/components/ConfigModal.tsx`.
+
+### Legacy `ask` and `form` Toolset Cleanup
+- **Current Problem**: `src/seamus/harness/runner.py` still defines and registers legacy `ask` and `form` tools alongside the modern A2UI artifact tool suite (`make_artifact`, `wait_for_click`, etc.), causing schema clutter and maintenance overhead.
+- **Improvement**: Audit references to `ask` and `form`, remove them or consolidate them completely into the A2UI artifact pipeline.
+- **Provenance**: `src/seamus/harness/runner.py`, [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md).
 
 ## TODO
 
@@ -321,60 +350,94 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: The `a2ui_components` skill currently provides in-depth examples for `Column`, `Row`, `Card`, `Text`, `TextField`, `ChoicePicker`, `Button`, and `Divider`. Documenting the full set of basic catalog widgets empowers agents to author richer, multi-tabbed, modal, or continuous-input interactive surfaces without guessing schemas or referencing raw catalog JSON.
 - **Provenance**: `src/seamus/skills/bundled/a2ui_components/SKILL.md`, `src/seamus/harness/artifacts.py` (`A2UI_COMPONENT_SPECS`), [0039-loose-artifact-normalization-and-mutation-log.md](../decisions/0039-loose-artifact-normalization-and-mutation-log.md).
 
+### Interactive Tool Disabling from Agent Inspector
+- **Description**: Add toggle controls in the Agent Inspector view allowing operators to dynamically enable or disable specific tools for an agent or session. Disabled tools are excluded from the model's bound tool list on subsequent turns.
+- **Rationale**: Empowers operators to run controlled experiments, isolate model behavior, debug tool regressions, or restrict access to risky or prone-to-misuse tools without editing code.
+- **Provenance**: `src/seamus/harness/inspector.py`, `src/seamus/harness/runner.py`, `ui/src/components/AgentInspector.tsx`.
+
+### Tool Categorization and Label Taxonomy in Agent Inspector
+- **Description**: Expand predefined taxonomy labels across registered tools beyond initial harness and opensandbox markings (e.g. tagging tools as *Harness*, *Sandbox*, *Skills*, *Planning*, *Web Search*, *Artifacts*) and organize tool cards in the Agent Inspector into meaningful visual categories.
+- **Rationale**: As tool capabilities expand, a flat list with minimal labeling makes inspecting the agent's available capabilities difficult to scan.
+- **Provenance**: `src/seamus/harness/inspector.py`, `ui/src/components/AgentInspector.tsx`.
+
+### System Events Right-Side Alignment in Chat Feed
+- **Description**: Align synthetic system event message rows (`isSynthetic`) to the right (`align-self: flex-end`) like user messages, distinguishing external harness actions and notifications from assistant outputs.
+- **Rationale**: Currently synthetic events align to the left, which visually blends with assistant turns and causes confusion during execution flow.
+- **Provenance**: `ui/src/components/MessageItem.tsx`, `ui/src/App.css`.
+
+### Conversational Anchors & Header Close Action for Dedicated Tab Artifacts
+- **Description**: Add conversational anchor indicators in the chat message stream when dedicated tab artifacts (plans, forms, custom surfaces) are created so users can re-open them from conversational context even after closing the tab. Add a close icon (`X`) to the artifact tab header itself (which disappears when an artifact is blocking execution).
+- **Rationale**: Once non-embedded artifact tabs are closed, there is no persistent anchor in the conversation history linking to them.
+- **Provenance**: `ui/src/components/`, `src/seamus/harness/artifacts.py`, [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md).
+
+### Type-Specific Renderers in Session Changes Diff View
+- **Description**: Extend the "Rendered" view mode in the Changes tab to support type-specific visual rendering: render A2UI `body.json` as live UI components, `manifest.json` as UI plus state inspection, and `.md` files as formatted markdown.
+- **Rationale**: Diff inspections for UI surfaces and structured documentation are much more productive when viewed in their rendered form rather than raw JSON/Markdown diffs.
+- **Provenance**: `ui/src/components/ChangesView.tsx`, [0015-session-changes-diff-tab.md](../decisions/0015-session-changes-diff-tab.md).
+
+### Differentiating Workspace Scratchpad vs. Mounted Projects in Prompt
+- **Description**: Clarify directory roles in system prompt construction: explicitly instruct agents that `/workspace` is for personal scratchpad notes, plans, and scripts, whereas `/projects/{mount_name}` is the canonical working directory for project codebase edits.
+- **Rationale**: Agents sometimes create or edit project files directly in `/workspace` when external repositories are mounted under `/projects`.
+- **Provenance**: `src/seamus/harness/prompt.py`, [0042-mount-external-git-repositories.md](../decisions/0042-mount-external-git-repositories.md).
+
+### Prompt Constraint Against Redundant "Other/Custom" in Questionnaires
+- **Description**: Add prompt negative constraints in questionnaire generation instructions forbidding agents from adding explicit "Other" or "Custom" choice options when `write_in=True` is enabled.
+- **Rationale**: Agents frequently define a "Custom" choice option alongside `write_in: true`, generating redundant UI fields ("Other" and "Custom").
+- **Provenance**: `src/seamus/harness/prompt.py`, `src/seamus/skills/bundled/a2ui_components/SKILL.md`.
+
+### Holistic Contextual Grounding for Plan Review Comments
+- **Description**: When delivering user plan review feedback back to the agent in Plan/Make phase, structure the injected prompt to instruct the agent to evaluate line-anchored comments within the context of the entire implementation plan and architectural intent, rather than making myopic isolated edits.
+- **Rationale**: Agents tend to fixate on the exact quoted snippet in review comments and disregard the surrounding plan structure.
+- **Provenance**: `spike-plan-comments`, `src/seamus/harness/runner.py`.
+
+### Plan Artifact Presentation & A2UI Surface Rendering Overhaul
+- **Description**: Redesign the visual layout, typography, and component structure used when rendering implementation plans and translating the internal plan entity into A2UI surfaces, making plan reviews visually engaging and ergonomic.
+- **Rationale**: The current plan artifact presentation is visually raw, unpolished, and difficult to scan during detailed architectural reviews.
+- **Provenance**: `ui/src/components/PlanArtifactViewer.tsx`, `src/seamus/harness/artifacts.py`, [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md).
+
+### Comprehensive Web UI Design System and CSS Architecture Overhaul
+- **Description**: Undertake a comprehensive design review of the Web UI: harmonize color schemes, borders, elevations, component proportions, typography, and simplify the monolithic CSS layout in `App.css`.
+- **Rationale**: Features and controls were added incrementally across dozens of spikes and tasks, resulting in visual drift and disjointed component styling.
+- **Provenance**: `ui/src/App.css`, `ui/src/components/`.
+
+### Browser/Desktop Notifications for Pending User Interaction
+- **Description**: Integrate the Web Notification API and title/favicon badges to alert operators when an agent pauses and is actively awaiting user interaction (`wait_for_click`, questionnaires, plan review, or confirmation).
+- **Rationale**: Operators multitasking in other tabs or windows need an immediate cue when the agent is blocked on user feedback.
+- **Provenance**: `ui/src/App.tsx`, `ui/src/hooks/useThreadStream.ts`.
+
+### Tab Key Autocomplete in Interactive Web Terminal
+- **Description**: Intercept and forward `Tab` keypress events in the web terminal emulator (`TerminalView.tsx`) to trigger shell completion rather than shifting browser element focus or inserting whitespace.
+- **Rationale**: Essential for standard terminal ergonomics when inspecting sandboxes.
+- **Provenance**: `ui/src/components/TerminalView.tsx`, [0044-interactive-web-terminal.md](../decisions/0044-interactive-web-terminal.md).
+
+### Model Reasoning Effort Configuration in Agent Settings
+- **Description**: Expose a `reasoning_effort` configuration property (`none`, `low`, `medium`, `high`) in `InferenceConfig` and the settings modal for reasoning models (e.g. OpenAI o-series, Claude extended thinking, DeepSeek-R1).
+- **Rationale**: Allows operators to control reasoning token budgets and depth per agent/session.
+- **Provenance**: `src/seamus/config/models.py`, `ui/src/components/ConfigModal.tsx`.
+
+### OpenRouter Session Telemetry, Generation ID Tracking, and Per-Turn Cost Accounting
+- **Description**: Capture OpenRouter generation IDs from response envelopes, propagate session tracking metadata/headers to group requests on OpenRouter dashboards, and surface cumulative token usage and cost accounting in chat bubble inspection.
+- **Rationale**: Enables accurate cost accounting and observability across multi-turn agent runs.
+- **Provenance**: `src/seamus/harness/runner.py`, `ui/src/components/MessageItem.tsx`.
+
+### Session Health Scoring and Automated Thrashing Safeguard
+- **Description**: Track a dynamic session health score that decays on repeated tool errors or rapid identical tool calls and recovers over successful turns; pause execution and prompt the operator if health falls below an operational threshold.
+- **Rationale**: Prevents agents from getting stuck in tight failure loops that consume tokens without making progress.
+- **Provenance**: `src/seamus/harness/runner.py`, `src/seamus/telemetry.py`.
+
+### Unmasking Symbolic Secret Expressions in Configuration Inputs
+- **Description**: Ensure configuration inputs for sensitive fields (such as API keys, daemon tokens, and external repo credentials) remain unmasked (`type="text"`) when their value is a symbolic secret expression like `${secret('/path')}`.
+- **Rationale**: Symbolic references contain vault paths, not raw secrets; masking them obscures the path without adding security.
+- **Provenance**: `ui/src/components/ConfigModal.tsx`, `src/seamus/vault/`.
+
+### Comprehensive End-to-End Test Suite with Steerable LLM Mocking
+- **Description**: Construct an automated end-to-end integration and UI test suite running against the container stack, leveraging steerable/replayable model responses to test multi-turn interactive flows predictably.
+- **Rationale**: Complements unit tests by validating the full browser-to-backend-to-sandbox loop without live LLM costs.
+- **Provenance**: `tests/`, `ui/tests/`, `src/seamus/harness/runner.py`.
+
 ## Not formalized
 
-- Detailed testing of mounting protected repositories (that require credentials)
-- Testing of cases where secrets are mixed with other value, like: `user:${secret('/some/password')}`
-- automated E2E test suite, including UI test (might have dependency on configurable pesudo-LMM, to record what the model is supposed to respond with in certain test scenarios)
-- Add notifications (to indicate pending user interaction)
-- refactor config; we slapped new pieces there, it lost shape; there are better ways to organize the entries there
-- instructional documentation
-- at least start tracking MCP integration, even if its waaaaay ahead
-- review available tools - there is still `ask` leftover
-- manage tool labels in inspector
-- agents sometimes use questionnaires/forms by both checking "writein" and providing "custom" option (so we have 'custom' and 'other'); strengthen the prompt
-- plan artifact is simply ugly
-- agent works in workspace even when working on mounted project; strentghten the prompt - workspace is personal, projects are for work
-
-- Detailed testing of mounting protected repositories (that require credentials)
-- Testing of cases where secrets are mixed with other value, like: `user:${secret('/some/password')}`
-- automated E2E test suite, including UI test (might have dependency on configurable pesudo-LMM, to record what the model is supposed to respond with in certain test scenarios)
-- Add notifications (to indicate pending user interaction)
-- refactor config; we slapped new pieces there, it lost shape; there are better ways to organize the entries there
-- instructional documentation
-- at least start tracking MCP integration, even if its waaaaay ahead
-- review available tools - there is still `ask` leftover
-- manage tool labels in inspector
-- agents sometimes use questionnaires/forms by both checking "writein" and providing "custom" option (so we have 'custom' and 'other'); strengthen the prompt
-- plan artifact is simply ugly
-- agent works in workspace even when working on mounted project; strentghten the prompt - workspace is personal, projects are for work
-
-
-- we need to stress that when we're reviewing a plan and comment on something, this comment must be understood in context of the whole plan with focus on comment subject; agents tend to only care about commented text, ignoring what surrounds it
-
-- System Events should be on the right side, as user messages are
-- non-embedded artifacts need some kind of anchor in the conversation view; that anchor must work even after closing the artifact; I think we might need "close" icon in artifact tab (the tab itself, not tab body) that disappears when that artifact blocks the conversation 
-- "rendered" in diff should be type-specific; body should be renderable as the UI, manifest as UI + state, markdowns should be rendered in this view too
-
+- deep-seamus variant of skills and todos (use normal skills/todos infra, but use LMXML to embed prompt parts, instead of simply appending markdown)
 - a way to attach to button (in artifact) both data from inputs and comments [low]
 - comments need to be saved in artifact state, not just "review" append log [low]
-
-- if a field in config or config template would be masked and contains ${} expression, it doesn't need to be masked
-
-- are we sure that we recognize v2? [CRITICAL] WTF did I mean? oO
-
-- way, waaaaay forward: disablability of more layers and components; 
-  - for sure context compaction, I dont like it
-  - disabling specific artifacts (generic are always allowed, in which case we need to mount custom examples directory, which might be a good idea anyway)
-
-- rethink styling and generally UI colors and shapes
-  
-- deep-seamus variant of skills and todos (use normal skills/todos infra, but use LMXML to embed prompt parts, instead of simply appending markdown)
-
-- Tab autocomplete in shell emulator
-
-- add session tracking when using openrouter (so we can see sessions on provider side and see their costs); capture generation ID and expose it in chat bubble details
-- add costs tracking
-- recognize tool failures, start gathering telemetry
-- track "session health score"; it slowly recovers over time; things like tool errors or the same tool calls repeated without meaningful gap between calls diminish health; once health falls below some level, we pause the session and ask the user if he wants to continue or switch model
-- add reasoning level to model config
+- instructional documentation
