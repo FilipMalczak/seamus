@@ -14,9 +14,12 @@ import {
   type ArtifactInfo,
   type ChatMessage,
 } from "../api/types";
+import { formatBubbleTime, formatFullDate } from "../utils/sequence";
 import { ArtifactRenderer } from "./ArtifactRenderer";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { ToolCallItem } from "./ToolCallItem";
+
+export { formatBubbleTime, formatFullDate };
 
 export function SyntheticMessageBlock({ text }: { text: string }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -81,9 +84,13 @@ export function SyntheticMessageBlock({ text }: { text: string }) {
 export function ReasoningBlock({
   content,
   isStreaming,
+  timestamp,
+  sequenceIndex,
 }: {
   content: string;
   isStreaming?: boolean;
+  timestamp?: string;
+  sequenceIndex?: number;
 }) {
   const [userToggled, setUserToggled] = useState<boolean>(false);
   const [isOpen, setIsOpen] = useState<boolean>(Boolean(isStreaming));
@@ -110,12 +117,28 @@ export function ReasoningBlock({
         title="Toggle agent reasoning"
       >
         <div className="reasoning-card-title">
+          {sequenceIndex !== undefined && (
+            <span
+              className="bubble-sequence-badge"
+              title={`Step #${sequenceIndex} in sequence`}
+            >
+              #{sequenceIndex}
+            </span>
+          )}
           <Brain
             className={`size-3.5 text-sky-400 ${isStreaming ? "animate-pulse" : ""}`}
           />
           <span className="reasoning-label">
             {isStreaming ? "Thinking..." : "Thought process"}
           </span>
+          {timestamp && (
+            <span
+              className="part-timestamp"
+              title={formatFullDate(timestamp)}
+            >
+              {formatBubbleTime(timestamp)}
+            </span>
+          )}
         </div>
         {isOpen ? (
           <ChevronDown className="size-3.5" />
@@ -134,12 +157,16 @@ export function ReasoningBlock({
 
 export function MessageItem({
   message,
+  sequenceIndex,
+  sequenceIndices,
   onBranch,
   onBranchTool,
   onSubmitArtifact,
   submittingArtifactId,
 }: {
   message: ChatMessage;
+  sequenceIndex?: number;
+  sequenceIndices?: Map<string, number>;
   onBranch?: () => void;
   onBranchTool?: () => void;
   onSubmitArtifact?: (artifact: ArtifactInfo, data: Record<string, unknown>) => Promise<void> | void;
@@ -150,6 +177,22 @@ export function MessageItem({
   );
   const isUser = message.role === "user" && !isSynthetic;
   const hasParts = !isUser && !isSynthetic && Boolean(message.parts && message.parts.length > 0);
+
+  const hasText = isUser
+    ? Boolean(message.text)
+    : hasParts
+      ? Boolean(message.parts?.some((p) => p.type === "text" && Boolean(p.content)))
+      : Boolean(message.text);
+
+  const formattedTime = formatBubbleTime(message.timestamp);
+  const fullTimestamp = formatFullDate(message.timestamp);
+
+  const getSeq = (key?: string): number | undefined => {
+    if (!key) return sequenceIndex;
+    return sequenceIndices?.get(key) ?? sequenceIndex;
+  };
+
+  const headerSeq = getSeq(message.id);
 
   return (
     <div
@@ -173,14 +216,19 @@ export function MessageItem({
 
       <div className="message-content-wrapper">
         <div className="message-header">
+          {headerSeq !== undefined && !hasText && !hasParts && (
+            <span
+              className="bubble-sequence-badge"
+              title={`Step #${headerSeq} in sequence`}
+            >
+              #{headerSeq}
+            </span>
+          )}
           <span className="message-sender">
             {isSynthetic ? "System Event" : isUser ? "You" : "Seamus Agent"}
           </span>
-          <span className="message-time">
-            {new Date(message.timestamp).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
+          <span className="message-time" title={fullTimestamp}>
+            {formattedTime}
           </span>
         </div>
 
@@ -189,17 +237,27 @@ export function MessageItem({
         ) : hasParts ? (
           <div className="message-parts-container">
             {message.parts!.map((part) => {
+              const partSeq = getSeq(part.id);
               if (part.type === "reasoning") {
                 return (
                   <ReasoningBlock
                     key={part.id}
                     content={part.content}
                     isStreaming={part.isStreaming}
+                    timestamp={part.timestamp || message.timestamp}
+                    sequenceIndex={partSeq}
                   />
                 );
               }
               if (part.type === "tool_call") {
-                return <ToolCallItem key={part.id} toolCall={part.toolCall} />;
+                const toolSeq = partSeq ?? getSeq(part.toolCall?.id);
+                return (
+                  <ToolCallItem
+                    key={part.id}
+                    toolCall={part.toolCall}
+                    sequenceIndex={toolSeq}
+                  />
+                );
               }
               if (part.type === "artifact") {
                 return (
@@ -213,9 +271,27 @@ export function MessageItem({
               }
               if (part.type === "text") {
                 if (!part.content) return null;
+                const textTime = part.timestamp || message.timestamp;
                 return (
                   <div key={part.id} className="message-bubble assistant-bubble">
-                    <MarkdownRenderer content={part.content} variant="assistant" />
+                    {partSeq !== undefined && (
+                      <div className="bubble-top-bar">
+                        <span
+                          className="bubble-sequence-badge"
+                          title={`Step #${partSeq} in sequence`}
+                        >
+                          #{partSeq}
+                        </span>
+                      </div>
+                    )}
+                    <div className="bubble-content">
+                      <MarkdownRenderer content={part.content} variant="assistant" />
+                    </div>
+                    <div className="bubble-footer">
+                      <span className="bubble-timestamp" title={formatFullDate(textTime)}>
+                        {formatBubbleTime(textTime)}
+                      </span>
+                    </div>
                   </div>
                 );
               }
@@ -228,6 +304,8 @@ export function MessageItem({
               <ReasoningBlock
                 content={message.reasoning || ""}
                 isStreaming={message.isReasoning}
+                timestamp={message.timestamp}
+                sequenceIndex={getSeq(`${message.id}-reasoning`)}
               />
             )}
 
@@ -235,17 +313,38 @@ export function MessageItem({
               <div
                 className={`message-bubble ${isUser ? "user-bubble" : "assistant-bubble"}`}
               >
-                <MarkdownRenderer
-                  content={message.text}
-                  variant={isUser ? "user" : "assistant"}
-                />
+                {getSeq(isUser ? message.id : `${message.id}-text`) !== undefined && (
+                  <div className="bubble-top-bar">
+                    <span
+                      className="bubble-sequence-badge"
+                      title={`Step #${getSeq(isUser ? message.id : `${message.id}-text`)} in sequence`}
+                    >
+                      #{getSeq(isUser ? message.id : `${message.id}-text`)}
+                    </span>
+                  </div>
+                )}
+                <div className="bubble-content">
+                  <MarkdownRenderer
+                    content={message.text}
+                    variant={isUser ? "user" : "assistant"}
+                  />
+                </div>
+                <div className="bubble-footer">
+                  <span className="bubble-timestamp" title={fullTimestamp}>
+                    {formattedTime}
+                  </span>
+                </div>
               </div>
             )}
 
             {message.toolCalls && message.toolCalls.length > 0 && (
               <div className="tool-calls-container">
                 {message.toolCalls.map((tc) => (
-                  <ToolCallItem key={tc.id} toolCall={tc} />
+                  <ToolCallItem
+                    key={tc.id}
+                    toolCall={tc}
+                    sequenceIndex={getSeq(tc.id)}
+                  />
                 ))}
               </div>
             )}

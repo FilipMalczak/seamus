@@ -261,6 +261,12 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0050-web-search-tool.md](../decisions/0050-web-search-tool.md), `src/seamus/harness/web_search.py`, `src/seamus/harness/runner.py`, `src/seamus/harness/inspector.py`.
 - **Linked Invariants**: [INV-055](./invariants.md#inv-055-web-search-capability-guard-and-dynamic-tool-suppression).
 
+### REQ-045: Chat Bubble Timestamps and Autonomous Sequence Indexing
+- **Description**: All conversation message bubbles rendered in the Web UI must display per-bubble timestamps formatted with seconds precision (`HH:MM:SS`), accompanied by full date/time tooltips on hover. When consecutive turns or bubbles by the same role form a streak exceeding `BUBBLE_SEQUENCE_THRESHOLD` (default 5, configurable), each bubble in that streak must display a 1-based sequence index badge (`#1`, `#2`, ..., `#N`) at its top-left corner (or in the message header if text content is absent, such as for pure tool calls). Thread transitions and synthetic events act as strict streak boundaries.
+- **Rationale**: Provides clear visibility into how long an agent has been operating autonomously across multi-turn execution streaks and how much time elapsed per step.
+- **Provenance**: [0051-chat-bubble-timestamps-and-sequence-indexing.md](../decisions/0051-chat-bubble-timestamps-and-sequence-indexing.md), `ui/src/components/MessageItem.tsx`, `ui/src/components/ChatArea.tsx`, `ui/src/utils/sequence.ts`.
+- **Linked Invariants**: [INV-056](./invariants.md#inv-056-chat-bubble-timestamps-and-autonomous-sequence-indexing).
+
 
 ## Cross-References
 - [backlog.md](./backlog.md)
