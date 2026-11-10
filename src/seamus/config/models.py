@@ -52,9 +52,11 @@ class ReasoningEffort(StrEnum):
 
     DEFAULT = "default"
     NONE = "none"
+    MINIMAL = "minimal"
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
+    XHIGH = "xhigh"
 
 
 class InferenceConfig(BaseModel):

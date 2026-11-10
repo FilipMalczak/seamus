@@ -589,7 +589,7 @@ def test_validate_a2ui_surface_valid() -> None:
             "id": "title",
             "component": "Text",
             "text": "Hello world",
-            "variant": "h2",
+            "variant": "body",
         },
         {
             "id": "picker",
@@ -1190,7 +1190,8 @@ def test_normalize_a2ui_components_type_aliases_and_casing() -> None:
     assert by_id["t1"]["component"] == "Text"
     assert by_id["t2"]["component"] == "Text"
     assert by_id["t3"]["component"] == "Text"
-    assert by_id["t3"]["variant"] == "h2"
+    assert by_id["t3"]["variant"] == "body"
+    assert by_id["t3"]["text"] == "## Heading alias"
     assert by_id["btn1"]["component"] == "Button"
 
     assert any("Renamed 'type' ('Text') to 'component'" in m for m in mutations)

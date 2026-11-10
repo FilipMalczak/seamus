@@ -57,7 +57,7 @@ A2UI_COMPONENT_SPECS: dict[str, dict[str, Any]] = {
         "required": {"text": "string"},
         "allowed": {"text", "variant"},
         "enums": {
-            "variant": {"h1", "h2", "h3", "h4", "h5", "caption", "body"},
+            "variant": {"caption", "body"},
         },
     },
     "Image": {
@@ -157,7 +157,7 @@ A2UI_COMPONENT_SPECS: dict[str, dict[str, Any]] = {
     },
     "Slider": {
         "required": {"max": "number", "value": "number"},
-        "allowed": {"min", "max", "value", "step", "label", "checks"},
+        "allowed": {"min", "max", "value", "steps", "label", "checks"},
     },
     "DateTimeInput": {
         "required": {"value": "string"},
@@ -380,8 +380,15 @@ def normalize_a2ui_components(
             if canon:
                 if canon != orig_type:
                     c["component"] = canon
-                    if orig_type.lower() in ("heading", "header") and "variant" not in c:
-                        c["variant"] = "h2"
+                    if orig_type.lower() in ("heading", "header"):
+                        c["component"] = "Text"
+                        if (
+                            "text" in c
+                            and isinstance(c["text"], str)
+                            and not c["text"].startswith("#")
+                        ):
+                            c["text"] = f"## {c['text']}"
+                        c["variant"] = "body"
                     record_mutation(
                         f"Normalized component type '{orig_type}' to '{canon}' at index {idx}."
                     )
@@ -433,12 +440,30 @@ def normalize_a2ui_components(
                         )
                         break
 
-            if variant == "bold":
+            if variant in {"h1", "h2", "h3", "h4", "h5"}:
+                level = int(variant[1])
+                prefix = "#" * level + " "
+                if isinstance(text, str) and not text.startswith("#"):
+                    text = f"{prefix}{text}"
+                variant = "body"
+                record_mutation(
+                    f"Normalized Text variant '{c.get('variant')}' to 'body' "
+                    f"with markdown heading on '{c['id']}'."
+                )
+            elif variant == "bold":
                 variant = "body"
                 if isinstance(text, str) and not text.startswith("**"):
                     text = f"**{text}**"
-            elif variant not in {"h1", "h2", "h3", "h4", "h5", "caption", "body"}:
+                record_mutation(
+                    f"Normalized Text variant 'bold' to 'body' with markdown bold on '{c['id']}'."
+                )
+            elif variant not in {"caption", "body"}:
+                if variant is not None:
+                    record_mutation(
+                        f"Normalized unsupported Text variant '{variant}' to 'body' on '{c['id']}'."
+                    )
                 variant = "body"
+
             c["variant"] = variant
             if text is not None:
                 c["text"] = text
@@ -565,7 +590,7 @@ def normalize_a2ui_components(
                                 "id": t_id,
                                 "component": "Text",
                                 "text": str(title_val),
-                                "variant": "h3",
+                                "variant": "body",
                             }
                         )
                         inner_ids.append(t_id)
@@ -662,6 +687,13 @@ def normalize_a2ui_components(
             if "src" in c and "url" not in c:
                 c["url"] = c.pop("src")
                 record_mutation(f"Renamed 'src' to 'url' on Image '{c['id']}'.")
+            normalized.append(c)
+            continue
+
+        if c_type == "Slider":
+            if "step" in c and "steps" not in c:
+                c["steps"] = c.pop("step")
+                record_mutation(f"Mapped 'step' to 'steps' on Slider '{c['id']}'.")
             normalized.append(c)
             continue
 
@@ -1267,8 +1299,8 @@ class QuestionnaireBuilder:
             {
                 "id": "title_text",
                 "component": "Text",
-                "text": title,
-                "variant": "h2",
+                "text": f"## {title}",
+                "variant": "body",
             },
         ]
 
@@ -1286,8 +1318,8 @@ class QuestionnaireBuilder:
                 {
                     "id": q_text_id,
                     "component": "Text",
-                    "text": q.body,
-                    "variant": "bold",
+                    "text": f"**{q.body}**",
+                    "variant": "body",
                 }
             )
 
@@ -1533,8 +1565,8 @@ class PlanBuilder:
             {
                 "id": "plan_header",
                 "component": "Text",
-                "text": clean_title,
-                "variant": "h1",
+                "text": f"# {clean_title}",
+                "variant": "body",
             },
             {
                 "id": "plan_content",

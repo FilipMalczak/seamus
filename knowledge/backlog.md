@@ -244,6 +244,11 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## TODO
 
+### Tool Card Header Layout and Label Overflow in Agent Inspector
+- **Description**: Fix formatting and wrapping of semantic tool labels in the Agent Inspector tool cards (`AgentInspector.tsx` and `App.css`). Ensure multiple labels wrap gracefully within the card header boundary without overflowing into the card padding or overlapping the "View Schema" toggle button.
+- **Rationale**: When multiple labels (e.g. `artifacts`, `harness`, `seamus`, `a2ui`) are attached to a tool card, flex header content can overflow beyond the header boundary on standard card widths.
+- **Provenance**: `ui/src/components/AgentInspector.tsx`, `ui/src/App.css`.
+
 ### Agent Runtime Warnings Panel in Web UI
 - **Description**: Add a runtime warnings panel or banner in the Web UI (and Agent Inspector) capturing and displaying non-fatal operational diagnostics. Candidate diagnostics include:
   1. Context discovery skips: files matched by `rules_patterns` that were skipped due to exceeding maximum size limits (e.g. > 1 MB) or failing UTF-8 binary decoding.

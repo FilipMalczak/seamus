@@ -298,6 +298,27 @@ export function ConfigModal({
                     }
                   />
                 </div>
+
+                <div className="config-field">
+                  <label className="config-label">Reasoning Effort</label>
+                  <select
+                    className="config-select"
+                    value={currentReasoningEffort}
+                    onChange={(e) =>
+                      updateDraft((d) => {
+                        d.inference.reasoning_effort = e.target.value;
+                      })
+                    }
+                  >
+                    <option value="default">Default (Provider Decides)</option>
+                    <option value="none">none (Reasoning Disabled)</option>
+                    <option value="minimal">minimal</option>
+                    <option value="low">low</option>
+                    <option value="medium">medium</option>
+                    <option value="high">high</option>
+                    <option value="xhigh">xhigh</option>
+                  </select>
+                </div>
               </div>
 
               <div className="config-form-row">
@@ -469,27 +490,6 @@ export function ConfigModal({
                   >
                     <option value="duckduckgo">duckduckgo (DuckDuckGo Search & Extraction)</option>
                     <option value="none">none (Disabled)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="config-form-row">
-                <div className="config-field">
-                  <label className="config-label">Model Reasoning Effort</label>
-                  <select
-                    className="config-select"
-                    value={currentReasoningEffort}
-                    onChange={(e) =>
-                      updateDraft((d) => {
-                        d.inference.reasoning_effort = e.target.value;
-                      })
-                    }
-                  >
-                    <option value="default">Default (Provider Decides)</option>
-                    <option value="none">none (Reasoning Disabled)</option>
-                    <option value="low">low</option>
-                    <option value="medium">medium</option>
-                    <option value="high">high</option>
                   </select>
                 </div>
               </div>

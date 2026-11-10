@@ -44,16 +44,16 @@ The addressed friction points include:
 ### 4. Negative Constraint on Redundant "Other/Custom" Questionnaire Options
 - Added instructions in `src/seamus/harness/prompt.py` and `src/seamus/skills/bundled/artifacts/SKILL.md` directing models never to inject explicit "Other" or "Custom" choice options when `write_in=True`, as the UI renderer automatically supplies the necessary freeform entry field.
 
-### 5. Tool Categorization and Badging in Agent Inspector
-- Introduced `categorize_tool` in `src/seamus/harness/inspector.py` assigning tools to semantic categories: `Sandbox`, `Artifacts`, `Planning`, `Skills`, `Todos`, `Web Search`, `Vault`, and `Other`.
-- Added `category` field to `ToolInspectInfo`.
-- Added category filter pills and color-coded badges to `AgentInspector.tsx` and `App.css`.
+### 5. Semantic Tool Labeling via Extracted Resource and Badging in Agent Inspector
+- Extracted `src/seamus/harness/resources/tool_labeling.json` containing standardized labels (`opensandbox`, `sandbox`, `harness`, `seamus`, `planning`, `deepagents`, `artifacts`, `a2ui`, `skills`, `web`, `duckduckgo`) and assigned tool mappings with color hex codes.
+- Added `ToolLabelInfo` model and `labels: list[ToolLabelInfo]` to `ToolInspectInfo`.
+- Rendered semantic colored badges in `AgentInspector.tsx` and enabled filtering by label.
 
 ### 6. Model Reasoning Effort Configuration
-- Defined `ReasoningEffort(StrEnum)` in `src/seamus/config/models.py` with values `DEFAULT="default"`, `NONE="none"`, `LOW="low"`, `MEDIUM="medium"`, and `HIGH="high"`.
+- Defined `ReasoningEffort(StrEnum)` in `src/seamus/config/models.py` with values `DEFAULT="default"`, `NONE="none"`, `MINIMAL="minimal"`, `LOW="low"`, `MEDIUM="medium"`, `HIGH="high"`, and `XHIGH="xhigh"`.
 - Added `reasoning_effort: ReasoningEffort = ReasoningEffort.DEFAULT` to `InferenceConfig`.
 - In `src/seamus/harness/runner.py`, configured `ReasoningChatOpenAI` to pass `reasoning_effort` only when explicitly set to a non-default tier, allowing providers to apply their defaults when `"default"` is selected.
-- Added a Reasoning Effort dropdown selector in `ConfigModal.tsx`.
+- Placed the Reasoning Effort dropdown selector in `ConfigModal.tsx` directly adjacent to Model Identifier.
 
 ### 7. Unmasking Symbolic Secret Expressions in UI Inputs
 - Modified `ConfigModal.tsx` and `SettingsModal.tsx` to detect values starting with `${secret(`.
@@ -71,6 +71,12 @@ The addressed friction points include:
 ### 10. Compound Symbolic Secret Reference Test Coverage
 - Added unit tests in `tests/vault/test_parser.py` verifying non-greedy regex matching and extraction across multi-secret compound connection strings, as well as syntax error handling on malformed embedded expressions.
 - Added asynchronous integration tests in `tests/vault/test_client_and_interpolator.py` verifying multi-secret template interpolation and version tracking against mock OpenBao endpoints.
+
+### 11. A2UI Surface Server-Side Validation and Text Normalization Alignment
+- Updated `A2UI_COMPONENT_SPECS["Text"]["enums"]["variant"]` in `src/seamus/harness/artifacts.py` to `{"caption", "body"}` to strictly match the A2UI v1.0 specification.
+- Enhanced `normalize_a2ui_components` to convert legacy heading/bold variants (`h1`-`h5`, `bold`) into valid Markdown formatting (`#`, `##`, `**`) with `variant: "body"`, preventing client-side Zod validation errors during rendering.
+- Updated `QuestionnaireBuilder` and `PlanBuilder` component definitions to use Markdown headings with `variant: "body"`.
+- Updated `Slider` component spec and normalizer to accept `steps` matching the v1.0 schema.
 
 ## Consequences
 

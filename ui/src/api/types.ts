@@ -1,4 +1,11 @@
-export type ReasoningEffort = "default" | "none" | "low" | "medium" | "high";
+export type ReasoningEffort =
+  | "default"
+  | "none"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh";
 
 export type InferenceConfig = {
   format: "openai" | "ollama";
@@ -270,12 +277,18 @@ export type SessionDiffResponse = {
   diff: string;
 };
 
+export interface ToolLabelInfo {
+  title: string;
+  color: string;
+}
+
 export interface ToolInspectInfo {
   name: string;
   description: string;
   parameters: Record<string, unknown>;
   backend: string;
   category?: string;
+  labels?: ToolLabelInfo[];
 }
 
 export interface SubAgentInspectInfo {

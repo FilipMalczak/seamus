@@ -452,7 +452,7 @@ class AgentConfig(BaseModel):
 - `inference.format`: Format of inference API (`openai` or `ollama`).
 - `inference.base_url`: Target endpoint URL for inference API requests (presets: OpenRouter, OpenAI, and local Ollama `http://localhost:11434/v1`).
 - `inference.api_key`: API key or symbolic vault reference (`${secret('/path')}`). Optional when using Ollama (`ollama` format or port `11434`).
-- `inference.reasoning_effort`: Reasoning token tier for reasoning models (`default`, `none`, `low`, `medium`, `high`). `"default"` leaves provider parameters untouched.
+- `inference.reasoning_effort`: Reasoning token tier for reasoning models (`default`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`). `"default"` leaves provider parameters untouched.
 - `rules_patterns`: Glob patterns evaluated per inference turn across `/workspace` and mounted `/projects/...`, injecting matching context files into `<discovered_context>`.
 - `repositories`: List of external Git repositories mounted into `/projects/{mount_name}`.
 - `daemons.naming.enabled`: Enables automated thread and session naming daemons (default: `true`).
