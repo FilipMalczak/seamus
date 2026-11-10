@@ -5,7 +5,7 @@ description: Canonical reference for authoring A2UI basic catalog components (Te
 
 # A2UI Basic Catalog Reference
 
-Seamus utilizes the **A2UI Basic Catalog (v0.9)** for describing declarative user interfaces in artifacts. The full component definition JSON schema is stored in `./resources/catalog.json`.
+Seamus utilizes the **A2UI Basic Catalog (v1.0)** for describing declarative user interfaces in artifacts. The full component definition JSON schema is stored in `./resources/catalog.json`.
 
 Artifact UI definitions reside in `/artifacts/<family>/<uuid>/body.json` as a flat JSON array of component objects matching the structure expected in A2UI `updateComponents` events.
 
@@ -73,7 +73,7 @@ Visually framed panel card.
 }
 ```
 > [!CAUTION]
-> In A2UI v0.9, `Card` strictly accepts a single child ID (`"child": "<id>"`). It **does NOT** accept `title` or `body`. To create a card with a title and multiple fields, point `child` to a `Column` containing a `Text` title and your content components.
+> In A2UI v1.0, `Card` strictly accepts a single child ID (`"child": "<id>"`). It **does NOT** accept `title` or `body`. To create a card with a title and multiple fields, point `child` to a `Column` containing a `Text` title and your content components.
 
 #### `Divider`
 Visual dividing line.
@@ -85,6 +85,48 @@ Visual dividing line.
 }
 ```
 - `axis`: `"horizontal" | "vertical"` (defaults to `"horizontal"`).
+
+#### `Tabs`
+Tabbed container switching between multiple child subtrees.
+```json
+{
+  "id": "settings_tabs",
+  "component": "Tabs",
+  "tabs": [
+    { "title": "Overview", "child": "overview_col" },
+    { "title": "Advanced", "child": "advanced_col" }
+  ]
+}
+```
+- `tabs`: Array of objects, each with `title` (string) and `child` (component ID).
+
+#### `Modal`
+Overlay dialog component.
+```json
+{
+  "id": "confirm_modal",
+  "component": "Modal",
+  "trigger": "open_modal_btn",
+  "content": "modal_content_card"
+}
+```
+- `trigger`: Component ID of the clickable element that opens the modal (e.g., a button).
+- `content`: Component ID of the content container displayed inside the modal.
+
+#### `List`
+Scrollable or repeating collection of child items.
+```json
+{
+  "id": "items_list",
+  "component": "List",
+  "children": ["item_card_1", "item_card_2"],
+  "direction": "vertical",
+  "align": "stretch"
+}
+```
+- `children`: Array of component IDs, or template binding object `{"path": "/items", "componentId": "template_id"}`.
+- `direction`: `"vertical" | "horizontal"` (default: `"vertical"`).
+- `align`: `"start" | "center" | "end" | "stretch"`.
 
 ---
 
@@ -110,11 +152,15 @@ Renders an image from a URL.
   "id": "banner",
   "component": "Image",
   "url": "https://example.com/logo.png",
-  "fit": "contain"
+  "description": "App logo banner",
+  "fit": "contain",
+  "variant": "mediumFeature"
 }
 ```
-- `url`: Image source URL string.
-- `fit`: `"contain" | "cover" | "fill" | "none" | "scaleDown"`
+- `url`: Image source URL string (required).
+- `description`: (Optional) Accessibility alt text.
+- `fit`: (Optional) `"contain" | "cover" | "fill" | "none" | "scaleDown"` (default: `"fill"`).
+- `variant`: (Optional) `"icon" | "avatar" | "smallFeature" | "mediumFeature" | "largeFeature" | "header"` (default: `"mediumFeature"`).
 
 #### `Icon`
 Renders a named icon.
@@ -125,6 +171,31 @@ Renders a named icon.
   "name": "check"
 }
 ```
+- `name`: Name of the icon (e.g. `"check"`, `"info"`, `"warning"`).
+
+#### `AudioPlayer`
+Plays audio from a media URL.
+```json
+{
+  "id": "audio_preview",
+  "component": "AudioPlayer",
+  "url": "https://example.com/audio.mp3",
+  "description": "Audio commentary"
+}
+```
+- `url`: Audio source URL string (required).
+- `description`: (Optional) Description text.
+
+#### `Video`
+Plays video from a media URL.
+```json
+{
+  "id": "video_demo",
+  "component": "Video",
+  "url": "https://example.com/demo.mp4"
+}
+```
+- `url`: Video source URL string (required).
 
 ---
 
@@ -163,11 +234,62 @@ Single or multiple choice selection.
 - `variant`: `"mutuallyExclusive"` (radio buttons) or `"multipleSelection"` (checkboxes).
 - `value`: List of selected value strings.
 
+#### `CheckBox`
+Boolean toggle input with a label.
+```json
+{
+  "id": "agree_terms",
+  "component": "CheckBox",
+  "label": "I agree to the deployment conditions",
+  "value": false
+}
+```
+- `label`: Text label displayed next to the checkbox (required).
+- `value`: Boolean state `true` or `false` (required).
+
+#### `Slider`
+Continuous or bounded numerical range input.
+```json
+{
+  "id": "budget_slider",
+  "component": "Slider",
+  "label": "Budget Allocation ($k)",
+  "min": 0,
+  "max": 100,
+  "value": 25
+}
+```
+- `value`: Current numerical value (required).
+- `max`: Maximum numerical value (required).
+- `min`: (Optional) Minimum numerical value (default: 0).
+- `label`: (Optional) Label string describing the slider.
+> [!NOTE]
+> Per the A2UI v1.0 Basic Catalog specification, `Slider` does not accept a `step` attribute.
+
+#### `DateTimeInput`
+Calendar date and/or clock time picker.
+```json
+{
+  "id": "schedule_time",
+  "component": "DateTimeInput",
+  "label": "Scheduled Execution Time",
+  "value": "2026-11-10T14:30:00Z",
+  "enableDate": true,
+  "enableTime": true
+}
+```
+- `value`: Selected date/time string in ISO 8601 format (required; initialize with `""` if unset).
+- `label`: (Optional) Text label for the input.
+- `enableDate`: (Optional) Boolean allowing date selection (default: `false`).
+- `enableTime`: (Optional) Boolean allowing time selection (default: `false`).
+- `min`: (Optional) Minimum allowed date/time in ISO 8601 format.
+- `max`: (Optional) Maximum allowed date/time in ISO 8601 format.
+
 #### `Button`
 Clickable action button.
 ```json
 {
-  "id": "deploy-btn",
+  "id": "deploy_btn",
   "component": "Button",
   "child": "deploy_btn_label",
   "variant": "primary",
@@ -182,7 +304,7 @@ Clickable action button.
   }
 }
 ```
-- `id`: Button ID. **MUST be declared in `manifest.json` under `buttons`**, or clicks will be ignored!
+- `id`: Button ID. **MUST be a valid UAX #31 identifier (letters, digits, underscores; no hyphens!)** and **MUST be declared in `manifest.json` under `buttons`**, or clicks will be ignored!
 - `child`: String ID of a child component providing the label (typically a `Text` component).
 - `variant`: `"primary"` (main action), `"default"` (secondary/neutral), `"borderless"` (link style).
 - `action`: Action payload containing the event name and context data pointers.
@@ -202,7 +324,7 @@ Here is a complete, working example of an artifact showcasing widgets properly s
   "commentable": false,
   "buttons": [
     {
-      "id": "submit-btn",
+      "id": "submit_btn",
       "mode": "set",
       "clicks": 1,
       "unblocking": false,
@@ -256,10 +378,10 @@ Here is a complete, working example of an artifact showcasing widgets properly s
   {
     "id": "actions_row",
     "component": "Row",
-    "children": ["submit-btn"]
+    "children": ["submit_btn"]
   },
   {
-    "id": "submit-btn",
+    "id": "submit_btn",
     "component": "Button",
     "child": "submit_label",
     "variant": "primary",

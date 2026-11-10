@@ -93,6 +93,36 @@ def test_find_and_has_secret_references() -> None:
     assert has_secret_references("plain-string-without-secrets") is False
 
 
+def test_find_compound_secret_references_connection_string() -> None:
+    """Test non-greedy extraction of multiple secret expressions embedded in a compound URL."""
+    conn_str = (
+        "postgresql://${secret('/db/user')}:${secret(path='/db/pass', field='password')}"
+        "@db.internal.net:5432/${secret('/db/name')}"
+    )
+    assert has_secret_references(conn_str) is True
+    matches = find_secret_references(conn_str)
+    assert len(matches) == 3
+
+    assert matches[0][0] == "${secret('/db/user')}"
+    assert matches[0][1].path == "/db/user"
+    assert matches[0][1].field == "value"
+
+    assert matches[1][0] == "${secret(path='/db/pass', field='password')}"
+    assert matches[1][1].path == "/db/pass"
+    assert matches[1][1].field == "password"
+
+    assert matches[2][0] == "${secret('/db/name')}"
+    assert matches[2][1].path == "/db/name"
+    assert matches[2][1].field == "value"
+
+
+def test_find_compound_secret_references_with_invalid_syntax() -> None:
+    """Partially invalid compound string raises SecretSyntaxError on the malformed expression."""
+    text = "Valid: ${secret('/db/user')} and Invalid: ${secret(bad_arg='xyz')}"
+    with pytest.raises(SecretSyntaxError, match="Unsupported argument 'bad_arg'"):
+        find_secret_references(text)
+
+
 def test_explode_and_strip_secret_references() -> None:
     from typing import Any
 

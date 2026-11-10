@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
   AlertCircle,
   BookOpen,
@@ -63,6 +63,31 @@ export function AgentInspector({
   const [copiedPrompt, setCopiedPrompt] = useState<boolean>(false);
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
   const [expandedSkills, setExpandedSkills] = useState<Record<string, boolean>>({});
+  const [selectedToolCategory, setSelectedToolCategory] = useState<string>("All");
+
+  const toolCategories = useMemo(() => {
+    if (!report?.tools) return [];
+    const set = new Set<string>();
+    report.tools.forEach((t) => {
+      if (t.labels && t.labels.length > 0) {
+        t.labels.forEach((l) => set.add(l.title));
+      } else if (t.category) {
+        set.add(t.category);
+      }
+    });
+    return ["All", ...Array.from(set).sort()];
+  }, [report?.tools]);
+
+  const filteredTools = useMemo(() => {
+    if (!report?.tools) return [];
+    if (selectedToolCategory === "All") return report.tools;
+    return report.tools.filter((t) => {
+      if (t.labels && t.labels.length > 0) {
+        return t.labels.some((l) => l.title === selectedToolCategory);
+      }
+      return t.category === selectedToolCategory;
+    });
+  }, [report?.tools, selectedToolCategory]);
 
   const fetchReport = async (isManualRefresh = false) => {
     if (!agentId || !sessionId) {
@@ -466,8 +491,34 @@ export function AgentInspector({
               )}
             </div>
 
+            {toolCategories.length > 2 && (
+              <div className="tool-category-filters">
+                {toolCategories.map((cat: string) => {
+                  const count =
+                    cat === "All"
+                      ? report.tools.length
+                      : report.tools.filter((t) =>
+                          t.labels && t.labels.length > 0
+                            ? t.labels.some((l) => l.title === cat)
+                            : t.category === cat
+                        ).length;
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      className={`category-filter-btn ${selectedToolCategory === cat ? "active" : ""}`}
+                      onClick={() => setSelectedToolCategory(cat)}
+                    >
+                      <span>{cat}</span>
+                      <span className="category-count">({count})</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             <div className="tools-grid">
-              {report.tools.map((tool: ToolInspectInfo) => {
+              {filteredTools.map((tool: ToolInspectInfo) => {
                 const isExpanded = !!expandedTools[tool.name];
                 const paramKeys = Object.keys(tool.parameters?.properties || {});
                 return (
@@ -480,21 +531,47 @@ export function AgentInspector({
                           <Terminal className="size-4 text-sky-400" />
                         )}
                         <h4 className="tool-name">{tool.name}</h4>
-                        <span
-                          className={`tool-backend-badge ${
-                            tool.backend === "opensandbox"
-                              ? "backend-sandbox"
-                              : tool.backend === "web"
-                                ? "backend-web"
-                                : "backend-harness"
-                          }`}
-                        >
-                          {tool.backend === "opensandbox"
-                            ? "OpenSandbox"
-                            : tool.backend === "web"
-                              ? "Web"
-                              : "Harness"}
-                        </span>
+                        {tool.labels && tool.labels.length > 0 ? (
+                          tool.labels.map((lbl) => {
+                            const hex = lbl.color.startsWith("#") ? lbl.color : `#${lbl.color}`;
+                            return (
+                              <span
+                                key={lbl.title}
+                                className="tool-label-badge"
+                                style={{
+                                  backgroundColor: `${hex}1a`,
+                                  color: hex,
+                                  borderColor: `${hex}40`,
+                                }}
+                              >
+                                {lbl.title}
+                              </span>
+                            );
+                          })
+                        ) : (
+                          <>
+                            <span
+                              className={`tool-backend-badge ${
+                                tool.backend === "opensandbox"
+                                  ? "backend-sandbox"
+                                  : tool.backend === "web"
+                                    ? "backend-web"
+                                    : "backend-harness"
+                              }`}
+                            >
+                              {tool.backend === "opensandbox"
+                                ? "OpenSandbox"
+                                : tool.backend === "web"
+                                  ? "Web"
+                                  : "Harness"}
+                            </span>
+                            {tool.category && (
+                              <span className="tool-category-badge">
+                                {tool.category}
+                              </span>
+                            )}
+                          </>
+                        )}
                       </div>
 
                       <button

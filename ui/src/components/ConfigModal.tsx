@@ -194,6 +194,10 @@ export function ConfigModal({
     parsedDraft?.inference?.api_key !== undefined
       ? parsedDraft.inference.api_key
       : initialConfig.inference?.api_key ?? null;
+  const currentReasoningEffort =
+    parsedDraft?.inference?.reasoning_effort ??
+    initialConfig.inference?.reasoning_effort ??
+    "default";
   const currentTodoImpl: TodoImplementation =
     parsedDraft?.todo_implementation ?? initialConfig.todo_implementation ?? "deepagents";
   const currentSkillsImpl: SkillsImplementation =
@@ -293,6 +297,27 @@ export function ConfigModal({
                       })
                     }
                   />
+                </div>
+
+                <div className="config-field">
+                  <label className="config-label">Reasoning Effort</label>
+                  <select
+                    className="config-select"
+                    value={currentReasoningEffort}
+                    onChange={(e) =>
+                      updateDraft((d) => {
+                        d.inference.reasoning_effort = e.target.value;
+                      })
+                    }
+                  >
+                    <option value="default">Default (Provider Decides)</option>
+                    <option value="none">none (Reasoning Disabled)</option>
+                    <option value="minimal">minimal</option>
+                    <option value="low">low</option>
+                    <option value="medium">medium</option>
+                    <option value="high">high</option>
+                    <option value="xhigh">xhigh</option>
+                  </select>
                 </div>
               </div>
 
@@ -668,7 +693,11 @@ export function ConfigModal({
                     </div>
                     <div className="config-input-with-action">
                       <input
-                        type={showDaemonApiKey ? "text" : "password"}
+                        type={
+                          showDaemonApiKey || (daemonApiKey ?? "").trim().startsWith("${secret(")
+                            ? "text"
+                            : "password"
+                        }
                         className="config-input"
                         value={daemonApiKey ?? ""}
                         placeholder="Daemon API key or ${secret('/api-key/...')}"

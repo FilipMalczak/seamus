@@ -277,6 +277,26 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-045](./requirements.md#req-045-chat-bubble-timestamps-and-autonomous-sequence-indexing), [0051-chat-bubble-timestamps-and-sequence-indexing.md](../decisions/0051-chat-bubble-timestamps-and-sequence-indexing.md).
 - **Enforcement**: `ui/src/utils/sequence.ts`, `ui/src/components/ChatArea.tsx`, `ui/src/components/MessageItem.tsx`, and automated tests in `ui/tests/sequence.test.mjs`.
 
+### INV-057: A2UI v1.0 UAX #31 Component Identifier and Envelope Invariant
+- **Statement**: Outbound A2UI event envelopes emitted to the UI must declare version `"1.0"`. All component IDs in declarative surfaces (`body.json`) must strictly conform to Unicode Standard Annex #31 (UAX #31) identifier syntax (`c_id.isidentifier()`). During normalization (`normalize_a2ui_components`), hyphens and invalid identifier characters must be converted to underscores, duplicate identifiers disambiguated with numeric suffixes, and all component pointer references (`child`, `children`, `trigger`, `content`, `tabs`, `action.event.context`) rewritten to their normalized target IDs. Surface pre-render validation (`validate_a2ui_surface`) must fail if any non-identifier component ID remains. In addition, Text component variants must belong to `{"caption", "body"}`; heading variants (`h1`-`h5`) must be rewritten to markdown headings (`#`, `##`, etc.) under `variant: "body"`. Built-in builders and runtime button dispatch must support snake_case IDs (`submit_btn`, `review_btn`, `proceed_btn`).
+- **Justification**: [REQ-046](./requirements.md#req-046-adaptive-ui-a2ui-v10-specification-upgrade--strict-uax-31-identifier-validation), [0052-backlog-low-hanging-fruits.md](../decisions/0052-backlog-low-hanging-fruits.md).
+- **Enforcement**: `src/seamus/harness/artifacts.py`, `ui/src/components/A2UIArtifactRenderer.tsx`, and unit tests in `tests/test_artifacts.py`.
+
+### INV-058: Model Reasoning Effort Parameter Forwarding Invariant
+- **Statement**: When `InferenceConfig.reasoning_effort == ReasoningEffort.DEFAULT`, the `reasoning_effort` argument must be omitted when instantiating `ReasoningChatOpenAI` and excluded from model request payloads, allowing the provider to use its native default. When `reasoning_effort` is set to any non-default tier (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`), the corresponding string value must be explicitly passed into `ReasoningChatOpenAI(reasoning_effort=...)`.
+- **Justification**: [REQ-047](./requirements.md#req-047-configurable-model-reasoning-effort-tiers), [0052-backlog-low-hanging-fruits.md](../decisions/0052-backlog-low-hanging-fruits.md).
+- **Enforcement**: `src/seamus/config/models.py`, `src/seamus/harness/runner.py`, `tests/test_runner.py`.
+
+### INV-059: Dynamic Tool Labeling JSON Resource Alignment
+- **Statement**: Semantic tool labels, categories, and colors must be loaded from `src/seamus/harness/resources/tool_labeling.json` via `get_tool_labeling()`. The Inspector service (`get_agent_inspect_report`) must assign each tool its configured `list[ToolLabelInfo]`. If a tool is not explicitly mapped in `tool_labeling.json`, it must default to empty labels rather than raising an error. The Web UI Inspector must render these semantic badges and allow filtering tools by label title.
+- **Justification**: [REQ-048](./requirements.md#req-048-semantic-tool-categorization-color-labeling--filtering-in-agent-inspector), [0052-backlog-low-hanging-fruits.md](../decisions/0052-backlog-low-hanging-fruits.md).
+- **Enforcement**: `src/seamus/harness/resources/tool_labeling.json`, `src/seamus/harness/inspector.py`, `ui/src/components/AgentInspector.tsx`, and tests in `tests/test_inspector.py`.
+
+### INV-060: Explicit Thread Skill Retention and Token Leakage Guard
+- **Statement**: Conversation thread creation (`Session.create_thread`, `HarnessStore.create_thread`, `runner.transition_to_phase`) must accept `retained_skills: list[str] | None`. When `retained_skills` is provided, the newly spawned thread's `active_skills` must be populated with `retained_skills`; when omitted or `None`, `active_skills` must initialize to empty `[]`. Unretained skills from previous threads must be dropped to prevent unbounded context token accumulation across phase rollovers.
+- **Justification**: [REQ-049](./requirements.md#req-049-cross-phase-retained-skills-continuity-across-thread-rollovers), [0052-backlog-low-hanging-fruits.md](../decisions/0052-backlog-low-hanging-fruits.md).
+- **Enforcement**: `src/seamus/domain/entities.py`, `src/seamus/harness/store.py`, `src/seamus/harness/runner.py`, `tests/test_skills.py`.
+
 
 ## Cross-References
 - [backlog.md](./backlog.md)
@@ -325,4 +345,6 @@ Properties and rules that must always hold across the repository.
 - [0048-native-lmxml-skills-system.md](../decisions/0048-native-lmxml-skills-system.md)
 - [0049-native-lmxml-todo-planning.md](../decisions/0049-native-lmxml-todo-planning.md)
 - [0050-web-search-tool.md](../decisions/0050-web-search-tool.md)
+- [0051-chat-bubble-timestamps-and-sequence-indexing.md](../decisions/0051-chat-bubble-timestamps-and-sequence-indexing.md)
+- [0052-backlog-low-hanging-fruits.md](../decisions/0052-backlog-low-hanging-fruits.md)
 - [persistence.md](./persistence.md)

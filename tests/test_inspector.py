@@ -657,3 +657,25 @@ def test_inspector_web_search_filtering() -> None:
     disabled_tool_names = {t.name for t in report_disabled.tools}
     assert "web_search" not in disabled_tool_names
     assert "fetch_web_page" not in disabled_tool_names
+
+
+def test_tool_labeling_resource_and_labels() -> None:
+    from seamus.harness.inspector import ToolInspectInfo, get_tool_labels
+
+    # 1. Sandbox tool
+    ls_labels = get_tool_labels("ls")
+    assert [lbl.title for lbl in ls_labels] == ["sandbox", "opensandbox"]
+    assert all(len(lbl.color) == 6 for lbl in ls_labels)
+
+    # 2. Planning tool
+    todo_labels = get_tool_labels("create_todo_item")
+    assert [lbl.title for lbl in todo_labels] == ["planning", "seamus"]
+
+    # 3. Web tool
+    web_labels = get_tool_labels("fetch_web_page")
+    assert [lbl.title for lbl in web_labels] == ["web", "seamus", "duckduckgo"]
+
+    # 4. ToolInspectInfo model validator auto-populates labels
+    info = ToolInspectInfo(name="delete", description="Delete file")
+    assert [lbl.title for lbl in info.labels] == ["sandbox", "opensandbox"]
+    assert info.category == "Sandbox"

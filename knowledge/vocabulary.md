@@ -168,6 +168,18 @@ An inference backend running entirely locally (either via the Docker Compose `ol
 ### Active Model Execution Management
 The harness responsibility of explicitly verifying daemon responsiveness via HTTP healthchecks, checking model availability, and pre-loading models into GPU/CPU memory (`POST /api/generate`)—including automated model pulling (`POST /api/pull`) when missing—prior to initializing LangChain execution, ensuring local models are immediately operational.
 
+### UAX #31 Identifier
+The identifier syntax standard defined in Unicode Standard Annex #31 and strictly enforced by the A2UI v1.0 specification (`^[\p{XID_Start}_][\p{XID_Continue}]*$`, matching Python's `str.isidentifier()`). Disallows hyphens (`-`) and special characters in component IDs, requiring snake_case or alphanumeric naming.
+
+### Reasoning Effort
+A tiered execution setting (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `default`) supported by frontier reasoning models (such as `o1` and `o3-mini`) that governs the depth of the model's internal chain-of-thought tokens, trading inference latency and compute cost against reasoning rigor.
+
+### Retained Skills
+A designated subset of active skills explicitly carried forward across thread boundaries and Plan Mode phase transitions (`discuss` -> `make` -> `execute`), guaranteeing workflow continuity for core capabilities (e.g. `artifacts`) while dropping ephemeral exploratory skills.
+
+### Tool Labeling Resource
+The centralized JSON mapping resource (`src/seamus/harness/resources/tool_labeling.json`) defining semantic tool domains (`opensandbox`, `sandbox`, `harness`, `seamus`, `planning`, `artifacts`, `a2ui`, `skills`, `web`, `duckduckgo`) and their associated hex color badges for structured presentation and filtering in the Agent Inspector.
+
 ## Cross-References
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
@@ -190,6 +202,9 @@ The harness responsibility of explicitly verifying daemon responsiveness via HTT
 - [0044-interactive-web-terminal.md](../decisions/0044-interactive-web-terminal.md)
 - [0045-ollama-local-model-provider.md](../decisions/0045-ollama-local-model-provider.md)
 - [0046-daemons-naming.md](../decisions/0046-daemons-naming.md)
+- [0050-web-search-tool.md](../decisions/0050-web-search-tool.md)
+- [0051-chat-bubble-timestamps-and-sequence-indexing.md](../decisions/0051-chat-bubble-timestamps-and-sequence-indexing.md)
+- [0052-backlog-low-hanging-fruits.md](../decisions/0052-backlog-low-hanging-fruits.md)
 - [artifacts.md](./artifacts.md)
 - [threads_modes_personas.md](./threads_modes_personas.md)
 - [architecture.md](./architecture.md)

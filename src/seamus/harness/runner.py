@@ -8,7 +8,7 @@ import traceback
 import urllib.error
 import urllib.request
 from collections.abc import AsyncGenerator, Mapping, Sequence
-from typing import Any, Literal, Self, cast
+from typing import Any, Literal, cast
 from uuid import uuid4
 
 import logfire
@@ -39,6 +39,7 @@ from pydantic import BaseModel, Field, SecretStr, model_validator
 
 from seamus.config.models import (
     InferenceFormat,
+    ReasoningEffort,
     SkillsImplementation,
     TodoImplementation,
     WebSearchImplementation,
@@ -488,84 +489,6 @@ Valid statuses: "pending", "in_progress", "completed".
 """
 
 
-class ResilientAskInput(BaseModel):
-    """Input schema for the ask tool."""
-
-    question: str = Field(description="The closed question to ask the user.")
-    answers: list[str] = Field(
-        ...,
-        description=(
-            "The list of possible answers for the user to choose from. Required. "
-            "Must contain at least 2 choices if writein=False and multiple=False, "
-            "or at least 1 choice if writein=True or multiple=True."
-        ),
-    )
-    multiple: bool = Field(
-        default=False,
-        description="Whether to allow selecting multiple options (multi-select).",
-    )
-    writein: bool = Field(
-        default=False,
-        description="Whether to include an 'Other: [text field]' option for user write-in.",
-    )
-    id: str | None = Field(
-        default=None,
-        description="Optional unique identifier for the question (e.g. 'backgroundColor').",
-    )
-
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_answers(cls, data: Any) -> Any:
-        if not isinstance(data, dict):
-            return data
-        d = dict(data)
-        if "answers" not in d:
-            for alias in ("options", "choices", "asnwers", "possible_answers"):
-                if alias in d:
-                    d["answers"] = d[alias]
-                    break
-        if not isinstance(d.get("answers"), list):
-            if d.get("answers") is not None:
-                d["answers"] = [str(d["answers"])]
-        if "multiple" not in d:
-            for m_alias in ("multi_select", "multiselect", "multi"):
-                if m_alias in d:
-                    d["multiple"] = bool(d[m_alias])
-                    break
-        return d
-
-    @model_validator(mode="after")
-    def _validate_answers_cardinality(self) -> Self:
-        min_answers = 1 if (self.writein or self.multiple) else 2
-        if len(self.answers) < min_answers:
-            if self.multiple:
-                msg = (
-                    f"Question '{self.question}' with multiple=True requires at least 1 choice in "
-                    f"'answers' (got {len(self.answers)})."
-                )
-            elif self.writein:
-                msg = (
-                    f"Question '{self.question}' with writein=True requires at least 1 choice in "
-                    f"'answers' (got {len(self.answers)})."
-                )
-            else:
-                msg = (
-                    f"Question '{self.question}' with writein=False requires at least 2 choices in "
-                    f"'answers' (got {len(self.answers)})."
-                )
-            raise ValueError(msg)
-        return self
-
-
-class ResilientFormInput(ResilientAskInput):
-    """Input schema for the form tool (tabbed, non-blocking questionnaire in Plan/Discuss)."""
-
-    title: str = Field(
-        default="Form",
-        description="Optional display title for the form tab (defaults to 'Form').",
-    )
-
-
 class MakeArtifactInput(BaseModel):
     """Input schema for make_artifact tool."""
 
@@ -653,6 +576,11 @@ class ReadArtifactSubmissionInput(BaseModel):
 
 class PlanTransitionInput(BaseModel):
     """Input schema for the plan() phase transition tool."""
+
+    retained_skills: list[str] = Field(
+        default_factory=list,
+        description="Optional list of active skill names to retain into the new thread.",
+    )
 
 
 class MakePlanInput(BaseModel):
@@ -747,13 +675,9 @@ class SessionAgentRunner:
         self._agent_entity = agent_entity
         self._sandbox_backend: SeamusOpenSandboxBackend | None = None
         self.checkpointer: GitCheckpointSaver | None = getattr(agent, "checkpointer", None)
-        self._pending_questions: list[QuestionItem] = []
-        self._current_questionnaire_id: str | None = None
-        self._pending_form_questions: list[QuestionItem] = []
-        self._current_form_id: str | None = None
-        self._current_form_title: str = "Form"
         self._turn_created_artifact_ids: set[str] = set()
         self._pending_phase_transition: tuple[str, str | None, bool] | None = None
+        self._pending_retained_skills: list[str] | None = None
         self._pending_clicks: dict[tuple[str, str | None], asyncio.Future[str]] = {}
         self._loaded_secret_versions: dict[tuple[str, str], int] = {}
         self._resolved_system_prompt: str | None = None
@@ -801,10 +725,16 @@ class SessionAgentRunner:
             if not base_url.rstrip("/").endswith("/v1"):
                 base_url = f"{base_url.rstrip('/')}/v1"
 
+        reasoning_effort = (
+            resolved_config.inference.reasoning_effort.value
+            if resolved_config.inference.reasoning_effort != ReasoningEffort.DEFAULT
+            else None
+        )
         llm = ReasoningChatOpenAI(
             model=resolved_config.model_name,
             api_key=SecretStr(api_key),
             base_url=base_url,
+            reasoning_effort=reasoning_effort,
         )
         self._llm = llm
 
@@ -969,27 +899,6 @@ class SessionAgentRunner:
             args_schema=WaitForClickInput,
         )
 
-        ask_tool = StructuredTool.from_function(
-            name="ask",
-            description=(
-                "Ask the user a closed question with multiple choices and an optional write-in "
-                "field. Batch multiple questions in the same turn to generate an embedded, "
-                "blocking questionnaire."
-            ),
-            func=self.handle_ask,
-            args_schema=ResilientAskInput,
-        )
-
-        form_tool = StructuredTool.from_function(
-            name="form",
-            description=(
-                "Create a tabbed, non-blocking questionnaire form in a dedicated tab to the "
-                "right of Changes. Batch multiple questions in the same turn to populate the form."
-            ),
-            func=self.handle_form,
-            args_schema=ResilientFormInput,
-        )
-
         read_sub_tool = StructuredTool.from_function(
             name="read_artifact_submission",
             description=(
@@ -1057,8 +966,6 @@ class SessionAgentRunner:
             make_questionnaire_tool,
             make_form_tool,
             wait_for_click_tool,
-            ask_tool,
-            form_tool,
             read_sub_tool,
             plan_tool,
             make_plan_tool,
@@ -1173,10 +1080,16 @@ class SessionAgentRunner:
             or self._llm.openai_api_base != new_base_url
             or self._llm.model_name != new_model
         ):
+            reasoning_effort = (
+                self.session.config.inference.reasoning_effort.value
+                if self.session.config.inference.reasoning_effort != ReasoningEffort.DEFAULT
+                else None
+            )
             fresh_llm = ReasoningChatOpenAI(
                 model=new_model,
                 api_key=SecretStr(new_api_key),
                 base_url=new_base_url,
+                reasoning_effort=reasoning_effort,
             )
             self._llm.openai_api_key = fresh_llm.openai_api_key
             self._llm.openai_api_base = fresh_llm.openai_api_base
@@ -1858,7 +1771,10 @@ class SessionAgentRunner:
         # Check existing clicks if fresh=False
         if not fresh and interactions_dir.is_dir():
             if button_id:
+                norm_id = button_id.replace("-", "_")
                 btn_file = interactions_dir / f"{button_id}.json"
+                if not btn_file.is_file() and norm_id != button_id:
+                    btn_file = interactions_dir / f"{norm_id}.json"
                 if btn_file.is_file():
                     try:
                         ctx = json.loads(btn_file.read_text(encoding="utf-8"))
@@ -1955,124 +1871,17 @@ class SessionAgentRunner:
                 except OSError:
                     pass
 
-    def handle_ask(
-        self,
-        question: str,
-        answers: list[str],
-        multiple: bool = False,
-        writein: bool = False,
-        id: str | None = None,
-    ) -> str:
-        """Handle execution of the 'ask' tool during an inference turn."""
-        item = QuestionItem(
-            question=question,
-            answers=answers,
-            multiple=multiple,
-            writein=writein,
-            id=id or "",
-        )
-        if any(q.id == item.id for q in self._pending_questions):
-            raise ValueError(
-                f"Question with id '{item.id}' already exists in the current questionnaire. "
-                f"Each question in a questionnaire must have a unique id."
-            )
-        if self._current_questionnaire_id is None:
-            self._current_questionnaire_id = uuid4().hex
-        self._turn_created_artifact_ids.add(self._current_questionnaire_id)
-        self._pending_questions.append(item)
-
-        ws_mgr = get_workspace_manager()
-        artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
-        target_dir = artifacts_dir / "questionnaires" / self._current_questionnaire_id
-        target_dir.mkdir(parents=True, exist_ok=True)
-
-        card_dict = QuestionnaireBuilder.build_card(self._pending_questions)
-        (target_dir / "card.json").write_text(json.dumps(card_dict, indent=2), encoding="utf-8")
-
-        art_event = {
-            "type": "ARTIFACT_CREATED",
-            "artifact_id": self._current_questionnaire_id,
-            "kind": "questionnaires",
-        }
-        self.broadcaster.broadcast_sync(art_event)
-        thread = self.session.get_open_thread()
-        if thread is not None:
-            thread.append_event(art_event)
-        return "OK"
-
-    def handle_form(
-        self,
-        question: str,
-        answers: list[str],
-        multiple: bool = False,
-        writein: bool = False,
-        id: str | None = None,
-        title: str = "Form",
-    ) -> str:
-        """Handle execution of the 'form' tool (tabbed, non-blocking questionnaire) in Discuss."""
-        item = QuestionItem(
-            question=question,
-            answers=answers,
-            multiple=multiple,
-            writein=writein,
-            id=id or "",
-        )
-        if any(q.id == item.id for q in self._pending_form_questions):
-            raise ValueError(
-                f"Question with id '{item.id}' already exists in the current form. "
-                f"Each question in a form must have a unique id."
-            )
-        if self._current_form_id is None:
-            self._current_form_id = uuid4().hex
-            self._current_form_title = title.strip() or "Form"
-        elif title and title.strip() and title.strip() != "Form":
-            self._current_form_title = title.strip()
-
-        self._turn_created_artifact_ids.add(self._current_form_id)
-        self._pending_form_questions.append(item)
-
-        ws_mgr = get_workspace_manager()
-        artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
-        seed_default_artifacts(artifacts_dir)
-        target_dir = artifacts_dir / "forms" / self._current_form_id
-        target_dir.mkdir(parents=True, exist_ok=True)
-
-        manifest_payload = {
-            "exposition": "tabbed",
-            "cadence": "nonblocking",
-            "title": self._current_form_title,
-        }
-        (target_dir / "manifest.json").write_text(
-            json.dumps(manifest_payload, indent=2),
-            encoding="utf-8",
-        )
-        card_dict = QuestionnaireBuilder.build_card(
-            self._pending_form_questions,
-            title=self._current_form_title,
-        )
-        (target_dir / "card.json").write_text(
-            json.dumps(card_dict, indent=2),
-            encoding="utf-8",
-        )
-
-        art_event = {
-            "type": "ARTIFACT_CREATED",
-            "artifact_id": self._current_form_id,
-            "kind": "forms",
-            "title": self._current_form_title,
-        }
-        self.broadcaster.broadcast_sync(art_event)
-        thread = self.session.get_open_thread()
-        if thread is not None:
-            thread.append_event(art_event)
-        return "OK"
-
-    def handle_plan(self) -> str:
+    def handle_plan(self, retained_skills: list[str] | None = None) -> str:
         """Transition from Plan/Discuss to Plan/Make in a new thread and auto-wake."""
         open_thread = self.session.get_open_thread()
         if open_thread.mode != ModeName.PLAN.value or open_thread.phase != PlanPhase.DISCUSS.value:
             raise ValueError("The 'plan' tool can only be called during the Plan/Discuss phase.")
-        self._pending_phase_transition = (ModeName.PLAN.value, PlanPhase.MAKE.value, True)
+        self._pending_phase_transition = (
+            ModeName.PLAN.value,
+            PlanPhase.MAKE.value,
+            True,
+        )
+        self._pending_retained_skills = retained_skills
         return "Transitioning session to Plan/Make phase in a new thread."
 
     def handle_make_plan(
@@ -2218,6 +2027,7 @@ class SessionAgentRunner:
                 open_thread.append_event(close_ev)
 
         self._pending_phase_transition = (ModeName.PLAN.value, PlanPhase.DISCUSS.value, False)
+        self._pending_retained_skills = None
         return "Discarded active plan and resetting session to a new Plan/Discuss thread."
 
     async def transition_to_phase(
@@ -2226,10 +2036,15 @@ class SessionAgentRunner:
         phase: str | None = None,
         *,
         auto_wake: bool = False,
+        retained_skills: list[str] | None = None,
     ) -> Thread:
         """Close the current thread, open a new thread in (mode, phase), and auto-wake if set."""
         resolved_mode, resolved_phase = normalize_mode_and_phase(mode, phase)
-        new_thread = self.session.create_thread(mode=resolved_mode, phase=resolved_phase)
+        new_thread = self.session.create_thread(
+            mode=resolved_mode,
+            phase=resolved_phase,
+            retained_skills=retained_skills,
+        )
         if auto_wake:
             new_thread.status = AgentStatus.AWAITING_LLM
         self.sync_sandbox_mounts(new_thread)
@@ -2267,23 +2082,11 @@ class SessionAgentRunner:
         If called for an open non-blocking artifact (cadence=nonblocking),
         that artifact instance is promoted to cadence=blocking.
         """
-        is_same_turn = (
-            artifact_id in self._turn_created_artifact_ids
-            or (
-                self._current_questionnaire_id is not None
-                and (artifact_id == self._current_questionnaire_id or not artifact_id)
-            )
-            or (
-                self._current_form_id is not None
-                and (artifact_id == self._current_form_id or not artifact_id)
-            )
-            or any(q.id == artifact_id for q in self._pending_questions if q.id)
-            or any(q.id == artifact_id for q in self._pending_form_questions if q.id)
-        )
+        is_same_turn = artifact_id in self._turn_created_artifact_ids
         if is_same_turn:
             msg = (
-                f"Cannot read artifact submission for questionnaire '{artifact_id}' in the same "
-                f"turn it was created with 'ask' or 'form'. The artifact must first be submitted "
+                f"Cannot read artifact submission for artifact '{artifact_id}' in the same "
+                f"turn it was created. The artifact must first be submitted "
                 f"by the user in a subsequent turn."
             )
             raise ValueError(msg)
@@ -2397,7 +2200,7 @@ class SessionAgentRunner:
                 await self.broadcaster.broadcast(art_closed)
 
             # Handle plan proceed transition
-            if family == "plans" and button_id in ("proceed-btn", "proceed"):
+            if family == "plans" and button_id in ("proceed_btn", "proceed-btn", "proceed"):
                 PlanBuilder.approve_plan(artifacts_dir, uuid)
                 self.session.active_plan_id = uuid
                 try:
@@ -2646,11 +2449,6 @@ class SessionAgentRunner:
         thread_identifier = thread_name or thread_id_str
 
         run_id = uuid4().hex
-        self._pending_questions = []
-        self._current_questionnaire_id = None
-        self._pending_form_questions = []
-        self._current_form_id = None
-        self._current_form_title = "Form"
         self._turn_created_artifact_ids.clear()
         self._pending_phase_transition = None
         self.sync_sandbox_mounts(thread)
@@ -2724,12 +2522,9 @@ class SessionAgentRunner:
                             logger.exception("Failed to close Sync PR on session failure")
                     finally:
                         pending_transition = self._pending_phase_transition
+                        pending_skills = self._pending_retained_skills
                         self._pending_phase_transition = None
-                        self._pending_questions = []
-                        self._current_questionnaire_id = None
-                        self._pending_form_questions = []
-                        self._current_form_id = None
-                        self._current_form_title = "Form"
+                        self._pending_retained_skills = None
                         self._turn_created_artifact_ids.clear()
                         if thread.status != AgentStatus.ERROR and self.session.is_active:
                             thread.status = AgentStatus.AWAITING_USER
@@ -2779,6 +2574,7 @@ class SessionAgentRunner:
                                 t_mode,
                                 t_phase,
                                 auto_wake=t_auto_wake,
+                                retained_skills=pending_skills,
                             )
 
     def _update_status_from_event(self, thread: Thread, event: Any) -> None:

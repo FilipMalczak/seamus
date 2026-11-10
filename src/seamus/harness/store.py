@@ -661,6 +661,7 @@ class HarnessStore:
         agent_identifier: str,
         session_identifier: str,
         name: str | None = None,
+        retained_skills: list[str] | None = None,
     ) -> Thread:
         """Create a new thread within the resolved session."""
         agent = self.resolve_agent(agent_identifier)
@@ -682,7 +683,7 @@ class HarnessStore:
                 session_identifier=session_ident,
                 agent_id=str(agent.id),
             ):
-                thread = session.create_thread(name=name)
+                thread = session.create_thread(name=name, retained_skills=retained_skills)
                 thread_ident = thread.name or str(thread.id)
                 with logfire.span(
                     f"thread {thread_ident}",

@@ -1,13 +1,15 @@
 """Inspector service extracting agent configuration, runtime parameters, and branch state."""
 
+import json
 import logging
 import re
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any, cast
 from uuid import UUID
 
 from deepagents.middleware.skills import SKILLS_SYSTEM_PROMPT, SkillMetadata, SkillsMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from seamus.config.models import (
     ExternalRepositoryConfig,
@@ -55,6 +57,52 @@ SANDBOX_TOOL_NAMES = frozenset(
 )
 
 
+class ToolLabelInfo(BaseModel):
+    """Semantic label and display color assigned to a tool."""
+
+    title: str
+    color: str
+
+
+_TOOL_LABELING_CACHE: tuple[dict[str, ToolLabelInfo], dict[str, list[str]]] | None = None
+
+
+def get_tool_labeling() -> tuple[dict[str, ToolLabelInfo], dict[str, list[str]]]:
+    """Load and cache tool labeling configuration from tool_labeling.json."""
+    global _TOOL_LABELING_CACHE
+    if _TOOL_LABELING_CACHE is None:
+        resource_path = Path(__file__).parent / "resources" / "tool_labeling.json"
+        try:
+            with open(resource_path, encoding="utf-8") as f:
+                data = json.load(f)
+            labels = {
+                lbl["title"]: ToolLabelInfo(title=lbl["title"], color=lbl["color"])
+                for lbl in data.get("labels", [])
+                if "title" in lbl and "color" in lbl
+            }
+            tools = data.get("tools", {})
+            _TOOL_LABELING_CACHE = (labels, tools)
+        except Exception:
+            logger.exception("Failed to load tool_labeling.json resource")
+            _TOOL_LABELING_CACHE = ({}, {})
+    return _TOOL_LABELING_CACHE
+
+
+def get_tool_labels(name: str) -> list[ToolLabelInfo]:
+    """Retrieve all assigned semantic labels for a tool by name."""
+    labels_dict, tools_dict = get_tool_labeling()
+    titles = tools_dict.get(name, [])
+    return [labels_dict[t] for t in titles if t in labels_dict]
+
+
+def categorize_tool(name: str) -> str:
+    """Return taxonomy category for a tool by name."""
+    lbls = get_tool_labels(name)
+    if lbls:
+        return lbls[0].title.capitalize()
+    return "Custom"
+
+
 class ToolInspectInfo(BaseModel):
     """Information about an available tool."""
 
@@ -62,6 +110,23 @@ class ToolInspectInfo(BaseModel):
     description: str
     parameters: dict[str, Any] = Field(default_factory=dict)
     backend: str = "opensandbox"
+    category: str = "Sandbox"
+    labels: list[ToolLabelInfo] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _default_labels_and_category(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            name = str(data.get("name", ""))
+            if "labels" not in data or not data["labels"]:
+                data["labels"] = [lbl.model_dump() for lbl in get_tool_labels(name)]
+            if "category" not in data or not data["category"]:
+                lbls = data.get("labels", [])
+                if lbls and isinstance(lbls[0], dict) and "title" in lbls[0]:
+                    data["category"] = lbls[0]["title"].capitalize()
+                else:
+                    data["category"] = "Custom"
+        return data
 
 
 class TodoInspectItem(BaseModel):

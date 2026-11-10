@@ -17,7 +17,7 @@ Seamus is an open, self-hosted, deep agent execution harness and developer works
    - [2. Multi-Container Execution & Filesystem Sandboxing](#2-multi-container-execution--filesystem-sandboxing)
    - [3. Git-Native Persistence, Checkpointing & Provenance](#3-git-native-persistence-checkpointing--provenance)
    - [4. Operational Modes & Structured Plan Lifecycle](#4-operational-modes--structured-plan-lifecycle)
-   - [5. Adaptive UI (A2UI v0.9) & Dynamic Artifacts](#5-adaptive-ui-a2ui-v09--dynamic-artifacts)
+   - [5. Adaptive UI (A2UI v1.0) & Dynamic Artifacts](#5-adaptive-ui-a2ui-v10--dynamic-artifacts)
    - [6. Anthropic Skills System & Precedence Engine](#6-anthropic-skills-system--precedence-engine)
    - [7. Enterprise Secrets Vault (OpenBao KV v2)](#7-enterprise-secrets-vault-openbao-kv-v2)
    - [8. Developer Web UI & Workspace Ergonomics](#8-developer-web-ui--workspace-ergonomics)
@@ -48,7 +48,7 @@ Seamus is an open, self-hosted, deep agent execution harness and developer works
 | **Unsafe local execution** lets agents run arbitrary bash commands and mutate files directly on your workstation. | **Heavyweight container sandboxing (OpenSandbox + Docker).** Agents execute strictly inside isolated disposable Linux containers with granular read-write/read-only mount policies. |
 | **Volatile, ephemeral memory** that vanishes on crash, with no audit trail or rollback capability. | **Git-native persistence (Gitea + GitCheckpointSaver).** Every turn, tool call, checkpoint, and file mutation is an immutable Git commit with branches, commit logs, and Sync Pull Requests. |
 | **Uncontrolled runaway coding loops** where agents start editing critical code before understanding the task or architecture. | **Rigorous three-phase Plan Mode (`discuss` &rarr; `make` &rarr; `execute`).** Enforces exploration, notes authoring, read-only plan synthesis, and explicit human-in-the-loop review before code mutation. |
-| **Flat, unformatted text chat** incapable of collecting structured answers or presenting interactive forms. | **Adaptive UI (A2UI v0.9).** Agents render interactive questionnaires that block until answered, tabbed configuration forms, and dedicated Plan tabs with inline section comments and Proceed gates. |
+| **Flat, unformatted text chat** incapable of collecting structured answers or presenting interactive forms. | **Adaptive UI (A2UI v1.0).** Agents render interactive questionnaires that block until answered, tabbed configuration forms, and dedicated Plan tabs with inline section comments and Proceed gates. |
 | **Leaked API keys and plaintext secrets** committed to git repositories, logged in traces, or saved in disk files. | **Integrated OpenBao Secrets Vault (KV v2).** Symbolic `${secret('/path')}` references, strictly in-memory resolution, zero disk secrets, and version-pinned snapshotting in checkpoint commits. |
 | **Static, rigid agent configurations** that cannot be extended with modular capabilities. | **Anthropic Skills Standard (`SKILL.md`).** Drop in modular skills with a multi-tiered priority engine spanning bundled, session, background, and system directories. |
 | **Opaque reasoning and invisible prompts** making it impossible to debug hallucinations or bad tool calls. | **DeepAgent Inspector.** Deconstructs composite LM-XML system prompts into layered cards, exposes registered JSON tool schemas, tracks active todos, and surfaces live diffs. |
@@ -101,7 +101,7 @@ Seamus is an open, self-hosted, deep agent execution harness and developer works
 | **Persistence Engine** | SQLite / Vector DB / In-memory | Proprietary Cloud DB | **Native Git Repository (Gitea)** |
 | **State Rollback & Audit** | Difficult / Manual | Opaque Cloud History | **Git Commits & Branch Provenance** |
 | **Workflow Discipline** | Single loop / Freeform | Uncontrolled coding loop | **Phased Plan Mode (`discuss` &rarr; `make` &rarr; `execute`)** |
-| **Interactive UI Artifacts** | Text only | Basic diff views | **A2UI v0.9 (Questionnaires, Forms, Plans)** |
+| **Interactive UI Artifacts** | Text only | Basic diff views | **A2UI v1.0 (Questionnaires, Forms, Plans)** |
 | **Secrets Management** | Plaintext `.env` files | Proprietary Cloud Vault | **OpenBao KV v2 + Symbolic References** |
 | **Skill Extensibility** | Custom python functions | Proprietary extensions | **Anthropic Skills Standard (`SKILL.md`)** |
 | **Inspection & Debugging** | Print statements / loggers | Minimal | **DeepAgent Inspector + LM-XML Prompts** |
@@ -189,15 +189,17 @@ stateDiagram-v2
   3. **Execute (`plan/execute`)**: With the plan approved, the workspace is unlocked to read-write (with `/workspace/notes` preserved as read-only). The agent implements and verifies the deliverables.
 - **Escape Hatch (`discard()`)**: The user or agent can abort the plan workflow at any time, cleaning up active plan artifacts.
 
-### 5. Adaptive UI (A2UI v0.9) & Dynamic Artifacts
+### 5. Adaptive UI (A2UI v1.0) & Dynamic Artifacts
 
-Move beyond text chat. Seamus implements the open **A2UI (Adaptive Agent User Interface) v0.9** standard to render dynamic, interactive components directly in the browser:
+Move beyond text chat. Seamus implements the open **A2UI (Adaptive Agent User Interface) v1.0** standard to render dynamic, interactive components directly in the browser:
 
 - **Direct Filesystem Persistence**: Artifacts are stored under `<session_workspace>/artifacts/<family>/<uuid>/`, capturing `manifest.json`, `body.json`, `state.json`, and per-button evaluated interaction files.
 - **Embedded Questionnaires (`make_questionnaire`)**: Rendered directly in the chat stream with `blocking=true`. The agent calls `wait_for_click`, pausing execution until the user selects chips, radio options, or fills in text inputs.
 - **Tabbed Forms (`make_form`)**: Non-blocking forms rendered in dedicated workspace tabs for complex configuration input while the agent continues background tasks.
 - **Interactive Implementation Plans (`make_plan`)**: Markdown-rendered plan artifacts with section-level inline commenting, approval indicators, and the interactive **Proceed** action.
 - **Auto-Repair & Normalization**: The harness includes automatic component tree normalization (`normalize_a2ui_components`), button declaration auto-synthesis, pre-render surface validation, and structural warning checks to ensure invalid LLM UI JSON never breaks the frontend.
+- **Strict UAX #31 Compliance & Reference Remapping**: Component IDs strictly adhere to Unicode Standard Annex #31 (`c_id.isidentifier()`). Hyphenated identifiers and illegal characters are automatically sanitized into snake_case (`submit_btn`, `review_btn`, `proceed_btn`) with all child, trigger, content, and action context references remapped dynamically.
+- **Negative Constraint on Redundant Options**: Harness prompts and bundled skills strictly instruct agents never to author explicit "Other" or "Custom" choices when `write_in=True` is enabled on questionnaires, as the A2UI renderer automatically supplies the necessary freeform text input.
 
 ### 6. Native LM-XML Skills System & Precedence Engine
 
@@ -205,6 +207,7 @@ Extend your agents using the open [Anthropic Agent Skills standard](https://docs
 
 - **Native LM-XML Progressive Disclosure**: Available skills are rendered directly into the dynamic LM-XML system prompt (`<skills><available_skills>...</available_skills></skills>`), allowing the agent to discover capabilities without polluting the context window.
 - **Explicit Context Lifecycle (`load_skill` & `unload_skill`)**: The agent explicitly loads full skill instructions into its dynamic prompt using `load_skill(name=...)` when needed, and unloads them with `unload_skill(name=...)` once the workflow is completed to conserve context tokens.
+- **Cross-Phase Skill Retention**: Essential active skills (e.g. `artifacts`) can be designated for retention across thread boundaries and Plan Mode phase transitions (`discuss` -> `make` -> `execute`) via `retained_skills`, maintaining capability continuity while shedding exploratory skills.
 - **Dynamic Tool Gating**: Tools declared in a skill's `allowed_tools` metadata are gated until the skill is loaded via `load_skill`.
 - **Resilient Frontmatter Parsing**: Fault-tolerant parsing handles unquoted colons, JSON-like braces, folded multiline descriptions, and inline tool arrays without silently dropping real-world skills.
 - **Multi-Tiered Precedence Engine (INV-035)**: Skills are resolved through an implementation-agnostic hierarchy where higher tiers override lower tiers on naming collisions:
@@ -238,15 +241,17 @@ A desktop-grade React 19 single-page application built with Vite and TypeScript:
 - **Changes Diff Viewer**: Dedicated `[Changes]` tab with hierarchical directory tree navigation, flat list view, git status badges (`[A]` Added, `[M]` Modified, `[D]` Deleted, `[R]` Renamed), diff stats (`+N / -M`), and syntax-highlighted unified diffs.
 - **Interactive Web Terminal & Shell Emulator**: Dedicated `[Terminal]` tab connected directly to the active session's OpenSandbox container. Features real-time Server-Sent Events (SSE) streaming output, command history navigation (`↑`/`↓`), quick action shortcuts, process interruption (Cancel / `Ctrl+C`), and dynamic working directory tracking across commands.
 - **Chat Bubble Timestamps & Autonomous Sequence Indexing**: Per-bubble localized timestamps with seconds precision (`HH:MM:SS`) and ISO tooltips on hover. When an agent produces a contiguous streak exceeding 5 bubbles (`BUBBLE_SEQUENCE_THRESHOLD`), each bubble in the sequence displays a high-contrast 1-based index badge (`#1`, `#2`, ..., `#N`) at its top-left corner, providing instant visibility into autonomous multi-step execution duration and step-by-step progress.
+- **Unmasked Symbolic Secret Expressions**: Configuration and settings modal input fields automatically unmask from password to readable text when containing symbolic `${secret(...)}` expressions, keeping secret paths clearly verifiable while preserving password masking for raw strings.
+- **Right-Aligned System and Daemon Events**: Background system notifications, phase shifts, and daemon events are styled and right-aligned to clearly distinguish harness logs from user inputs and assistant dialogue.
 - **Interactive Markdown Renderer**: GitHub Flavored Markdown (GFM) with one-click code block copying, responsive tables, and sanitized external links.
-- **Dual-Mode Config Editor**: Edit agent and session configurations using either a guided form interface or a raw JSON editor with client-side syntax validation.
+- **Dual-Mode Config Editor**: Edit agent and session configurations using either a guided form interface (with reasoning effort selection placed adjacent to the model identifier) or a raw JSON editor with client-side syntax validation.
 
 ### 9. DeepAgent Runtime Introspection & Inspector
 
 Inspect exactly what the language model sees and executes via the UI `[Inspector]` tab:
 
 - **Decomposed Composite Prompt Layers**: View the exact LM-XML system prompt generated for the active turn, split cleanly into Scaffolding, Dynamic Runtime Context (paths, IDs, dates), and Custom Instructions, with one-click copy.
-- **Registered Tool Schemas**: Interactive accordion displaying formatted JSON Schema parameter definitions for every tool exposed to the agent.
+- **Registered Tool Schemas & Semantic Label Badges**: Interactive accordion displaying formatted JSON Schema parameter definitions for every tool exposed to the agent, augmented by semantic colored badges (`opensandbox`, `harness`, `planning`, `web`, `skills`) loaded from `tool_labeling.json` with interactive category filtering.
 - **Active Todos Checklist**: Real-time inspection of active task planning items managed by DeepAgents `TodoListMiddleware`.
 - **Runtime Inference Parameters**: Model identifier, base URL, sampling parameters, and masked credential references.
 - **Complete Message Trajectory**: Inspect raw message payloads, token counts, and tool call results.
@@ -422,6 +427,7 @@ class InferenceConfig(BaseModel):
     format: InferenceFormat = InferenceFormat.OPENAI
     base_url: str = "https://openrouter.ai/api/v1"
     api_key: str | None = None
+    reasoning_effort: ReasoningEffort = ReasoningEffort.DEFAULT
 
 
 class ExternalRepositoryConfig(BaseModel):
@@ -451,6 +457,7 @@ class AgentConfig(BaseModel):
 - `inference.format`: Format of inference API (`openai` or `ollama`).
 - `inference.base_url`: Target endpoint URL for inference API requests (presets: OpenRouter, OpenAI, and local Ollama `http://localhost:11434/v1`).
 - `inference.api_key`: API key or symbolic vault reference (`${secret('/path')}`). Optional when using Ollama (`ollama` format or port `11434`).
+- `inference.reasoning_effort`: Reasoning token tier for reasoning models (`default`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`). `"default"` leaves provider parameters untouched.
 - `rules_patterns`: Glob patterns evaluated per inference turn across `/workspace` and mounted `/projects/...`, injecting matching context files into `<discovered_context>`.
 - `repositories`: List of external Git repositories mounted into `/projects/{mount_name}`.
 - `daemons.naming.enabled`: Enables automated thread and session naming daemons (default: `true`).

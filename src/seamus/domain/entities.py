@@ -223,12 +223,16 @@ class Session(BaseModel):
         mode: str | None = None,
         phase: str | None = None,
         reuse_empty: bool = True,
+        retained_skills: list[str] | None = None,
     ) -> Thread:
         """Create a new open thread, closing all previous threads in the session.
 
         If reuse_empty is True (default) and the currently open thread in the session
         is empty (has no events), the open thread is kept and updated in place with the
         new mode, phase, and name rather than creating an unnecessary empty thread.
+
+        If retained_skills is provided, those skill names are copied into the open
+        thread's active_skills.
         """
         if not self.is_active:
             msg = f"Cannot create thread in session '{self.id}' with status '{self.status.value}'."
@@ -251,6 +255,10 @@ class Session(BaseModel):
                             thread.name = name
                         thread.mode = resolved_mode
                         thread.phase = resolved_phase
+                        if retained_skills:
+                            for s in retained_skills:
+                                if s not in thread.active_skills:
+                                    thread.active_skills.append(s)
                         thread.touch()
                         self.touch()
                         return thread
@@ -265,6 +273,7 @@ class Session(BaseModel):
             status=AgentStatus.AWAITING_USER,
             mode=resolved_mode,
             phase=resolved_phase,
+            active_skills=list(retained_skills) if retained_skills else [],
         )
         self.threads[new_thread.id] = new_thread
         self.touch()

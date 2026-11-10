@@ -1,0 +1,44 @@
+{
+  "labels": [
+    { "title": "opensandbox", "color": "10b981" },
+    { "title": "sandbox", "color": "059669" },
+    { "title": "harness", "color": "6366f1" },
+    { "title": "seamus", "color": "8b5cf6" },
+    { "title": "planning", "color": "3b82f6" },
+    { "title": "deepagents", "color": "0ea5e9" },
+    { "title": "artifacts", "color": "f59e0b" },
+    { "title": "a2ui", "color": "d97706" },
+    { "title": "skills", "color": "ec4899" },
+    { "title": "web", "color": "14b8a6" },
+    { "title": "duckduckgo", "color": "f97316" }
+  ],
+  "tools": {
+    "ls": ["sandbox", "opensandbox"],
+    "read_file": ["sandbox", "opensandbox"],
+    "write_file": ["sandbox", "opensandbox"],
+    "edit_file": ["sandbox", "opensandbox"],
+    "delete": ["sandbox", "opensandbox"],
+    "glob": ["sandbox", "opensandbox"],
+    "grep": ["sandbox", "opensandbox"],
+    "execute": ["sandbox", "opensandbox"],
+    "plan": ["planning", "harness", "seamus"],
+    "discard": ["planning", "harness", "seamus"],
+    "make_plan": ["planning", "artifacts", "seamus"],
+    "update_plan": ["planning", "artifacts", "seamus"],
+    "edit_plan": ["planning", "artifacts", "seamus"],
+    "make_artifact": ["artifacts", "harness", "a2ui"],
+    "make_questionnaire": ["artifacts", "harness", "seamus", "a2ui"],
+    "make_form": ["artifacts", "harness", "seamus", "a2ui"],
+    "wait_for_click": ["artifacts", "harness", "seamus"],
+    "read_artifact_submission": ["artifacts", "harness", "seamus"],
+    "write_todos": ["planning", "deepagents"],
+    "create_todo_item": ["planning", "seamus"],
+    "edit_todo_item": ["planning", "seamus"],
+    "delete_todo_item": ["planning", "seamus"],
+    "load_skill": ["skills", "seamus"],
+    "unload_skill": ["skills", "seamus"],
+    "web_search": ["web", "seamus", "duckduckgo"],
+    "fetch_web_page": ["web", "seamus", "duckduckgo"]
+  }
+}
+

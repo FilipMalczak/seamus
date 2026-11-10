@@ -1,7 +1,17 @@
+export type ReasoningEffort =
+  | "default"
+  | "none"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh";
+
 export type InferenceConfig = {
   format: "openai" | "ollama";
   base_url: string;
   api_key?: string | null;
+  reasoning_effort?: ReasoningEffort;
 };
 
 export type TodoImplementation = "none" | "deepagents" | "seamus";
@@ -267,11 +277,18 @@ export type SessionDiffResponse = {
   diff: string;
 };
 
+export interface ToolLabelInfo {
+  title: string;
+  color: string;
+}
+
 export interface ToolInspectInfo {
   name: string;
   description: string;
   parameters: Record<string, unknown>;
   backend: string;
+  category?: string;
+  labels?: ToolLabelInfo[];
 }
 
 export interface SubAgentInspectInfo {

@@ -47,12 +47,25 @@ class OperationalMode(StrEnum):
     PLAN = "plan"
 
 
+class ReasoningEffort(StrEnum):
+    """Reasoning effort level for inference requests."""
+
+    DEFAULT = "default"
+    NONE = "none"
+    MINIMAL = "minimal"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    XHIGH = "xhigh"
+
+
 class InferenceConfig(BaseModel):
     """Inference API connection and credentials configuration."""
 
     format: InferenceFormat = InferenceFormat.OPENAI
     base_url: str = "https://openrouter.ai/api/v1"
     api_key: str | None = None
+    reasoning_effort: ReasoningEffort = ReasoningEffort.DEFAULT
 
     @model_validator(mode="after")
     def _validate_secret_refs(self) -> Self:

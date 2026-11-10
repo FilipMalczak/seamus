@@ -133,4 +133,3 @@ def get_web_search_tools() -> list[StructuredTool]:
         create_web_search_tool(),
         create_fetch_web_page_tool(),
     ]
-
