@@ -289,7 +289,7 @@ Calendar date and/or clock time picker.
 Clickable action button.
 ```json
 {
-  "id": "deploy-btn",
+  "id": "deploy_btn",
   "component": "Button",
   "child": "deploy_btn_label",
   "variant": "primary",
@@ -304,7 +304,7 @@ Clickable action button.
   }
 }
 ```
-- `id`: Button ID. **MUST be declared in `manifest.json` under `buttons`**, or clicks will be ignored!
+- `id`: Button ID. **MUST be a valid UAX #31 identifier (letters, digits, underscores; no hyphens!)** and **MUST be declared in `manifest.json` under `buttons`**, or clicks will be ignored!
 - `child`: String ID of a child component providing the label (typically a `Text` component).
 - `variant`: `"primary"` (main action), `"default"` (secondary/neutral), `"borderless"` (link style).
 - `action`: Action payload containing the event name and context data pointers.
@@ -324,7 +324,7 @@ Here is a complete, working example of an artifact showcasing widgets properly s
   "commentable": false,
   "buttons": [
     {
-      "id": "submit-btn",
+      "id": "submit_btn",
       "mode": "set",
       "clicks": 1,
       "unblocking": false,
@@ -378,10 +378,10 @@ Here is a complete, working example of an artifact showcasing widgets properly s
   {
     "id": "actions_row",
     "component": "Row",
-    "children": ["submit-btn"]
+    "children": ["submit_btn"]
   },
   {
-    "id": "submit-btn",
+    "id": "submit_btn",
     "component": "Button",
     "child": "submit_label",
     "variant": "primary",

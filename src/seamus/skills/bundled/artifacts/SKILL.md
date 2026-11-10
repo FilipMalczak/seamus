@@ -57,7 +57,7 @@ The manifest controls exposure, blocking behavior, inline commenting, and whitel
   "commentable": false,
   "buttons": [
     {
-      "id": "submit-btn",
+      "id": "submit_btn",
       "mode": "set",
       "clicks": 1,
       "unblocking": true,
@@ -71,7 +71,7 @@ The manifest controls exposure, blocking behavior, inline commenting, and whitel
 - **`blocking`**: If `true`, the user cannot send chat messages until an unblocking button is clicked.
 - **`commentable`**: If `true`, enables inline text selection and review comments.
 - **`buttons`**: List of whitelisted buttons:
-  - `id`: Button component ID in `body.json`. Any button clicked in UI that is not listed in `buttons` will log a warning and be ignored.
+  - `id`: Button component ID in `body.json`. MUST be a valid UAX #31 identifier (letters, digits, underscores; no hyphens!). Any button clicked in UI that is not listed in `buttons` will log a warning and be ignored.
   - `mode`: `"set"` (overwrites `/interactions/<id>.json` with pretty JSON) or `"append"` (appends JSON lines).
   - `clicks`: Positive integer (e.g. `1` or `3`) or `"*"` (unlimited). When clicks reaches `0`, the button is rendered visibly disabled in the UI.
   - `unblocking`: Whether clicking this button unblocks the session.
@@ -132,7 +132,7 @@ make_artifact(
 > 3. **Render Validation**: If fatal validation fails (e.g. unknown component types, dangling child IDs, or cycles), **the artifact is not stored** and the tool returns the list of errors with a notification stating that the artifact was not stored. When this occurs, inspect the errors, fix the component tree, and call `make_artifact` again.
 
 ### 4. `make_plan`, `update_plan`, `edit_plan` (Plan Mode)
-- `make_plan(title="Plan", content="# Implementation Plan...")`: Creates the session plan tab with a whitelisted **Proceed** button (`id="proceed-btn"`, `clicks="*"`, `unblocking=true`, `closing=true`) and inline review commenting enabled.
+- `make_plan(title="Plan", content="# Implementation Plan...")`: Creates the session plan tab with a whitelisted **Proceed** button (`id="proceed_btn"`, `clicks="*"`, `unblocking=true`, `closing=true`) and inline review commenting enabled.
 - Once created, `update_plan(content)` and `edit_plan(old_string, new_string)` are used for refinements.
 
 ## Resumption & Human-In-The-Loop Execution
@@ -140,7 +140,7 @@ make_artifact(
 ### In-Turn Suspension: `wait_for_click`
 To suspend execution within the current turn until the user interacts with the artifact:
 ```python
-result_json = wait_for_click(artifact_id=uuid, button_id="submit-btn", fresh=True)
+result_json = wait_for_click(artifact_id=uuid, button_id="submit_btn", fresh=True)
 ```
 - Suspends execution and writes `pending_wait.json` to `<session_dir>/agent/state/threads/{thread_id}/pending_wait.json`.
 - When the user clicks the button, execution resumes seamlessly within the same turn (even across server restarts!).

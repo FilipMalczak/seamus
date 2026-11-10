@@ -1771,7 +1771,10 @@ class SessionAgentRunner:
         # Check existing clicks if fresh=False
         if not fresh and interactions_dir.is_dir():
             if button_id:
+                norm_id = button_id.replace("-", "_")
                 btn_file = interactions_dir / f"{button_id}.json"
+                if not btn_file.is_file() and norm_id != button_id:
+                    btn_file = interactions_dir / f"{norm_id}.json"
                 if btn_file.is_file():
                     try:
                         ctx = json.loads(btn_file.read_text(encoding="utf-8"))
@@ -2197,7 +2200,7 @@ class SessionAgentRunner:
                 await self.broadcaster.broadcast(art_closed)
 
             # Handle plan proceed transition
-            if family == "plans" and button_id in ("proceed-btn", "proceed"):
+            if family == "plans" and button_id in ("proceed_btn", "proceed-btn", "proceed"):
                 PlanBuilder.approve_plan(artifacts_dir, uuid)
                 self.session.active_plan_id = uuid
                 try:

@@ -91,6 +91,20 @@ const CANONICAL_COMPONENT_MAP: Record<string, string> = {
 
 const COMPONENT_TYPE_ALIAS_KEYS = ["type", "component_type", "componentType", "widget", "kind"];
 
+function toValidUax31Identifier(id: string): string {
+  if (!id) return "comp";
+  let clean = id.trim().replace(/[-\s\.]+/g, "_");
+  clean = clean.replace(/[^\p{XID_Continue}_]/gu, "_");
+  if (clean && /^\p{Nd}/u.test(clean)) {
+    clean = `_${clean}`;
+  }
+  clean = clean.replace(/_+/g, "_");
+  if (!clean || !/^[\p{XID_Start}_][\p{XID_Continue}]*$/u.test(clean)) {
+    clean = clean ? `comp_${clean}` : "comp";
+  }
+  return clean;
+}
+
 /**
  * Normalizes components into standard A2UI basicCatalog specifications.
  * Seamlessly adapts legacy or custom shapes (like ChoiceSet -> ChoicePicker, Text variant 'bold' -> Markdown body).
@@ -130,6 +144,7 @@ function normalizeComponents(components: any): Array<Record<string, any>> {
 
   const extraComponents: Array<Record<string, any>> = [];
   const seenIdsInPass = new Set<string>();
+  const idRemap: Record<string, string> = {};
 
   const normalized: Array<Record<string, any>> = [];
 
@@ -180,15 +195,18 @@ function normalizeComponents(components: any): Array<Record<string, any>> {
       const canon = CANONICAL_COMPONENT_MAP[orig.toLowerCase()];
       if (canon) {
         c.component = canon;
-        if (["heading", "header"].includes(orig.toLowerCase()) && !c.variant) {
-          c.variant = "h2";
+        if (["heading", "header"].includes(orig.toLowerCase())) {
+          c.variant = "body";
+          if (typeof c.text === "string" && !c.text.startsWith("#")) {
+            c.text = `## ${c.text}`;
+          }
         }
       }
     }
 
-    // 2. ID resolution: Auto-assign ID if missing or empty
+    // 2. ID resolution: Auto-assign ID if missing or empty, normalize to UAX #31
     if (!c.id || typeof c.id !== "string" || !c.id.trim()) {
-      const prefix = String(c.component || "comp").toLowerCase();
+      const prefix = toValidUax31Identifier(String(c.component || "comp").toLowerCase());
       let candidate = `${prefix}_${idx}`;
       let counter = 1;
       while (existingIds.has(candidate)) {
@@ -198,19 +216,28 @@ function normalizeComponents(components: any): Array<Record<string, any>> {
       existingIds.add(candidate);
       c.id = candidate;
     } else {
-      c.id = c.id.trim();
-      if (seenIdsInPass.has(c.id)) {
-        const origId = c.id;
-        let candidate = `${origId}_${idx}`;
+      const origId = c.id.trim();
+      let candidate = origId;
+      if (!/^[\p{XID_Start}_][\p{XID_Continue}]*$/u.test(candidate)) {
+        candidate = toValidUax31Identifier(origId);
+        idRemap[origId] = candidate;
+      }
+
+      if (seenIdsInPass.has(candidate)) {
+        let dedupCand = `${candidate}_${idx}`;
         let counter = 1;
-        while (existingIds.has(candidate)) {
-          candidate = `${origId}_${idx}_${counter}`;
+        while (existingIds.has(dedupCand)) {
+          dedupCand = `${candidate}_${idx}_${counter}`;
           counter++;
         }
+        existingIds.add(dedupCand);
+        c.id = dedupCand;
+        idRemap[origId] = dedupCand;
+      } else {
+        seenIdsInPass.add(candidate);
+        existingIds.delete(origId);
         existingIds.add(candidate);
         c.id = candidate;
-      } else {
-        seenIdsInPass.add(c.id);
       }
     }
 
@@ -234,7 +261,14 @@ function normalizeComponents(components: any): Array<Record<string, any>> {
         if (typeof text === "string" && !text.startsWith("**")) {
           text = `**${text}**`;
         }
-      } else if (!["h1", "h2", "h3", "h4", "h5", "caption", "body"].includes(variant)) {
+      } else if (["h1", "h2", "h3", "h4", "h5"].includes(variant)) {
+        const level = parseInt(variant[1], 10);
+        const prefix = "#".repeat(level) + " ";
+        if (typeof text === "string" && !text.startsWith("#")) {
+          text = `${prefix}${text}`;
+        }
+        variant = "body";
+      } else if (!["caption", "body"].includes(variant)) {
         variant = "body";
       }
       normalized.push({ ...c, variant, text });
@@ -353,8 +387,8 @@ function normalizeComponents(components: any): Array<Record<string, any>> {
             extraComponents.push({
               id: tId,
               component: "Text",
-              text: String(c.title),
-              variant: "h3",
+              text: `### ${String(c.title)}`,
+              variant: "body",
             });
             innerIds.push(tId);
           }
@@ -438,6 +472,55 @@ function normalizeComponents(components: any): Array<Record<string, any>> {
   }
 
   normalized.push(...extraComponents);
+
+  if (Object.keys(idRemap).length > 0) {
+    for (const comp of normalized) {
+      if (!comp || typeof comp !== "object") continue;
+      if (typeof comp.child === "string" && idRemap[comp.child]) {
+        comp.child = idRemap[comp.child];
+      }
+      if (Array.isArray(comp.children)) {
+        comp.children = comp.children.map((ch: any) =>
+          typeof ch === "string" && idRemap[ch] ? idRemap[ch] : ch
+        );
+      }
+      if (typeof comp.trigger === "string" && idRemap[comp.trigger]) {
+        comp.trigger = idRemap[comp.trigger];
+      }
+      if (typeof comp.content === "string" && idRemap[comp.content]) {
+        comp.content = idRemap[comp.content];
+      }
+      if (Array.isArray(comp.tabs)) {
+        for (const t of comp.tabs) {
+          if (t && typeof t.child === "string" && idRemap[t.child]) {
+            t.child = idRemap[t.child];
+          }
+        }
+      }
+      if (comp.action && typeof comp.action === "object") {
+        const event = comp.action.event;
+        if (event && typeof event === "object" && event.context && typeof event.context === "object") {
+          const newCtx: Record<string, any> = {};
+          for (const [k, v] of Object.entries(event.context)) {
+            const newK = idRemap[k] || k;
+            if (v && typeof v === "object" && typeof (v as any).path === "string") {
+              let p = (v as any).path;
+              for (const [oldK, newV] of Object.entries(idRemap)) {
+                p = p.replace(new RegExp(`/${oldK}/`, "g"), `/${newV}/`);
+                if (p.endsWith(`/${oldK}`)) {
+                  p = p.slice(0, -oldK.length) + newV;
+                }
+              }
+              newCtx[newK] = { ...(v as any), path: p };
+            } else {
+              newCtx[newK] = v;
+            }
+          }
+          event.context = newCtx;
+        }
+      }
+    }
+  }
 
   // Ensure there is a root component for A2UI MessageProcessor/NodeResolver
   const hasRoot = normalized.some((c: any) => c && c.id === "root");
@@ -612,20 +695,27 @@ export function A2UIArtifactRenderer({
       if (curIsClosed || curIsSubmitting) return;
 
       const buttonId = action.sourceComponentId;
-      const manifestBtn = (curArtifact.manifest?.buttons || []).find((b) => b.id === buttonId);
+      const manifestBtn = (curArtifact.manifest?.buttons || []).find(
+        (b) => b.id === buttonId || b.id.replace(/-/g, "_") === buttonId.replace(/-/g, "_")
+      );
       if (!manifestBtn) {
         console.warn(`[A2UI] Button "${buttonId}" clicked but not declared in manifest.`);
         return;
       }
 
-      const clicksLeft = curArtifact.state?.clicksLeft?.[buttonId];
+      const effectiveBtnId = manifestBtn.id;
+      const clicksLeft =
+        curArtifact.state?.clicksLeft?.[buttonId] ?? curArtifact.state?.clicksLeft?.[effectiveBtnId];
       if (typeof clicksLeft === "number" && clicksLeft <= 0) {
         console.warn(`[A2UI] Button "${buttonId}" has exhausted clicks.`);
         return;
       }
 
       const evaluatedContext: Record<string, unknown> = { ...(action.context || {}) };
-      if (curIsCommentable && (curComments.length > 0 || buttonId === "review-btn")) {
+      if (
+        curIsCommentable &&
+        (curComments.length > 0 || buttonId === "review_btn" || buttonId === "review-btn")
+      ) {
         evaluatedContext.comments = curComments.map((c) => ({
           location: c.location,
           selectedText: c.selectedText,
@@ -639,7 +729,7 @@ export function A2UIArtifactRenderer({
           button_id: buttonId,
           ...evaluatedContext,
         });
-        if (buttonId === "review-btn") {
+        if (buttonId === "review_btn" || buttonId === "review-btn") {
           setComments([]);
         }
         if (submitPromise && typeof (submitPromise as any).catch === "function") {

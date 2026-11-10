@@ -165,7 +165,7 @@ def test_questionnaire_builder_lifecycle(tmp_path: Path) -> None:
     assert info.manifest.blocking is True
     assert info.manifest.commentable is False
     assert len(info.manifest.buttons) == 1
-    assert info.manifest.buttons[0].id == "submit-btn"
+    assert info.manifest.buttons[0].id == "submit_btn"
     assert info.manifest.buttons[0].unblocking is True
     assert info.manifest.buttons[0].closing is True
     assert not info.is_closed
@@ -201,7 +201,7 @@ def test_form_builder_lifecycle(tmp_path: Path) -> None:
     assert info.manifest.blocking is False
     assert info.manifest.commentable is False
     assert len(info.manifest.buttons) == 1
-    assert info.manifest.buttons[0].id == "submit-btn"
+    assert info.manifest.buttons[0].id == "submit_btn"
     assert info.manifest.buttons[0].unblocking is False
     assert info.manifest.buttons[0].closing is True
 
@@ -246,7 +246,7 @@ def test_plan_builder_lifecycle(tmp_path: Path) -> None:
     resolver = ArtifactResolver(artifacts_dir)
     plan_info = resolver.load_artifact("plans", plan_uuid)
     assert plan_info.is_closed is True
-    assert plan_info.state.clicksLeft.get("proceed-btn") == "*"
+    assert plan_info.state.clicksLeft.get("proceed_btn") == "*"
 
 
 def test_plan_review_button_and_unlimited_clicks(tmp_path: Path) -> None:
@@ -257,23 +257,23 @@ def test_plan_review_button_and_unlimited_clicks(tmp_path: Path) -> None:
     PlanBuilder.create_plan(artifacts_dir, plan_uuid, content=content, title="Arch Plan")
     plan_dir = artifacts_dir / "plans" / plan_uuid
 
-    # Verify body.json has a valid Button component for review-btn with label Review
+    # Verify body.json has a valid Button component for review_btn with label Review
     body_data = json.loads((plan_dir / "body.json").read_text(encoding="utf-8"))
     components_by_id = {c["id"]: c for c in body_data}
-    assert "review-btn" in components_by_id
-    assert components_by_id["review-btn"]["component"] == "Button"
-    assert components_by_id["review-btn"]["variant"] == "default"
-    assert components_by_id["review-btn"]["child"] == "review-label"
-    assert components_by_id["review-label"]["component"] == "Text"
-    assert components_by_id["review-label"]["text"] == "Review"
+    assert "review_btn" in components_by_id
+    assert components_by_id["review_btn"]["component"] == "Button"
+    assert components_by_id["review_btn"]["variant"] == "default"
+    assert components_by_id["review_btn"]["child"] == "review_label"
+    assert components_by_id["review_label"]["component"] == "Text"
+    assert components_by_id["review_label"]["text"] == "Review"
 
-    # Verify manifest.json declares review-btn with clicks="*" and mode="append"
+    # Verify manifest.json declares review_btn with clicks="*" and mode="append"
     manifest_data = json.loads((plan_dir / "manifest.json").read_text(encoding="utf-8"))
     btns = {b["id"]: b for b in manifest_data["buttons"]}
-    assert "review-btn" in btns
-    assert btns["review-btn"]["clicks"] == "*"
-    assert btns["review-btn"]["mode"] == "append"
-    assert btns["review-btn"]["closing"] is False
+    assert "review_btn" in btns
+    assert btns["review_btn"]["clicks"] == "*"
+    assert btns["review_btn"]["mode"] == "append"
+    assert btns["review_btn"]["closing"] is False
 
     # Dispatch multiple review clicks with comments payload
     for i in range(3):
@@ -281,7 +281,7 @@ def test_plan_review_button_and_unlimited_clicks(tmp_path: Path) -> None:
             artifacts_dir=artifacts_dir,
             family="plans",
             uuid=plan_uuid,
-            button_id="review-btn",
+            button_id="review_btn",
             context={
                 "comments": [
                     {
@@ -292,12 +292,12 @@ def test_plan_review_button_and_unlimited_clicks(tmp_path: Path) -> None:
                 ]
             },
         )
-        assert res.button_id == "review-btn"
+        assert res.button_id == "review_btn"
         assert len(res.context["comments"]) == 1
         assert res.context["comments"][0]["comment"] == f"Feedback {i + 1}"
 
-    # Verify interactions/review-btn.json has 3 appended records
-    int_file = plan_dir / "interactions" / "review-btn.json"
+    # Verify interactions/review_btn.json has 3 appended records
+    int_file = plan_dir / "interactions" / "review_btn.json"
     assert int_file.is_file()
     lines = [line for line in int_file.read_text(encoding="utf-8").strip().splitlines() if line]
     assert len(lines) == 3
@@ -307,7 +307,7 @@ def test_plan_review_button_and_unlimited_clicks(tmp_path: Path) -> None:
 
     # Verify state.json retains clicks="*" and artifact is not closed
     state_data = json.loads((plan_dir / "state.json").read_text(encoding="utf-8"))
-    assert state_data["clicksLeft"]["review-btn"] == "*"
+    assert state_data["clicksLeft"]["review_btn"] == "*"
     assert not (plan_dir / "closed.marker").exists()
 
 
@@ -549,7 +549,7 @@ def test_questionnaire_write_in_and_schema_translation(tmp_path: Path) -> None:
         artifacts_dir=artifacts_dir,
         family="questionnaires",
         uuid=q_uuid,
-        button_id="submit-btn",
+        button_id="submit_btn",
         context=raw_submission,
     )
 
@@ -753,7 +753,7 @@ def test_validate_a2ui_surface_component_properties_and_buttons() -> None:
     ]
     errs = validate_a2ui_surface(components=btn_not_in_manifest, manifest=manifest)
     assert any(
-        "Button 'btn-unregistered' is present in components but is not declared in manifest.buttons"
+        "Button 'btn_unregistered' is present in components but is not declared in manifest.buttons"
         in e
         for e in errs
     )
@@ -875,18 +875,18 @@ def test_make_artifact_stores_valid_surface_and_emits_event() -> None:
     manifest = ArtifactManifest(
         name="Valid Artifact",
         exposition="embedded",
-        buttons=[ManifestButton(id="btn-ok", mode="set", clicks=1)],
+        buttons=[ManifestButton(id="btn_ok", mode="set", clicks=1)],
     )
     valid_components: list[dict[str, Any]] = [
-        {"id": "root", "component": "Column", "children": ["t", "btn-ok"]},
+        {"id": "root", "component": "Column", "children": ["t", "btn_ok"]},
         {"id": "t", "component": "Text", "text": "Valid message"},
         {
-            "id": "btn-ok",
+            "id": "btn_ok",
             "component": "Button",
-            "child": "btn-lbl",
+            "child": "btn_lbl",
             "action": {"event": {"name": "btn_click", "context": {}}},
         },
-        {"id": "btn-lbl", "component": "Text", "text": "Confirm"},
+        {"id": "btn_lbl", "component": "Text", "text": "Confirm"},
     ]
 
     result = runner.handle_make_artifact(
@@ -1153,7 +1153,7 @@ def test_make_artifact_auto_synthesizes_root_and_returns_warning() -> None:
     # Stored body has synthesized root Column
     assert body_data[0]["id"] == "root"
     assert body_data[0]["component"] == "Column"
-    assert body_data[0]["children"] == ["intro", "ok-btn"]
+    assert body_data[0]["children"] == ["intro", "ok_btn"]
 
     thread = session.get_open_thread()
     assert thread is not None
@@ -1289,6 +1289,30 @@ def test_handle_make_artifact_mutation_log_feedback() -> None:
     assert "Notice: Automatically normalized component tree:" in result
     assert "Auto-assigned id='text_0'" in result
     assert "Renamed 'type' ('Text') to 'component'" in result
-    assert "Synthesized child Text 'submit-btn_label' for Button 'submit-btn'" in result
-    assert "Auto-declared button 'submit-btn' in manifest.buttons" in result
+    assert "Normalized component id 'submit-btn' to valid UAX #31 identifier 'submit_btn'" in result
+    assert "Synthesized child Text 'submit_btn_label' for Button 'submit_btn'" in result
+    assert "Auto-declared button 'submit_btn' in manifest.buttons" in result
     assert "Auto-synthesized root 'Column' container" in result
+
+
+def test_uax31_identifier_normalization_and_validation() -> None:
+    # 1. Hyphenated and special-char IDs normalized to valid UAX #31
+    raw = [
+        {"id": "card-header", "component": "Text", "text": "Header"},
+        {"id": "action.btn", "component": "Button", "child": "action-lbl"},
+        {"id": "action-lbl", "component": "Text", "text": "Go"},
+    ]
+    mutations: list[str] = []
+    norm = normalize_a2ui_components(raw, mutation_log=mutations)
+    norm_ids = [c["id"] for c in norm]
+    assert "card_header" in norm_ids
+    assert "action_btn" in norm_ids
+    assert "action_lbl" in norm_ids
+    btn_comp = next(c for c in norm if c["id"] == "action_btn")
+    assert btn_comp["child"] == "action_lbl"
+    for c in norm:
+        assert c["id"].isidentifier()
+
+    # 2. validate_a2ui_surface accepts normalized identifiers
+    errors = validate_a2ui_surface(components=norm)
+    assert errors == []

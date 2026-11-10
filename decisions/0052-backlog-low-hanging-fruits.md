@@ -78,10 +78,18 @@ The addressed friction points include:
 - Updated `QuestionnaireBuilder` and `PlanBuilder` component definitions to use Markdown headings with `variant: "body"`.
 - Updated `Slider` component spec and normalizer to accept `steps` matching the v1.0 schema.
 
+### 12. UAX #31 Component Identifier Normalization and Surface Validation
+- A2UI v1.0 strictly enforces Unicode Standard Annex #31 (UAX #31) identifier syntax on all component `id`s (`^[\p{XID_Start}_][\p{XID_Continue}]*$`), matching Python's `str.isidentifier()`. Disallowed characters such as hyphens (`-`) caused client-side render exceptions (e.g. `Component id 'submit-btn' must be a valid UAX #31 identifier`).
+- Added server-side identifier validation in `validate_a2ui_surface` (`c_id.isidentifier()`).
+- Updated `normalize_a2ui_components` (both Python backend and TypeScript UI) to automatically sanitize component IDs by converting hyphens and non-identifier characters to underscores, deduplicating collisions, and updating all reference pointers (`child`, `children`, `trigger`, `content`, `tabs`, `action.event.context`).
+- Updated built-in artifact builders (`QuestionnaireBuilder`, `FormBuilder`, `PlanBuilder`) and bundled skills (`artifacts`, `a2ui_components`) to use snake_case identifiers (`submit_btn`, `review_btn`, `proceed_btn`).
+- Ensured backwards compatibility in `runner.py` and `dispatch_button_click` by supporting both snake_case and legacy hyphenated button IDs.
+
 ## Consequences
 
 - The codebase is free of legacy question-asking tools and dead state variables.
 - A2UI artifacts conform to the official v1.0 specification and documentation.
+- Custom and built-in artifacts strictly satisfy UAX #31 identifier constraints, preventing client crashes while gracefully adapting legacy or hyphenated agent inputs.
 - The web UI provides improved inspectability for tools, unmasked secret expression editing, and cleaner event feed layout.
 - Agents receive clearer instructions distinguishing project roots from scratchpads and creating cleaner questionnaires.
 - Reasoning effort can be tuned per agent or left to provider defaults.

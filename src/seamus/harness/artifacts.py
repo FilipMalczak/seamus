@@ -213,14 +213,53 @@ RELAXED_PATH_PATTERN = re.compile(
 )
 
 
+def _to_valid_uax31_identifier(name: str) -> str:
+    """Normalize a string into a valid UAX #31 / Python identifier."""
+    if not name:
+        return "comp"
+    # Replace hyphens and common separators with underscores
+    clean = re.sub(r"[-\s\.]+", "_", name.strip())
+    # Strip any characters that are not valid in identifiers
+    clean = "".join(c if (c.isalnum() or c == "_") else "_" for c in clean)
+    # Ensure it starts with a letter or underscore (XID_Start / _)
+    if clean and clean[0].isdigit():
+        clean = f"_{clean}"
+    # Collapse consecutive underscores
+    clean = re.sub(r"_+", "_", clean)
+    if not clean or not clean.isidentifier():
+        clean = f"comp_{clean}" if clean else "comp"
+    return clean
+
+
 def auto_declare_manifest_buttons(
     manifest: ArtifactManifest | dict[str, Any] | None,
     components: list[dict[str, Any]],
     mutation_log: list[str] | None = None,
 ) -> None:
-    """Ensure any Button present in components is declared in manifest.buttons."""
+    """Ensure any Button present in components is declared in manifest.buttons, normalizing IDs."""
     if manifest is None:
         return
+
+    # Normalize existing manifest button IDs to valid UAX #31 identifiers
+    if isinstance(manifest, ArtifactManifest):
+        for btn in manifest.buttons:
+            if not btn.id.isidentifier():
+                old_id = btn.id
+                btn.id = _to_valid_uax31_identifier(btn.id)
+                if mutation_log is not None:
+                    mutation_log.append(f"Normalized manifest button id '{old_id}' to '{btn.id}'.")
+    elif isinstance(manifest, dict):
+        btns = manifest.get("buttons") or []
+        if isinstance(btns, list):
+            for b in btns:
+                if isinstance(b, dict) and "id" in b and isinstance(b["id"], str):
+                    if not b["id"].isidentifier():
+                        old_id = b["id"]
+                        b["id"] = _to_valid_uax31_identifier(b["id"])
+                        if mutation_log is not None:
+                            mutation_log.append(
+                                f"Normalized manifest button id '{old_id}' to '{b['id']}'."
+                            )
 
     manifest_button_ids: set[str] = set()
     if isinstance(manifest, ArtifactManifest):
@@ -305,6 +344,7 @@ def normalize_a2ui_components(
     normalized: list[dict[str, Any]] = []
     extra_components: list[dict[str, Any]] = []
     seen_ids_in_pass: set[str] = set()
+    id_remap: dict[str, str] = {}
 
     for idx, comp in enumerate(raw_list):
         if not isinstance(comp, dict):
@@ -393,10 +433,11 @@ def normalize_a2ui_components(
                         f"Normalized component type '{orig_type}' to '{canon}' at index {idx}."
                     )
 
-        # 2. ID resolution: Auto-assign ID if missing or empty
+        # 2. ID resolution: Auto-assign ID if missing or empty, normalize to UAX #31
         c_id = c.get("id")
         if not c_id or not isinstance(c_id, str) or not c_id.strip():
             prefix = str(c.get("component") or "comp").lower()
+            prefix = _to_valid_uax31_identifier(prefix)
             candidate = f"{prefix}_{idx}"
             counter = 1
             while candidate in existing_ids:
@@ -408,22 +449,34 @@ def normalize_a2ui_components(
                 f"Auto-assigned id='{candidate}' to component at index {idx} (missing ID)."
             )
         else:
-            c["id"] = c_id.strip()
-            if c["id"] in seen_ids_in_pass:
-                orig_id = c["id"]
-                candidate = f"{orig_id}_{idx}"
+            orig_id = c_id.strip()
+            candidate = orig_id
+            if not candidate.isidentifier():
+                candidate = _to_valid_uax31_identifier(orig_id)
+                record_mutation(
+                    f"Normalized component id '{orig_id}' to valid UAX #31 identifier "
+                    f"'{candidate}'."
+                )
+                id_remap[orig_id] = candidate
+
+            if candidate in seen_ids_in_pass:
+                dedup_cand = f"{candidate}_{idx}"
                 counter = 1
-                while candidate in existing_ids:
-                    candidate = f"{orig_id}_{idx}_{counter}"
+                while dedup_cand in existing_ids:
+                    dedup_cand = f"{candidate}_{idx}_{counter}"
                     counter += 1
-                existing_ids.add(candidate)
-                c["id"] = candidate
+                existing_ids.add(dedup_cand)
+                c["id"] = dedup_cand
+                id_remap[orig_id] = dedup_cand
                 record_mutation(
                     f"Deduplicated ID for component at index {idx} from '{orig_id}' "
-                    f"to '{candidate}'."
+                    f"to '{dedup_cand}'."
                 )
             else:
-                seen_ids_in_pass.add(c["id"])
+                seen_ids_in_pass.add(candidate)
+                existing_ids.discard(orig_id)
+                existing_ids.add(candidate)
+                c["id"] = candidate
 
         c_type = c.get("component")
 
@@ -701,6 +754,49 @@ def normalize_a2ui_components(
 
     normalized.extend(extra_components)
 
+    # Remap any child references if component IDs were normalized or deduplicated
+    if id_remap:
+        for comp in normalized:
+            if not isinstance(comp, dict):
+                continue
+            child = comp.get("child")
+            if isinstance(child, str) and child in id_remap:
+                comp["child"] = id_remap[child]
+            children = comp.get("children")
+            if isinstance(children, list):
+                comp["children"] = [
+                    id_remap.get(ch, ch) if isinstance(ch, str) else ch for ch in children
+                ]
+            trigger = comp.get("trigger")
+            if isinstance(trigger, str) and trigger in id_remap:
+                comp["trigger"] = id_remap[trigger]
+            content = comp.get("content")
+            if isinstance(content, str) and content in id_remap:
+                comp["content"] = id_remap[content]
+            tabs = comp.get("tabs")
+            if isinstance(tabs, list):
+                for tab in tabs:
+                    if isinstance(tab, dict) and isinstance(tab.get("child"), str):
+                        if tab["child"] in id_remap:
+                            tab["child"] = id_remap[tab["child"]]
+            action = comp.get("action")
+            if isinstance(action, dict):
+                event = action.get("event")
+                if isinstance(event, dict) and isinstance(event.get("context"), dict):
+                    new_ctx: dict[str, Any] = {}
+                    for k, v in event["context"].items():
+                        new_k = id_remap.get(k, k)
+                        if isinstance(v, dict) and "path" in v and isinstance(v["path"], str):
+                            p = v["path"]
+                            for old_k, new_v in id_remap.items():
+                                p = p.replace(f"/{old_k}/", f"/{new_v}/")
+                                if p.endswith(f"/{old_k}"):
+                                    p = p[: -len(old_k)] + new_v
+                            new_ctx[new_k] = {**v, "path": p}
+                        else:
+                            new_ctx[new_k] = v
+                    event["context"] = new_ctx
+
     # Ensure there is a root component for A2UI MessageProcessor/NodeResolver
     has_root = any(isinstance(c, dict) and c.get("id") == "root" for c in normalized)
     if not has_root and normalized:
@@ -955,6 +1051,11 @@ def validate_a2ui_surface(
     components_by_id = {c["id"]: c for c in normalized if isinstance(c, dict) and "id" in c}
     normalized_ids = set(components_by_id.keys())
 
+    # Component ID validation against UAX #31 identifier syntax
+    for c_id in normalized_ids:
+        if not c_id.isidentifier():
+            errors.append(f"Component id '{c_id}' must be a valid UAX #31 identifier.")
+
     # 3. Schema validation for each component (required properties, allowed envelope,
     # unrecognized keys)
     for c_id, comp in components_by_id.items():
@@ -1136,11 +1237,15 @@ def validate_a2ui_surface(
                     for b in btns
                     if isinstance(b, dict) and "id" in b and b["id"] is not None
                 }
+        norm_manifest_buttons = {b_id.replace("-", "_") for b_id in manifest_button_ids}
         for c_id in normalized_ids:
             c_comp = components_by_id.get(c_id, {})
             c_type, _ = _extract_component_type_and_props(c_comp)
             if c_type == "Button":
-                if c_id not in manifest_button_ids:
+                if (
+                    c_id not in manifest_button_ids
+                    and c_id.replace("-", "_") not in norm_manifest_buttons
+                ):
                     errors.append(
                         f"Button '{c_id}' is present in components but is not declared "
                         "in manifest.buttons."
@@ -1381,8 +1486,8 @@ class QuestionnaireBuilder:
                 }
             )
 
-        submit_btn_id = "submit-btn"
-        submit_label_id = "submit-label"
+        submit_btn_id = "submit_btn"
+        submit_label_id = "submit_label"
         root_children.append(submit_btn_id)
 
         action_name = "submit_questionnaire" if prefix == "q" else "submit_form"
@@ -1451,7 +1556,7 @@ class QuestionnaireBuilder:
             commentable=False,
             buttons=[
                 ManifestButton(
-                    id="submit-btn",
+                    id="submit_btn",
                     mode="set",
                     clicks="*",
                     unblocking=True,
@@ -1502,7 +1607,7 @@ class FormBuilder:
             items, title, prefix="f"
         )
 
-        submit_btn_id = "submit-btn"
+        submit_btn_id = "submit_btn"
         manifest = ArtifactManifest(
             name=title,
             exposition=exposition,
@@ -1576,12 +1681,12 @@ class PlanBuilder:
             {
                 "id": "plan_actions",
                 "component": "Row",
-                "children": ["review-btn", "proceed-btn"],
+                "children": ["review_btn", "proceed_btn"],
             },
             {
-                "id": "review-btn",
+                "id": "review_btn",
                 "component": "Button",
-                "child": "review-label",
+                "child": "review_label",
                 "variant": "default",
                 "action": {
                     "event": {
@@ -1591,14 +1696,14 @@ class PlanBuilder:
                 },
             },
             {
-                "id": "review-label",
+                "id": "review_label",
                 "component": "Text",
                 "text": "Review",
             },
             {
-                "id": "proceed-btn",
+                "id": "proceed_btn",
                 "component": "Button",
-                "child": "proceed-label",
+                "child": "proceed_label",
                 "variant": "primary",
                 "action": {
                     "event": {
@@ -1610,7 +1715,7 @@ class PlanBuilder:
                 },
             },
             {
-                "id": "proceed-label",
+                "id": "proceed_label",
                 "component": "Text",
                 "text": "Proceed to Execution",
             },
@@ -1623,14 +1728,14 @@ class PlanBuilder:
             commentable=True,
             buttons=[
                 ManifestButton(
-                    id="review-btn",
+                    id="review_btn",
                     mode="append",
                     clicks="*",
                     unblocking=False,
                     closing=False,
                 ),
                 ManifestButton(
-                    id="proceed-btn",
+                    id="proceed_btn",
                     mode="set",
                     clicks="*",
                     unblocking=True,
@@ -1762,8 +1867,9 @@ def dispatch_button_click(
     # 1. Whitelist validation
     btn_config: ManifestButton | None = None
     for b in manifest.buttons:
-        if b.id == button_id:
+        if b.id == button_id or b.id.replace("-", "_") == button_id.replace("-", "_"):
             btn_config = b
+            button_id = b.id
             break
 
     if btn_config is None:
