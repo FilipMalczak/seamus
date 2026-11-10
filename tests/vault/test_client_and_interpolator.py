@@ -192,6 +192,56 @@ async def test_resolve_secrets_with_versions_leaves_original_config_untouched() 
     await async_http.aclose()
 
 
+@pytest.mark.asyncio
+async def test_resolve_compound_secret_references_in_template() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/v1/secret/data/db/user":
+            return httpx.Response(
+                200,
+                json={"data": {"data": {"value": "dbadmin"}, "metadata": {"version": 1}}},
+            )
+        if path == "/v1/secret/data/db/credentials":
+            return httpx.Response(
+                200,
+                json={"data": {"data": {"password": "p@ssword:123#"}, "metadata": {"version": 4}}},
+            )
+        if path == "/v1/secret/data/db/name":
+            return httpx.Response(
+                200,
+                json={"data": {"data": {"value": "production"}, "metadata": {"version": 2}}},
+            )
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    async_http = httpx.AsyncClient(transport=transport, base_url="http://openbao:8200")
+    vault_client = VaultClient(client=async_http)
+
+    cfg = AgentConfig(
+        inference=InferenceConfig(
+            api_key="test-key",
+            base_url=(
+                "postgresql://${secret('/db/user')}:"
+                "${secret(path='/db/credentials', field='password')}"
+                "@internal.db.net:5432/${secret('/db/name')}"
+            ),
+        ),
+        model_name="openai/gpt-oss-120b",
+    )
+
+    resolved_cfg, version_map = await resolve_secrets_with_versions(cfg, client=vault_client)
+    assert (
+        resolved_cfg.inference.base_url
+        == "postgresql://dbadmin:p@ssword:123#@internal.db.net:5432/production"
+    )
+    assert version_map == {
+        ("/db/user", "value"): 1,
+        ("/db/credentials", "password"): 4,
+        ("/db/name", "value"): 2,
+    }
+    await async_http.aclose()
+
+
 def test_resolve_secrets_rejects_non_string_field_value() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(

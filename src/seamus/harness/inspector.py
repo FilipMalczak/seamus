@@ -7,7 +7,7 @@ from typing import Any, cast
 from uuid import UUID
 
 from deepagents.middleware.skills import SKILLS_SYSTEM_PROMPT, SkillMetadata, SkillsMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from seamus.config.models import (
     ExternalRepositoryConfig,
@@ -55,6 +55,32 @@ SANDBOX_TOOL_NAMES = frozenset(
 )
 
 
+def categorize_tool(name: str) -> str:
+    """Return taxonomy category for a tool by name."""
+    if name in {"ls", "read_file", "write_file", "edit_file", "delete", "glob", "grep", "execute"}:
+        return "Sandbox"
+    if name in {
+        "make_artifact",
+        "make_questionnaire",
+        "make_form",
+        "make_plan",
+        "update_plan",
+        "edit_plan",
+        "wait_for_click",
+        "read_artifact_submission",
+    }:
+        return "Artifacts"
+    if name in {"plan", "discard"}:
+        return "Harness"
+    if name in {"write_todos", "create_todo_item", "edit_todo_item", "delete_todo_item"}:
+        return "Planning"
+    if name in {"load_skill", "unload_skill"}:
+        return "Skills"
+    if name in {"web_search"}:
+        return "Web Search"
+    return "Custom"
+
+
 class ToolInspectInfo(BaseModel):
     """Information about an available tool."""
 
@@ -62,6 +88,15 @@ class ToolInspectInfo(BaseModel):
     description: str
     parameters: dict[str, Any] = Field(default_factory=dict)
     backend: str = "opensandbox"
+    category: str = "Sandbox"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _default_category(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "category" not in data or not data["category"]:
+                data["category"] = categorize_tool(str(data.get("name", "")))
+        return data
 
 
 class TodoInspectItem(BaseModel):

@@ -1108,8 +1108,8 @@ body {
 }
 
 .synthetic-row {
-  align-self: flex-start;
-  flex-direction: row;
+  align-self: flex-end;
+  flex-direction: row-reverse;
 }
 
 .message-avatar {
@@ -2526,6 +2526,55 @@ body {
   background: rgba(20, 184, 166, 0.15);
   color: #2dd4bf;
   border: 1px solid rgba(20, 184, 166, 0.3);
+}
+
+.tool-category-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(139, 92, 246, 0.15);
+  color: #c084fc;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  text-transform: uppercase;
+}
+
+.tool-category-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.category-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.category-filter-btn:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.category-filter-btn.active {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.category-count {
+  font-size: 0.7rem;
+  opacity: 0.7;
 }
 
 .btn-tool-toggle {

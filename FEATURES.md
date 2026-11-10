@@ -17,7 +17,7 @@ Seamus is an open, self-hosted, deep agent execution harness and developer works
    - [2. Multi-Container Execution & Filesystem Sandboxing](#2-multi-container-execution--filesystem-sandboxing)
    - [3. Git-Native Persistence, Checkpointing & Provenance](#3-git-native-persistence-checkpointing--provenance)
    - [4. Operational Modes & Structured Plan Lifecycle](#4-operational-modes--structured-plan-lifecycle)
-   - [5. Adaptive UI (A2UI v0.9) & Dynamic Artifacts](#5-adaptive-ui-a2ui-v09--dynamic-artifacts)
+   - [5. Adaptive UI (A2UI v1.0) & Dynamic Artifacts](#5-adaptive-ui-a2ui-v10--dynamic-artifacts)
    - [6. Anthropic Skills System & Precedence Engine](#6-anthropic-skills-system--precedence-engine)
    - [7. Enterprise Secrets Vault (OpenBao KV v2)](#7-enterprise-secrets-vault-openbao-kv-v2)
    - [8. Developer Web UI & Workspace Ergonomics](#8-developer-web-ui--workspace-ergonomics)
@@ -48,7 +48,7 @@ Seamus is an open, self-hosted, deep agent execution harness and developer works
 | **Unsafe local execution** lets agents run arbitrary bash commands and mutate files directly on your workstation. | **Heavyweight container sandboxing (OpenSandbox + Docker).** Agents execute strictly inside isolated disposable Linux containers with granular read-write/read-only mount policies. |
 | **Volatile, ephemeral memory** that vanishes on crash, with no audit trail or rollback capability. | **Git-native persistence (Gitea + GitCheckpointSaver).** Every turn, tool call, checkpoint, and file mutation is an immutable Git commit with branches, commit logs, and Sync Pull Requests. |
 | **Uncontrolled runaway coding loops** where agents start editing critical code before understanding the task or architecture. | **Rigorous three-phase Plan Mode (`discuss` &rarr; `make` &rarr; `execute`).** Enforces exploration, notes authoring, read-only plan synthesis, and explicit human-in-the-loop review before code mutation. |
-| **Flat, unformatted text chat** incapable of collecting structured answers or presenting interactive forms. | **Adaptive UI (A2UI v0.9).** Agents render interactive questionnaires that block until answered, tabbed configuration forms, and dedicated Plan tabs with inline section comments and Proceed gates. |
+| **Flat, unformatted text chat** incapable of collecting structured answers or presenting interactive forms. | **Adaptive UI (A2UI v1.0).** Agents render interactive questionnaires that block until answered, tabbed configuration forms, and dedicated Plan tabs with inline section comments and Proceed gates. |
 | **Leaked API keys and plaintext secrets** committed to git repositories, logged in traces, or saved in disk files. | **Integrated OpenBao Secrets Vault (KV v2).** Symbolic `${secret('/path')}` references, strictly in-memory resolution, zero disk secrets, and version-pinned snapshotting in checkpoint commits. |
 | **Static, rigid agent configurations** that cannot be extended with modular capabilities. | **Anthropic Skills Standard (`SKILL.md`).** Drop in modular skills with a multi-tiered priority engine spanning bundled, session, background, and system directories. |
 | **Opaque reasoning and invisible prompts** making it impossible to debug hallucinations or bad tool calls. | **DeepAgent Inspector.** Deconstructs composite LM-XML system prompts into layered cards, exposes registered JSON tool schemas, tracks active todos, and surfaces live diffs. |
@@ -101,7 +101,7 @@ Seamus is an open, self-hosted, deep agent execution harness and developer works
 | **Persistence Engine** | SQLite / Vector DB / In-memory | Proprietary Cloud DB | **Native Git Repository (Gitea)** |
 | **State Rollback & Audit** | Difficult / Manual | Opaque Cloud History | **Git Commits & Branch Provenance** |
 | **Workflow Discipline** | Single loop / Freeform | Uncontrolled coding loop | **Phased Plan Mode (`discuss` &rarr; `make` &rarr; `execute`)** |
-| **Interactive UI Artifacts** | Text only | Basic diff views | **A2UI v0.9 (Questionnaires, Forms, Plans)** |
+| **Interactive UI Artifacts** | Text only | Basic diff views | **A2UI v1.0 (Questionnaires, Forms, Plans)** |
 | **Secrets Management** | Plaintext `.env` files | Proprietary Cloud Vault | **OpenBao KV v2 + Symbolic References** |
 | **Skill Extensibility** | Custom python functions | Proprietary extensions | **Anthropic Skills Standard (`SKILL.md`)** |
 | **Inspection & Debugging** | Print statements / loggers | Minimal | **DeepAgent Inspector + LM-XML Prompts** |
@@ -189,9 +189,9 @@ stateDiagram-v2
   3. **Execute (`plan/execute`)**: With the plan approved, the workspace is unlocked to read-write (with `/workspace/notes` preserved as read-only). The agent implements and verifies the deliverables.
 - **Escape Hatch (`discard()`)**: The user or agent can abort the plan workflow at any time, cleaning up active plan artifacts.
 
-### 5. Adaptive UI (A2UI v0.9) & Dynamic Artifacts
+### 5. Adaptive UI (A2UI v1.0) & Dynamic Artifacts
 
-Move beyond text chat. Seamus implements the open **A2UI (Adaptive Agent User Interface) v0.9** standard to render dynamic, interactive components directly in the browser:
+Move beyond text chat. Seamus implements the open **A2UI (Adaptive Agent User Interface) v1.0** standard to render dynamic, interactive components directly in the browser:
 
 - **Direct Filesystem Persistence**: Artifacts are stored under `<session_workspace>/artifacts/<family>/<uuid>/`, capturing `manifest.json`, `body.json`, `state.json`, and per-button evaluated interaction files.
 - **Embedded Questionnaires (`make_questionnaire`)**: Rendered directly in the chat stream with `blocking=true`. The agent calls `wait_for_click`, pausing execution until the user selects chips, radio options, or fills in text inputs.
@@ -422,6 +422,7 @@ class InferenceConfig(BaseModel):
     format: InferenceFormat = InferenceFormat.OPENAI
     base_url: str = "https://openrouter.ai/api/v1"
     api_key: str | None = None
+    reasoning_effort: ReasoningEffort = ReasoningEffort.DEFAULT
 
 
 class ExternalRepositoryConfig(BaseModel):
@@ -451,6 +452,7 @@ class AgentConfig(BaseModel):
 - `inference.format`: Format of inference API (`openai` or `ollama`).
 - `inference.base_url`: Target endpoint URL for inference API requests (presets: OpenRouter, OpenAI, and local Ollama `http://localhost:11434/v1`).
 - `inference.api_key`: API key or symbolic vault reference (`${secret('/path')}`). Optional when using Ollama (`ollama` format or port `11434`).
+- `inference.reasoning_effort`: Reasoning token tier for reasoning models (`default`, `none`, `low`, `medium`, `high`). `"default"` leaves provider parameters untouched.
 - `rules_patterns`: Glob patterns evaluated per inference turn across `/workspace` and mounted `/projects/...`, injecting matching context files into `<discovered_context>`.
 - `repositories`: List of external Git repositories mounted into `/projects/{mount_name}`.
 - `daemons.naming.enabled`: Enables automated thread and session naming daemons (default: `true`).

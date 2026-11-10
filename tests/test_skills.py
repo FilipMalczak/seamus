@@ -38,7 +38,7 @@ name: bevy-assets
 description: Assets management for Bevy: handles gltf, png {nested: true}
 allowed_tools:
   - make_artifact
-  - ask
+  - make_questionnaire
 ---
 # Bevy Assets Guide
 Step 1: Load assets
@@ -47,7 +47,7 @@ Step 1: Load assets
     assert name == "bevy-assets"
     assert desc == "Assets management for Bevy: handles gltf, png {nested: true}"
     assert body == "# Bevy Assets Guide\nStep 1: Load assets"
-    assert tools == ["make_artifact", "ask"]
+    assert tools == ["make_artifact", "make_questionnaire"]
 
     # Case 2: inline list format [tool1, tool2]
     text2 = """---
@@ -302,3 +302,46 @@ def test_runner_skills_prompt_and_tool_gating(tmp_path: Path) -> None:
     thread.active_skills.remove("artifacts")
     prompt_unloaded = runner.build_effective_system_prompt()
     assert "<active_skills>" not in prompt_unloaded
+
+
+def test_skill_stashing_across_thread_creation() -> None:
+    """Verify active skills can be explicitly retained across thread creation or transition."""
+    store = get_harness_store()
+    from seamus.config.models import InferenceConfig
+
+    config = AgentConfig(
+        model_name="openai/gpt-4o-mini",
+        inference=InferenceConfig(api_key="sk-test-key"),
+        skills_implementation=SkillsImplementation.SEAMUS,
+    )
+    agent = store.create_agent(config=config, name="stashing-agent")
+    session = store.create_session(str(agent.id), name="stashing-session")
+    t1 = session.get_open_thread()
+    t1.active_skills = ["artifacts", "a2ui_components"]
+    t1.append_event({"type": "MESSAGE", "content": "non-empty"})
+
+    # 1. Create a thread without passing retained_skills: active_skills starts clean
+    t2 = store.create_thread(str(agent.id), str(session.id), name="thread-2")
+    assert t2.active_skills == []
+
+    # 2. Add an event and create thread-3 with explicit retained_skills
+    t2.append_event({"type": "MESSAGE", "content": "non-empty-2"})
+    t3 = store.create_thread(
+        str(agent.id),
+        str(session.id),
+        name="thread-3",
+        retained_skills=["a2ui_components"],
+    )
+    assert t3.active_skills == ["a2ui_components"]
+
+    # 3. Test handle_plan with retained_skills on runner
+    from seamus.harness.runner import get_runner_registry
+
+    runner = get_runner_registry().get_runner(session, agent)
+    # Put thread-3 in Plan/Discuss phase
+    t3.mode = "plan"
+    t3.phase = "discuss"
+    res = runner.handle_plan(retained_skills=["artifacts"])
+    assert "Transitioning session" in res
+    assert runner._pending_phase_transition == ("plan", "make", True)
+    assert runner._pending_retained_skills == ["artifacts"]

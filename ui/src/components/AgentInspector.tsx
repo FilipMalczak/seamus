@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
   AlertCircle,
   BookOpen,
@@ -63,6 +63,22 @@ export function AgentInspector({
   const [copiedPrompt, setCopiedPrompt] = useState<boolean>(false);
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
   const [expandedSkills, setExpandedSkills] = useState<Record<string, boolean>>({});
+  const [selectedToolCategory, setSelectedToolCategory] = useState<string>("All");
+
+  const toolCategories = useMemo(() => {
+    if (!report?.tools) return [];
+    const set = new Set<string>();
+    report.tools.forEach((t) => {
+      if (t.category) set.add(t.category);
+    });
+    return ["All", ...Array.from(set).sort()];
+  }, [report?.tools]);
+
+  const filteredTools = useMemo(() => {
+    if (!report?.tools) return [];
+    if (selectedToolCategory === "All") return report.tools;
+    return report.tools.filter((t) => t.category === selectedToolCategory);
+  }, [report?.tools, selectedToolCategory]);
 
   const fetchReport = async (isManualRefresh = false) => {
     if (!agentId || !sessionId) {
@@ -466,8 +482,30 @@ export function AgentInspector({
               )}
             </div>
 
+            {toolCategories.length > 2 && (
+              <div className="tool-category-filters">
+                {toolCategories.map((cat: string) => {
+                  const count =
+                    cat === "All"
+                      ? report.tools.length
+                      : report.tools.filter((t) => t.category === cat).length;
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      className={`category-filter-btn ${selectedToolCategory === cat ? "active" : ""}`}
+                      onClick={() => setSelectedToolCategory(cat)}
+                    >
+                      <span>{cat}</span>
+                      <span className="category-count">({count})</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             <div className="tools-grid">
-              {report.tools.map((tool: ToolInspectInfo) => {
+              {filteredTools.map((tool: ToolInspectInfo) => {
                 const isExpanded = !!expandedTools[tool.name];
                 const paramKeys = Object.keys(tool.parameters?.properties || {});
                 return (
@@ -495,6 +533,11 @@ export function AgentInspector({
                               ? "Web"
                               : "Harness"}
                         </span>
+                        {tool.category && (
+                          <span className="tool-category-badge">
+                            {tool.category}
+                          </span>
+                        )}
                       </div>
 
                       <button

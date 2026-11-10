@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { A2uiSurface, MarkdownContext } from "@a2ui/react/v0_9";
-import { MessageProcessor } from "@a2ui/web_core/v0_9";
-import { basicCatalog, setMarkdownRenderer } from "@a2ui/web_core/v0_9/basic_catalog";
+import { A2uiSurface, MarkdownContext } from "@a2ui/react";
+import { MessageProcessor, basicCatalog, setMarkdownRenderer } from "@a2ui/web_core/v1_0";
 import { injectStyles } from "@a2ui/react/styles";
 import MarkdownIt from "markdown-it";
 import {
@@ -663,14 +662,14 @@ export function A2UIArtifactRenderer({
 
       proc.processMessages([
         {
-          version: "v0.9",
+          version: "1.0",
           createSurface: {
             surfaceId,
             catalogId: basicCatalog.id,
           },
         },
         {
-          version: "v0.9",
+          version: "1.0",
           updateDataModel: {
             surfaceId,
             path: "/",
@@ -678,7 +677,7 @@ export function A2UIArtifactRenderer({
           },
         },
         {
-          version: "v0.9",
+          version: "1.0",
           updateComponents: {
             surfaceId,
             components: normalized,
@@ -712,7 +711,7 @@ export function A2UIArtifactRenderer({
       try {
         proc.processMessages([
           {
-            version: "v0.9",
+            version: "1.0",
             updateDataModel: {
               surfaceId,
               path: "/",

@@ -232,6 +232,11 @@ def build_operating_environment(
         "files (such as caches, build artifacts, and virtual environments) remain ephemeral "
         "within the sandbox container.\n"
         "Mounted external Git repositories are located under `/projects/<name>/`. "
+        "Directory roles: `/workspace` is your personal scratchpad for session notes, plans, and "
+        "temporary scripts. When mounted external repositories exist under `/projects/<name>/`, "
+        "`/projects/<name>/` is the canonical working directory for project codebase inspection, "
+        "edits, builds, and commits. Do NOT create or modify project codebase files directly "
+        "in `/workspace` when working on a mounted repository.\n"
         "Each mounted project is an independent, fully functional Git repository with its own "
         "`.git/`. You can execute standard Git commands (`git status`, `git diff`, `git add`, "
         "`git commit`, `git log`, `git branch`, `git switch`) directly inside `/projects/<name>`. "
@@ -699,6 +704,11 @@ def build_user_inquiry(
                 "When calling `make_questionnaire`, output at most a single concise introductory "
                 "sentence (e.g. 'Please select your preferred options below.') or emit no text at "
                 "all, then immediately call `wait_for_click` or halt to await user submission."
+            ),
+            (
+                "When `write_in=True` is enabled on questions, do NOT include explicit 'Other' or "
+                "'Custom' choice options; the UI automatically provides an unselected freeform "
+                "write-in text field."
             ),
             (
                 "Consult the 'artifacts' skill at `/skills/bundled/artifacts/SKILL.md` and "

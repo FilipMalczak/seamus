@@ -124,6 +124,7 @@ class ThreadCreateRequest(BaseModel):
     """Request payload for creating a new thread in a session."""
 
     name: str | None = None
+    retained_skills: list[str] | None = None
 
 
 class ThreadUpdateRequest(BaseModel):

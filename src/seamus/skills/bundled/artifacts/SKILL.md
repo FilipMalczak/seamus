@@ -89,12 +89,15 @@ make_questionnaire(
             body="Which environment should we target?",
             answers=["staging", "production"],
             multiple_choice=False,
+            write_in=True,
         )
     ],
     blocking=True,
     exposition="embedded",
 )
 ```
+> [!NOTE]
+> When `write_in=True` is enabled, the UI automatically provides an unselected freeform write-in text field. Do **NOT** provide explicit `"Other"` or `"Custom"` choice items in `answers`.
 
 ### 2. `make_form` (Tabbed + Non-Blocking)
 Creates a structured form in a dedicated tab to the right of Changes:

@@ -32,6 +32,7 @@ async def create_thread(
             agent_identifier=agent_identifier,
             session_identifier=session_identifier,
             name=payload.name,
+            retained_skills=payload.retained_skills,
         )
     except EntityNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

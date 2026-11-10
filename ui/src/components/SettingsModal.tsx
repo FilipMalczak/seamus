@@ -800,7 +800,7 @@ export function SettingsModal({
                       }}
                     />
                     <input
-                      type="password"
+                      type={f.value.trim().startsWith("${secret(") ? "text" : "password"}
                       placeholder="Secret value"
                       value={f.value}
                       onChange={(e) => handleSecretFieldChange(idx, "value", e.target.value)}

@@ -167,8 +167,7 @@ export function useThreadStream(
                   (getToolArg(c.args, "artifact_id") === artId || !getToolArg(c.args, "artifact_id"))) ||
                 c.name === "make_questionnaire" ||
                 c.name === "make_form" ||
-                c.name === "make_artifact" ||
-                c.name === "ask"
+                c.name === "make_artifact"
             )
           )
       );
