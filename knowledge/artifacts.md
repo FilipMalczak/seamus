@@ -58,7 +58,8 @@ The artifact filesystem layout is intentionally open to family-specific extensio
   - If `exposition="tabbed"`, closing the artifact removes its tab from the UI panel.
   - If `exposition="embedded"`, closing the artifact automatically collapses its chat bubble and marks all controls permanently disabled and uneditable.
   - In addition, when viewed in the Changes tab in rendered mode, closed artifacts remain strictly non-editable and visually locked, ensuring the Changes tab cannot serve as an override or backdoor to interact with closed artifacts.
-- **INV-ART-011 (Surface Pre-Render Validation on Creation)**: `make_artifact` attempts to render and validate the A2UI component tree and manifest prior to storage. If any rendering or integrity errors occur (unsupported component types, dangling child references, cyclic hierarchies, duplicate IDs, missing required properties, unlisted button IDs, or invalid JSON pointers), the artifact is not stored on disk, no `ARTIFACT_CREATED` event is emitted, and the tool returns a response listing the validation errors and explicitly stating that the artifact was not stored.
+- **INV-ART-011 (Surface Pre-Render Validation on Creation)**: `make_artifact` attempts to render and validate the A2UI component tree and manifest prior to storage. If any rendering or integrity errors occur (unsupported component types, invalid UAX #31 identifier syntax, dangling child references, cyclic hierarchies, duplicate IDs, missing required properties, unlisted button IDs, or invalid JSON pointers), the artifact is not stored on disk, no `ARTIFACT_CREATED` event is emitted, and the tool returns a response listing the validation errors and explicitly stating that the artifact was not stored.
+- **INV-ART-014 (Strict UAX #31 Component Identifier and Envelope Invariant)**: All component IDs in `body.json` must strictly satisfy Unicode Standard Annex #31 (UAX #31) identifier syntax (`c_id.isidentifier()`), and outbound event envelopes must declare version `"1.0"`. `normalize_a2ui_components` automatically sanitizes invalid characters (such as hyphens) into underscores, deduplicates ID collisions, and remaps all structural and action references (`child`, `children`, `trigger`, `content`, `tabs`, `action.event.context`). Built-in builders and runtime button dispatch support snake_case identifiers (`submit_btn`, `proceed_btn`, `review_btn`).
 
 ---
 
@@ -76,7 +77,7 @@ The manifest defines artifact metadata, presentation rules, conversation blockin
   "commentable": false,
   "buttons": [
     {
-      "id": "submit-btn",
+      "id": "submit_btn",
       "mode": "set",
       "clicks": 1,
       "unblocking": true,
@@ -124,7 +125,7 @@ The manifest defines artifact metadata, presentation rules, conversation blockin
 
 ## 4. Body Specification (`body.json`)
 
-`body.json` defines the declarative UI layout as a flat sequence of JSON component objects conforming to the A2UI v0.9 basic catalog. It is identical to the `components` field in an A2UI `updateComponents` event.
+`body.json` defines the declarative UI layout as a flat sequence of JSON component objects conforming to the A2UI v1.0 basic catalog. It is identical to the `components` field in an A2UI `updateComponents` event. All component IDs must conform to UAX #31 identifier syntax (`^[a-zA-Z_][a-zA-Z0-9_]*$`).
 
 ### Structure
 
@@ -133,38 +134,38 @@ The manifest defines artifact metadata, presentation rules, conversation blockin
   {
     "id": "root",
     "component": "Column",
-    "children": ["title-text", "input-field", "submit-btn"]
+    "children": ["title_text", "input_field", "submit_btn"]
   },
   {
-    "id": "title-text",
+    "id": "title_text",
     "component": "Text",
-    "text": "Please provide your project preferences",
-    "variant": "h2"
+    "text": "## Please provide your project preferences",
+    "variant": "body"
   },
   {
-    "id": "input-field",
+    "id": "input_field",
     "component": "TextField",
     "label": "Project Name",
     "value": ""
   },
   {
-    "id": "submit-btn",
+    "id": "submit_btn",
     "component": "Button",
-    "child": "submit-label",
+    "child": "submit_label",
     "variant": "primary",
     "action": {
       "event": {
         "name": "submit_form",
         "context": {
           "projectName": {
-            "path": "/components/input-field/value"
+            "path": "/components/input_field/value"
           }
         }
       }
     }
   },
   {
-    "id": "submit-label",
+    "id": "submit_label",
     "component": "Text",
     "text": "Submit"
   }
@@ -190,9 +191,9 @@ Artifact state is initialized automatically by the harness upon artifact creatio
 {
   "dataModel": {},
   "clicksLeft": {
-    "submit-btn": 1,
-    "refresh-btn": "*",
-    "exhausted-btn": 0
+    "submit_btn": 1,
+    "refresh_btn": "*",
+    "exhausted_btn": 0
   }
 }
 ```
@@ -361,8 +362,8 @@ def make_plan(
       - blocking: False
       - commentable: True (enables inline text selection and review comments)
       - buttons:
-          - proceed-btn: mode='set', clicks='*', unblocking=True, closing=True
-          - review-btn: action={"comments": "push"} for inline comment submission
+          - proceed_btn: mode='set', clicks='*', unblocking=True, closing=True
+          - review_btn: action={"comments": "push"} for inline comment submission
     Writes:
       - /artifacts/plans/<uuid>/manifest.json
       - /artifacts/plans/<uuid>/body.json (structured A2UI document)
@@ -424,7 +425,7 @@ Regardless of whether an artifact was configured as `blocking: true` or `blockin
 <SYNTHETIC MESSAGE INDICATOR>
 An artifact "Project Requirements Questionnaire" (uuid: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d) was interacted with. The following event occurred:
 {
-  "button_id": "submit-btn",
+  "button_id": "submit_btn",
   "context": {
     "framework": "FastAPI",
     "database": "PostgreSQL"
@@ -453,9 +454,9 @@ For review-oriented artifacts (such as plans or requirements documents), setting
    The agent places a `Review` component in `body.json`:
    ```json
    {
-     "id": "review-btn",
+     "id": "review_btn",
      "component": "Review",
-     "child": "review-label",
+     "child": "review_label",
      "variant": "primary",
      "action": {
        "comments": "push"
@@ -501,9 +502,9 @@ Two bundled skills govern artifact usage:
 - **Guidance**: Emphasizes that custom artifacts (`make_artifact`) are rarely needed; specialized tools (`make_questionnaire`, `make_form`, `make_plan`) must be preferred. Existing specialized artifacts can serve as syntax examples when custom authoring is required.
 
 ### 2. `a2ui-components` Skill
-- Provides reference documentation for all components available in the default A2UI basic catalog (`Text`, `Button`, `TextField`, `ChoiceSet`, `Column`, `Row`, `Card`, `Review`, etc.).
-- Ships with the downloaded basic catalog specification:
-  `src/seamus/skills/bundled/a2ui_components/resources/catalog.json` (downloaded from `https://github.com/a2ui-project/a2ui/blob/main/specification/v0_9/catalogs/basic/catalog.json`).
+- Provides reference documentation for all components available in the default A2UI basic catalog (`Text`, `Button`, `TextField`, `ChoiceSet`, `Column`, `Row`, `Card`, `Review`, `Tabs`, `Modal`, `List`, `Image`, `Icon`, `AudioPlayer`, `Video`, `CheckBox`, `Slider`, `DateTimeInput`).
+- Ships with the downloaded canonical A2UI v1.0 basic catalog specification:
+  `src/seamus/skills/bundled/a2ui_components/resources/catalog.json` (aligned with `https://a2ui.org/specification/v1.0-basic-catalog-implementation-guide/`).
 
 ---
 
@@ -523,4 +524,5 @@ Two bundled skills govern artifact usage:
 | `INV-ART-010` | Read-Only Sandbox | Sandbox mounts `/artifacts` as `readOnly=True`. |
 | `INV-ART-011` | Surface Validation | `make_artifact` validates A2UI surface before storage; invalid surfaces are not stored on disk and return errors with "did not store" notification. |
 | `INV-ART-012` | Root Component & Structure Warning | Every A2UI surface resolves from a root component; if `id='root'` is missing or multiple disconnected roots exist, a root `Column` container is synthesized during normalization to prevent blank renders, and static incomplete structure warnings are returned to the agent. |
-| `INV-ART-013` | Loose Normalization & Mutation Log | `normalize_a2ui_components` loosely parses component trees (auto-assigning missing IDs, mapping type aliases, synthesizing Button child and Card content Column, auto-declaring manifest buttons) and returns an educational mutation log to the agent in `make_artifact` tool responses. |
+| `INV-ART-013` | Loose Normalization & Mutation Log | `normalize_a2ui_components` loosely parses component trees (auto-assigning missing IDs, mapping type aliases, converting heading variants `h1`-`h5` to markdown `#` headings with `variant: body`, synthesizing Button child and Card content Column, auto-declaring manifest buttons) and returns an educational mutation log to the agent in `make_artifact` tool responses. |
+| `INV-ART-014` | UAX #31 Identifier Validation | All component IDs in `body.json` must satisfy UAX #31 identifier syntax (`c_id.isidentifier()`), and outbound event envelopes declare version `"1.0"`. `normalize_a2ui_components` sanitizes invalid characters into underscores, deduplicates collisions, and remaps all structural and action references. |

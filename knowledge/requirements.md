@@ -267,6 +267,30 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0051-chat-bubble-timestamps-and-sequence-indexing.md](../decisions/0051-chat-bubble-timestamps-and-sequence-indexing.md), `ui/src/components/MessageItem.tsx`, `ui/src/components/ChatArea.tsx`, `ui/src/utils/sequence.ts`.
 - **Linked Invariants**: [INV-056](./invariants.md#inv-056-chat-bubble-timestamps-and-autonomous-sequence-indexing).
 
+### REQ-046: Adaptive UI (A2UI) v1.0 Specification Upgrade & Strict UAX #31 Identifier Validation
+- **Description**: The A2UI artifact subsystem and frontend renderer must conform to the official A2UI v1.0 specification. Outbound event envelopes must declare version `"1.0"`. All component IDs in declarative surfaces (`body.json`) must strictly adhere to Unicode Standard Annex #31 (UAX #31) identifier syntax (`c_id.isidentifier()`). Normalization routines must automatically convert non-identifier characters (such as hyphens) into underscores, deduplicate ID collisions, and remap all structural and action references. Server-side validation must reject invalid component IDs with explicit failure diagnostics. Text components must restrict variants to `"caption"` and `"body"`, with heading variants (`h1`-`h5`) automatically transformed into markdown headings (`#`, `##`, etc.). Built-in builders and interactive button actions must use snake_case identifiers (`submit_btn`, `review_btn`, `proceed_btn`).
+- **Rationale**: Eliminates runtime Zod client-side exceptions caused by hyphenated component IDs or legacy text variants, aligning Seamus with the canonical A2UI v1.0 standard and documentation.
+- **Provenance**: [0052-backlog-low-hanging-fruits.md](../decisions/0052-backlog-low-hanging-fruits.md), `src/seamus/harness/artifacts.py`, `ui/src/components/A2UIArtifactRenderer.tsx`.
+- **Linked Invariants**: [INV-057](./invariants.md#inv-057-a2ui-v10-uax-31-component-identifier-and-envelope-invariant).
+
+### REQ-047: Configurable Model Reasoning Effort Tiers
+- **Description**: Inference configurations (`InferenceConfig`) must expose a configurable `reasoning_effort` property accepting values `"default"`, `"none"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, and `"xhigh"`, defaulting to `"default"`. When set to `"default"`, the parameter must be omitted from LLM provider request payloads, allowing the backend model provider to apply its native default. When set to any other tier, the tier string must be forwarded to supported reasoning model providers (`ReasoningChatOpenAI`). In the Web UI configuration editor (`ConfigModal.tsx`), the reasoning effort selector must be positioned immediately adjacent to the model identifier.
+- **Rationale**: Gives operators explicit control over reasoning latency and depth on frontier reasoning models (such as OpenAI o1/o3-mini) while permitting seamless fallback to provider defaults.
+- **Provenance**: [0052-backlog-low-hanging-fruits.md](../decisions/0052-backlog-low-hanging-fruits.md), `src/seamus/config/models.py`, `src/seamus/harness/runner.py`, `ui/src/components/ConfigModal.tsx`.
+- **Linked Invariants**: [INV-058](./invariants.md#inv-058-model-reasoning-effort-parameter-forwarding-invariant).
+
+### REQ-048: Semantic Tool Categorization, Color Labeling & Filtering in Agent Inspector
+- **Description**: All tools registered in the harness must be categorized and annotated with semantic labels defined in a centralized JSON resource (`src/seamus/harness/resources/tool_labeling.json`). Each label definition must declare a title and distinct hex color. The Agent Inspector API response (`AgentInspectReport`) must include structured `ToolLabelInfo` lists on each tool, and the Web UI Inspector must display colored badges for each label and support interactive category filtering.
+- **Rationale**: Eliminates cognitive clutter in the Agent Inspector by grouping disparate tools (sandbox commands, artifacts, planning, web queries, skills) into visually distinguishable domains.
+- **Provenance**: [0052-backlog-low-hanging-fruits.md](../decisions/0052-backlog-low-hanging-fruits.md), `src/seamus/harness/resources/tool_labeling.json`, `src/seamus/harness/inspector.py`, `ui/src/components/AgentInspector.tsx`.
+- **Linked Invariants**: [INV-059](./invariants.md#inv-059-dynamic-tool-labeling-json-resource-alignment).
+
+### REQ-049: Cross-Phase Retained Skills Continuity Across Thread Rollovers
+- **Description**: The thread creation and phase transition mechanisms (`Session.create_thread`, `runner.transition_to_phase`, and `make_plan`) must support an explicit `retained_skills: list[str]` parameter. When specified, designated active skills from the preceding thread are carried over to the new thread's `active_skills`, while all non-designated skills are cleanly unloaded. When omitted or `None`, new threads default to empty active skills to prevent unbounded token accumulation.
+- **Rationale**: Allows essential cross-phase skills (such as `artifacts` or specialized domain skills) to persist uninterrupted across Plan Mode transitions (`discuss` -> `make` -> `execute`) without leaking temporary exploratory skills.
+- **Provenance**: [0052-backlog-low-hanging-fruits.md](../decisions/0052-backlog-low-hanging-fruits.md), `src/seamus/domain/entities.py`, `src/seamus/harness/runner.py`, `src/seamus/harness/store.py`, `src/seamus/server/schemas.py`.
+- **Linked Invariants**: [INV-060](./invariants.md#inv-060-explicit-thread-skill-retention-and-token-leakage-guard).
+
 
 ## Cross-References
 - [backlog.md](./backlog.md)
@@ -312,4 +336,6 @@ Requirements, rationale, provenance, and stable IDs.
 - [0048-native-lmxml-skills-system.md](../decisions/0048-native-lmxml-skills-system.md)
 - [0049-native-lmxml-todo-planning.md](../decisions/0049-native-lmxml-todo-planning.md)
 - [0050-web-search-tool.md](../decisions/0050-web-search-tool.md)
+- [0051-chat-bubble-timestamps-and-sequence-indexing.md](../decisions/0051-chat-bubble-timestamps-and-sequence-indexing.md)
+- [0052-backlog-low-hanging-fruits.md](../decisions/0052-backlog-low-hanging-fruits.md)
 - [persistence.md](./persistence.md)
