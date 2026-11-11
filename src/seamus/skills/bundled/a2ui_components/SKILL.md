@@ -297,8 +297,7 @@ Clickable action button.
     "event": {
       "name": "deploy_action",
       "context": {
-        "environment": { "path": "/components/env_picker/value" },
-        "notes": { "path": "/components/notes_input/value" }
+        "tier": "production"
       }
     }
   }
@@ -307,7 +306,9 @@ Clickable action button.
 - `id`: Button ID. **MUST be a valid UAX #31 identifier (letters, digits, underscores; no hyphens!)** and **MUST be declared in `manifest.json` under `buttons`**, or clicks will be ignored!
 - `child`: String ID of a child component providing the label (typically a `Text` component).
 - `variant`: `"primary"` (main action), `"default"` (secondary/neutral), `"borderless"` (link style).
-- `action`: Action payload containing the event name and context data pointers.
+- `action`: Action payload containing the event name (`event.name`) and optional static context (`event.context`).
+> [!NOTE]
+> Buttons do **NOT** require dynamic `{ "path": ... }` context pointers. Whenever a button is clicked, Seamus automatically captures a snapshot of all input widgets across the surface into `event.data`. Dynamic path pointers are disallowed and dropped. Buttons may declare static context flags (e.g. `{"approved": true}`) in `event.context`.
 
 ---
 
@@ -325,7 +326,6 @@ Here is a complete, working example of an artifact showcasing widgets properly s
   "buttons": [
     {
       "id": "submit_btn",
-      "mode": "set",
       "clicks": 1,
       "unblocking": false,
       "closing": false
@@ -389,8 +389,7 @@ Here is a complete, working example of an artifact showcasing widgets properly s
       "event": {
         "name": "submit_showcase",
         "context": {
-          "target": { "path": "/components/target_picker/value" },
-          "notes": { "path": "/components/notes_field/value" }
+          "source": "showcase_form"
         }
       }
     }

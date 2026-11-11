@@ -378,9 +378,12 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Complements unit tests by validating the full browser-to-backend-to-sandbox loop without live LLM costs.
 - **Provenance**: `tests/`, `ui/tests/`, `src/seamus/harness/runner.py`.
 
+### Alternative Formatting and Presentation Formats in `answers.md`
+- **Description**: Explore and evaluate alternative markdown representations for structured questionnaire and form responses in `answers.md`. In particular, test displaying multiple-choice sets and checkbox options explicitly showing both affirmative and negative selections (e.g. `<option label>: yes/no` or markdown task list checkmarks `- [x] <option>` / `- [ ] <option>`), tabular answer matrices, or grouped question sections.
+- **Rationale**: The current format lists only selected options under blockquotes (`> <picked label>`). While concise, explicit boolean indicators (`<choice>: yes` vs `<choice>: no` or checkboxes) make it immediately clear to readers and LLMs which options were actively declined versus simply unselected.
+- **Provenance**: [0053-artifact-event-snapshots-and-static-context.md](../decisions/0053-artifact-event-snapshots-and-static-context.md), `src/seamus/harness/artifacts.py`.
+
 ## Not formalized
 
 - deep-seamus variant of skills and todos: An intentional hybrid architecture combining DeepAgents execution and middleware mechanics with Seamus LMXML structured prompt composition (rather than raw markdown appending or vanilla prompt injection), intentionally kept outstanding.
-- a way to attach to button (in artifact) both data from inputs and comments [low]
-- comments need to be saved in artifact state, not just "review" append log [low]
 - instructional documentation

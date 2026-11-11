@@ -205,7 +205,7 @@ def build_operating_environment(
                     "for reference.\n"
                 )
             )
-            + "Renderable Adaptive Cards artifacts are mounted READ-ONLY at `/artifacts`.\n"
+            + "Renderable A2UI artifacts are mounted READ-ONLY at `/artifacts`.\n"
             f"Anything outside `{workdir}` and `/artifacts` (such as `/tmp` or `/root`) "
             "is transient and ephemeral, and will be discarded when the sandbox restarts."
         )
@@ -676,12 +676,15 @@ def build_user_inquiry(
     if "make_artifact" in available:
         tools_list.append(
             "make_artifact: Core atomic artifact builder creating custom A2UI components under "
-            "`/artifacts/<family>/<uuid>/` with custom manifest and body definitions."
+            "`/artifacts/<family>/<uuid>/` with custom manifest and body definitions. Button "
+            "clicks automatically capture a snapshot of all input widgets into append-only JSONL "
+            "event logs and state.json."
         )
     if "wait_for_click" in available:
         tools_list.append(
             "wait_for_click: Suspends agent execution within the current turn until the user "
-            "clicks a button on the specified artifact."
+            "clicks a button on the specified artifact. Returns the clicked button ID, event name, "
+            "input data snapshot, and static context."
         )
 
     guidelines = (
@@ -709,6 +712,23 @@ def build_user_inquiry(
                 "When `write_in=True` is enabled on questions, do NOT include explicit 'Other' or "
                 "'Custom' choice options; the UI automatically provides an unselected freeform "
                 "write-in text field."
+            ),
+            (
+                "When defining custom artifacts or buttons, dynamic context pointers "
+                "(`{'path': ...}`) are disallowed and dropped; the harness automatically "
+                "captures a complete snapshot of all interactive input widgets across the "
+                "surface in `event.data`. Buttons may define static context values "
+                "(e.g. `{'approved': true}`) in `action.event.context`."
+            ),
+            (
+                "Button interactions are recorded chronologically into append-only JSONL "
+                "event logs at `/artifacts/<family>/<uuid>/interactions/<button_id>.jsonl` "
+                "and the latest snapshot is saved in `state.json` under `last_event`."
+            ),
+            (
+                "For questionnaires and forms, user answers are automatically compiled into "
+                "`/artifacts/<family>/<uuid>/answers.md` in clean, human-readable Markdown. "
+                "Inspect `answers.md` to review the user's responses."
             ),
             (
                 "Consult the 'artifacts' skill at `/skills/bundled/artifacts/SKILL.md` and "

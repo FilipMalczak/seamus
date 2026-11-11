@@ -17,18 +17,22 @@ Artifact instances live in isolated directories with no hierarchical search:
 │   └── <uuid>/
 │       ├── manifest.json              # Behavioral manifest & button whitelist
 │       ├── body.json                  # Sequence of A2UI basic catalog components
-│       ├── state.json                 # Accumulated dataModel and clicksLeft counters
+│       ├── schema.json                # Schema mapping questions/choice IDs to text/labels
+│       ├── state.json                 # latest last_event snapshot and clicksLeft counters
+│       ├── answers.md                 # Human-readable summary of user answers & selections
 │       ├── closed.marker              # Present if and only if artifact is closed
 │       └── interactions/
-│           └── <button_id>.json       # Payloads written upon button clicks
+│           └── <button_id>.jsonl      # Append-only chronological stream of click events
 ├── forms/
 │   └── <uuid>/
 │       ├── manifest.json
 │       ├── body.json
+│       ├── schema.json
 │       ├── state.json
+│       ├── answers.md
 │       ├── closed.marker
 │       └── interactions/
-│           └── <button_id>.json
+│           └── <button_id>.jsonl
 └── plans/
     └── <uuid>/
         ├── manifest.json
@@ -37,13 +41,14 @@ Artifact instances live in isolated directories with no hierarchical search:
         ├── plan.md                    # Canonical Markdown plan body
         ├── closed.marker
         └── interactions/
-            └── <button_id>.json
+            └── <button_id>.jsonl
 ```
 
 - **`manifest.json` & `body.json`**: Written atomically upon creation. If `manifest.json` exists without `body.json`, the artifact is corrupted (INV-ART-003).
-- **`state.json`**: Initialized with `{ "dataModel": {}, "clicksLeft": { ... } }`.
+- **`state.json`**: Contains `{ "last_event": { ... }, "clicksLeft": { ... } }`.
+- **`answers.md`**: Automatically generated and kept updated for questionnaires and forms upon submission. Provides a clean, human-readable Markdown summary of user responses.
 - **`closed.marker`**: Empty file touched when an artifact closes. When closed, tabbed artifacts unmount and embedded artifacts auto-collapse into read-only mode.
-- **`/interactions/<button_id>.json`**: Created when the user clicks an active button.
+- **`/interactions/<button_id>.jsonl`**: Append-only log recording every click event in order.
 
 ## Manifest Schema & Button Whitelist
 
@@ -58,7 +63,6 @@ The manifest controls exposure, blocking behavior, inline commenting, and whitel
   "buttons": [
     {
       "id": "submit_btn",
-      "mode": "set",
       "clicks": 1,
       "unblocking": true,
       "closing": true
@@ -72,10 +76,18 @@ The manifest controls exposure, blocking behavior, inline commenting, and whitel
 - **`commentable`**: If `true`, enables inline text selection and review comments.
 - **`buttons`**: List of whitelisted buttons:
   - `id`: Button component ID in `body.json`. MUST be a valid UAX #31 identifier (letters, digits, underscores; no hyphens!). Any button clicked in UI that is not listed in `buttons` will log a warning and be ignored.
-  - `mode`: `"set"` (overwrites `/interactions/<id>.json` with pretty JSON) or `"append"` (appends JSON lines).
   - `clicks`: Positive integer (e.g. `1` or `3`) or `"*"` (unlimited). When clicks reaches `0`, the button is rendered visibly disabled in the UI.
   - `unblocking`: Whether clicking this button unblocks the session.
   - `closing`: Whether clicking this button writes `closed.marker` to close the artifact. Closing implies unblocking.
+
+## Button Events, Snapshots, and Context
+
+Whenever a user clicks a button:
+1. **Input Data Snapshot**: The client automatically gathers a complete snapshot of all input widgets across the surface (`TextField`, `CheckBox`, `ChoicePicker`/`ChoiceSet`, `Slider`, `DateTimeInput`) and sends them as key-value pairs in `event.data`.
+2. **No Dynamic Path Pointers Needed**: Buttons do **NOT** need dynamic context pointers (e.g. `{ "path": "/components/..." }` is disallowed and dropped). All widgets are automatically captured by their component IDs.
+3. **Static Context**: Buttons may define static flags or values (e.g. `{"approved": true}`, `{"action": "deploy"}`) in `button.action.event.context`.
+4. **Append-Only History**: The event `{ "event": "<name>", "timestamp": "<ISO-8601>", "context": { ... }, "data": { ... }, "comments": [ ... ] }` is appended to `/interactions/<button_id>.jsonl` and persisted in `state.json` (`last_event`).
+5. **Answers Summary (`answers.md`)**: For questionnaires and forms, responses are translated using `schema.json` into `/artifacts/<family>/<uuid>/answers.md`. Inspect `answers.md` directly to review user responses.
 
 ## Atomic Artifact Tools
 
@@ -144,7 +156,7 @@ result_json = wait_for_click(artifact_id=uuid, button_id="submit_btn", fresh=Tru
 ```
 - Suspends execution and writes `pending_wait.json` to `<session_dir>/agent/state/threads/{thread_id}/pending_wait.json`.
 - When the user clicks the button, execution resumes seamlessly within the same turn (even across server restarts!).
-- Returns a JSON string of `ClickResult`: `{ "artifact_id": str, "button_id": str, "context": dict, "timestamp": float }`.
+- Returns a JSON string of `ClickResult`: `{ "artifact_id": str, "button_id": str, "event": str, "data": dict, "context": dict, "timestamp": str }`.
 
 ### Synthetic Unblocking Notification
 If the agent concludes its turn with an assistant message (e.g. without calling `wait_for_click`), when the user subsequently clicks an unblocking or closing button, Seamus injects a synthetic user turn beginning with:

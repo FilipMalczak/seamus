@@ -856,7 +856,9 @@ class SessionAgentRunner:
             name="make_artifact",
             description=(
                 "Create a new atomic A2UI renderable artifact under `/artifacts/<family>/<uuid>/` "
-                "with a custom manifest and basic catalog components."
+                "with a custom manifest and basic catalog components. Buttons do not require "
+                "dynamic context pointers; all input widget values are automatically captured on "
+                "click into event snapshots."
             ),
             func=self.handle_make_artifact,
             args_schema=MakeArtifactInput,
@@ -866,7 +868,8 @@ class SessionAgentRunner:
             name="make_questionnaire",
             description=(
                 "Create an atomic questionnaire artifact with a list of questions, whitelisted "
-                "submit button, and optional blocking behavior."
+                "submit button, and optional blocking behavior. User answers are automatically "
+                "captured on submission and summarized in answers.md."
             ),
             func=self.handle_make_questionnaire,
             args_schema=MakeQuestionnaireInput,
@@ -876,7 +879,8 @@ class SessionAgentRunner:
             name="make_form",
             description=(
                 "Create an atomic non-blocking form artifact in a dedicated tab with fields "
-                "and whitelisted submit button."
+                "and whitelisted submit button. User answers are automatically captured on "
+                "submission and summarized in answers.md."
             ),
             func=self.handle_make_form,
             args_schema=MakeFormInput,
@@ -886,7 +890,8 @@ class SessionAgentRunner:
             name="wait_for_click",
             description=(
                 "Suspend agent execution within the current turn until the user clicks a button "
-                "on an artifact. Returns the clicked button ID and context payload."
+                "on an artifact. Returns the clicked button ID, event name, input data snapshot, "
+                "and static context."
             ),
             func=lambda *args, **kwargs: "Suspended waiting for user click",
             coroutine=self.handle_wait_for_click,
