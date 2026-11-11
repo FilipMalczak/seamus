@@ -1550,11 +1550,14 @@ class SessionAgentRunner:
 
         self.session.kill()
 
-    async def resume_turn(self, thread: Thread | None = None) -> None:
-        """Resume execution in an existing thread without adding a new user message.
+    async def resume_turn(
+        self,
+        thread: Thread | None = None,
+        user_message: UserMessage | None = None,
+    ) -> None:
+        """Resume execution in an existing thread.
 
-        Used when branching after tool calls to retry/generate LLM inference from
-        existing tool results in the checkpointer state.
+        Used when branching to retry inference or re-execute tool calls.
         """
         async with self._lock:
             if not self.session.is_active:
@@ -1566,7 +1569,7 @@ class SessionAgentRunner:
             self.session.touch()
 
             self._active_task = asyncio.create_task(
-                self._run_loop(target_thread, user_message=None)
+                self._run_loop(target_thread, user_message=user_message)
             )
 
     def handle_make_artifact(

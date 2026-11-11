@@ -5,7 +5,6 @@ import {
   ChevronDown,
   ChevronRight,
   GitFork,
-  RotateCcw,
   User,
   Zap,
 } from "lucide-react";
@@ -155,20 +154,93 @@ export function ReasoningBlock({
   );
 }
 
+export type BranchItemType =
+  | "user_message"
+  | "system_event"
+  | "bot_message"
+  | "bot_thinking"
+  | "tool_call";
+
+export type BranchHandler = (
+  targetId: string,
+  position: "before" | "after",
+  itemType: BranchItemType,
+  text?: string
+) => void;
+
+export function BubbleBranchActions({
+  targetId,
+  itemType,
+  text,
+  onBranch,
+  direction = "right",
+}: {
+  targetId: string;
+  itemType: BranchItemType;
+  text?: string;
+  onBranch?: BranchHandler;
+  direction?: "left" | "right";
+}) {
+  if (!onBranch) return null;
+
+  const beforeTooltip =
+    itemType === "user_message"
+      ? "Branch before this message (get back to waiting for user input)"
+      : itemType === "system_event"
+        ? "Branch before this event (get back to waiting for user input)"
+        : itemType === "tool_call"
+          ? "Branch before tool execution (re-execute tool)"
+          : itemType === "bot_thinking"
+            ? "Branch before thinking (re-generate reasoning)"
+            : "Branch before this message (send message again and continue)";
+
+  const afterTooltip =
+    itemType === "user_message"
+      ? "Branch after this message (start inference)"
+      : itemType === "system_event"
+        ? "Branch after this event (start inference)"
+        : itemType === "tool_call"
+          ? "Branch after tool execution (keep tool result, continue processing)"
+          : itemType === "bot_thinking"
+            ? "Branch after thinking (keep reasoning, continue processing)"
+            : "Branch after this message (message already sent, continue processing)";
+
+  return (
+    <div className={`bubble-branch-actions branch-dir-${direction}`}>
+      <button
+        type="button"
+        className="branch-action-icon-btn branch-before-btn"
+        onClick={() => onBranch(targetId, "before", itemType, text)}
+        title={beforeTooltip}
+        aria-label={beforeTooltip}
+      >
+        <GitFork className="size-3.5 branch-icon-before" />
+      </button>
+      <button
+        type="button"
+        className="branch-action-icon-btn branch-after-btn"
+        onClick={() => onBranch(targetId, "after", itemType, text)}
+        title={afterTooltip}
+        aria-label={afterTooltip}
+      >
+        <GitFork className="size-3.5 branch-icon-after" />
+      </button>
+    </div>
+  );
+}
+
 export function MessageItem({
   message,
   sequenceIndex,
   sequenceIndices,
   onBranch,
-  onBranchTool,
   onSubmitArtifact,
   submittingArtifactId,
 }: {
   message: ChatMessage;
   sequenceIndex?: number;
   sequenceIndices?: Map<string, number>;
-  onBranch?: () => void;
-  onBranchTool?: () => void;
+  onBranch?: BranchHandler;
   onSubmitArtifact?: (artifact: ArtifactInfo, data: Record<string, unknown>) => Promise<void> | void;
   submittingArtifactId?: string | null;
 }) {
@@ -233,30 +305,54 @@ export function MessageItem({
         </div>
 
         {isSynthetic ? (
-          <SyntheticMessageBlock text={message.text || ""} />
+          <div className="bubble-row synthetic-bubble-row">
+            <BubbleBranchActions
+              targetId={message.id}
+              itemType="system_event"
+              text={message.text}
+              onBranch={onBranch}
+              direction="left"
+            />
+            <SyntheticMessageBlock text={message.text || ""} />
+          </div>
         ) : hasParts ? (
           <div className="message-parts-container">
             {message.parts!.map((part) => {
               const partSeq = getSeq(part.id);
               if (part.type === "reasoning") {
                 return (
-                  <ReasoningBlock
-                    key={part.id}
-                    content={part.content}
-                    isStreaming={part.isStreaming}
-                    timestamp={part.timestamp || message.timestamp}
-                    sequenceIndex={partSeq}
-                  />
+                  <div key={part.id} className="bubble-row assistant-bubble-row">
+                    <ReasoningBlock
+                      content={part.content}
+                      isStreaming={part.isStreaming}
+                      timestamp={part.timestamp || message.timestamp}
+                      sequenceIndex={partSeq}
+                    />
+                    <BubbleBranchActions
+                      targetId={part.id}
+                      itemType="bot_thinking"
+                      text={part.content}
+                      onBranch={onBranch}
+                      direction="right"
+                    />
+                  </div>
                 );
               }
               if (part.type === "tool_call") {
                 const toolSeq = partSeq ?? getSeq(part.toolCall?.id);
                 return (
-                  <ToolCallItem
-                    key={part.id}
-                    toolCall={part.toolCall}
-                    sequenceIndex={toolSeq}
-                  />
+                  <div key={part.id} className="bubble-row assistant-bubble-row">
+                    <ToolCallItem
+                      toolCall={part.toolCall}
+                      sequenceIndex={toolSeq}
+                    />
+                    <BubbleBranchActions
+                      targetId={part.toolCall.id}
+                      itemType="tool_call"
+                      onBranch={onBranch}
+                      direction="right"
+                    />
+                  </div>
                 );
               }
               if (part.type === "artifact") {
@@ -273,25 +369,34 @@ export function MessageItem({
                 if (!part.content) return null;
                 const textTime = part.timestamp || message.timestamp;
                 return (
-                  <div key={part.id} className="message-bubble assistant-bubble">
-                    {partSeq !== undefined && (
-                      <div className="bubble-top-bar">
-                        <span
-                          className="bubble-sequence-badge"
-                          title={`Step #${partSeq} in sequence`}
-                        >
-                          #{partSeq}
+                  <div key={part.id} className="bubble-row assistant-bubble-row">
+                    <div className="message-bubble assistant-bubble">
+                      {partSeq !== undefined && (
+                        <div className="bubble-top-bar">
+                          <span
+                            className="bubble-sequence-badge"
+                            title={`Step #${partSeq} in sequence`}
+                          >
+                            #{partSeq}
+                          </span>
+                        </div>
+                      )}
+                      <div className="bubble-content">
+                        <MarkdownRenderer content={part.content} variant="assistant" />
+                      </div>
+                      <div className="bubble-footer">
+                        <span className="bubble-timestamp" title={formatFullDate(textTime)}>
+                          {formatBubbleTime(textTime)}
                         </span>
                       </div>
-                    )}
-                    <div className="bubble-content">
-                      <MarkdownRenderer content={part.content} variant="assistant" />
                     </div>
-                    <div className="bubble-footer">
-                      <span className="bubble-timestamp" title={formatFullDate(textTime)}>
-                        {formatBubbleTime(textTime)}
-                      </span>
-                    </div>
+                    <BubbleBranchActions
+                      targetId={part.id}
+                      itemType="bot_message"
+                      text={part.content}
+                      onBranch={onBranch}
+                      direction="right"
+                    />
                   </div>
                 );
               }
@@ -301,84 +406,92 @@ export function MessageItem({
         ) : (
           <>
             {!isUser && (message.reasoning || message.isReasoning) && (
-              <ReasoningBlock
-                content={message.reasoning || ""}
-                isStreaming={message.isReasoning}
-                timestamp={message.timestamp}
-                sequenceIndex={getSeq(`${message.id}-reasoning`)}
-              />
+              <div className="bubble-row assistant-bubble-row">
+                <ReasoningBlock
+                  content={message.reasoning || ""}
+                  isStreaming={message.isReasoning}
+                  timestamp={message.timestamp}
+                  sequenceIndex={getSeq(`${message.id}-reasoning`)}
+                />
+                <BubbleBranchActions
+                  targetId={`${message.id}-reasoning`}
+                  itemType="bot_thinking"
+                  text={message.reasoning}
+                  onBranch={onBranch}
+                  direction="right"
+                />
+              </div>
             )}
 
             {message.text && (
               <div
-                className={`message-bubble ${isUser ? "user-bubble" : "assistant-bubble"}`}
+                className={`bubble-row ${isUser ? "user-bubble-row" : "assistant-bubble-row"}`}
               >
-                {getSeq(isUser ? message.id : `${message.id}-text`) !== undefined && (
-                  <div className="bubble-top-bar">
-                    <span
-                      className="bubble-sequence-badge"
-                      title={`Step #${getSeq(isUser ? message.id : `${message.id}-text`)} in sequence`}
-                    >
-                      #{getSeq(isUser ? message.id : `${message.id}-text`)}
+                {isUser && (
+                  <BubbleBranchActions
+                    targetId={message.id}
+                    itemType="user_message"
+                    text={message.text}
+                    onBranch={onBranch}
+                    direction="left"
+                  />
+                )}
+                <div
+                  className={`message-bubble ${isUser ? "user-bubble" : "assistant-bubble"}`}
+                >
+                  {getSeq(isUser ? message.id : `${message.id}-text`) !== undefined && (
+                    <div className="bubble-top-bar">
+                      <span
+                        className="bubble-sequence-badge"
+                        title={`Step #${getSeq(isUser ? message.id : `${message.id}-text`)} in sequence`}
+                      >
+                        #{getSeq(isUser ? message.id : `${message.id}-text`)}
+                      </span>
+                    </div>
+                  )}
+                  <div className="bubble-content">
+                    <MarkdownRenderer
+                      content={message.text}
+                      variant={isUser ? "user" : "assistant"}
+                    />
+                  </div>
+                  <div className="bubble-footer">
+                    <span className="bubble-timestamp" title={fullTimestamp}>
+                      {formattedTime}
                     </span>
                   </div>
-                )}
-                <div className="bubble-content">
-                  <MarkdownRenderer
-                    content={message.text}
-                    variant={isUser ? "user" : "assistant"}
+                </div>
+                {!isUser && (
+                  <BubbleBranchActions
+                    targetId={message.id}
+                    itemType="bot_message"
+                    text={message.text}
+                    onBranch={onBranch}
+                    direction="right"
                   />
-                </div>
-                <div className="bubble-footer">
-                  <span className="bubble-timestamp" title={fullTimestamp}>
-                    {formattedTime}
-                  </span>
-                </div>
+                )}
               </div>
             )}
 
             {message.toolCalls && message.toolCalls.length > 0 && (
               <div className="tool-calls-container">
                 {message.toolCalls.map((tc) => (
-                  <ToolCallItem
-                    key={tc.id}
-                    toolCall={tc}
-                    sequenceIndex={getSeq(tc.id)}
-                  />
+                  <div key={tc.id} className="bubble-row assistant-bubble-row">
+                    <ToolCallItem
+                      toolCall={tc}
+                      sequenceIndex={getSeq(tc.id)}
+                    />
+                    <BubbleBranchActions
+                      targetId={tc.id}
+                      itemType="tool_call"
+                      onBranch={onBranch}
+                      direction="right"
+                    />
+                  </div>
                 ))}
               </div>
             )}
           </>
-        )}
-
-        {onBranch && (
-          <div className="message-footer-actions">
-            <button
-              type="button"
-              className="message-action-btn branch-msg-btn"
-              onClick={onBranch}
-              title={
-                isUser
-                  ? "Branch on latest Seamus bubble and retry this prompt"
-                  : "Branch off this message into a new parallel session"
-              }
-            >
-              <GitFork className="size-3" />
-              <span>Branch</span>
-            </button>
-
-            {!isUser && onBranchTool && (
-              <button
-                type="button"
-                className="message-action-btn branch-tool-btn"
-                onClick={onBranchTool}
-                title="Branch right after tool execution and retry inference in a new session"
-              >
-                <RotateCcw className="size-3" />
-                <span>Branch after tools (retry inference)</span>
-              </button>
-            )}
-          </div>
         )}
       </div>
     </div>

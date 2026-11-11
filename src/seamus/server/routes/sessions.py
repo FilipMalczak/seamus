@@ -220,10 +220,17 @@ async def branch_session(
     """Branch off a completed assistant message to create a new parallel session."""
     store = get_harness_store()
     try:
+        target_id = payload.get_target_id()
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    try:
         new_session = store.branch_session(
             agent_identifier=agent_identifier,
             session_identifier=session_identifier,
-            message_id=payload.message_id,
+            target_id=target_id,
+            position=payload.position,
+            item_type=payload.item_type,
             name=payload.name,
             retry_inference=payload.retry_inference,
         )

@@ -113,11 +113,31 @@ class SessionModeSwitchRequest(BaseModel):
 
 
 class BranchSessionRequest(BaseModel):
-    """Request payload for branching a session from a completed assistant message."""
+    """Request payload for branching a session from a target conversation item."""
 
-    message_id: str
+    target_id: str | None = None
+    message_id: str | None = None
+    position: Literal["before", "after"] = "after"
+    item_type: (
+        Literal[
+            "user_message",
+            "system_event",
+            "bot_message",
+            "bot_thinking",
+            "tool_call",
+        ]
+        | None
+    ) = None
     name: str | None = None
     retry_inference: bool = False
+
+    def get_target_id(self) -> str:
+        """Return resolved target ID from target_id or legacy message_id."""
+        tid = self.target_id or self.message_id
+        if not tid or not tid.strip():
+            msg = "Target ID cannot be empty."
+            raise ValueError(msg)
+        return tid.strip()
 
 
 class ThreadCreateRequest(BaseModel):

@@ -11,6 +11,7 @@ from ag_ui.core.events import (
 from fastapi.testclient import TestClient
 
 from seamus.config.models import AgentConfig, InferenceConfig
+from seamus.domain.artifacts import SYNTHETIC_MESSAGE_INDICATOR
 from seamus.domain.entities import AgentStatus, Session, SessionStatus
 from seamus.harness.runner import (
     RunnerRegistry,
@@ -574,3 +575,230 @@ def test_api_branch_with_retry_inference(monkeypatch: pytest.MonkeyPatch) -> Non
     events = branch_sess.get_open_thread().events
     assert len(events) >= 6
     assert (getattr(events[5], "type", None) or events[5].get("type")) == "TOOL_CALL_RESULT"
+
+
+def test_granular_branch_before_and_after_user_and_system_events() -> None:
+    store = HarnessStore()
+    config = make_complete_config()
+    store.create_agent(config=config, name="user-branch-agent")
+    s = store.create_session("user-branch-agent", name="parent")
+    t = s.get_open_thread()
+
+    # User message 1
+    t.append_event(TextMessageStartEvent(message_id="u1", role="user"))
+    t.append_event(TextMessageContentEvent(message_id="u1", delta="First user message"))
+    t.append_event(TextMessageEndEvent(message_id="u1"))
+    t.append_event({"type": "RUN_STARTED"})
+    t.append_event(TextMessageStartEvent(message_id="a1", role="assistant"))
+    t.append_event(TextMessageContentEvent(message_id="a1", delta="First answer"))
+    t.append_event(TextMessageEndEvent(message_id="a1"))
+    t.append_event({"type": "RUN_FINISHED"})
+
+    # Synthetic system event
+    synthetic_delta = f"{SYNTHETIC_MESSAGE_INDICATOR} User clicked 'approve' on artifact 'plan-1'"
+    t.append_event(TextMessageStartEvent(message_id="sys1", role="user"))
+    t.append_event(TextMessageContentEvent(message_id="sys1", delta=synthetic_delta))
+    t.append_event(TextMessageEndEvent(message_id="sys1"))
+    t.append_event({"type": "RUN_STARTED"})
+    t.append_event(TextMessageStartEvent(message_id="a2", role="assistant"))
+    t.append_event(TextMessageContentEvent(message_id="a2", delta="Second answer"))
+    t.append_event(TextMessageEndEvent(message_id="a2"))
+    t.append_event({"type": "RUN_FINISHED"})
+
+    # 1. Branch BEFORE user message u1:
+    # Gets back to waiting for user message; branch from point where it wasn't sent yet
+    s_u1_before = store.branch_session(
+        agent_identifier="user-branch-agent",
+        session_identifier="parent",
+        target_id="u1",
+        position="before",
+    )
+    t_u1_b = s_u1_before.get_open_thread()
+    assert t_u1_b.status == AgentStatus.AWAITING_USER
+    assert len(t_u1_b.events) == 0
+
+    # 2. Branch AFTER user message u1:
+    # Starts from inference on that user message
+    s_u1_after = store.branch_session(
+        agent_identifier="user-branch-agent",
+        session_identifier="parent",
+        target_id="u1",
+        position="after",
+    )
+    t_u1_a = s_u1_after.get_open_thread()
+    assert t_u1_a.status == AgentStatus.AWAITING_LLM
+    assert len(t_u1_a.events) == 3  # Start, content, end for u1
+
+    # 3. Branch BEFORE system event sys1:
+    # Gets back to waiting for user message before synthetic event was sent (has u1 + a1)
+    s_sys_before = store.branch_session(
+        agent_identifier="user-branch-agent",
+        session_identifier="parent",
+        target_id="sys1",
+        position="before",
+    )
+    t_sys_b = s_sys_before.get_open_thread()
+    assert t_sys_b.status == AgentStatus.AWAITING_USER
+    assert len(t_sys_b.events) == 8  # 3 user events + 5 assistant events from turn 1
+
+    # 4. Branch AFTER system event sys1:
+    # Starts from inference on that synthetic event
+    s_sys_after = store.branch_session(
+        agent_identifier="user-branch-agent",
+        session_identifier="parent",
+        target_id="sys1",
+        position="after",
+    )
+    t_sys_a = s_sys_after.get_open_thread()
+    assert t_sys_a.status == AgentStatus.AWAITING_LLM
+    assert len(t_sys_a.events) == 11  # 8 from turn 1 + 3 events for sys1
+
+
+def test_granular_branch_before_and_after_tool_calls_and_reasoning() -> None:
+    store = HarnessStore()
+    config = make_complete_config()
+    store.create_agent(config=config, name="tool-reason-agent")
+    s = store.create_session("tool-reason-agent", name="parent")
+    t = s.get_open_thread()
+
+    t.append_event(TextMessageStartEvent(message_id="u1", role="user"))
+    t.append_event(TextMessageContentEvent(message_id="u1", delta="Execute command"))
+    t.append_event(TextMessageEndEvent(message_id="u1"))
+    t.append_event({"type": "RUN_STARTED"})
+
+    # Reasoning block
+    t.append_event({"type": "REASONING_START", "message_id": "r1"})
+    t.append_event(
+        {"type": "REASONING_MESSAGE_CONTENT", "message_id": "r1", "delta": "Thinking..."}
+    )
+    t.append_event({"type": "REASONING_END", "message_id": "r1"})
+
+    # Tool call
+    t.append_event({"type": "TOOL_CALL_START", "tool_call_id": "call-1", "tool_call_name": "bash"})
+    t.append_event({"type": "TOOL_CALL_ARGS", "tool_call_id": "call-1", "args": '{"command":"ls"}'})
+    t.append_event({"type": "TOOL_CALL_END", "tool_call_id": "call-1"})
+    t.append_event({"type": "TOOL_CALL_RESULT", "tool_call_id": "call-1", "content": "file.txt"})
+
+    # Assistant message
+    t.append_event(TextMessageStartEvent(message_id="a1", role="assistant"))
+    t.append_event(TextMessageContentEvent(message_id="a1", delta="Done listing"))
+    t.append_event(TextMessageEndEvent(message_id="a1"))
+    t.append_event({"type": "RUN_FINISHED"})
+
+    # 1. Branch BEFORE tool call:
+    # Slices before TOOL_CALL_RESULT so tool can re-execute in new session
+    s_tc_before = store.branch_session(
+        agent_identifier="tool-reason-agent",
+        session_identifier="parent",
+        target_id="call-1",
+        position="before",
+    )
+    t_tc_b = s_tc_before.get_open_thread()
+    assert t_tc_b.status == AgentStatus.AWAITING_LLM
+    # Sliced events include: u1(3) + RUN_STARTED(1) + reasoning(3) + tool calls(3) = 10 events
+    assert len(t_tc_b.events) == 10
+    last_ev_b = t_tc_b.events[-1]
+    assert (getattr(last_ev_b, "type", None) or last_ev_b.get("type")) == "TOOL_CALL_END"
+
+    # 2. Branch AFTER tool call:
+    # Slices after TOOL_CALL_RESULT so result is preserved and inference continues
+    s_tc_after = store.branch_session(
+        agent_identifier="tool-reason-agent",
+        session_identifier="parent",
+        target_id="call-1",
+        position="after",
+    )
+    t_tc_a = s_tc_after.get_open_thread()
+    assert t_tc_a.status == AgentStatus.AWAITING_LLM
+    # Sliced events include through TOOL_CALL_RESULT = 11 events
+    assert len(t_tc_a.events) == 11
+    last_ev_a = t_tc_a.events[-1]
+    assert (getattr(last_ev_a, "type", None) or last_ev_a.get("type")) == "TOOL_CALL_RESULT"
+
+    # 3. Branch BEFORE reasoning:
+    s_r_before = store.branch_session(
+        agent_identifier="tool-reason-agent",
+        session_identifier="parent",
+        target_id="r1",
+        position="before",
+    )
+    t_r_b = s_r_before.get_open_thread()
+    assert t_r_b.status == AgentStatus.AWAITING_LLM
+    # Slices before REASONING_START: u1(3) + RUN_STARTED(1) = 4 events
+    assert len(t_r_b.events) == 4
+
+    # 4. Branch AFTER reasoning:
+    s_r_after = store.branch_session(
+        agent_identifier="tool-reason-agent",
+        session_identifier="parent",
+        target_id="r1",
+        position="after",
+    )
+    t_r_a = s_r_after.get_open_thread()
+    assert t_r_a.status == AgentStatus.AWAITING_LLM
+    # Slices after REASONING_END: 4 + 3 = 7 events
+    assert len(t_r_a.events) == 7
+
+    # 5. Branch BEFORE bot message a1:
+    s_a_before = store.branch_session(
+        agent_identifier="tool-reason-agent",
+        session_identifier="parent",
+        target_id="a1",
+        position="before",
+    )
+    t_a_b = s_a_before.get_open_thread()
+    assert t_a_b.status == AgentStatus.AWAITING_LLM
+    # Slices before TextMessageStartEvent for a1: 11 events
+    assert len(t_a_b.events) == 11
+
+    # 6. Branch AFTER bot message a1 (end of turn):
+    s_a_after = store.branch_session(
+        agent_identifier="tool-reason-agent",
+        session_identifier="parent",
+        target_id="a1",
+        position="after",
+    )
+    t_a_a = s_a_after.get_open_thread()
+    assert t_a_a.status == AgentStatus.AWAITING_USER
+    # Full turn: 15 events
+    assert len(t_a_a.events) == 15
+
+
+def test_api_granular_branching() -> None:
+    store = HarnessStore()
+    reset_harness_store(store)
+    reset_runner_registry()
+    config = make_complete_config()
+    store.create_agent(config=config, name="api-granular-agent")
+    s = store.create_session("api-granular-agent", name="api-parent")
+    t = s.get_open_thread()
+
+    t.append_event(TextMessageStartEvent(message_id="u1", role="user"))
+    t.append_event(TextMessageContentEvent(message_id="u1", delta="Prompt 1"))
+    t.append_event(TextMessageEndEvent(message_id="u1"))
+    t.append_event({"type": "RUN_STARTED"})
+    t.append_event(TextMessageStartEvent(message_id="a1", role="assistant"))
+    t.append_event(TextMessageContentEvent(message_id="a1", delta="Response 1"))
+    t.append_event(TextMessageEndEvent(message_id="a1"))
+    t.append_event({"type": "RUN_FINISHED"})
+
+    app = create_app()
+    client = TestClient(app)
+
+    # Branch before user message via API
+    res_b = client.post(
+        f"/api/v-alpha/agent/api-granular-agent/session/{s.id}/branch",
+        json={"target_id": "u1", "position": "before", "item_type": "user_message"},
+    )
+    assert res_b.status_code == 201
+    data_b = res_b.json()
+    assert data_b["provenance"]["parent_message_id"] == "u1"
+
+    # Branch after assistant message via API
+    res_a = client.post(
+        f"/api/v-alpha/agent/api-granular-agent/session/{s.id}/branch",
+        json={"target_id": "a1", "position": "after", "item_type": "bot_message"},
+    )
+    assert res_a.status_code == 201
+    data_a = res_a.json()
+    assert data_a["provenance"]["parent_message_id"] == "a1"

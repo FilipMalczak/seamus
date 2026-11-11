@@ -4,7 +4,6 @@ import {
   getConfigTemplate,
   getSystemInfo,
   getSystemSettings,
-  postUserInput,
   updateConfigTemplate,
   updateSystemSettings,
 } from "./api/client";
@@ -514,32 +513,29 @@ export function App() {
                 }}
                 onArtifactsSync={handleArtifactsSync}
                 onBranchMessage={async (
-                  targetId: string | null,
-                  options?: { retryInference?: boolean; promptToSend?: string }
+                  targetId: string,
+                  options?: {
+                    position?: "before" | "after";
+                    itemType?: "user_message" | "system_event" | "bot_message" | "bot_thinking" | "tool_call";
+                    promptToSend?: string;
+                  }
                 ) => {
-                  if (!selectedAgentId) return;
-                  if (targetId && selectedSessionId) {
-                    const newSession = await branchSession(
-                      selectedAgentId,
-                      selectedSessionId,
-                      targetId,
-                      null,
-                      options?.retryInference
-                    );
-                    if (options?.promptToSend) {
-                      await postUserInput(
-                        selectedAgentId,
-                        newSession.id,
-                        options.promptToSend
-                      );
+                  if (!selectedAgentId || !selectedSessionId) return;
+                  const newSession = await branchSession(
+                    selectedAgentId,
+                    selectedSessionId,
+                    targetId,
+                    {
+                      position: options?.position ?? "after",
+                      itemType: options?.itemType,
                     }
-                  } else if (options?.promptToSend) {
-                    const newSession = await createSession(selectedAgentId);
-                    await postUserInput(
-                      selectedAgentId,
-                      newSession.id,
-                      options.promptToSend
-                    );
+                  );
+                  await refreshTree();
+                  selectSession(selectedAgentId, newSession.id);
+                  const openThread =
+                    newSession.threads.find((t) => t.is_open) || newSession.threads[0];
+                  if (openThread) {
+                    selectThread(selectedAgentId, newSession.id, openThread.id);
                   }
                 }}
                 onNavigateToSession={handleNavigateToSession}

@@ -964,6 +964,80 @@ body {
   margin-top: 0.35rem;
 }
 
+.bubble-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 100%;
+}
+
+.user-bubble-row {
+  justify-content: flex-end;
+}
+
+.assistant-bubble-row {
+  justify-content: flex-start;
+}
+
+.synthetic-bubble-row {
+  justify-content: flex-end;
+}
+
+.bubble-branch-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  opacity: 0.35;
+  transition: opacity 0.15s ease-in-out;
+  flex-shrink: 0;
+}
+
+.message-row:hover .bubble-branch-actions,
+.bubble-row:hover .bubble-branch-actions,
+.bubble-branch-actions:hover {
+  opacity: 1;
+}
+
+.branch-action-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-muted, #a1a1aa);
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  padding: 0;
+}
+
+.branch-action-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.branch-before-btn:hover {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: rgba(56, 189, 248, 0.4);
+  color: #38bdf8;
+}
+
+.branch-after-btn:hover {
+  background: rgba(168, 85, 247, 0.15);
+  border-color: rgba(168, 85, 247, 0.4);
+  color: #c084fc;
+}
+
+.branch-icon-before {
+  transform: rotate(-90deg);
+}
+
+.branch-icon-after {
+  transform: rotate(90deg);
+}
+
 .branch-msg-btn,
 .branch-tool-btn {
   display: inline-flex;

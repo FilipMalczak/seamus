@@ -23,15 +23,13 @@ import {
   SYNTHETIC_MESSAGE_INDICATOR,
   type AgentStatus,
   type ArtifactInfo,
-  type ChatMessage,
-  type MessagePart,
   type SessionBranchProvenance,
   type SessionStatus,
   type ThreadInfo,
 } from "../api/types";
 import { useThreadStream } from "../hooks/useThreadStream";
 import { computeBubbleSequenceIndices } from "../utils/sequence";
-import { MessageItem } from "./MessageItem";
+import { MessageItem, type BranchHandler, type BranchItemType } from "./MessageItem";
 
 interface ChatAreaProps {
   agentId: string | null;
@@ -62,9 +60,13 @@ interface ChatAreaProps {
     submittingArtifactId: string | null
   ) => void;
   onBranchMessage?: (
-    messageId: string | null,
-    options?: { retryInference?: boolean; promptToSend?: string }
-  ) => void;
+    targetId: string,
+    options?: {
+      position?: "before" | "after";
+      itemType?: BranchItemType;
+      promptToSend?: string;
+    }
+  ) => void | Promise<void>;
   onNavigateToSession?: (sessionId: string) => void;
   onNamed?: (event: any) => void;
   sequenceThreshold?: number;
@@ -146,97 +148,14 @@ export function ChatArea({
   const isOpen = (thread?.is_open ?? false) && !isSessionTerminal;
   const isBusy = isOpen && status !== "AWAITING_USER" && status !== "ERROR";
 
-  const handleBranchItem = useCallback(
-    (message: ChatMessage) => {
+  const handleBranchItem: BranchHandler = useCallback(
+    (targetId, position, itemType, text) => {
       if (!onBranchMessage) return;
-
-      if (message.role === "user") {
-        const currentIdx = messages.findIndex((m) => m.id === message.id);
-        const priorAssistant =
-          currentIdx > 0
-            ? messages
-              .slice(0, currentIdx)
-              .reverse()
-              .find((m) => m.role === "assistant")
-            : undefined;
-
-        if (priorAssistant) {
-          let targetId = priorAssistant.id;
-          if (priorAssistant.parts && priorAssistant.parts.length > 0) {
-            const textPart = priorAssistant.parts.find(
-              (p) =>
-                p.type === "text" &&
-                p.id &&
-                !p.id.startsWith("asst-") &&
-                !p.id.startsWith("text-asst-")
-            );
-            if (textPart && textPart.id) {
-              targetId = textPart.id;
-            } else {
-              const toolPart = priorAssistant.parts.find(
-                (p) =>
-                  p.type === "tool_call" &&
-                  p.toolCall.id &&
-                  !p.toolCall.id.startsWith("asst-")
-              );
-              if (
-                toolPart &&
-                toolPart.type === "tool_call" &&
-                toolPart.toolCall.id
-              ) {
-                targetId = toolPart.toolCall.id;
-              }
-            }
-          }
-          onBranchMessage(targetId, { promptToSend: message.text });
-        } else {
-          onBranchMessage(null, { promptToSend: message.text });
-        }
-      } else {
-        let targetId = message.id;
-        if (message.parts && message.parts.length > 0) {
-          const textPart = message.parts.find(
-            (p: MessagePart) =>
-              p.type === "text" &&
-              p.id &&
-              !p.id.startsWith("asst-") &&
-              !p.id.startsWith("text-asst-")
-          );
-          if (textPart && textPart.id) {
-            targetId = textPart.id;
-          } else {
-            const toolPart = message.parts.find(
-              (p: MessagePart) =>
-                p.type === "tool_call" &&
-                p.toolCall.id &&
-                !p.toolCall.id.startsWith("asst-")
-            );
-            if (
-              toolPart &&
-              toolPart.type === "tool_call" &&
-              toolPart.toolCall.id
-            ) {
-              targetId = toolPart.toolCall.id;
-            }
-          }
-        }
-        onBranchMessage(targetId);
-      }
-    },
-    [messages, onBranchMessage]
-  );
-
-  const handleBranchToolItem = useCallback(
-    (message: ChatMessage) => {
-      if (!onBranchMessage) return;
-      let targetId = message.id;
-      if (message.toolCalls && message.toolCalls.length > 0) {
-        const lastTool = message.toolCalls[message.toolCalls.length - 1];
-        if (lastTool && lastTool.id) {
-          targetId = lastTool.id;
-        }
-      }
-      onBranchMessage(targetId, { retryInference: true });
+      onBranchMessage(targetId, {
+        position,
+        itemType,
+        promptToSend: text,
+      });
     },
     [onBranchMessage]
   );
@@ -662,12 +581,7 @@ export function ChatArea({
                   message={msg}
                   sequenceIndex={sequenceIndices.get(msg.id)}
                   sequenceIndices={sequenceIndices}
-                  onBranch={onBranchMessage ? () => handleBranchItem(msg) : undefined}
-                  onBranchTool={
-                    onBranchMessage && msg.role === "assistant" && msg.toolCalls && msg.toolCalls.length > 0
-                      ? () => handleBranchToolItem(msg)
-                      : undefined
-                  }
+                  onBranch={onBranchMessage ? handleBranchItem : undefined}
                   onSubmitArtifact={handleSubmitArtifact}
                   submittingArtifactId={submittingArtifactId}
                 />

@@ -4,12 +4,14 @@ import json
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 import logfire
+from ag_ui.core.types import TextInputContent, UserMessage
 
 from seamus.config.models import AgentConfig
+from seamus.domain.artifacts import SYNTHETIC_MESSAGE_INDICATOR
 from seamus.domain.entities import (
     Agent,
     AgentStatus,
@@ -47,6 +49,16 @@ class _AssistantTurn:
     timestamp_ms: float | None = None
     tool_result_slice_index: int | None = None
     tool_ids: set[str] = field(default_factory=set)
+
+
+@dataclass
+class _BranchSliceResult:
+    slice_index: int
+    rep_id: str
+    item_type: str
+    should_resume: bool
+    status: AgentStatus
+    user_message_to_dispatch: UserMessage | None = None
 
 
 class SlugConflictError(ValueError):
@@ -276,18 +288,394 @@ class HarnessStore:
         return session
 
     @staticmethod
-    def _find_assistant_turn(
-        thread: Thread, message_id: str, retry_inference: bool = False
-    ) -> tuple[int, str] | None:
-        """Locate the target assistant turn and its slice index in a thread's events.
+    def _find_branch_slice_point(
+        thread: Thread,
+        target_id: str,
+        position: Literal["before", "after"] = "after",
+        item_type: str | None = None,
+        retry_inference: bool = False,
+        is_legacy_call: bool = False,
+    ) -> _BranchSliceResult | None:
+        """Locate exact slice point and resumption parameters for any conversation element.
 
-        Matches by exact event/tool/message ID, turn index (e.g. 'asst-0'), or client-generated
-        timestamp identifier (e.g. 'asst-1793565453328').
-        Returns (slice_index, representative_id) or None if not found.
+        Supports user messages, synthetic system events, tool calls, reasoning blocks,
+        and assistant text messages. Falls back to legacy assistant turn matching.
         """
+
+        def ev_attr(ev: Any, attr: str) -> Any:
+            return getattr(ev, attr, None) or (ev.get(attr) if isinstance(ev, dict) else None)
+
+        events = thread.events
+        if not events:
+            return None
+
+        # 0. Legacy Retry Inference or Legacy Message-ID Call
+        if retry_inference or is_legacy_call:
+            legacy_res = HarnessStore._find_assistant_turn(
+                thread, target_id, retry_inference=retry_inference
+            )
+            if legacy_res is not None:
+                slice_idx, rep_id = legacy_res
+                if retry_inference:
+                    return _BranchSliceResult(
+                        slice_index=slice_idx,
+                        rep_id=rep_id,
+                        item_type="tool_call",
+                        should_resume=True,
+                        status=AgentStatus.AWAITING_LLM,
+                    )
+                if position == "before":
+                    turns = HarnessStore._collect_assistant_turns(thread)
+                    for turn in turns:
+                        if rep_id == turn.rep_id or target_id in turn.associated_ids:
+                            return _BranchSliceResult(
+                                slice_index=turn.event_indices[0],
+                                rep_id=turn.rep_id,
+                                item_type="bot_message",
+                                should_resume=True,
+                                status=AgentStatus.AWAITING_LLM,
+                            )
+                return _BranchSliceResult(
+                    slice_index=slice_idx,
+                    rep_id=rep_id,
+                    item_type="bot_message",
+                    should_resume=False,
+                    status=AgentStatus.AWAITING_USER,
+                )
+            if is_legacy_call:
+                return None
+
+        # 1. Parse Tool Calls
+        tool_records: list[dict[str, Any]] = []
+        tool_by_id: dict[str, dict[str, Any]] = {}
+        for idx, ev in enumerate(events):
+            t_type = str(ev_attr(ev, "type") or "").upper()
+            tcid = ev_attr(ev, "tool_call_id") or (
+                ev_attr(ev, "id") if t_type.startswith("TOOL_CALL") else None
+            )
+            if tcid:
+                tcid_str = str(tcid)
+                if tcid_str not in tool_by_id:
+                    rec = {
+                        "tool_call_id": tcid_str,
+                        "start_idx": idx,
+                        "end_idx": idx,
+                        "result_idx": None,
+                        "associated_ids": {tcid_str, f"call-{tcid_str}"},
+                    }
+                    tool_by_id[tcid_str] = rec
+                    tool_records.append(rec)
+                else:
+                    rec = tool_by_id[tcid_str]
+
+                if t_type == "TOOL_CALL_RESULT":
+                    rec["result_idx"] = idx
+                else:
+                    rec["end_idx"] = idx
+
+        # Check Tool Call match
+        for trec in tool_records:
+            if target_id in trec["associated_ids"] or target_id == trec["tool_call_id"]:
+                tcid = trec["tool_call_id"]
+                if position == "before":
+                    # Branch before tool was executed: slice before TOOL_CALL_RESULT
+                    res_idx = trec["result_idx"]
+                    slice_idx = res_idx if res_idx is not None else (trec["end_idx"] + 1)
+                    return _BranchSliceResult(
+                        slice_index=slice_idx,
+                        rep_id=tcid,
+                        item_type="tool_call",
+                        should_resume=True,
+                        status=AgentStatus.AWAITING_LLM,
+                    )
+                else:
+                    # Branch after tool was executed: include TOOL_CALL_RESULT, continue processing
+                    res_idx = trec["result_idx"]
+                    slice_idx = (res_idx + 1) if res_idx is not None else (trec["end_idx"] + 1)
+                    return _BranchSliceResult(
+                        slice_index=slice_idx,
+                        rep_id=tcid,
+                        item_type="tool_call",
+                        should_resume=True,
+                        status=AgentStatus.AWAITING_LLM,
+                    )
+
+        # 2. Parse User Messages and System Events
+        user_records: list[dict[str, Any]] = []
+        curr_user: dict[str, Any] | None = None
+
+        for idx, ev in enumerate(events):
+            e_type = str(ev_attr(ev, "type") or "").upper()
+            role = str(ev_attr(ev, "role") or "").lower()
+
+            is_user_start = (
+                e_type in ("USER_INPUT",)
+                or (role == "user" and e_type in ("TEXT_MESSAGE_START",))
+                or (
+                    role == "user"
+                    and not curr_user
+                    and e_type not in ("RUN_STARTED", "RUN_FINISHED")
+                )
+            )
+
+            if is_user_start:
+                if curr_user is not None:
+                    user_records.append(curr_user)
+                mid = ev_attr(ev, "message_id") or ev_attr(ev, "id") or f"user-{len(user_records)}"
+                mid_str = str(mid)
+                delta = str(
+                    ev_attr(ev, "delta") or ev_attr(ev, "text") or ev_attr(ev, "content") or ""
+                )
+                curr_user = {
+                    "message_id": mid_str,
+                    "start_idx": idx,
+                    "end_idx": idx,
+                    "text": delta,
+                    "is_synthetic": SYNTHETIC_MESSAGE_INDICATOR in delta,
+                    "associated_ids": {
+                        mid_str,
+                        f"user-{len(user_records)}",
+                        f"user-msg-{len(user_records)}",
+                    },
+                }
+                eid = ev_attr(ev, "id")
+                if eid:
+                    curr_user["associated_ids"].add(str(eid))
+                continue
+
+            if curr_user is not None:
+                curr_mid = str(ev_attr(ev, "message_id") or "")
+                if curr_mid == curr_user["message_id"] or role == "user":
+                    curr_user["end_idx"] = idx
+                    delta = str(
+                        ev_attr(ev, "delta") or ev_attr(ev, "text") or ev_attr(ev, "content") or ""
+                    )
+                    if delta:
+                        curr_user["text"] += delta
+                        if SYNTHETIC_MESSAGE_INDICATOR in delta:
+                            curr_user["is_synthetic"] = True
+                elif e_type in ("RUN_STARTED", "TEXT_MESSAGE_START") or role in (
+                    "assistant",
+                    "system",
+                ):
+                    user_records.append(curr_user)
+                    curr_user = None
+
+        if curr_user is not None:
+            user_records.append(curr_user)
+
+        # Check User Message / System Event match
+        for urec in user_records:
+            if target_id in urec["associated_ids"] or target_id == urec["message_id"]:
+                mid = urec["message_id"]
+                itype = "system_event" if urec["is_synthetic"] else "user_message"
+                if position == "before":
+                    # Branch before user message: wait for user, message not sent yet
+                    return _BranchSliceResult(
+                        slice_index=urec["start_idx"],
+                        rep_id=mid,
+                        item_type=itype,
+                        should_resume=False,
+                        status=AgentStatus.AWAITING_USER,
+                    )
+                else:
+                    # Branch after user message: start from inference
+                    user_msg = UserMessage(
+                        id=mid,
+                        role="user",
+                        content=[TextInputContent(text=urec["text"])],
+                    )
+                    return _BranchSliceResult(
+                        slice_index=urec["end_idx"] + 1,
+                        rep_id=mid,
+                        item_type=itype,
+                        should_resume=True,
+                        status=AgentStatus.AWAITING_LLM,
+                        user_message_to_dispatch=user_msg,
+                    )
+
+        # 3. Parse Reasoning / Bot Thinking Blocks
+        reasoning_records: list[dict[str, Any]] = []
+        curr_reasoning: dict[str, Any] | None = None
+        for idx, ev in enumerate(events):
+            e_type = str(ev_attr(ev, "type") or "").upper()
+            if "REASONING" in e_type:
+                rid = (
+                    ev_attr(ev, "message_id")
+                    or ev_attr(ev, "id")
+                    or f"reasoning-{len(reasoning_records)}"
+                )
+                rid_str = str(rid)
+                if curr_reasoning is None:
+                    curr_reasoning = {
+                        "id": rid_str,
+                        "start_idx": idx,
+                        "end_idx": idx,
+                        "associated_ids": {
+                            rid_str,
+                            f"reasoning-{len(reasoning_records)}",
+                            f"{rid_str}-reasoning",
+                        },
+                    }
+                else:
+                    curr_reasoning["end_idx"] = idx
+                    curr_reasoning["associated_ids"].add(rid_str)
+                    curr_reasoning["associated_ids"].add(f"{rid_str}-reasoning")
+            else:
+                if curr_reasoning is not None:
+                    reasoning_records.append(curr_reasoning)
+                    curr_reasoning = None
+        if curr_reasoning is not None:
+            reasoning_records.append(curr_reasoning)
+
+        # Check Reasoning match
+        for rrec in reasoning_records:
+            if (
+                target_id in rrec["associated_ids"]
+                or target_id == rrec["id"]
+                or target_id.endswith("-reasoning")
+            ):
+                rid = rrec["id"]
+                if position == "before":
+                    return _BranchSliceResult(
+                        slice_index=rrec["start_idx"],
+                        rep_id=rid,
+                        item_type="bot_thinking",
+                        should_resume=True,
+                        status=AgentStatus.AWAITING_LLM,
+                    )
+                else:
+                    return _BranchSliceResult(
+                        slice_index=rrec["end_idx"] + 1,
+                        rep_id=rid,
+                        item_type="bot_thinking",
+                        should_resume=True,
+                        status=AgentStatus.AWAITING_LLM,
+                    )
+
+        # 4. Parse Bot Text Messages
+        bot_text_records: list[dict[str, Any]] = []
+        curr_bot: dict[str, Any] | None = None
+        for idx, ev in enumerate(events):
+            e_type = str(ev_attr(ev, "type") or "").upper()
+            role = str(ev_attr(ev, "role") or "").lower()
+            mid = str(ev_attr(ev, "message_id") or ev_attr(ev, "id") or "")
+
+            if role == "assistant" and "TEXT_MESSAGE" in e_type:
+                mid_str = mid or f"asst-text-{len(bot_text_records)}"
+                if curr_bot is not None and curr_bot["message_id"] != mid_str:
+                    bot_text_records.append(curr_bot)
+                    curr_bot = None
+                if curr_bot is None:
+                    curr_bot = {
+                        "message_id": mid_str,
+                        "start_idx": idx,
+                        "end_idx": idx,
+                        "associated_ids": {
+                            mid_str,
+                            f"asst-text-{len(bot_text_records)}",
+                            f"text-{mid_str}",
+                        },
+                    }
+                else:
+                    curr_bot["end_idx"] = idx
+            elif curr_bot is not None:
+                if mid == curr_bot["message_id"] or "TEXT_MESSAGE" in e_type:
+                    curr_bot["end_idx"] = idx
+                elif e_type == "RUN_FINISHED":
+                    curr_bot["end_idx"] = idx
+                    bot_text_records.append(curr_bot)
+                    curr_bot = None
+                else:
+                    bot_text_records.append(curr_bot)
+                    curr_bot = None
+        if curr_bot is not None:
+            bot_text_records.append(curr_bot)
+
+        # Check Bot Text Message match
+        for brec in bot_text_records:
+            if target_id in brec["associated_ids"] or target_id == brec["message_id"]:
+                mid = brec["message_id"]
+                if position == "before":
+                    return _BranchSliceResult(
+                        slice_index=brec["start_idx"],
+                        rep_id=mid,
+                        item_type="bot_message",
+                        should_resume=True,
+                        status=AgentStatus.AWAITING_LLM,
+                    )
+                else:
+                    slice_idx = brec["end_idx"] + 1
+                    # Check if subsequent events in turn contain tool calls
+                    subsequent_events = events[slice_idx:]
+                    has_tools_following = any(
+                        "TOOL_CALL" in str(ev_attr(sev, "type") or "").upper()
+                        for sev in subsequent_events
+                    )
+                    if not has_tools_following:
+                        # Message was already sent and turn finished
+                        if (
+                            slice_idx < len(events)
+                            and str(ev_attr(events[slice_idx], "type") or "").upper()
+                            == "RUN_FINISHED"
+                        ):
+                            slice_idx += 1
+                        return _BranchSliceResult(
+                            slice_index=slice_idx,
+                            rep_id=mid,
+                            item_type="bot_message",
+                            should_resume=False,
+                            status=AgentStatus.AWAITING_USER,
+                        )
+                    else:
+                        return _BranchSliceResult(
+                            slice_index=slice_idx,
+                            rep_id=mid,
+                            item_type="bot_message",
+                            should_resume=True,
+                            status=AgentStatus.AWAITING_LLM,
+                        )
+
+        # 5. Final Legacy Assistant Turn Fallback
+        legacy_res = HarnessStore._find_assistant_turn(
+            thread, target_id, retry_inference=retry_inference
+        )
+        if legacy_res is not None:
+            slice_idx, rep_id = legacy_res
+            if retry_inference:
+                return _BranchSliceResult(
+                    slice_index=slice_idx,
+                    rep_id=rep_id,
+                    item_type="tool_call",
+                    should_resume=True,
+                    status=AgentStatus.AWAITING_LLM,
+                )
+            if position == "before":
+                turns = HarnessStore._collect_assistant_turns(thread)
+                for turn in turns:
+                    if rep_id == turn.rep_id or target_id in turn.associated_ids:
+                        return _BranchSliceResult(
+                            slice_index=turn.event_indices[0],
+                            rep_id=turn.rep_id,
+                            item_type="bot_message",
+                            should_resume=True,
+                            status=AgentStatus.AWAITING_LLM,
+                        )
+            return _BranchSliceResult(
+                slice_index=slice_idx,
+                rep_id=rep_id,
+                item_type="bot_message",
+                should_resume=False,
+                status=AgentStatus.AWAITING_USER,
+            )
+
+        return None
+
+    @staticmethod
+    def _collect_assistant_turns(thread: Thread) -> list[_AssistantTurn]:
+        """Collect all assistant turns with their event indices and tool results."""
         turns: list[_AssistantTurn] = []
         current_turn_events: list[tuple[int, Any]] = []
-        user_ids: set[str] = set()
         in_assistant_turn = False
 
         def finish_current_turn() -> None:
@@ -403,14 +791,6 @@ class HarnessStore:
                 current_role = "user"
 
             if current_role == "user":
-                u_mid = getattr(ev, "message_id", None) or (
-                    ev.get("message_id") if isinstance(ev, dict) else None
-                )
-                if u_mid:
-                    user_ids.add(str(u_mid))
-                u_id = getattr(ev, "id", None) or (ev.get("id") if isinstance(ev, dict) else None)
-                if u_id:
-                    user_ids.add(str(u_id))
                 if in_assistant_turn:
                     finish_current_turn()
                 continue
@@ -421,10 +801,19 @@ class HarnessStore:
         if in_assistant_turn:
             finish_current_turn()
 
-        # Reject if message belongs to a user event
-        if message_id in user_ids:
-            return None
+        return turns
 
+    @staticmethod
+    def _find_assistant_turn(
+        thread: Thread, message_id: str, retry_inference: bool = False
+    ) -> tuple[int, str] | None:
+        """Locate the target assistant turn and its slice index in a thread's events.
+
+        Matches by exact event/tool/message ID, turn index (e.g. 'asst-0'), or client-generated
+        timestamp identifier (e.g. 'asst-1793565453328').
+        Returns (slice_index, representative_id) or None if not found.
+        """
+        turns = HarnessStore._collect_assistant_turns(thread)
         if not turns:
             return None
 
@@ -488,37 +877,60 @@ class HarnessStore:
         self,
         agent_identifier: str,
         session_identifier: str,
-        message_id: str,
+        target_id: str | None = None,
+        position: Literal["before", "after"] = "after",
+        item_type: str | None = None,
         name: str | None = None,
         retry_inference: bool = False,
+        message_id: str | None = None,
     ) -> Session:
-        """Branch off an assistant message in a session to create a new session."""
+        """Branch off any item in a session to create a new session.
+
+        Supports branching before or after user messages, system events, bot text
+        messages, reasoning blocks, and tool calls.
+        """
         agent = self.resolve_agent(agent_identifier)
         parent_session = resolve_session(agent, session_identifier)
         self._ensure_session_slug_unique(agent, name, current_session_id=None)
 
-        # Locate target message and thread
-        target_thread: Thread | None = None
-        target_event_index: int = -1
-        target_rep_id: str | None = None
-
-        for thread in parent_session.threads.values():
-            match_res = self._find_assistant_turn(
-                thread, message_id, retry_inference=retry_inference
-            )
-            if match_res is not None:
-                target_thread = thread
-                target_event_index, target_rep_id = match_res
-                break
-
-        if target_thread is None or target_rep_id is None:
-            msg = f"Assistant message '{message_id}' not found in session '{parent_session.id}'."
+        resolved_id = target_id or message_id
+        if not resolved_id:
+            msg = "target_id or message_id must be provided to branch a session."
             raise ValueError(msg)
 
+        # Locate target message and thread
+        target_thread: Thread | None = None
+        branch_res: _BranchSliceResult | None = None
+
+        is_legacy = target_id is None and message_id is not None and not retry_inference
+
+        for thread in parent_session.threads.values():
+            branch_res = self._find_branch_slice_point(
+                thread,
+                resolved_id,
+                position=position,
+                item_type=item_type,
+                retry_inference=retry_inference,
+                is_legacy_call=is_legacy,
+            )
+            if branch_res is not None:
+                target_thread = thread
+                break
+
+        if target_thread is None or branch_res is None:
+            if is_legacy:
+                msg = (
+                    f"Assistant message '{resolved_id}' not found in session '{parent_session.id}'."
+                )
+            else:
+                msg = f"Target item '{resolved_id}' not found in session '{parent_session.id}'."
+            raise ValueError(msg)
+
+        target_rep_id = branch_res.rep_id
         provenance_id = (
             target_rep_id
-            if (message_id.startswith("asst-") and message_id not in target_rep_id)
-            else message_id
+            if (resolved_id.startswith("asst-") and resolved_id not in target_rep_id)
+            else resolved_id
         )
 
         provenance = SessionBranchProvenance(
@@ -528,7 +940,7 @@ class HarnessStore:
         )
 
         # Sliced events for new session
-        sliced_events = list(target_thread.events[:target_event_index])
+        sliced_events = list(target_thread.events[: branch_res.slice_index])
         sliced_event_ids: set[str] = set()
         for ev in sliced_events:
             for attr in ("message_id", "tool_call_id", "parent_message_id", "id"):
@@ -566,7 +978,7 @@ class HarnessStore:
             new_thread = Thread(
                 custom_name=None,
                 is_open=True,
-                status=AgentStatus.AWAITING_LLM if retry_inference else AgentStatus.AWAITING_USER,
+                status=branch_res.status,
                 events=sliced_events,
             )
             new_session.threads[new_thread.id] = new_thread
@@ -585,11 +997,14 @@ class HarnessStore:
                 try:
                     ws_mgr = get_workspace_manager()
                     branch_commit = ws_mgr.find_commit_for_event(
-                        agent.id, parent_session.id, provenance_id
+                        agent.id, parent_session.id, provenance_id, before=(position == "before")
                     )
                     if not branch_commit and target_rep_id != provenance_id:
                         branch_commit = ws_mgr.find_commit_for_event(
-                            agent.id, parent_session.id, target_rep_id
+                            agent.id,
+                            parent_session.id,
+                            target_rep_id,
+                            before=(position == "before"),
                         )
                     branch_from = branch_commit or f"origin/session/{parent_session.id}"
                     ws_mgr.create_session_workspace(new_session, agent, branch_from=branch_from)
@@ -625,7 +1040,7 @@ class HarnessStore:
                         new_session.id,
                     )
 
-                if retry_inference:
+                if branch_res.should_resume:
                     import asyncio
 
                     from seamus.harness.runner import get_runner_registry
@@ -650,7 +1065,12 @@ class HarnessStore:
 
                     try:
                         loop = asyncio.get_running_loop()
-                        loop.create_task(runner.resume_turn(new_thread))
+                        loop.create_task(
+                            runner.resume_turn(
+                                new_thread,
+                                user_message=branch_res.user_message_to_dispatch,
+                            )
+                        )
                     except RuntimeError:
                         pass
 

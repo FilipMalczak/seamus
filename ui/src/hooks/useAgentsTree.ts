@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   acceptThread,
   branchSession,
+  type BranchSessionOptions,
   createAgent,
   createSession,
   createThread,
@@ -330,15 +331,15 @@ export function useAgentsTree() {
     async (
       agentId: string,
       sessionId: string,
-      messageId: string,
-      name?: string | null,
+      targetId: string,
+      optionsOrName?: string | null | BranchSessionOptions,
       retryInference?: boolean
     ) => {
       const newSession = await branchSession(
         agentId,
         sessionId,
-        messageId,
-        name,
+        targetId,
+        optionsOrName,
         retryInference
       );
       await refreshTree();

@@ -116,7 +116,7 @@ Seamus is an open, self-hosted, deep agent execution harness and developer works
 Seamus organizes work into a clean three-tiered entity hierarchy:
 
 - **Agent**: An autonomous software identity configured with a baseline **Persona** (such as `Coder`), inference configuration, custom system prompts, and tools. Each agent owns a dedicated Git repository (`agent-{agent_id}`) on Gitea.
-- **Session (Conversation)**: An isolated operational task and conversational context. A session clones its parent agent's configuration and creates an isolated Git branch (`session/{session_id}`). Sessions support full lifecycle states (`ACTIVE`, `KILLED`, `FAILED`) and **Session Branching**, allowing you to fork a new child session from any historical assistant turn with commit-level provenance.
+- **Session (Conversation)**: An isolated operational task and conversational context. A session clones its parent agent's configuration and creates an isolated Git branch (`session/{session_id}`). Sessions support full lifecycle states (`ACTIVE`, `KILLED`, `FAILED`) and **Granular Bidirectional Session Branching**, allowing you to fork a new child session from any historical point (user message, system event, bot message, bot reasoning, or tool call) either *before* or *after* the item with commit-level provenance.
 - **Thread**: A sequential execution segment within a session representing a discrete operational mode or plan phase. Only the most recent thread in a session is open; earlier threads are sealed. Mode switches automatically close the active thread and spawn a fresh thread, reusing empty threads to eliminate clutter.
 - **Dual Identifier Resolution**: Every Agent, Session, and Thread can be addressed by its canonical UUID or by an ergonomic, human-readable, URL-safe slug (e.g. `agent/frontend-bot/session/auth-refactor/thread/discuss-requirements`).
 
@@ -241,6 +241,16 @@ A desktop-grade React 19 single-page application built with Vite and TypeScript:
 - **Real-Time SSE Streaming**: Live AG-UI event streaming with token-by-token text generation, expandable reasoning blocks, and lifecycle state badges.
 - **Changes Diff Viewer**: Dedicated `[Changes]` tab with hierarchical directory tree navigation, flat list view, git status badges (`[A]` Added, `[M]` Modified, `[D]` Deleted, `[R]` Renamed), diff stats (`+N / -M`), and syntax-highlighted unified diffs.
 - **Interactive Web Terminal & Shell Emulator**: Dedicated `[Terminal]` tab connected directly to the active session's OpenSandbox container. Features real-time Server-Sent Events (SSE) streaming output, command history navigation (`↑`/`↓`), quick action shortcuts, process interruption (Cancel / `Ctrl+C`), and dynamic working directory tracking across commands.
+- **Granular Bidirectional Chat Branching**: Every chat bubble, reasoning block, tool execution, user message, and synthetic event features contextual "Branch Before" and "Branch After" action buttons oriented toward the center of the viewport (left of user bubbles, right of assistant/system bubbles):
+  - *Branch Before*:
+    - **User Message / System Event**: Reverts the session state to prior to the message being sent, returning to `AWAITING_USER`.
+    - **Bot Message / Thinking**: Truncates history prior to the generation and re-runs inference (`AWAITING_LLM`) to generate a fresh response or reasoning block.
+    - **Tool Call**: Slices the thread before tool execution (before `TOOL_CALL_RESULT`) and re-executes the tool call in the branched session.
+  - *Branch After*:
+    - **User Message / System Event**: Branches with the user prompt or synthetic event intact and initiates turn inference (`AWAITING_LLM`).
+    - **Bot Message**: Retains the assistant text; if the turn finished without subsequent tools, transitions cleanly to `AWAITING_USER`, otherwise continues processing.
+    - **Bot Thinking**: Retains reasoning tokens and continues inference (`AWAITING_LLM`).
+    - **Tool Call**: Preserves the existing tool execution result from the parent session and continues processing (`AWAITING_LLM`).
 - **Chat Bubble Timestamps & Autonomous Sequence Indexing**: Per-bubble localized timestamps with seconds precision (`HH:MM:SS`) and ISO tooltips on hover. When an agent produces a contiguous streak exceeding 5 bubbles (`BUBBLE_SEQUENCE_THRESHOLD`), each bubble in the sequence displays a high-contrast 1-based index badge (`#1`, `#2`, ..., `#N`) at its top-left corner, providing instant visibility into autonomous multi-step execution duration and step-by-step progress.
 - **Unmasked Symbolic Secret Expressions**: Configuration and settings modal input fields automatically unmask from password to readable text when containing symbolic `${secret(...)}` expressions, keeping secret paths clearly verifiable while preserving password masking for raw strings.
 - **Right-Aligned System and Daemon Events**: Background system notifications, phase shifts, and daemon events are styled and right-aligned to clearly distinguish harness logs from user inputs and assistant dialogue.
@@ -587,7 +597,7 @@ The backend exposes a clean, typed REST API under prefix `/api/v-alpha/`:
 - `GET /api/v-alpha/agents/{agent_id}/sessions/{session_id}/stream`: Session-level SSE feed streaming unified multi-thread events.
 - `POST /api/v-alpha/agents/{agent_id}/sessions/{session_id}/terminal/stream`: Streams shell command execution inside the session's sandbox container via SSE.
 - `GET /api/v-alpha/agents/{agent_id}/sessions/{session_id}/terminal/info`: Returns active sandbox terminal status and operational directory.
-- `POST /api/v-alpha/agents/{agent_id}/sessions/{session_id}/branch`: Branches a new child session from a historical assistant turn.
+- `POST /api/v-alpha/agents/{agent_id}/sessions/{session_id}/branch`: Branches a new child session from an arbitrary historical item (`target_id`, `position: "before" | "after"`, optional `item_type`), with full backward-compatibility for legacy turn branching (`message_id`, `retry_inference`).
 
 #### Threads
 

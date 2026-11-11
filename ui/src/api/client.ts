@@ -179,22 +179,46 @@ export async function switchSessionMode(
   return handleResponse<SessionDetail>(res);
 }
 
+export interface BranchSessionOptions {
+  position?: "before" | "after";
+  itemType?: "user_message" | "system_event" | "bot_message" | "bot_thinking" | "tool_call";
+  name?: string | null;
+  retryInference?: boolean;
+}
+
 export async function branchSession(
   agentId: string,
   sessionId: string,
-  messageId: string,
-  name?: string | null,
+  targetId: string,
+  optionsOrName?: string | null | BranchSessionOptions,
   retryInference?: boolean
 ): Promise<SessionDetail> {
+  let name: string | null = null;
+  let position: "before" | "after" = "after";
+  let itemType: string | undefined = undefined;
+  let retryInf = retryInference ?? false;
+
+  if (optionsOrName && typeof optionsOrName === "object") {
+    name = optionsOrName.name ?? null;
+    position = optionsOrName.position ?? "after";
+    itemType = optionsOrName.itemType;
+    retryInf = optionsOrName.retryInference ?? retryInf;
+  } else if (typeof optionsOrName === "string") {
+    name = optionsOrName;
+  }
+
   const res = await fetch(
     `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/branch`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        message_id: messageId,
-        name: name ?? null,
-        retry_inference: retryInference ?? false,
+        target_id: targetId,
+        message_id: targetId,
+        position,
+        item_type: itemType,
+        name,
+        retry_inference: retryInf,
       }),
     }
   );

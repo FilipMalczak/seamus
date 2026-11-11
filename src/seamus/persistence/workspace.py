@@ -823,8 +823,13 @@ class GitWorkspaceManager:
         agent_id: UUID,
         session_id: UUID,
         search_string: str,
+        before: bool = False,
     ) -> str | None:
-        """Find the git commit SHA on the session branch that introduced the search string."""
+        """Find the git commit SHA on the session branch that introduced the search string.
+
+        If before is True, attempts to resolve the immediate parent commit (the state
+        prior to this event).
+        """
         if not self.settings.enabled:
             return None
 
@@ -838,7 +843,17 @@ class GitWorkspaceManager:
                 ["log", f"-S{search_string}", "-n", "1", "--format=%H"],
             )
             sha = res.stdout.strip()
-            return sha if sha else None
+            if not sha:
+                return None
+            if before:
+                try:
+                    parent_res = self._run_git(session_dir, ["rev-parse", f"{sha}~1"])
+                    parent_sha = parent_res.stdout.strip()
+                    if parent_sha:
+                        return parent_sha
+                except Exception:
+                    pass
+            return sha
         except Exception:
             logger.debug(
                 "No commit found for search string %s in session %s", search_string, session_id

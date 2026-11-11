@@ -318,11 +318,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: While baseline containerized execution, candidate endpoint probing, model pre-loading, and auto-pull work correctly, local inference introduces unique latencies and resource constraints. Usability enhancements and thorough test coverage will ensure seamless day-to-day developer workflows.
 - **Provenance**: [0045-ollama-local-model-provider.md](../decisions/0045-ollama-local-model-provider.md), `src/seamus/harness/runner.py`, `ui/src/components/ConfigModal.tsx`.
 
-### Granular Branch Action Placement in Chat Bubble UI
-- **Description**: Redesign the message branch action layout in `MessageItem.tsx`. Move the branch action icon/button to the right of message bubbles (e.g., in a hover/action gutter) rather than placing it in the bottom footer below the bubble content, and review branch point indicators to ensure they are visually intuitive and unambiguous.
-- **Rationale**: Footer placement below the bubble text is visually misleading and occupies unnecessary vertical space across conversational streams.
-- **Provenance**: `ui/src/components/MessageItem.tsx`, `ui/src/components/ChatArea.tsx`.
-
 ### Full Auto-Restart and Execution Recovery on System Startup
 - **Description**: Automatically detect in-flight or interrupted agent sessions upon harness server restart/startup, recovering execution from the latest checkpoint and auto-resuming the agent's run loop.
 - **Rationale**: If the host or server container is restarted or killed mid-turn, active runs currently stall without resuming, requiring manual user intervention.
