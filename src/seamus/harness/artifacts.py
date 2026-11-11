@@ -1502,6 +1502,7 @@ class QuestionnaireBuilder:
             schema_questions.append(
                 {
                     "id": q_id,
+                    "choice_id": q_choice_id,
                     "body": q.body,
                     "multiple_choice": q.multiple_choice,
                     "write_in": q.write_in,
@@ -1587,15 +1588,21 @@ class QuestionnaireBuilder:
             ],
         )
 
+        initial_data: dict[str, Any] = {}
+        for q_info in schema_questions:
+            val = [] if q_info["multiple_choice"] else ""
+            initial_data[q_info["id"]] = val
+            initial_data[q_info.get("choice_id", f"{q_info['id']}_choices")] = val
+            if q_info.get("writein_id"):
+                initial_data[q_info["writein_id"]] = ""
+
         inst_uuid = ArtifactBuilder.create_artifact(
             artifacts_dir=artifacts_dir,
             family="questionnaires",
             manifest=manifest,
             components=components,
             uuid=uuid,
-            initial_data={
-                q_info["id"]: [] if q_info["multiple_choice"] else "" for q_info in schema_questions
-            },
+            initial_data=initial_data,
         )
 
         # Persist schema.json for translating IDs back to question text and option labels
@@ -1645,15 +1652,21 @@ class FormBuilder:
             ],
         )
 
+        initial_data: dict[str, Any] = {}
+        for q_info in schema_questions:
+            val = [] if q_info["multiple_choice"] else ""
+            initial_data[q_info["id"]] = val
+            initial_data[q_info.get("choice_id", f"{q_info['id']}_choices")] = val
+            if q_info.get("writein_id"):
+                initial_data[q_info["writein_id"]] = ""
+
         inst_uuid = ArtifactBuilder.create_artifact(
             artifacts_dir=artifacts_dir,
             family="forms",
             manifest=manifest,
             components=components,
             uuid=uuid,
-            initial_data={
-                q_info["id"]: [] if q_info["multiple_choice"] else "" for q_info in schema_questions
-            },
+            initial_data=initial_data,
         )
 
         # Persist schema.json for translating IDs back to field text and option labels
@@ -1903,14 +1916,20 @@ def _generate_answers_markdown(
 
     for q_info in questions_list:
         q_id = q_info.get("id", "")
+        choice_id = q_info.get("choice_id") or f"{q_id}_choices"
         q_body = q_info.get("body") or q_id
         options_map = q_info.get("options", {})
-        writein_id = q_info.get("writein_id")
+        fallback_writein = f"{q_id}_writein" if q_info.get("write_in") else None
+        writein_id = q_info.get("writein_id") or fallback_writein
         handled_keys.add(q_id)
+        handled_keys.add(choice_id)
         if writein_id:
             handled_keys.add(writein_id)
 
         raw_val = data.get(q_id)
+        if raw_val is None or raw_val == "" or raw_val == []:
+            raw_val = data.get(choice_id)
+
         picked_labels: list[str] = []
         if isinstance(raw_val, list):
             for v in raw_val:
@@ -1918,9 +1937,14 @@ def _generate_answers_markdown(
         elif raw_val is not None and str(raw_val).strip():
             picked_labels.append(str(options_map.get(str(raw_val), raw_val)))
 
-        if writein_id and data.get(writein_id):
-            writein_text = str(data[writein_id]).strip()
-            if writein_text:
+        writein_val = data.get(writein_id) if writein_id else None
+        writein_text = str(writein_val).strip() if writein_val is not None else ""
+        if writein_text:
+            if "Other" in picked_labels:
+                picked_labels = [
+                    f"Other: {writein_text}" if x == "Other" else x for x in picked_labels
+                ]
+            else:
                 picked_labels.append(f"Other: {writein_text}")
 
         lines.append(f"**{q_body}**")
@@ -1934,9 +1958,15 @@ def _generate_answers_markdown(
 
     for k, v in data.items():
         if k not in handled_keys:
+            if v is None or v == "" or v == []:
+                continue
             lines.append(f"**{k}**")
             lines.append("")
-            lines.append(f"> {v}")
+            if isinstance(v, list):
+                for item in v:
+                    lines.append(f"> {item}")
+            else:
+                lines.append(f"> {v}")
             lines.append("")
 
     if context:

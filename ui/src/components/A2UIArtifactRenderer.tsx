@@ -699,8 +699,11 @@ function collectInputSnapshot(container: HTMLElement | null): Record<string, unk
   for (const el of elements) {
     const customEl = el as any;
     const node = customEl.node;
-    const compId = node?.id || customEl.getAttribute?.("data-component-id");
-    const compType = node?.type;
+    const compId =
+      node?.componentId ||
+      customEl.context?.componentModel?.id ||
+      customEl.getAttribute?.("data-component-id");
+    const compType = node?.type || customEl.getAttribute?.("data-component-type");
     if (!compId || !compType) continue;
 
     if (compType === "TextField" || compType === "TextInput") {
@@ -713,7 +716,9 @@ function collectInputSnapshot(container: HTMLElement | null): Record<string, unk
       const isMulti =
         node?.properties?.variant === "multipleSelection" ||
         node?.properties?.isMultiSelect ||
-        customEl.controller?.props?.variant === "multipleSelection";
+        customEl.controller?.props?.variant === "multipleSelection" ||
+        customEl.controller?.props?.isMultiSelect ||
+        customEl.querySelector("input[type='checkbox']") !== null;
       const checkedInputs = Array.from(
         customEl.querySelectorAll("input:checked")
       ) as HTMLInputElement[];

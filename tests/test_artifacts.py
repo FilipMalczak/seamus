@@ -1397,3 +1397,52 @@ def test_read_artifact_submission_tool_absent() -> None:
     report = build_agent_inspect_report(str(agent.id), str(session.id))
     tool_names = [t.name for t in report.tools]
     assert "read_artifact_submission" not in tool_names
+
+
+def test_questionnaire_answers_md_choice_id_and_other_writein(tmp_path: Path) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    q = Question(
+        body="Which database to use?",
+        answers=["PostgreSQL", "SQLite"],
+        multiple_choice=False,
+        write_in=True,
+    )
+    q_uuid = QuestionnaireBuilder.create_questionnaire(
+        artifacts_dir=artifacts_dir,
+        questions=[q],
+        title="DB Choice",
+    )
+    art_dir = artifacts_dir / "questionnaires" / q_uuid
+    schema = json.loads((art_dir / "schema.json").read_text(encoding="utf-8"))
+    q_info = schema["questions"][0]
+    choice_id = q_info["choice_id"]
+    writein_id = q_info["writein_id"]
+
+    # Client sends data keyed by payload component IDs (choice_id and writein_id)
+    submission_data = {
+        choice_id: "other",
+        writein_id: "DuckDB",
+        "empty_unmapped": "",
+        "empty_list_unmapped": [],
+        "extra_note": "Production ready",
+    }
+
+    dispatch_button_click(
+        artifacts_dir=artifacts_dir,
+        family="questionnaires",
+        uuid=q_uuid,
+        button_id="submit_btn",
+        data=submission_data,
+        timestamp="2026-11-11T10:00:00Z",
+    )
+
+    answers_md = art_dir / "answers.md"
+    assert answers_md.is_file()
+    content = answers_md.read_text(encoding="utf-8")
+    assert "**Which database to use?**" in content
+    assert "> Other: DuckDB" in content
+    assert "> Other\n" not in content  # Replaced, not duplicated
+    assert "**extra_note**" in content
+    assert "> Production ready" in content
+    assert "empty_unmapped" not in content
+    assert "empty_list_unmapped" not in content
