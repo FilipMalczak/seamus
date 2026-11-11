@@ -257,6 +257,11 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Predefined artifact builders should accommodate a broader palette of input widgets (color pickers, date pickers, freeform text boxes, file uploads) beyond simple single/multiple-choice questions while preserving atomic generation.
 - **Provenance**: [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [artifacts.md](./artifacts.md).
 
+### A2UI Text Heading Variants Support (`h1`–`h5`) vs Normalization
+- **Description**: `make_artifact` surface validation and normalization currently reject heading variants such as `variant: "h2"` / `"h3"` on `Text` components and rewrite them to `variant: "body"` with markdown heading syntax (`## ...`), despite `a2ui_components/SKILL.md` documenting `h1` through `h5` as valid. Align the A2UI validation schema, component normalization, and skill documentation so agents and builders can reliably author proper section headings without unexpected rewrites.
+- **Rationale**: Agents attempting to structure complex multi-section forms or custom surfaces using standard A2UI heading variants encounter silent rewrites or validation friction. Harmonizing the schema and renderer ensures predictable typography and component declarations.
+- **Provenance**: `src/seamus/harness/artifacts.py`, `src/seamus/skills/bundled/a2ui_components/SKILL.md`, [artifacts.md](./artifacts.md).
+
 ### Review and Audit Plan Mode Implementation
 - **Description**: Conduct a thorough review and audit of the Plan mode and planner implementation (`PlanBuilder`, prompt composition, `make_plan` tool lifecycle, phase transitions, and UI presentation). In particular, evaluate whether the current A2UI structure and tool mechanics provide optimal model steerability, assess how user comments and section-level revisions should be incorporated, and review whether the prompt instructions and sandbox handoff (`/artifacts/plans/<id>/plan.md`) cleanly support execution across long tasks.
 - **Rationale**: Plan mode was quickly composed across multiple iterations (initial mode scaffolding, Adaptive Cards migration, and A2UI decoupling). A dedicated review pass will consolidate lessons learned, eliminate residual rough edges, and prepare the foundation for rich plan commenting and section-level revisions.
