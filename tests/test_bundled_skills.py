@@ -158,7 +158,7 @@ def test_bundled_skills_and_tools_in_inspector() -> None:
     report_tool_names = [t.name for t in report.tools]
     assert "ask" not in report_tool_names
     assert "make_questionnaire" in report_tool_names
-    assert "read_artifact_submission" in report_tool_names
+    assert "read_artifact_submission" not in report_tool_names
 
     # Verify prompt mentions
     assert "artifacts" in report.prompts.composite

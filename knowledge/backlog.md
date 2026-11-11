@@ -78,12 +78,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Revisit Trigger**: When authoring experience reveals repetitive button configuration patterns across custom artifacts.
 - **Provenance**: [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [artifacts.md](./artifacts.md).
 
-### Surface Event Name in `wait_for_click` Output and Context Dispatch
-- **Description**: Incorporate the declarative action event name (e.g. `action.event.name` from `body.json`) into the `ClickResult` returned by `wait_for_click`, persisted interaction files, and synthetic unblocking messages.
-- **Why Deferred**: Interaction dispatch currently relies on button ID and evaluated context payload; event name is ignored in initial persistence to keep state transitions minimal.
-- **Revisit Trigger**: When multiple buttons dispatch distinct event names sharing identical IDs or when backend event routing requires semantic event classification.
-- **Provenance**: [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [artifacts.md](./artifacts.md).
-
 ### Synthetic Tool Call Injection for Blocking Artifact Unblocks
 - **Description**: Investigate synthetic tool call injection (e.g. injecting a synthetic `wait_for_click` tool call and tool result pair) into the model's message trajectory instead of injecting a synthetic user message (`<SYNTHETIC MESSAGE INDICATOR>`) when an agent finishes a blocking turn without calling `wait_for_click`.
 - **Why Deferred**: Synthetic user messages avoid manipulating tool call history in provider-specific LLM adapters, but synthetic tool call injection might feel more natural to the model's tool-use reasoning loop.

@@ -1385,7 +1385,17 @@ export function useThreadStream(
   const submitArtifactHandler = useCallback(
     async (artifact: ArtifactInfo, data: Record<string, unknown>) => {
       if (!agentId || !sessionId) return;
-      const { button_id, buttonId, action, ...contextData } = data;
+      const {
+        button_id,
+        buttonId,
+        action,
+        event,
+        timestamp,
+        context,
+        data: inputData,
+        comments,
+        ...rest
+      } = data;
       const effectiveButtonId =
         (button_id as string) ||
         (buttonId as string) ||
@@ -1395,10 +1405,16 @@ export function useThreadStream(
       const uuid = artifact.uuid || artifact.name;
 
       try {
-        await clickArtifact(agentId, sessionId, family, uuid, effectiveButtonId, contextData);
+        await clickArtifact(agentId, sessionId, family, uuid, effectiveButtonId, {
+          event: (event as string) || (action as string) || effectiveButtonId,
+          timestamp: (timestamp as string) || new Date().toISOString(),
+          context: (context as Record<string, unknown>) || rest,
+          data: (inputData as Record<string, unknown>) || {},
+          comments: (comments as Array<Record<string, unknown>>) || [],
+        });
       } catch (err) {
         console.warn("clickArtifact failed, attempting fallback to submitArtifact:", err);
-        await submitArtifact(agentId, sessionId, family, uuid, contextData);
+        await submitArtifact(agentId, sessionId, family, uuid, rest);
       }
 
       try {

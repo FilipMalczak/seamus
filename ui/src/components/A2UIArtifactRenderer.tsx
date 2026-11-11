@@ -328,6 +328,20 @@ function normalizeComponents(components: any): Array<Record<string, any>> {
           context: {},
         },
       };
+      if (
+        action.event &&
+        typeof action.event === "object" &&
+        action.event.context &&
+        typeof action.event.context === "object"
+      ) {
+        const cleanContext: Record<string, any> = {};
+        for (const [k, v] of Object.entries(action.event.context)) {
+          if (!(v && typeof v === "object" && "path" in (v as any))) {
+            cleanContext[k] = v;
+          }
+        }
+        action.event.context = cleanContext;
+      }
 
       if (!c.child || typeof c.child !== "string") {
         const labelText = c.label || c.text || c.title || c.id || "Button";
@@ -677,6 +691,74 @@ export function A2UIArtifactRenderer({
     };
   });
 
+function collectInputSnapshot(container: HTMLElement | null): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  if (!container) return result;
+
+  const elements = Array.from(container.querySelectorAll("*"));
+  for (const el of elements) {
+    const customEl = el as any;
+    const node = customEl.node;
+    const compId = node?.id || customEl.getAttribute?.("data-component-id");
+    const compType = node?.type;
+    if (!compId || !compType) continue;
+
+    if (compType === "TextField" || compType === "TextInput") {
+      const input = customEl.querySelector("input, textarea") as HTMLInputElement | HTMLTextAreaElement | null;
+      result[compId] = input ? input.value : (customEl.controller?.props?.value ?? "");
+    } else if (compType === "CheckBox") {
+      const checkbox = customEl.querySelector("input[type='checkbox']") as HTMLInputElement | null;
+      result[compId] = checkbox ? checkbox.checked : Boolean(customEl.controller?.props?.value);
+    } else if (compType === "ChoicePicker" || compType === "ChoiceSet") {
+      const isMulti =
+        node?.properties?.variant === "multipleSelection" ||
+        node?.properties?.isMultiSelect ||
+        customEl.controller?.props?.variant === "multipleSelection";
+      const checkedInputs = Array.from(
+        customEl.querySelectorAll("input:checked")
+      ) as HTMLInputElement[];
+      const selectedChips = Array.from(
+        customEl.querySelectorAll(".a2ui-chip-selected")
+      ) as HTMLElement[];
+
+      if (isMulti) {
+        const vals: string[] = [];
+        checkedInputs.forEach((inp) => {
+          if (inp.value) vals.push(inp.value);
+        });
+        selectedChips.forEach((chip) => {
+          const v = chip.getAttribute("data-value") || chip.textContent?.trim();
+          if (v && !vals.includes(v)) vals.push(v);
+        });
+        result[compId] = vals;
+      } else {
+        const checkedRadio = customEl.querySelector("input[type='radio']:checked") as HTMLInputElement | null;
+        const select = customEl.querySelector("select") as HTMLSelectElement | null;
+        if (checkedRadio) {
+          result[compId] = checkedRadio.value;
+        } else if (select) {
+          result[compId] = select.value;
+        } else if (checkedInputs.length > 0) {
+          result[compId] = checkedInputs[0].value;
+        } else if (selectedChips.length > 0) {
+          result[compId] =
+            selectedChips[0].getAttribute("data-value") || selectedChips[0].textContent?.trim() || "";
+        } else {
+          result[compId] = customEl.controller?.props?.value ?? "";
+        }
+      }
+    } else if (compType === "Slider") {
+      const slider = customEl.querySelector("input[type='range']") as HTMLInputElement | null;
+      result[compId] = slider ? Number(slider.value) : Number(customEl.controller?.props?.value ?? 0);
+    } else if (compType === "DateTimeInput") {
+      const dt = customEl.querySelector("input") as HTMLInputElement | null;
+      result[compId] = dt ? dt.value : (customEl.controller?.props?.value ?? "");
+    }
+  }
+
+  return result;
+}
+
   // Initialize A2UI MessageProcessor surface
   useEffect(() => {
     injectStyles();
@@ -711,25 +793,61 @@ export function A2UIArtifactRenderer({
         return;
       }
 
-      const evaluatedContext: Record<string, unknown> = { ...(action.context || {}) };
-      if (
-        curIsCommentable &&
-        (curComments.length > 0 || buttonId === "review_btn" || buttonId === "review-btn")
-      ) {
-        evaluatedContext.comments = curComments.map((c) => ({
+      // 1. Gather static context
+      const rawCtx = (action.context || {}) as Record<string, unknown>;
+      const staticContext: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(rawCtx)) {
+        if (!(v && typeof v === "object" && "path" in (v as any))) {
+          staticContext[k] = v;
+        }
+      }
+
+      const bodyComp = (curArtifact.body || []).find((c) => c && c.id === buttonId);
+      const btnAction = (bodyComp as any)?.action as any;
+      if (btnAction?.event?.context && typeof btnAction.event.context === "object") {
+        for (const [k, v] of Object.entries(btnAction.event.context)) {
+          if (!(v && typeof v === "object" && "path" in (v as any))) {
+            staticContext[k] = v;
+          }
+        }
+      }
+
+      // 2. Snapshot all input widgets from the DOM container
+      const inputSnapshot = collectInputSnapshot(contentContainerRef.current);
+
+      // 3. Comments handling
+      let attachedComments: Array<Record<string, unknown>> | undefined;
+      const isPushComments =
+        btnAction?.comments === "push" ||
+        buttonId === "review_btn" ||
+        buttonId === "review-btn" ||
+        (curIsCommentable && curComments.length > 0);
+      if (isPushComments && curComments.length > 0) {
+        attachedComments = curComments.map((c) => ({
           location: c.location,
           selectedText: c.selectedText,
           comment: c.comment,
         }));
       }
 
+      const eventName =
+        action.name ||
+        btnAction?.event?.name ||
+        buttonId;
+
+      const clickPayload: Record<string, unknown> = {
+        button_id: buttonId,
+        event: eventName,
+        timestamp: new Date().toISOString(),
+        ...(Object.keys(staticContext).length > 0 ? { context: staticContext } : {}),
+        ...(Object.keys(inputSnapshot).length > 0 ? { data: inputSnapshot } : {}),
+        ...(attachedComments && attachedComments.length > 0 ? { comments: attachedComments } : {}),
+      };
+
       try {
-        curOnClickButton?.(buttonId, evaluatedContext);
-        const submitPromise = curOnSubmit?.({
-          button_id: buttonId,
-          ...evaluatedContext,
-        });
-        if (buttonId === "review_btn" || buttonId === "review-btn") {
+        curOnClickButton?.(buttonId, clickPayload);
+        const submitPromise = curOnSubmit?.(clickPayload);
+        if (isPushComments) {
           setComments([]);
         }
         if (submitPromise && typeof (submitPromise as any).catch === "function") {

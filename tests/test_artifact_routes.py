@@ -178,12 +178,14 @@ async def test_artifact_click_closes_and_updates_state(tmp_path: Any, monkeypatc
 
         # Check interaction file was written
         q_dir = artifacts_dir / "questionnaires" / "q-456"
-        interaction_file = q_dir / "interactions" / "submit.json"
+        interaction_file = q_dir / "interactions" / "submit.jsonl"
         assert interaction_file.is_file()
         import json
 
-        data_content = json.loads(interaction_file.read_text())
-        assert data_content["backgroundColor"] == "blue"
+        lines = [line for line in interaction_file.read_text().strip().splitlines() if line]
+        assert len(lines) == 1
+        data_content = json.loads(lines[0])
+        assert data_content["context"]["backgroundColor"] == "blue"
 
         # Check closed marker was written
         marker_file = q_dir / "closed.marker"
@@ -193,4 +195,4 @@ async def test_artifact_click_closes_and_updates_state(tmp_path: Any, monkeypatc
         state_file = q_dir / "state.json"
         state_data = json.loads(state_file.read_text())
         assert state_data["clicksLeft"]["submit"] == 0
-        assert state_data["dataModel"]["backgroundColor"] == "blue"
+        assert state_data["last_event"]["context"]["backgroundColor"] == "blue"

@@ -193,8 +193,9 @@ stateDiagram-v2
 
 Move beyond text chat. Seamus implements the open **A2UI (Adaptive Agent User Interface) v1.0** standard to render dynamic, interactive components directly in the browser:
 
-- **Direct Filesystem Persistence**: Artifacts are stored under `<session_workspace>/artifacts/<family>/<uuid>/`, capturing `manifest.json`, `body.json`, `state.json`, and per-button evaluated interaction files.
-- **Embedded Questionnaires (`make_questionnaire`)**: Rendered directly in the chat stream with `blocking=true`. The agent calls `wait_for_click`, pausing execution until the user selects chips, radio options, or fills in text inputs.
+- **Direct Filesystem Persistence**: Artifacts are stored under `<session_workspace>/artifacts/<family>/<uuid>/`, capturing `manifest.json`, `body.json`, pretty-printed `state.json` (recording `state.last_event`), untrimmed event logs (`/interactions/<button_id>.jsonl`), and auxiliary `answers.md` for question-centric artifacts.
+- **Automatic Input Snapshots & Static Context**: Interactive buttons automatically capture a value snapshot of all interactive input widgets across the surface into event `data` on click without requiring manual context definitions. Dynamic context pointers (`{path: ...}`) on button actions are disallowed and automatically dropped during normalization with educational mutation logs, while non-dynamic static context (such as `{approved: true}`) is preserved.
+- **Embedded Questionnaires (`make_questionnaire`)**: Rendered directly in the chat stream with `blocking=true`. The agent calls `wait_for_click`, pausing execution until the user selects chips, radio options, or fills in text inputs. Answers and context are summarized automatically into `answers.md`.
 - **Tabbed Forms (`make_form`)**: Non-blocking forms rendered in dedicated workspace tabs for complex configuration input while the agent continues background tasks.
 - **Interactive Implementation Plans (`make_plan`)**: Markdown-rendered plan artifacts with section-level inline commenting, approval indicators, and the interactive **Proceed** action.
 - **Auto-Repair & Normalization**: The harness includes automatic component tree normalization (`normalize_a2ui_components`), button declaration auto-synthesis, pre-render surface validation, and structural warning checks to ensure invalid LLM UI JSON never breaks the frontend.

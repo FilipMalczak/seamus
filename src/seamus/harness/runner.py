@@ -568,12 +568,6 @@ class WaitForClickInput(BaseModel):
     )
 
 
-class ReadArtifactSubmissionInput(BaseModel):
-    """Input schema for read_artifact_submission tool (deprecated)."""
-
-    artifact_id: str = Field(description="UUID of the questionnaire, form, or plan artifact.")
-
-
 class PlanTransitionInput(BaseModel):
     """Input schema for the plan() phase transition tool."""
 
@@ -899,17 +893,6 @@ class SessionAgentRunner:
             args_schema=WaitForClickInput,
         )
 
-        read_sub_tool = StructuredTool.from_function(
-            name="read_artifact_submission",
-            description=(
-                "Read the canonical user-submitted data model for a questionnaire or form "
-                "artifact. Calling this on a non-blocking artifact promotes it to blocking. "
-                "Cannot be called in the same turn that created the artifact."
-            ),
-            func=self.handle_read_artifact_submission,
-            args_schema=ReadArtifactSubmissionInput,
-        )
-
         plan_tool = StructuredTool.from_function(
             name="plan",
             description=(
@@ -966,7 +949,6 @@ class SessionAgentRunner:
             make_questionnaire_tool,
             make_form_tool,
             wait_for_click_tool,
-            read_sub_tool,
             plan_tool,
             make_plan_tool,
             update_plan_tool,
@@ -2076,65 +2058,6 @@ class SessionAgentRunner:
             )
         return new_thread
 
-    def handle_read_artifact_submission(self, artifact_id: str) -> str:
-        """Read the canonical user submission for a questionnaire, form, or plan artifact.
-
-        If called for an open non-blocking artifact (cadence=nonblocking),
-        that artifact instance is promoted to cadence=blocking.
-        """
-        is_same_turn = artifact_id in self._turn_created_artifact_ids
-        if is_same_turn:
-            msg = (
-                f"Cannot read artifact submission for artifact '{artifact_id}' in the same "
-                f"turn it was created. The artifact must first be submitted "
-                f"by the user in a subsequent turn."
-            )
-            raise ValueError(msg)
-
-        ws_mgr = get_workspace_manager()
-        artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
-        resolver = ArtifactResolver(artifacts_dir)
-
-        matched_kind = "questionnaires"
-        for candidate_kind in ("questionnaires", "forms", "plans"):
-            if (artifacts_dir / candidate_kind / artifact_id).is_dir():
-                matched_kind = candidate_kind
-                break
-
-        # If open and non-blocking, promote instance manifest to blocking
-        inst_dir = artifacts_dir / matched_kind / artifact_id
-        if inst_dir.is_dir() and not resolver.is_closed(matched_kind, artifact_id):
-            try:
-                manifest = resolver.load_manifest(matched_kind, artifact_id)
-                if not manifest.blocking:
-                    promoted = manifest.model_copy(update={"blocking": True})
-                    (inst_dir / "manifest.json").write_text(
-                        promoted.model_dump_json(indent=2),
-                        encoding="utf-8",
-                    )
-                    self.broadcaster.broadcast_sync(
-                        {
-                            "type": "ARTIFACT_UPDATED",
-                            "artifact_id": artifact_id,
-                            "kind": matched_kind,
-                        }
-                    )
-            except Exception:
-                logger.exception(
-                    "Failed to promote artifact %s/%s to blocking",
-                    matched_kind,
-                    artifact_id,
-                )
-
-        data_path = resolver.resolve_file(matched_kind, artifact_id, "submission.json")
-        if not data_path or not data_path.is_file():
-            return json.dumps({"data": {}, "status": "pending"})
-        try:
-            loaded = json.loads(data_path.read_text(encoding="utf-8"))
-            return json.dumps({"data": loaded})
-        except Exception as exc:
-            return json.dumps({"error": str(exc), "data": {}})
-
     def has_open_blocking_artifact(self) -> bool:
         """Check if the session currently has any open artifact with blocking=True."""
         try:
@@ -2150,7 +2073,12 @@ class SessionAgentRunner:
         family: str,
         uuid: str,
         button_id: str,
-        context: dict[str, Any],
+        context: dict[str, Any] | None = None,
+        *,
+        event: str | None = None,
+        timestamp: str | None = None,
+        data: dict[str, Any] | None = None,
+        comments: list[dict[str, Any]] | None = None,
     ) -> ClickResult:
         """Process an artifact button click, update state/interactions, and handle resumption."""
         async with self._lock:
@@ -2174,7 +2102,17 @@ class SessionAgentRunner:
                 raise ValueError(msg)
 
             # Record click and update state.json
-            click_res = dispatch_button_click(artifacts_dir, family, uuid, button_id, context)
+            click_res = dispatch_button_click(
+                artifacts_dir,
+                family,
+                uuid,
+                button_id,
+                context=context,
+                event=event,
+                timestamp=timestamp,
+                data=data,
+                comments=comments,
+            )
 
             thread = self.session.get_open_thread()
             art_click = {
@@ -2182,7 +2120,11 @@ class SessionAgentRunner:
                 "family": family,
                 "uuid": uuid,
                 "button_id": button_id,
-                "context": context,
+                "event": click_res.event,
+                "timestamp": click_res.timestamp,
+                "context": click_res.context,
+                "data": click_res.data,
+                "comments": click_res.comments,
             }
             thread.append_event(art_click)
             await self.broadcaster.broadcast(art_click)
@@ -2292,7 +2234,7 @@ class SessionAgentRunner:
 
             # If agent is idle / turn completed, notify agent with synthetic message
             if self.is_awaiting_user():
-                payload_str = json.dumps(context)
+                payload_str = json.dumps(click_res.model_dump(exclude_none=True))
                 synthetic_msg = (
                     f"{SYNTHETIC_MESSAGE_INDICATOR} User clicked '{button_id}' on artifact "
                     f"'{uuid}' with payload: {payload_str}"

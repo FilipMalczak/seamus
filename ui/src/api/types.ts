@@ -172,15 +172,20 @@ export interface ArtifactManifest {
 }
 
 export interface ArtifactState {
-  dataModel: Record<string, unknown>;
+  last_event?: Record<string, unknown> | null;
+  dataModel?: Record<string, unknown>;
   clicksLeft: Record<string, number | "*">;
 }
 
 export interface ClickResult {
   artifact_id: string;
   button_id: string;
-  context: Record<string, unknown>;
-  timestamp: number;
+  event?: string;
+  timestamp: string | number;
+  context?: Record<string, unknown>;
+  data?: Record<string, unknown>;
+  comments?: Array<Record<string, unknown>>;
+  raw_context?: Record<string, unknown>;
 }
 
 export interface ArtifactInfo {

@@ -35,23 +35,25 @@ All artifacts are persisted within the session workspace under `<session_dir>/ar
     └── <uuid>/                   # Unique artifact identifier (UUIDv4)
         ├── manifest.json         # Presentation, blocking cadence, and button rules
         ├── body.json             # Declarative A2UI component list
-        ├── state.json            # Accumulated dataModel and remaining click counters
+        ├── state.json            # Pretty-printed state (last_event snapshot and remaining clicks)
+        ├── answers.md            # (Question-centric) Markdown summary of user answers and context
         ├── schema.json           # (Optional) Domain schema mapping IDs to original text/labels
         ├── closed.marker         # Marker file indicating artifact is closed (empty or non-empty)
-        └── interactions/         # Evaluated button click payloads
-            ├── <button_id_1>.json
-            └── <button_id_2>.json
+        └── interactions/         # Evaluated button click event logs
+            ├── <button_id_1>.jsonl
+            └── <button_id_2>.jsonl
 ```
 
 ### Specialized Family Extensions
 
-The artifact filesystem layout is intentionally open to family-specific extensions rather than forcing family metadata into runtime state or ad-hoc data models. Specialized artifact families may store supplementary read-only definition files alongside the core files:
-- `schema.json`: In `questionnaires` and `forms`, stores the original prompts, option label dictionaries, and write-in specifications. The harness uses `schema.json` upon button dispatch to translate submitted component keys and choice slugs back into human-readable question text and user-facing labels for agent consumption, cleanly separating presentation mapping from runtime `dataModel`.
+The artifact filesystem layout is intentionally open to family-specific extensions rather than forcing family metadata into runtime state or ad-hoc data models. Specialized artifact families may store supplementary files alongside the core files:
+- `schema.json`: In `questionnaires` and `forms`, stores the original prompts, option label dictionaries, and write-in specifications.
+- `answers.md`: Automatically generated and maintained in `questionnaires` and `forms` upon button click dispatch. It formats the latest answer snapshot (`state.last_event.data`) and static context into human-readable Markdown with submitted timestamps, picked answer labels, write-ins, and optional comments.
 
 ### Persistence Invariants
 
 - **INV-ART-001 (No Deletion)**: Artifact files and directories are never deleted during normal operation.
-- **INV-ART-002 (Replace vs. Append)**: State files (`manifest.json`, `body.json`, `state.json`) and `mode="set"` interaction files are modified only by complete content replacement. Interaction files with `mode="append"` are modified by appending single-line JSON records (JSONL).
+- **INV-ART-002 (Append-Only Interaction JSONL & Pretty-Printed State)**: State files (`manifest.json`, `body.json`, `state.json`) are modified by complete content replacement (with `state.json` always pretty-printed with 2-space indentation). All button interaction files in `/interactions/<button_id>.jsonl` are append-only JSONL files preserving the exact, untrimmed event history.
 - **INV-ART-003 (Co-existence on Creation & Unusable State)**: `body.json` must exist before or at the exact instant `manifest.json` is created. If `manifest.json` is detected without `body.json`, harness validation fails and artifact initialization is aborted. This leaves the agent turn in an unusable `ERROR` state; recovery requires the user to branch the session off a prior turn (typically reverting the tool call that attempted artifact creation so the agent can retry).
 - **INV-ART-004 (Closure Marker)**: An artifact is closed if and only if `closed.marker` exists in its instance directory. The contents of `closed.marker` are ignored (can be empty).
 - **INV-ART-005 (Closure Presentation Semantics & Changes Tab Guard)**:
@@ -78,7 +80,6 @@ The manifest defines artifact metadata, presentation rules, conversation blockin
   "buttons": [
     {
       "id": "submit_btn",
-      "mode": "set",
       "clicks": 1,
       "unblocking": true,
       "closing": true
@@ -102,7 +103,6 @@ The manifest defines artifact metadata, presentation rules, conversation blockin
 ```json
 {
   "id": "string",
-  "mode": "set" | "append",
   "clicks": 1 | "*",
   "unblocking": false,
   "closing": false
@@ -112,10 +112,12 @@ The manifest defines artifact metadata, presentation rules, conversation blockin
 | Field | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `id` | `string` | *(Required)* | Unique button identifier matching the component ID in `body.json`. |
-| `mode` | `"set"` \| `"append"` | *(Required)* | Storage format in `/interactions/<id>.json`. `"set"` overwrites with pretty-printed JSON. `"append"` appends a JSONL record. |
 | `clicks` | `int` \| `"*"` | `"*"` | Number of clicks allowed before the button becomes inactive. Must be a positive integer (`>= 1`) or `"*"` (unlimited). Non-positive integers (`<= 0`) are disallowed in `manifest.json` and will fail manifest validation upon creation. |
 | `unblocking` | `boolean` | `false` | If `true`, clicking this button unblocks the conversation if the artifact is `blocking: true`. Ignored if artifact is non-blocking. |
 | `closing` | `boolean` | `false` | If `true`, clicking this button closes the artifact (creates `closed.marker`). **Note:** Closing implicitly triggers unblocking. |
+
+> **Note on Button Behavior**:
+> Legacy `mode: "set" | "append"` has been removed from button behavior. All button clicks append raw structured events to `interactions/<button_id>.jsonl` as JSON lines without trimming.
 
 > **Button Whitelisting, Inactivity, and Security Rules**:
 > 1. **Visibly Disabled State (`clicksLeft <= 0`)**: For buttons listed in `manifest.json.buttons` whose remaining quota in `state.json` reaches `0` (or negative, if edited externally in Git), the frontend renders the button in a **visibly disabled state** (grayed out, unclickable).
@@ -172,12 +174,25 @@ The manifest defines artifact metadata, presentation rules, conversation blockin
 ]
 ```
 
-### Action Context Evaluation
+### Action Context and Input Snapshot
 
-When a button with an `action.event` is clicked:
-1. The frontend evaluates each path expression in `action.event.context` against the local UI state tree.
-2. The evaluated key-value dictionary is submitted to the harness as the event context payload (e.g. `{"projectName": "Seamus"}`).
-3. The event name (e.g. `"submit_form"`) is currently ignored by the dispatch pipeline (see Deferred Backlog).
+When an interactive button is clicked:
+1. **Input Snapshot (`data`)**: The frontend collects a snapshot of all interactive input widgets across the surface by value (e.g. `TextField`, `ChoicePicker`, checkboxes). Unchecked checkboxes evaluate to `false`, and multi-select pickers evaluate to arrays of selected values.
+2. **Static Context (`context`)**: If the button declares static, non-dynamic context (such as `{"approved": true}` or `{"role": "admin"}`), it is preserved and forwarded. Dynamic context pointers (`{"path": ...}`) on button action context are **disallowed**; they are automatically dropped during artifact normalization with a notice in the tool output.
+3. **Event Name (`event`)**: Taken from `button.action.event.name`. If absent or empty, it falls back to `button.id`.
+4. **Timestamp (`timestamp`)**: Evaluated at click time as an ISO 8601 string including timezone offset for exactness.
+5. **Comments (`comments`)**: Review comments collected on the surface are included if `action: { comments: "push" }`.
+
+The outbound payload sent from the UI to the backend:
+```json
+{
+  "event": "submit_btn",
+  "timestamp": "2026-11-11T12:00:00+01:00",
+  "context": { "approved": true },
+  "data": { "projectName": "Seamus" },
+  "comments": []
+}
+```
 
 ---
 
@@ -187,13 +202,23 @@ Artifact state is initialized automatically by the harness upon artifact creatio
 
 ### State Schema (`state.json`)
 
+The legacy `state.dataModel` has been replaced by `state.last_event`. `state.json` is always persisted in pretty-printed JSON (2-space indent):
+
 ```json
 {
-  "dataModel": {},
+  "last_event": {
+    "event": "submit_btn",
+    "timestamp": "2026-11-11T12:00:00+01:00",
+    "context": {
+      "approved": true
+    },
+    "data": {
+      "projectName": "Seamus"
+    }
+  },
   "clicksLeft": {
-    "submit_btn": 1,
-    "refresh_btn": "*",
-    "exhausted_btn": 0
+    "submit_btn": 0,
+    "review_btn": "*"
   }
 }
 ```
@@ -204,7 +229,7 @@ Artifact state is initialized automatically by the harness upon artifact creatio
 
 1. Harness detects creation of `manifest.json` and validates presence of `body.json`.
 2. Initial `state.json` is written:
-   - `dataModel`: Initialized to empty dictionary `{}`.
+   - `last_event`: Initialized to `null`.
    - `clicksLeft`: Initialized from `manifest.json.buttons`, mapping each button `id` to its configured `clicks` value (integer or `"*"`).
 3. The artifact is exposed in the Web UI:
    - If `exposition="embedded"`, added as an inline message item.
@@ -213,44 +238,46 @@ Artifact state is initialized automatically by the harness upon artifact creatio
 
 ### Click Execution Lifecycle
 
-In the Web UI:
-- Buttons with `clicksLeft <= 0` are rendered in a **visibly disabled state** (grayed out and non-clickable).
-- When an enabled button is clicked, or an event is dispatched to the harness:
+When an enabled button is clicked:
+1. Validate `button_id` against `manifest.buttons` and verify quota in `state.clicksLeft`.
+2. Assemble raw structured event: `{ event, timestamp, context?, data?, comments? }`.
+3. Append single line to `/interactions/<button_id>.jsonl` (untrimmed chronological history).
+4. Decrement remaining click quota (if integer).
+5. Overwrite `state.json` with `state.last_event = new_event` (pretty-printed with 2-space indent).
+6. If `closing: true`, create `closed.marker`.
+7. For question-centric artifacts (`questionnaires` and `forms`), generate or update `<artifact_dir>/answers.md`.
+8. Unblock UI if `unblocking: true` or `closing: true`.
+9. Wake agent awaiting click via `wait_for_click`, or inject synthetic user notification.
 
-```mermaid
-flowchart TD
-    Click["User Dispatches Button Click"] --> Whitelist{"Button ID in manifest.buttons?"}
-    Whitelist -- No --> LogWarning["Log Warning & Drop Event (Ignored)"]
-    Whitelist -- Yes --> CheckQuota{"clicksLeft > 0 or '*'?"}
-    CheckQuota -- No --> Drop["Drop Event (Button Inactive)"]
-    CheckQuota -- Yes --> Eval["Evaluate Context Paths against UI State"]
-    Eval --> WriteInteraction["Write /interactions/<id>.json\n(Overwrite if 'set', Append line if 'append')"]
-    WriteInteraction --> DecQuota["Decrement clicksLeft in state.json (if int)\nDisable Button in UI if <= 0"]
-    DecQuota --> UpdateDataModel["Update state.json dataModel with Click Context"]
-    UpdateDataModel --> CheckUnblock{"unblocking == true or closing == true?"}
-    CheckUnblock -- Yes --> UnblockUI["Unblock Chat Input (if blocking)"]
-    CheckUnblock -- No --> CheckClose
-    UnblockUI --> CheckClose{"closing == true?"}
-    CheckClose -- Yes --> WriteMarker["Create closed.marker\nCollapse / Remove Tab / Lock Changes Tab"]
-    CheckClose -- No --> WakeWaiting{"Agent awaiting click via wait_for_click?"}
-    WriteMarker --> WakeWaiting
-    WakeWaiting -- Yes --> ResumeAgent["Resume Agent with Click Result"]
-    WakeWaiting -- No --> SendSynthetic["Inject Synthetic User Message\n(<SYNTHETIC MESSAGE INDICATOR>)"]
+### Auxiliary Answers Document (`answers.md`)
+
+For question-centric families (`questionnaires` and `forms`), the harness translates component identifiers and option keys back to human-readable question text and chosen labels using `schema.json`, writing `<artifact_dir>/answers.md`:
+
+```markdown
+# <Artifact Name>: user answers
+
+`submitted: 2026-11-11 12:00:00 UTC+01:00`
+
+## Answers
+
+**Primary language?**
+
+> Python
+> Other: With PyPy support
+
+**Target platforms?**
+
+> Linux
+> macOS
+
+## Context
+
+```json
+{
+  "approved": true
+}
 ```
-
-### DataModel Accumulation Scenario
-
-Multiple button clicks incrementally build up `dataModel`:
-
-- Form text fields: `A`, `B`, `C`.
-- Button `X` (`mode="set"`): context `{ "A": path(A), "B": path(B) }`.
-- Button `Y` (`mode="set"`): context `{ "B": path(B), "C": path(C) }`.
-
-| Step | User Action | Interaction File Written | `state.json` `dataModel` | Notes |
-| :--- | :--- | :--- | :--- | :--- |
-| 1 | Fields set: `A=A1`, `B=B1`, `C=C1`. Click `X`. | `interactions/X.json` = `{"A": "A1", "B": "B1"}` | `{"A": "A1", "B": "B1"}` | `X` writes `A` and `B`. |
-| 2 | Field updated: `B=B2`. Click `Y`. | `interactions/Y.json` = `{"B": "B2", "C": "C1"}` | `{"A": "A1", "B": "B2", "C": "C1"}` | `B` updated to `B2`; `C` added as `C1`. |
-| 3 | Fields updated: `A=A2`, `B=B3`. Click `Y`. | `interactions/Y.json` = `{"B": "B3", "C": "C1"}` | `{"A": "A1", "B": "B3", "C": "C1"}` | `A` was not in `Y`'s context; `A` remains `A1` in `dataModel`. |
+```
 
 ---
 
@@ -331,7 +358,7 @@ def make_questionnaire(questions: list[Question]) -> str:
       - family: 'questionnaires'
       - exposition: 'embedded'
       - blocking: True
-      - buttons: single submit button with mode='set', clicks='*',
+      - buttons: single submit button with clicks='*',
                  unblocking=True, closing=True.
     """
 ```
@@ -344,7 +371,7 @@ Effectively the same structure as `make_questionnaire`, but configured for a tab
   - `family: "forms"`
   - `exposition: "tabbed"` (renders in a dedicated sidebar tab)
   - `blocking: False` (non-blocking, allowing continued conversational dialogue while the form remains editable in its tab)
-  - `buttons`: submit button with `mode="set"`, `clicks="*"`, `unblocking=False`, `closing=True`.
+  - `buttons`: submit button with `clicks="*"`, `unblocking=False`, `closing=True`.
 
 ### 4. `make_plan`
 Specialized template over `make_artifact` for session implementation plans.
@@ -362,7 +389,7 @@ def make_plan(
       - blocking: False
       - commentable: True (enables inline text selection and review comments)
       - buttons:
-          - proceed_btn: mode='set', clicks='*', unblocking=True, closing=True
+          - proceed_btn: clicks='*', unblocking=True, closing=True
           - review_btn: action={"comments": "push"} for inline comment submission
     Writes:
       - /artifacts/plans/<uuid>/manifest.json
@@ -378,8 +405,11 @@ Explicit agent wait tool realizing Human-in-the-Loop suspension.
 class ClickResult(BaseModel):
     artifact_id: str
     button_id: str
-    context: dict[str, Any]
-    timestamp: float  # Last modification timestamp (mtime) of the interaction file
+    event: str | None = None
+    timestamp: str | None = None
+    context: dict[str, Any] | None = None
+    data: dict[str, Any] | None = None
+    comments: list[dict[str, Any]] | None = None
 
 
 def wait_for_click(
@@ -397,7 +427,7 @@ def wait_for_click(
                otherwise waits for a click.
 
     Returns:
-        ClickResult containing evaluated payload, clicked button ID, and timestamp.
+        ClickResult containing evaluated payload, clicked button ID, timestamp, and optional context/data/comments.
     """
 ```
 

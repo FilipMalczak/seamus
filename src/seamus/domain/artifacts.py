@@ -17,9 +17,6 @@ class ManifestButton(BaseModel):
     """Button configuration declared in an artifact manifest."""
 
     id: str = Field(description="Unique button ID matching component ID in body.json")
-    mode: Literal["set", "append"] = Field(
-        description="Mode for recording click context in /interactions/<id>.json"
-    )
     clicks: int | Literal["*"] = Field(
         default="*",
         description="Allowed clicks before becoming inactive; positive integer or '*'",
@@ -31,6 +28,10 @@ class ManifestButton(BaseModel):
     closing: bool = Field(
         default=False,
         description="Whether clicking this button closes the artifact (implicitly unblocking)",
+    )
+    mode: str | None = Field(
+        default=None,
+        description="Deprecated persistence mode; retained optionally for legacy compatibility",
     )
 
     @field_validator("clicks")
@@ -75,14 +76,23 @@ class ArtifactManifest(BaseModel):
 class ArtifactState(BaseModel):
     """Runtime state accumulated over button interactions and click counters."""
 
-    dataModel: dict[str, Any] = Field(
-        default_factory=dict,
-        description="Accumulated data model from button click context payloads",
+    last_event: dict[str, Any] | None = Field(
+        default=None,
+        description="Latest event snapshot received from a button interaction",
     )
     clicksLeft: dict[str, int | Literal["*"]] = Field(
         default_factory=dict,
         description="Remaining click quotas per button ID (<= 0 indicates inactive)",
     )
+
+    @property
+    def dataModel(self) -> dict[str, Any]:
+        """Transitional accessor for dataModel."""
+        if self.last_event:
+            d = self.last_event.get("data")
+            if isinstance(d, dict):
+                return dict(d)
+        return {}
 
 
 class ClickResult(BaseModel):
@@ -90,15 +100,24 @@ class ClickResult(BaseModel):
 
     artifact_id: str = Field(description="UUID of the clicked artifact")
     button_id: str = Field(description="ID of the button that was clicked")
+    event: str = Field(default="", description="Event name of the button action")
+    timestamp: str | float = Field(description="Timestamp of the interaction")
     context: dict[str, Any] = Field(
         default_factory=dict,
-        description="Evaluated context payload from click event (translated for human/agent)",
+        description="Static context payload defined on the button",
+    )
+    data: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Snapshot of all input widgets on the artifact",
+    )
+    comments: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Review comments attached to the action, if any",
     )
     raw_context: dict[str, Any] = Field(
         default_factory=dict,
         description="Raw context payload with component and choice identifiers",
     )
-    timestamp: float = Field(description="Timestamp of the interaction (file mtime)")
 
 
 class ArtifactInfo(BaseModel):

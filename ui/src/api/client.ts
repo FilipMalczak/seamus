@@ -497,14 +497,27 @@ export async function clickArtifact(
   family: string,
   uuid: string,
   buttonId: string,
-  context: Record<string, unknown> = {}
+  payload: {
+    event?: string;
+    timestamp?: string;
+    context?: Record<string, unknown>;
+    data?: Record<string, unknown>;
+    comments?: Array<Record<string, unknown>>;
+  } = {}
 ): Promise<ClickResult> {
   const res = await fetch(
     `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/artifact/${encodeURIComponent(family)}/${encodeURIComponent(uuid)}/click`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ button_id: buttonId, context }),
+      body: JSON.stringify({
+        button_id: buttonId,
+        event: payload.event || buttonId,
+        timestamp: payload.timestamp || new Date().toISOString(),
+        context: payload.context || {},
+        data: payload.data || {},
+        comments: payload.comments || [],
+      }),
     }
   );
   return handleResponse<ClickResult>(res);

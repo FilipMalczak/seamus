@@ -30,7 +30,6 @@
     "make_questionnaire": ["artifacts", "harness", "seamus", "a2ui"],
     "make_form": ["artifacts", "harness", "seamus", "a2ui"],
     "wait_for_click": ["artifacts", "harness", "seamus"],
-    "read_artifact_submission": ["artifacts", "harness", "seamus"],
     "write_todos": ["planning", "deepagents"],
     "create_todo_item": ["planning", "seamus"],
     "edit_todo_item": ["planning", "seamus"],

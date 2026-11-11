@@ -24,9 +24,19 @@ class ArtifactClickRequest(BaseModel):
     """Payload for clicking an artifact button."""
 
     button_id: str = Field(description="ID of the clicked button")
+    event: str | None = Field(default=None, description="Action event name")
+    timestamp: str | None = Field(default=None, description="ISO timestamp with TZ")
     context: dict[str, Any] = Field(
         default_factory=dict,
-        description="Evaluated context payload from button action event",
+        description="Static context payload from button action event",
+    )
+    data: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Snapshot of input widgets on the artifact",
+    )
+    comments: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Review comments attached to the action",
     )
 
 
@@ -114,6 +124,10 @@ async def click_artifact(
             uuid=uuid,
             button_id=payload.button_id,
             context=payload.context,
+            event=payload.event,
+            timestamp=payload.timestamp,
+            data=payload.data,
+            comments=payload.comments,
         )
     except SessionBusyError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
@@ -161,6 +175,10 @@ async def click_artifact_by_uuid(
             uuid=uuid,
             button_id=payload.button_id,
             context=payload.context,
+            event=payload.event,
+            timestamp=payload.timestamp,
+            data=payload.data,
+            comments=payload.comments,
         )
     except SessionBusyError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc

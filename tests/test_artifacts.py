@@ -83,8 +83,8 @@ def test_artifact_builder_create_artifact(tmp_path: Path) -> None:
         blocking=True,
         commentable=False,
         buttons=[
-            ManifestButton(id="btn_ok", mode="set", clicks=2, unblocking=True),
-            ManifestButton(id="btn_log", mode="append", clicks="*"),
+            ManifestButton(id="btn_ok", clicks=2, unblocking=True),
+            ManifestButton(id="btn_log", clicks="*"),
         ],
     )
     components: list[dict[str, Any]] = [
@@ -108,7 +108,7 @@ def test_artifact_builder_create_artifact(tmp_path: Path) -> None:
     assert not (art_dir / "closed.marker").exists()
 
     state = json.loads((art_dir / "state.json").read_text(encoding="utf-8"))
-    assert state["dataModel"] == {}
+    assert state["last_event"] is None
     assert state["clicksLeft"]["btn_ok"] == 2
     assert state["clicksLeft"]["btn_log"] == "*"
 
@@ -267,12 +267,11 @@ def test_plan_review_button_and_unlimited_clicks(tmp_path: Path) -> None:
     assert components_by_id["review_label"]["component"] == "Text"
     assert components_by_id["review_label"]["text"] == "Review"
 
-    # Verify manifest.json declares review_btn with clicks="*" and mode="append"
+    # Verify manifest.json declares review_btn with clicks="*"
     manifest_data = json.loads((plan_dir / "manifest.json").read_text(encoding="utf-8"))
     btns = {b["id"]: b for b in manifest_data["buttons"]}
     assert "review_btn" in btns
     assert btns["review_btn"]["clicks"] == "*"
-    assert btns["review_btn"]["mode"] == "append"
     assert btns["review_btn"]["closing"] is False
 
     # Dispatch multiple review clicks with comments payload
@@ -282,22 +281,21 @@ def test_plan_review_button_and_unlimited_clicks(tmp_path: Path) -> None:
             family="plans",
             uuid=plan_uuid,
             button_id="review_btn",
-            context={
-                "comments": [
-                    {
-                        "location": "p:0",
-                        "selectedText": "Component A",
-                        "comment": f"Feedback {i + 1}",
-                    }
-                ]
-            },
+            comments=[
+                {
+                    "location": "p:0",
+                    "selectedText": "Component A",
+                    "comment": f"Feedback {i + 1}",
+                }
+            ],
         )
         assert res.button_id == "review_btn"
-        assert len(res.context["comments"]) == 1
-        assert res.context["comments"][0]["comment"] == f"Feedback {i + 1}"
+        assert res.comments is not None
+        assert len(res.comments) == 1
+        assert res.comments[0]["comment"] == f"Feedback {i + 1}"
 
-    # Verify interactions/review_btn.json has 3 appended records
-    int_file = plan_dir / "interactions" / "review_btn.json"
+    # Verify interactions/review_btn.jsonl has 3 appended records
+    int_file = plan_dir / "interactions" / "review_btn.jsonl"
     assert int_file.is_file()
     lines = [line for line in int_file.read_text(encoding="utf-8").strip().splitlines() if line]
     assert len(lines) == 3
@@ -308,10 +306,11 @@ def test_plan_review_button_and_unlimited_clicks(tmp_path: Path) -> None:
     # Verify state.json retains clicks="*" and artifact is not closed
     state_data = json.loads((plan_dir / "state.json").read_text(encoding="utf-8"))
     assert state_data["clicksLeft"]["review_btn"] == "*"
+    assert state_data["last_event"]["comments"][0]["comment"] == "Feedback 3"
     assert not (plan_dir / "closed.marker").exists()
 
 
-def test_dispatch_button_click_modes_and_quotas(tmp_path: Path) -> None:
+def test_dispatch_button_click_quotas_and_jsonl(tmp_path: Path) -> None:
     artifacts_dir = tmp_path / "artifacts"
     manifest = ArtifactManifest(
         name="Counter Test",
@@ -319,8 +318,8 @@ def test_dispatch_button_click_modes_and_quotas(tmp_path: Path) -> None:
         blocking=False,
         commentable=False,
         buttons=[
-            ManifestButton(id="set_btn", mode="set", clicks=2, unblocking=False, closing=False),
-            ManifestButton(id="app_btn", mode="append", clicks=1, unblocking=True, closing=True),
+            ManifestButton(id="set_btn", clicks=2, unblocking=False, closing=False),
+            ManifestButton(id="app_btn", clicks=1, unblocking=True, closing=True),
         ],
     )
     components: list[dict[str, Any]] = [
@@ -343,19 +342,23 @@ def test_dispatch_button_click_modes_and_quotas(tmp_path: Path) -> None:
         family="test_family",
         uuid=uuid,
         button_id="set_btn",
-        context={"val": "first"},
+        data={"val": "first"},
     )
     assert res1.button_id == "set_btn"
-    assert res1.context == {"val": "first"}
+    assert res1.data == {"val": "first"}
 
-    # interactions/set_btn.json should be formatted JSON
-    int_file = art_dir / "interactions" / "set_btn.json"
+    # interactions/set_btn.jsonl should have 1 JSONL record
+    int_file = art_dir / "interactions" / "set_btn.jsonl"
     assert int_file.is_file()
-    assert json.loads(int_file.read_text(encoding="utf-8")) == {"val": "first"}
+    lines1 = [line for line in int_file.read_text(encoding="utf-8").strip().splitlines() if line]
+    assert len(lines1) == 1
+    rec1 = json.loads(lines1[0])
+    assert rec1["event"] == "set_btn"
+    assert rec1["data"] == {"val": "first"}
 
-    # state.json dataModel updated, clicks left decremented to 1
+    # state.json last_event updated, clicks left decremented to 1
     state1 = json.loads((art_dir / "state.json").read_text(encoding="utf-8"))
-    assert state1["dataModel"] == {"val": "first"}
+    assert state1["last_event"]["data"] == {"val": "first"}
     assert state1["clicksLeft"]["set_btn"] == 1
 
     # 2. Click set_btn second time (quota reaches 0)
@@ -364,12 +367,16 @@ def test_dispatch_button_click_modes_and_quotas(tmp_path: Path) -> None:
         family="test_family",
         uuid=uuid,
         button_id="set_btn",
-        context={"val": "second"},
+        data={"val": "second"},
     )
     assert res2.button_id == "set_btn"
     state2 = json.loads((art_dir / "state.json").read_text(encoding="utf-8"))
-    assert state2["dataModel"] == {"val": "second"}
+    assert state2["last_event"]["data"] == {"val": "second"}
     assert state2["clicksLeft"]["set_btn"] == 0
+
+    lines2 = [line for line in int_file.read_text(encoding="utf-8").strip().splitlines() if line]
+    assert len(lines2) == 2
+    assert json.loads(lines2[1])["data"] == {"val": "second"}
 
     # 3. Third click on set_btn fails with ValueError (inactive)
     with pytest.raises(ValueError, match="exhausted its remaining clicks"):
@@ -378,7 +385,7 @@ def test_dispatch_button_click_modes_and_quotas(tmp_path: Path) -> None:
             family="test_family",
             uuid=uuid,
             button_id="set_btn",
-            context={"val": "third"},
+            data={"val": "third"},
         )
 
     # 4. Click unlisted button raises ValueError
@@ -388,21 +395,21 @@ def test_dispatch_button_click_modes_and_quotas(tmp_path: Path) -> None:
             family="test_family",
             uuid=uuid,
             button_id="rogue_btn",
-            context={},
+            data={},
         )
 
-    # 5. Click app_btn (mode=append, closing=True)
+    # 5. Click app_btn (closing=True)
     res_app = dispatch_button_click(
         artifacts_dir=artifacts_dir,
         family="test_family",
         uuid=uuid,
         button_id="app_btn",
-        context={"note": "done"},
+        data={"note": "done"},
     )
     assert res_app.button_id == "app_btn"
-    app_file = art_dir / "interactions" / "app_btn.json"
+    app_file = art_dir / "interactions" / "app_btn.jsonl"
     assert app_file.is_file()
-    assert '{"note": "done"}\n' in app_file.read_text(encoding="utf-8")
+    assert '"note": "done"' in app_file.read_text(encoding="utf-8")
     assert (art_dir / "closed.marker").exists()
 
 
@@ -524,21 +531,19 @@ def test_questionnaire_write_in_and_schema_translation(tmp_path: Path) -> None:
 
     assert len(choice_sets) == 2
     assert len(text_fields) == 1
-    assert choice_sets[0]["value"] == {"path": "/q_1_primary_language"}
+    assert choice_sets[0]["value"] == ""
     # Write-in choice set has "Other" as last choice
     assert choice_sets[0]["choices"][-1]["label"] == "Other"
     assert choice_sets[0]["choices"][-1]["value"] == "other"
-    # Write-in text field is labelless
-    assert text_fields[0]["value"] == {"path": "/q_1_primary_language_writein"}
+    # Write-in text field is labelless and empty string
+    assert text_fields[0]["value"] == ""
     assert text_fields[0]["label"] == ""
 
-    # Action context binds to data model paths
-    ctx = button["action"]["event"]["context"]
-    assert ctx["q_1_primary_language"] == {"path": "/q_1_primary_language"}
-    assert ctx["q_1_primary_language_writein"] == {"path": "/q_1_primary_language_writein"}
-    assert ctx["q_2_target_platforms"] == {"path": "/q_2_target_platforms"}
+    # Button action has no dynamic context paths
+    btn_event = button.get("action", {}).get("event", {})
+    assert "path" not in str(btn_event.get("context", {}))
 
-    # Simulate client submitting raw values (including single-select passed as list)
+    # Simulate client submitting raw values via data snapshot
     raw_submission = {
         "q_1_primary_language": ["python"],
         "q_1_primary_language_writein": "With PyPy support",
@@ -550,26 +555,30 @@ def test_questionnaire_write_in_and_schema_translation(tmp_path: Path) -> None:
         family="questionnaires",
         uuid=q_uuid,
         button_id="submit_btn",
-        context=raw_submission,
+        data=raw_submission,
     )
 
-    # raw_context has single-select unrolled to scalar string
-    assert result.raw_context["q_1_primary_language"] == "python"
-    assert result.raw_context["q_2_target_platforms"] == ["linux", "macos"]
+    # data snapshot contains submitted values
+    assert result.data["q_1_primary_language"] == ["python"]
+    assert result.data["q_1_primary_language_writein"] == "With PyPy support"
+    assert result.data["q_2_target_platforms"] == ["linux", "macos"]
 
-    # context has translated human-readable text and scalar unrolled labels
-    assert result.context["Primary language?"] == {
-        "selection": "Python",
-        "write_in": "With PyPy support",
-    }
-    assert result.context["Target platforms?"] == ["Linux", "macOS"]
-
-    # state.json strictly contains component data paths and NOT duplicate translated questions
+    # state.json strictly contains last_event with data snapshot
     state_data = json.loads((art_dir / "state.json").read_text(encoding="utf-8"))
-    assert "Primary language?" not in state_data["dataModel"]
-    assert "Target platforms?" not in state_data["dataModel"]
-    assert state_data["dataModel"]["q_1_primary_language"] == "python"
-    assert state_data["dataModel"]["q_2_target_platforms"] == ["linux", "macos"]
+    assert state_data["last_event"]["data"]["q_1_primary_language"] == ["python"]
+    assert state_data["last_event"]["data"]["q_2_target_platforms"] == ["linux", "macos"]
+
+    # answers.md generated for questionnaire
+    answers_md = art_dir / "answers.md"
+    assert answers_md.is_file()
+    answers_content = answers_md.read_text(encoding="utf-8")
+    assert "# Stack Questionnaire: user answers" in answers_content
+    assert "**Primary language?**" in answers_content
+    assert "> Python" in answers_content
+    assert "> Other: With PyPy support" in answers_content
+    assert "**Target platforms?**" in answers_content
+    assert "> Linux" in answers_content
+    assert "> macOS" in answers_content
 
 
 def test_validate_a2ui_surface_valid() -> None:
@@ -758,26 +767,13 @@ def test_validate_a2ui_surface_component_properties_and_buttons() -> None:
         for e in errs
     )
 
-    # Action context pointer referencing non-existent component
-    bad_pointer_comps = [
-        {
-            "id": "btn-allowed",
-            "component": "Button",
-            "child": "lbl",
-            "action": {
-                "event": {
-                    "name": "act",
-                    "context": {"x": {"path": "/components/ghost_component/value"}},
-                }
-            },
-        },
-        {"id": "lbl", "component": "Text", "text": "Allowed"},
+    # Component pointer referencing non-existent component
+    bad_comp_pointer = [
+        {"id": "lbl", "component": "Text", "text": {"path": "/components/ghost_component/value"}},
     ]
-    errs_pointer = validate_a2ui_surface(components=bad_pointer_comps, manifest=manifest)
+    errs_comp_pointer = validate_a2ui_surface(components=bad_comp_pointer, manifest=manifest)
     assert any(
-        "Action context pointer '/components/ghost_component/value' references non-existent "
-        "component 'ghost_component'" in e
-        for e in errs_pointer
+        "references non-existent component 'ghost_component'" in e for e in errs_comp_pointer
     )
 
 
@@ -1316,3 +1312,88 @@ def test_uax31_identifier_normalization_and_validation() -> None:
     # 2. validate_a2ui_surface accepts normalized identifiers
     errors = validate_a2ui_surface(components=norm)
     assert errors == []
+
+
+def test_normalize_drops_dynamic_context_preserves_static_context() -> None:
+    raw = [
+        {
+            "id": "btn_submit",
+            "component": "Button",
+            "title": "Submit",
+            "action": {
+                "event": {
+                    "name": "submit_event",
+                    "context": {
+                        "approved": True,
+                        "dynamic_field": {"path": "/inputs/some_field"},
+                        "target_role": "admin",
+                    },
+                }
+            },
+        }
+    ]
+    mutations: list[str] = []
+    norm = normalize_a2ui_components(raw, mutation_log=mutations)
+    btn = next(c for c in norm if c["id"] == "btn_submit")
+    ctx = btn["action"]["event"]["context"]
+    assert "approved" in ctx and ctx["approved"] is True
+    assert "target_role" in ctx and ctx["target_role"] == "admin"
+    assert "dynamic_field" not in ctx
+    assert any(
+        "Dropped dynamic context pointer '{path: ...}' for key 'dynamic_field'" in m
+        for m in mutations
+    )
+
+
+def test_form_answers_markdown_generation(tmp_path: Path) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    fields = [
+        Question(body="Role", answers=["Developer", "Designer", "Manager"]),
+        Question(body="Subscribe to newsletter?", answers=["yes", "no"], multiple_choice=False),
+    ]
+    form_uuid = FormBuilder.create_form(
+        artifacts_dir=artifacts_dir,
+        fields=fields,
+        title="Account Setup",
+    )
+    art_dir = artifacts_dir / "forms" / form_uuid
+    assert (art_dir / "schema.json").is_file()
+
+    # Dispatch submit with data snapshot and static context
+    click_res = dispatch_button_click(
+        artifacts_dir=artifacts_dir,
+        family="forms",
+        uuid=form_uuid,
+        button_id="submit_btn",
+        data={"f_1_role": ["Developer"], "f_2_subscribe_to_newsletter": ["yes"]},
+        context={"approved": True},
+        timestamp="2026-11-11T12:00:00+01:00",
+    )
+    assert click_res.button_id == "submit_btn"
+    assert click_res.context == {"approved": True}
+    assert click_res.data == {"f_1_role": ["Developer"], "f_2_subscribe_to_newsletter": ["yes"]}
+
+    answers_md = art_dir / "answers.md"
+    assert answers_md.is_file()
+    text = answers_md.read_text(encoding="utf-8")
+    assert "# Account Setup: user answers" in text
+    assert "`submitted: 2026-11-11 12:00:00 UTC+01:00`" in text
+    assert "**Role**" in text
+    assert "> Developer" in text
+    assert "**Subscribe to newsletter?**" in text
+    assert "> yes" in text
+    assert "## Context" in text
+    assert '"approved": true' in text
+
+
+def test_read_artifact_submission_tool_absent() -> None:
+    from seamus.harness.inspector import build_agent_inspect_report
+    from seamus.harness.store import get_harness_store
+
+    store = get_harness_store()
+    config = _make_agent_config()
+    agent = store.create_agent(config=config, name="agent-tools-test")
+    session = store.create_session(agent_identifier=str(agent.id), name="session-tools-test")
+    report = build_agent_inspect_report(str(agent.id), str(session.id))
+    tool_names = [t.name for t in report.tools]
+    assert "read_artifact_submission" not in tool_names

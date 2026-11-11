@@ -4,6 +4,7 @@ import json
 import logging
 import re
 from collections.abc import Sequence
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
@@ -282,11 +283,11 @@ def auto_declare_manifest_buttons(
             if isinstance(b_id, str) and b_id not in manifest_button_ids:
                 manifest_button_ids.add(b_id)
                 if isinstance(manifest, ArtifactManifest):
-                    manifest.buttons.append(ManifestButton(id=b_id, mode="set", clicks=1))
+                    manifest.buttons.append(ManifestButton(id=b_id, clicks=1))
                 elif isinstance(manifest, dict):
                     if "buttons" not in manifest or not isinstance(manifest["buttons"], list):
                         manifest["buttons"] = []
-                    manifest["buttons"].append({"id": b_id, "mode": "set", "clicks": 1})
+                    manifest["buttons"].append({"id": b_id, "clicks": 1})
                 if mutation_log is not None:
                     mutation_log.append(f"Auto-declared button '{b_id}' in manifest.buttons.")
 
@@ -575,7 +576,8 @@ def normalize_a2ui_components(
             variant = c.get("variant")
             if variant and variant not in {"default", "primary", "borderless"}:
                 c["variant"] = "default"
-            if not c.get("action"):
+            action = c.get("action")
+            if not action or not isinstance(action, dict):
                 c["action"] = {
                     "event": {
                         "name": str(c.get("id", "button_click")),
@@ -583,6 +585,20 @@ def normalize_a2ui_components(
                     }
                 }
                 record_mutation(f"Auto-generated default action for Button component '{c['id']}'.")
+            else:
+                event = action.get("event")
+                if isinstance(event, dict) and isinstance(event.get("context"), dict):
+                    filtered_context: dict[str, Any] = {}
+                    for ctx_k, ctx_v in list(event["context"].items()):
+                        if isinstance(ctx_v, dict) and "path" in ctx_v:
+                            record_mutation(
+                                f"Dropped dynamic context pointer '{{path: ...}}' "
+                                f"for key '{ctx_k}' on Button '{c['id']}'. Input widget values "
+                                "are captured automatically in event 'data' on click."
+                            )
+                        else:
+                            filtered_context[ctx_k] = ctx_v
+                    event["context"] = filtered_context
 
             if not c.get("child") or not isinstance(c.get("child"), str):
                 label_text = c.pop("label", None) or c.pop("text", None) or c.pop("title", None)
@@ -1250,6 +1266,17 @@ def validate_a2ui_surface(
                         f"Button '{c_id}' is present in components but is not declared "
                         "in manifest.buttons."
                     )
+                b_action = c_comp.get("action")
+                if isinstance(b_action, dict):
+                    b_event = b_action.get("event")
+                    if isinstance(b_event, dict) and isinstance(b_event.get("context"), dict):
+                        for ctx_k, ctx_v in b_event["context"].items():
+                            if isinstance(ctx_v, dict) and "path" in ctx_v:
+                                errors.append(
+                                    f"Dynamic context pointer '{{path: ...}}' on key '{ctx_k}' of "
+                                    f"Button '{c_id}' is disallowed. Input widgets are captured "
+                                    "automatically by value in event 'data' on click."
+                                )
 
     # 9. Data model and action context pointer checks
     def check_pointers(val: Any, current_path: str = "") -> None:
@@ -1375,7 +1402,8 @@ class ArtifactBuilder:
         for btn in manifest_obj.buttons:
             clicks_left[btn.id] = btn.clicks
 
-        initial_state = ArtifactState(dataModel=initial_data or {}, clicksLeft=clicks_left)
+        initial_last_event = {"data": initial_data} if initial_data else None
+        initial_state = ArtifactState(last_event=initial_last_event, clicksLeft=clicks_left)
         state_file = inst_dir / "state.json"
         state_file.write_text(
             initial_state.model_dump_json(indent=2),
@@ -1410,7 +1438,6 @@ class QuestionnaireBuilder:
         ]
 
         root_children = ["title_text"]
-        submit_context: dict[str, Any] = {}
         schema_questions: list[dict[str, Any]] = []
 
         for idx, item in enumerate(questions, start=1):
@@ -1447,7 +1474,7 @@ class QuestionnaireBuilder:
                         "component": "ChoiceSet",
                         "isMultiSelect": q.multiple_choice,
                         "choices": choices,
-                        "value": {"path": f"/{q_id}"},
+                        "value": [] if q.multiple_choice else "",
                     }
                 )
                 components.append(
@@ -1456,12 +1483,10 @@ class QuestionnaireBuilder:
                         "component": "TextField",
                         "label": "",
                         "placeholder": "Specify other...",
-                        "value": {"path": f"/{writein_id}"},
+                        "value": "",
                     }
                 )
                 root_children.extend([q_text_id, q_choice_id, writein_id])
-                submit_context[q_id] = {"path": f"/{q_id}"}
-                submit_context[writein_id] = {"path": f"/{writein_id}"}
             else:
                 components.append(
                     {
@@ -1469,11 +1494,10 @@ class QuestionnaireBuilder:
                         "component": "ChoiceSet",
                         "isMultiSelect": q.multiple_choice,
                         "choices": choices,
-                        "value": {"path": f"/{q_id}"},
+                        "value": [] if q.multiple_choice else "",
                     }
                 )
                 root_children.extend([q_text_id, q_choice_id])
-                submit_context[q_id] = {"path": f"/{q_id}"}
 
             schema_questions.append(
                 {
@@ -1500,7 +1524,6 @@ class QuestionnaireBuilder:
                 "action": {
                     "event": {
                         "name": action_name,
-                        "context": submit_context,
                     }
                 },
             }
@@ -1557,7 +1580,6 @@ class QuestionnaireBuilder:
             buttons=[
                 ManifestButton(
                     id="submit_btn",
-                    mode="set",
                     clicks="*",
                     unblocking=True,
                     closing=True,
@@ -1616,7 +1638,6 @@ class FormBuilder:
             buttons=[
                 ManifestButton(
                     id=submit_btn_id,
-                    mode="set",
                     clicks="*",
                     unblocking=False,
                     closing=True,
@@ -1689,10 +1710,10 @@ class PlanBuilder:
                 "child": "review_label",
                 "variant": "default",
                 "action": {
+                    "comments": "push",
                     "event": {
                         "name": "review_plan",
-                        "context": {},
-                    }
+                    },
                 },
             },
             {
@@ -1729,14 +1750,12 @@ class PlanBuilder:
             buttons=[
                 ManifestButton(
                     id="review_btn",
-                    mode="append",
                     clicks="*",
                     unblocking=False,
                     closing=False,
                 ),
                 ManifestButton(
                     id="proceed_btn",
-                    mode="set",
                     clicks="*",
                     unblocking=True,
                     closing=True,
@@ -1844,14 +1863,123 @@ class PlanBuilder:
         return True
 
 
+def _generate_answers_markdown(
+    inst_dir: Path,
+    artifact_name: str,
+    event: dict[str, Any],
+) -> str:
+    """Generate human-readable answers.md summarizing user answers for questionnaires and forms."""
+    timestamp_str = str(event.get("timestamp", ""))
+    data = event.get("data") or {}
+    context = event.get("context") or {}
+    comments = event.get("comments") or []
+
+    human_ts = timestamp_str
+    try:
+        dt = datetime.fromisoformat(timestamp_str)
+        human_ts = dt.strftime("%Y-%m-%d %H:%M:%S %Z").strip()
+    except Exception:
+        pass
+
+    lines: list[str] = [
+        f"# {artifact_name}: user answers",
+        "",
+        f"`submitted: {human_ts}`",
+        "",
+        "## Answers",
+        "",
+    ]
+
+    schema_file = inst_dir / "schema.json"
+    questions_list: list[dict[str, Any]] = []
+    if schema_file.is_file():
+        try:
+            schema_data = json.loads(schema_file.read_text(encoding="utf-8"))
+            questions_list = schema_data.get("questions", [])
+        except Exception:
+            pass
+
+    handled_keys: set[str] = set()
+
+    for q_info in questions_list:
+        q_id = q_info.get("id", "")
+        q_body = q_info.get("body") or q_id
+        options_map = q_info.get("options", {})
+        writein_id = q_info.get("writein_id")
+        handled_keys.add(q_id)
+        if writein_id:
+            handled_keys.add(writein_id)
+
+        raw_val = data.get(q_id)
+        picked_labels: list[str] = []
+        if isinstance(raw_val, list):
+            for v in raw_val:
+                picked_labels.append(str(options_map.get(str(v), v)))
+        elif raw_val is not None and str(raw_val).strip():
+            picked_labels.append(str(options_map.get(str(raw_val), raw_val)))
+
+        if writein_id and data.get(writein_id):
+            writein_text = str(data[writein_id]).strip()
+            if writein_text:
+                picked_labels.append(f"Other: {writein_text}")
+
+        lines.append(f"**{q_body}**")
+        lines.append("")
+        if picked_labels:
+            for lbl in picked_labels:
+                lines.append(f"> {lbl}")
+        else:
+            lines.append("> *(No response)*")
+        lines.append("")
+
+    for k, v in data.items():
+        if k not in handled_keys:
+            lines.append(f"**{k}**")
+            lines.append("")
+            lines.append(f"> {v}")
+            lines.append("")
+
+    if context:
+        lines.append("## Context")
+        lines.append("")
+        lines.append("```json")
+        lines.append(json.dumps(context, indent=2))
+        lines.append("```")
+        lines.append("")
+
+    if comments:
+        lines.append("## Comments")
+        lines.append("")
+        for c in comments:
+            if isinstance(c, dict):
+                loc = c.get("location", "")
+                txt = c.get("selectedText", "")
+                comment = c.get("comment", "")
+                prefix = f"**{loc}** " if loc else ""
+                quote = f'(*"{txt}"*): ' if txt else ": "
+                lines.append(f"- {prefix}{quote}{comment}")
+            else:
+                lines.append(f"- {c}")
+        lines.append("")
+
+    content = "\n".join(lines).strip() + "\n"
+    (inst_dir / "answers.md").write_text(content, encoding="utf-8")
+    return content
+
+
 def dispatch_button_click(
     artifacts_dir: Path,
     family: str,
     uuid: str,
     button_id: str,
-    context: dict[str, Any],
+    context: dict[str, Any] | None = None,
+    *,
+    event: str | None = None,
+    timestamp: str | None = None,
+    data: dict[str, Any] | None = None,
+    comments: list[dict[str, Any]] | None = None,
 ) -> ClickResult:
-    """Execute button click logic, update interactions and state, and check closure."""
+    """Execute button click logic, update JSONL interactions and state.json, and check closure."""
     inst_dir = artifacts_dir / family / uuid
     if not inst_dir.is_dir():
         msg = f"Artifact '{family}/{uuid}' not found."
@@ -1885,12 +2013,10 @@ def dispatch_button_click(
     # 2. State loading & quota validation
     state_file = inst_dir / "state.json"
     clicks_left: dict[str, int | Literal["*"]] = {}
-    data_model: dict[str, Any] = {}
     if state_file.is_file():
         try:
             raw_state = json.loads(state_file.read_text(encoding="utf-8"))
             clicks_left = raw_state.get("clicksLeft", {})
-            data_model = raw_state.get("dataModel", {})
         except Exception:
             pass
 
@@ -1906,78 +2032,74 @@ def dispatch_button_click(
         msg = f"Button '{button_id}' has exhausted its remaining clicks."
         raise ValueError(msg)
 
-    # 3. Translate context if schema.json exists
-    raw_context = dict(context)
-    translated_context = dict(context)
+    # 3. Assemble event components
+    raw_input_dict = dict(context or {})
 
-    schema_file = inst_dir / "schema.json"
-    if schema_file.is_file():
-        try:
-            schema_data = json.loads(schema_file.read_text(encoding="utf-8"))
-            translated_context = {}
-            questions_list = schema_data.get("questions", [])
-            for q_info in questions_list:
-                q_id = q_info.get("id")
-                q_body = q_info.get("body") or q_id
-                options_map = q_info.get("options", {})
-                writein_id = q_info.get("writein_id")
+    # Event name: provided event kwarg > event in dict > button_id
+    eff_event = event or raw_input_dict.get("event") or button_id
 
-                is_multi = q_info.get("multiple_choice", False)
-                raw_choice = context.get(q_id)
-                choice_translated = None
-                if isinstance(raw_choice, list):
-                    choice_translated = [options_map.get(v, v) for v in raw_choice if v]
-                    if not is_multi:
-                        choice_translated = choice_translated[0] if choice_translated else None
-                        raw_context[q_id] = raw_choice[0] if raw_choice else ""
-                elif raw_choice is not None and str(raw_choice).strip():
-                    raw_str = str(raw_choice)
-                    choice_translated = options_map.get(raw_str, raw_str)
-                    raw_context[q_id] = raw_str
+    # Timestamp: provided timestamp kwarg > timestamp in dict > current ISO string with TZ
+    eff_timestamp = (
+        timestamp or raw_input_dict.get("timestamp") or datetime.now().astimezone().isoformat()
+    )
 
-                writein_val = context.get(writein_id) if writein_id else None
-                if writein_val is not None:
-                    writein_val = str(writein_val).strip()
+    # Input snapshot data: provided data kwarg > data in dict > remaining keys
+    eff_data: dict[str, Any] = {}
+    if data is not None:
+        eff_data = dict(data)
+    elif "data" in raw_input_dict and isinstance(raw_input_dict["data"], dict):
+        eff_data = dict(raw_input_dict["data"])
+    else:
+        reserved_keys = {"event", "timestamp", "data", "comments", "context", "button_id"}
+        eff_data = {k: v for k, v in raw_input_dict.items() if k not in reserved_keys}
 
-                if writein_val:
-                    if choice_translated:
-                        translated_context[q_body] = {
-                            "selection": choice_translated,
-                            "write_in": writein_val,
-                        }
-                    else:
-                        translated_context[q_body] = {"write_in": writein_val}
-                elif choice_translated is not None:
-                    translated_context[q_body] = choice_translated
+    # Static context
+    eff_static_context: dict[str, Any] = {}
+    if "context" in raw_input_dict and isinstance(raw_input_dict["context"], dict):
+        eff_static_context = dict(raw_input_dict["context"])
+    elif data is not None and raw_input_dict:
+        reserved_keys = {"event", "timestamp", "data", "comments", "context", "button_id"}
+        eff_static_context = {k: v for k, v in raw_input_dict.items() if k not in reserved_keys}
 
-            # Include any remaining keys not mapped to questions
-            all_known = {
-                k
-                for q_info in questions_list
-                for k in (q_info.get("id"), q_info.get("writein_id"))
-                if k
-            }
-            for k, v in context.items():
-                if k not in all_known:
-                    translated_context[k] = v
-        except Exception:
-            logger.exception("Failed to translate click context using schema.json")
-            translated_context = dict(context)
+    if not eff_static_context:
+        body_file = inst_dir / "body.json"
+        if body_file.is_file():
+            try:
+                body_comps = json.loads(body_file.read_text(encoding="utf-8"))
+                for c in body_comps:
+                    if isinstance(c, dict) and c.get("id") == button_id:
+                        b_ctx = (c.get("action") or {}).get("event", {}).get("context", {})
+                        if isinstance(b_ctx, dict):
+                            for k, v in b_ctx.items():
+                                if not (isinstance(v, dict) and "path" in v):
+                                    eff_static_context[k] = v
+            except Exception:
+                pass
 
-    # 4. Persist interaction payload
+    # Comments
+    eff_comments: list[dict[str, Any]] = []
+    if comments is not None:
+        eff_comments = list(comments)
+    elif "comments" in raw_input_dict and isinstance(raw_input_dict["comments"], list):
+        eff_comments = list(raw_input_dict["comments"])
+
+    new_event: dict[str, Any] = {
+        "event": eff_event,
+        "timestamp": eff_timestamp,
+    }
+    if eff_static_context:
+        new_event["context"] = eff_static_context
+    if eff_data:
+        new_event["data"] = eff_data
+    if eff_comments:
+        new_event["comments"] = eff_comments
+
+    # 4. Append to interactions/<button_id>.jsonl
     interactions_dir = inst_dir / "interactions"
     interactions_dir.mkdir(parents=True, exist_ok=True)
-    interaction_file = interactions_dir / f"{button_id}.json"
-
-    saved_payload = {
-        **translated_context,
-    }
-
-    if btn_config.mode == "append":
-        with interaction_file.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(saved_payload) + "\n")
-    else:
-        interaction_file.write_text(json.dumps(saved_payload, indent=2), encoding="utf-8")
+    interaction_file = interactions_dir / f"{button_id}.jsonl"
+    with interaction_file.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(new_event) + "\n")
 
     # 5. Decrement quota if integer
     if isinstance(current_clicks, int):
@@ -1985,24 +2107,27 @@ def dispatch_button_click(
     else:
         clicks_left[button_id] = current_clicks
 
-    # 6. Accumulate into dataModel (component paths only, avoiding duplicate text keys)
-    data_model.update(raw_context)
-
-    # 7. Save updated state.json
-    new_state = ArtifactState(dataModel=data_model, clicksLeft=clicks_left)
+    # 6. Save updated state.json with last_event (pretty-printed)
+    new_state = ArtifactState(last_event=new_event, clicksLeft=clicks_left)
     state_file.write_text(new_state.model_dump_json(indent=2), encoding="utf-8")
 
-    # 8. Check closing
+    # 7. Check closing
     if btn_config.closing:
         (inst_dir / "closed.marker").touch(exist_ok=True)
 
-    mtime = interaction_file.stat().st_mtime
+    # 8. Generate answers.md for question-centric artifacts
+    if family in ("questionnaires", "forms"):
+        _generate_answers_markdown(inst_dir, manifest.name, new_event)
+
     return ClickResult(
         artifact_id=uuid,
         button_id=button_id,
-        context=translated_context,
-        raw_context=raw_context,
-        timestamp=mtime,
+        event=eff_event,
+        timestamp=eff_timestamp,
+        context=eff_static_context,
+        data=eff_data,
+        comments=eff_comments,
+        raw_context=eff_data,
     )
 
 
@@ -2062,7 +2187,7 @@ class ArtifactResolver:
         else:
             # Initialize state from manifest if not written yet
             clicks_left: dict[str, int | Literal["*"]] = {b.id: b.clicks for b in manifest.buttons}
-            state = ArtifactState(dataModel={}, clicksLeft=clicks_left)
+            state = ArtifactState(last_event=None, clicksLeft=clicks_left)
 
         is_closed = self.is_closed(family, uuid)
         title = manifest.name
