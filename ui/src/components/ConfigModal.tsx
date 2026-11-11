@@ -17,13 +17,15 @@ interface ConfigModalProps {
 
 const MODEL_PRESETS = [
   "openai/gpt-oss-120b",
-  "openai/gpt-oss-20b",
   "anthropic/claude-sonnet-4",
+  "openai/gpt-4o-mini",
   "openai/gpt-4.1",
   "openai/gpt-4.1-mini",
   "google/gemini-2.5-pro",
   "google/gemini-2.5-flash",
   "deepseek/deepseek-r1",
+  "deepseek/deepseek-v4.1-flash-1017",
+  "minimax/minimax-m3.1-flash",
   "gemma4:e4b",
   "llama3.2:3b",
   "qwen3.8:latest",
@@ -69,7 +71,7 @@ export function ConfigModal({
     }
   }, [isOpen, initialConfig]);
 
-  const parsedDraft = useMemo< Record<string, any> | null>(() => {
+  const parsedDraft = useMemo<Record<string, any> | null>(() => {
     try {
       const obj = JSON.parse(jsonText);
       return obj && typeof obj === "object" ? obj : null;
@@ -346,9 +348,8 @@ export function ConfigModal({
                         <button
                           key={p.label}
                           type="button"
-                          className={`config-preset-pill ${
-                            currentBaseUrl === p.url ? "active" : ""
-                          }`}
+                          className={`config-preset-pill ${currentBaseUrl === p.url ? "active" : ""
+                            }`}
                           onClick={() =>
                             updateDraft((d) => {
                               d.inference.base_url = p.url;
@@ -638,9 +639,8 @@ export function ConfigModal({
                             <button
                               key={p.label}
                               type="button"
-                              className={`config-preset-pill ${
-                                daemonBaseUrl === p.url ? "active" : ""
-                              }`}
+                              className={`config-preset-pill ${daemonBaseUrl === p.url ? "active" : ""
+                                }`}
                               onClick={() =>
                                 updateDraft((d) => {
                                   if (!d.daemons) d.daemons = {};
