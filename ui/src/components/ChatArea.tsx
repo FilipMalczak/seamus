@@ -12,7 +12,6 @@ import {
   ChevronRight,
   Clock,
   Copy,
-  GitFork,
   Loader2,
   Sparkles,
   Square,
@@ -160,70 +159,36 @@ export function ChatArea({
     [onBranchMessage]
   );
 
-  const branchPoints = useMemo(() => {
+  const augmentedProvenanceList = useMemo(() => {
     const list =
       sessionLineage && sessionLineage.length > 0
         ? sessionLineage
         : sessionProvenance
           ? [sessionProvenance]
           : [];
+    if (list.length === 0 || messages.length === 0) return list;
 
-    const map = new Map<number, SessionBranchProvenance[]>();
-    if (list.length === 0 || messages.length === 0) return map;
+    const asstIndices = messages
+      .map((m, j) => (m.role === "assistant" ? j : -1))
+      .filter((j) => j >= 0);
 
-    for (let i = 0; i < list.length; i++) {
-      const prov = list[i];
+    return list.map((prov) => {
       const targetId = prov.parent_message_id;
-
-      // 1. Direct match on message.id
-      let idx = messages.findIndex((m) => m.id === targetId);
-
-      // 2. Match within parts or toolCalls
-      if (idx === -1) {
-        idx = messages.findIndex((m) =>
-          Boolean(
-            m.parts?.some(
-              (p) =>
-                p.id === targetId ||
-                (p.type === "tool_call" && p.toolCall.id === targetId)
-            ) ||
-            m.toolCalls?.some((tc) => tc.id === targetId)
-          )
-        );
-      }
-
-      // 3. Fallback: match by turn index if targetId is asst-N
-      if (idx === -1 && targetId.startsWith("asst-")) {
+      if (targetId.startsWith("asst-")) {
         const suffix = targetId.slice(5);
         if (/^\d+$/.test(suffix)) {
           const turnIdx = parseInt(suffix, 10);
-          const asstIndices = messages
-            .map((m, j) => (m.role === "assistant" ? j : -1))
-            .filter((j) => j >= 0);
           if (turnIdx < asstIndices.length) {
-            idx = asstIndices[turnIdx];
+            const actualMsg = messages[asstIndices[turnIdx]];
+            return {
+              ...prov,
+              parent_message_id: actualMsg.id,
+            };
           }
         }
       }
-
-      // 4. Fallback if single entry: pick last assistant message
-      if (idx === -1 && list.length === 1) {
-        for (let j = messages.length - 1; j >= 0; j--) {
-          if (messages[j].role === "assistant") {
-            idx = j;
-            break;
-          }
-        }
-        if (idx === -1) idx = 0;
-      }
-
-      if (idx >= 0) {
-        const existing = map.get(idx) || [];
-        existing.push(prov);
-        map.set(idx, existing);
-      }
-    }
-    return map;
+      return prov;
+    });
   }, [sessionLineage, sessionProvenance, messages]);
 
   // Compute 1-based index for each bubble if part of a streak exceeding the threshold
@@ -533,7 +498,7 @@ export function ChatArea({
             </div>
           </div>
         ) : (
-          messages.map((msg, idx) => {
+          messages.map((msg) => {
             if (msg.threadTransition) {
               return (
                 <div key={msg.id} className="thread-transition-separator">
@@ -584,38 +549,9 @@ export function ChatArea({
                   onBranch={onBranchMessage ? handleBranchItem : undefined}
                   onSubmitArtifact={handleSubmitArtifact}
                   submittingArtifactId={submittingArtifactId}
+                  provenanceList={augmentedProvenanceList}
+                  onNavigateToSession={onNavigateToSession}
                 />
-                {branchPoints.get(idx)?.map((prov, pIdx) => (
-                  <div
-                    key={`${prov.parent_session_id}-${prov.parent_message_id}-${pIdx}`}
-                    className="branch-provenance-separator"
-                  >
-                    <div className="separator-line" />
-                    <div className="separator-content">
-                      <GitFork className="size-3 text-sky-400" />
-                      <span className="separator-text">branched from</span>
-                      {onNavigateToSession ? (
-                        <button
-                          type="button"
-                          className="separator-link-btn"
-                          onClick={() =>
-                            onNavigateToSession(prov.parent_session_id)
-                          }
-                          title={`Navigate to parent session: ${prov.parent_session_name || prov.parent_session_id}`}
-                        >
-                          {prov.parent_session_name ||
-                            prov.parent_session_id.slice(0, 8)}
-                        </button>
-                      ) : (
-                        <span className="separator-name">
-                          {prov.parent_session_name ||
-                            prov.parent_session_id.slice(0, 8)}
-                        </span>
-                      )}
-                    </div>
-                    <div className="separator-line" />
-                  </div>
-                ))}
               </React.Fragment>
             );
           })

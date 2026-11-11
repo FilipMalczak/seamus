@@ -802,3 +802,65 @@ def test_api_granular_branching() -> None:
     assert res_a.status_code == 201
     data_a = res_a.json()
     assert data_a["provenance"]["parent_message_id"] == "a1"
+    assert data_a["provenance"]["branch_position"] == "after"
+
+
+def test_tool_grouping_branching() -> None:
+    store = HarnessStore()
+    config = make_complete_config()
+    store.create_agent(config=config, name="tool-group-agent")
+    s = store.create_session("tool-group-agent", name="parent")
+    t = s.get_open_thread()
+
+    # User message
+    t.append_event(TextMessageStartEvent(message_id="u1", role="user"))
+    t.append_event(TextMessageContentEvent(message_id="u1", delta="Run tools"))
+    t.append_event(TextMessageEndEvent(message_id="u1"))
+    t.append_event({"type": "RUN_STARTED"})
+
+    # Tool group: two tool calls in single inference
+    # 1. tc1 call
+    t.append_event({"type": "TOOL_CALL_START", "tool_call_id": "tc1", "tool_call_name": "tool_a"})
+    t.append_event({"type": "TOOL_CALL_ARGS", "tool_call_id": "tc1", "args": "{}"})
+    t.append_event({"type": "TOOL_CALL_END", "tool_call_id": "tc1"})
+    # 2. tc2 call
+    t.append_event({"type": "TOOL_CALL_START", "tool_call_id": "tc2", "tool_call_name": "tool_b"})
+    t.append_event({"type": "TOOL_CALL_ARGS", "tool_call_id": "tc2", "args": "{}"})
+    t.append_event({"type": "TOOL_CALL_END", "tool_call_id": "tc2"})
+    # Results
+    t.append_event({"type": "TOOL_CALL_RESULT", "tool_call_id": "tc1", "content": "res1"})
+    t.append_event({"type": "TOOL_CALL_RESULT", "tool_call_id": "tc2", "content": "res2"})
+    t.append_event({"type": "RUN_FINISHED"})
+
+    # Branch BEFORE tc2 in group: restarts ALL tools in the group
+    s_b = store.branch_session(
+        agent_identifier="tool-group-agent",
+        session_identifier="parent",
+        target_id="tc2",
+        position="before",
+    )
+    t_b = s_b.get_open_thread()
+    assert t_b.status == AgentStatus.AWAITING_LLM
+    # Events should include u1 (3) + RUN_STARTED (1)
+    # + tc1 start/args/end (3) + tc2 start/args/end (3) = 10 events
+    assert len(t_b.events) == 10
+    ev_types = [getattr(e, "type", None) or e.get("type") for e in t_b.events]
+    assert "TOOL_CALL_RESULT" not in ev_types
+    assert s_b.provenance is not None
+    assert s_b.provenance.branch_position == "before"
+
+    # Branch AFTER tc1 in group: includes ALL tool results in the group
+    s_a = store.branch_session(
+        agent_identifier="tool-group-agent",
+        session_identifier="parent",
+        target_id="tc1",
+        position="after",
+    )
+    t_a = s_a.get_open_thread()
+    assert t_a.status == AgentStatus.AWAITING_LLM
+    # Slices after tc2 result: 10 + 2 results = 12 events
+    assert len(t_a.events) == 12
+    a_types = [getattr(e, "type", None) or e.get("type") for e in t_a.events]
+    assert a_types.count("TOOL_CALL_RESULT") == 2
+    assert s_a.provenance is not None
+    assert s_a.provenance.branch_position == "after"

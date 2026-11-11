@@ -966,7 +966,7 @@ body {
 
 .bubble-row {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 0.5rem;
   max-width: 100%;
 }
@@ -985,15 +985,21 @@ body {
 
 .bubble-branch-actions {
   display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
+  flex-direction: column;
+  justify-content: space-between;
+  align-self: stretch;
+  min-height: 32px;
+  gap: 2px;
+  padding: 1px 0;
   opacity: 0.35;
   transition: opacity 0.15s ease-in-out;
   flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .message-row:hover .bubble-branch-actions,
 .bubble-row:hover .bubble-branch-actions,
+.tool-group-wrapper:hover .bubble-branch-actions,
 .bubble-branch-actions:hover {
   opacity: 1;
 }
@@ -1002,15 +1008,16 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 4px;
+  width: 20px;
+  height: 14px;
+  border-radius: 3px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--text-muted, #a1a1aa);
   cursor: pointer;
   transition: all 0.15s ease-in-out;
   padding: 0;
+  flex-shrink: 0;
 }
 
 .branch-action-icon-btn:hover {
@@ -1036,6 +1043,61 @@ body {
 
 .branch-icon-after {
   transform: rotate(90deg);
+}
+
+/* Tool Group with Visual Brace */
+.tool-group-wrapper {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+  max-width: 100%;
+  margin-top: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+
+.tool-group-brace-container {
+  display: flex;
+  align-items: stretch;
+  position: relative;
+  flex: 1;
+  max-width: 100%;
+}
+
+.tool-group-brace {
+  width: 10px;
+  margin-right: 6px;
+  position: relative;
+  flex-shrink: 0;
+  border-left: 2px solid rgba(245, 158, 11, 0.45);
+  border-top: 2px solid rgba(245, 158, 11, 0.45);
+  border-bottom: 2px solid rgba(245, 158, 11, 0.45);
+  border-top-left-radius: 6px;
+  border-bottom-left-radius: 6px;
+}
+
+.tool-group-brace::after {
+  content: "";
+  position: absolute;
+  left: -5px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-left: 2px solid rgba(245, 158, 11, 0.55);
+  border-bottom: 2px solid rgba(245, 158, 11, 0.55);
+  transform: translateY(-50%) rotate(45deg);
+  background: var(--bg-primary, #0c1017);
+}
+
+.tool-group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.tool-sub-row {
+  width: 100%;
 }
 
 .branch-msg-btn,

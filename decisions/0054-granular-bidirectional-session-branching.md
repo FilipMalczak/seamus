@@ -43,12 +43,35 @@ Decision 0022 introduced session branching and lifecycle error handling, permitt
      - To the **right** of assistant text bubbles, reasoning blocks, tool call cards, and system event cards.
    - Pair two distinct icons for "Branch before" and "Branch after" with explicit tooltips detailing the exact outcome.
 
+3. **Vertical Layout & Tall/Expanded Pinning**:
+   - Arrange "Branch Before" and "Branch After" icon buttons vertically (`flex-direction: column`).
+   - Sized at fixed constant dimensions (14px height each) such that together they match the exact height of a collapsed bubble (~32px) without icon scaling.
+   - When a bubble expands or is taller than a single line, "Branch Before" sticks to the top of the bubble, and "Branch After" sticks to the bottom border of the bubble via `align-self: stretch` and `justify-content: space-between`.
+
+4. **Tool Call Grouping & Visual Brace**:
+   - When a single model inference results in more than one tool call, render a visual brace to the left of the group (`.tool-group-brace`).
+   - Sibling tool call bubbles inside a group omit individual branch actions. Instead, a single pair of branch buttons is placed at the top and bottom level of the group brace on the right.
+   - Slicing semantics for tool groups:
+     - `before`: Slices immediately prior to the first `TOOL_CALL_RESULT` in the group, restarting all tool executions in the group.
+     - `after`: Slices immediately after the last `TOOL_CALL_RESULT` in the group, keeping all existing tool results and continuing execution.
+   - Single tool call inferences omit the visual brace to prevent visual clutter, placing singular branch buttons beside the tool call card as with regular bubbles.
+
+5. **Precise Provenance Indicator Placement**:
+   - For user messages, system events, agent text messages, and reasoning blocks:
+     - If branched before: the provenance indicator line is rendered **above** the target bubble.
+     - If branched after: the provenance indicator line is rendered **below** the target bubble.
+   - For tool calls:
+     - If single tool call: above if branched before, below if branched after.
+     - If tool call group: if branched before, the indicator line goes **through the middle of the group** (so some tool call bubbles are above it, and some below it); if branched after, the indicator line goes **below the group**.
+
 ## Consequences
 
 ### Positive
 - Fine-grained control over conversation forks and error recovery at any step in a turn.
 - Immediate retries for failed tool calls or undesirable model responses without losing context or restarting sessions.
-- Clean UI ergonomics aligned center-ward relative to message bubbles.
+- Clean UI ergonomics aligned center-ward relative to message bubbles with vertical top/bottom border pinning.
+- Clear visual grouping with braces for multi-tool inferences, avoiding sequential execution assumptions.
+- Accurate provenance indicator positioning reflecting whether history was sliced before or after each item.
 - Full provenance and Git workspace synchronization preserved across all slice points.
 
 ### Negative / Trade-offs

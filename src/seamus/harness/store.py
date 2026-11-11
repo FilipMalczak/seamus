@@ -373,28 +373,61 @@ class HarnessStore:
                 else:
                     rec["end_idx"] = idx
 
-        # Check Tool Call match
+        # Cluster tool records into inference groups
+        tool_groups: list[list[dict[str, Any]]] = []
         for trec in tool_records:
-            if target_id in trec["associated_ids"] or target_id == trec["tool_call_id"]:
-                tcid = trec["tool_call_id"]
+            if not tool_groups:
+                tool_groups.append([trec])
+            else:
+                last_group = tool_groups[-1]
+                prev_res = last_group[-1].get("result_idx")
+                if prev_res is None or trec["start_idx"] <= prev_res:
+                    last_group.append(trec)
+                else:
+                    prev_end = max(
+                        t["result_idx"] if t["result_idx"] is not None else t["end_idx"]
+                        for t in last_group
+                    )
+                    has_intervening = any(
+                        str(ev_attr(events[k], "type") or "").upper()
+                        in ("RUN_FINISHED", "USER_MESSAGE")
+                        or str(ev_attr(events[k], "role") or "").lower() == "user"
+                        for k in range(prev_end + 1, trec["start_idx"])
+                    )
+                    if not has_intervening:
+                        last_group.append(trec)
+                    else:
+                        tool_groups.append([trec])
+
+        # Check Tool Call / Group match
+        for group in tool_groups:
+            group_all_ids: set[str] = set()
+            for t in group:
+                group_all_ids.update(t["associated_ids"])
+                group_all_ids.add(t["tool_call_id"])
+                group_all_ids.add(f"group-{t['tool_call_id']}")
+
+            if target_id in group_all_ids or any(target_id == t["tool_call_id"] for t in group):
+                rep_tcid = group[0]["tool_call_id"]
+                results = [t["result_idx"] for t in group if t["result_idx"] is not None]
+                group_end = max(t["end_idx"] for t in group)
+
                 if position == "before":
-                    # Branch before tool was executed: slice before TOOL_CALL_RESULT
-                    res_idx = trec["result_idx"]
-                    slice_idx = res_idx if res_idx is not None else (trec["end_idx"] + 1)
+                    # Branch before tools were executed: restart all tools in the group
+                    first_res = min(results) if results else (group_end + 1)
                     return _BranchSliceResult(
-                        slice_index=slice_idx,
-                        rep_id=tcid,
+                        slice_index=first_res,
+                        rep_id=rep_tcid,
                         item_type="tool_call",
                         should_resume=True,
                         status=AgentStatus.AWAITING_LLM,
                     )
                 else:
-                    # Branch after tool was executed: include TOOL_CALL_RESULT, continue processing
-                    res_idx = trec["result_idx"]
-                    slice_idx = (res_idx + 1) if res_idx is not None else (trec["end_idx"] + 1)
+                    # Branch after tools were executed: include all results in the group
+                    last_res = max(results) if results else group_end
                     return _BranchSliceResult(
-                        slice_index=slice_idx,
-                        rep_id=tcid,
+                        slice_index=last_res + 1,
+                        rep_id=rep_tcid,
                         item_type="tool_call",
                         should_resume=True,
                         status=AgentStatus.AWAITING_LLM,
@@ -937,6 +970,8 @@ class HarnessStore:
             parent_session_id=parent_session.id,
             parent_message_id=provenance_id,
             parent_session_name=parent_session.name,
+            branch_position=position,
+            item_type=branch_res.item_type,
         )
 
         # Sliced events for new session

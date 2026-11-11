@@ -3,7 +3,7 @@
 import re
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 import coolname
@@ -75,6 +75,8 @@ class SessionBranchProvenance(BaseModel):
     parent_message_id: str
     parent_session_name: str | None = None
     branched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    branch_position: Literal["before", "after"] = "after"
+    item_type: str | None = None
 
 
 class Thread(BaseModel):
