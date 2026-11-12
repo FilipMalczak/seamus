@@ -562,30 +562,29 @@ class HarnessStore:
             reasoning_records.append(curr_reasoning)
 
         # Check Reasoning match
-        if item_type in (None, "bot_thinking"):
-            for rrec in reasoning_records:
-                if (
-                    target_id in rrec["associated_ids"]
-                    or target_id == rrec["id"]
-                    or target_id.endswith("-reasoning")
-                ):
-                    rid = rrec["id"]
-                    if position == "before":
-                        return _BranchSliceResult(
-                            slice_index=rrec["start_idx"],
-                            rep_id=rid,
-                            item_type="bot_thinking",
-                            should_resume=True,
-                            status=AgentStatus.AWAITING_LLM,
-                        )
-                    else:
-                        return _BranchSliceResult(
-                            slice_index=rrec["end_idx"] + 1,
-                            rep_id=rid,
-                            item_type="bot_thinking",
-                            should_resume=True,
-                            status=AgentStatus.AWAITING_LLM,
-                        )
+        for rrec in reasoning_records:
+            if (
+                target_id in rrec["associated_ids"]
+                or target_id == rrec["id"]
+                or target_id.endswith("-reasoning")
+            ):
+                rid = rrec["id"]
+                if position == "before":
+                    return _BranchSliceResult(
+                        slice_index=rrec["start_idx"],
+                        rep_id=rid,
+                        item_type="bot_thinking",
+                        should_resume=True,
+                        status=AgentStatus.AWAITING_LLM,
+                    )
+                else:
+                    return _BranchSliceResult(
+                        slice_index=rrec["end_idx"] + 1,
+                        rep_id=rid,
+                        item_type="bot_thinking",
+                        should_resume=True,
+                        status=AgentStatus.AWAITING_LLM,
+                    )
 
         # 4. Parse Bot Text Messages
         bot_text_records: list[dict[str, Any]] = []
@@ -967,6 +966,31 @@ class HarnessStore:
             else resolved_id
         )
 
+        ws_mgr = get_workspace_manager()
+        branch_commit: str | None = None
+        try:
+            branch_commit = ws_mgr.find_commit_for_event(
+                agent.id, parent_session.id, provenance_id, before=(position == "before")
+            )
+            if not branch_commit and target_rep_id != provenance_id:
+                branch_commit = ws_mgr.find_commit_for_event(
+                    agent.id,
+                    parent_session.id,
+                    target_rep_id,
+                    before=(position == "before"),
+                )
+        except Exception:
+            branch_commit = None
+
+        provenance = SessionBranchProvenance(
+            parent_session_id=parent_session.id,
+            parent_message_id=provenance_id,
+            parent_session_name=parent_session.name,
+            branch_position=position,
+            item_type=branch_res.item_type,
+            commit_sha=branch_commit[:8] if branch_commit else None,
+        )
+
         # Sliced events for new session
         sliced_events = list(target_thread.events[: branch_res.slice_index])
         sliced_event_ids: set[str] = set()
@@ -976,30 +1000,6 @@ class HarnessStore:
                 if val:
                     sliced_event_ids.add(str(val))
 
-        preceding_id: str | None = None
-        for ev in reversed(sliced_events):
-            ev_type = str(
-                getattr(ev, "type", None) or (ev.get("type") if isinstance(ev, dict) else "") or ""
-            ).upper()
-            if ev_type in ("RUN_STARTED", "RUN_FINISHED", "STEP_STARTED", "STEP_FINISHED"):
-                continue
-            for attr in ("tool_call_id", "message_id", "id"):
-                val = getattr(ev, attr, None) or (ev.get(attr) if isinstance(ev, dict) else None)
-                if val:
-                    preceding_id = str(val)
-                    break
-            if preceding_id is not None:
-                break
-
-        provenance = SessionBranchProvenance(
-            parent_session_id=parent_session.id,
-            parent_message_id=provenance_id,
-            parent_session_name=parent_session.name,
-            branch_position=position,
-            item_type=branch_res.item_type,
-            preceding_message_id=preceding_id,
-        )
-
         inherited_lineage: list[SessionBranchProvenance] = []
         candidates = (
             parent_session.lineage
@@ -1007,15 +1007,7 @@ class HarnessStore:
             else ([parent_session.provenance] if parent_session.provenance else [])
         )
         for entry in candidates:
-            if (
-                entry.parent_message_id in sliced_event_ids
-                or (entry.preceding_message_id and entry.preceding_message_id in sliced_event_ids)
-                or (
-                    entry.branch_position == "before"
-                    and entry.item_type != "tool_call"
-                    and entry.preceding_message_id is None
-                )
-            ):
+            if entry.parent_message_id in sliced_event_ids:
                 inherited_lineage.append(entry)
 
         inherited_lineage.append(provenance)
@@ -1027,18 +1019,13 @@ class HarnessStore:
             agent_name=agent.name,
             agent_identifier=agent_ident,
         ):
-            from seamus.config.models import OperationalMode
-
-            new_cfg = parent_session.config.model_copy(deep=True)
-            if target_thread.mode in OperationalMode.__members__.values():
-                new_cfg.mode = OperationalMode(target_thread.mode)
-
+            new_session_config = parent_session.config.model_copy(deep=True)
+            new_session_config.mode = target_thread.mode
             new_session = Session(
                 agent_id=agent.id,
                 custom_name=name,
-                config=new_cfg,
+                config=new_session_config,
                 status=SessionStatus.ACTIVE,
-                active_plan_id=parent_session.active_plan_id,
                 provenance=provenance,
                 lineage=inherited_lineage,
             )
@@ -1046,11 +1033,9 @@ class HarnessStore:
                 custom_name=None,
                 is_open=True,
                 status=branch_res.status,
+                events=sliced_events,
                 mode=target_thread.mode,
                 phase=target_thread.phase,
-                active_skills=list(target_thread.active_skills),
-                todos=[t.model_copy(deep=True) for t in target_thread.todos],
-                events=sliced_events,
             )
             new_session.threads[new_thread.id] = new_thread
             agent.sessions[new_session.id] = new_session
@@ -1066,17 +1051,6 @@ class HarnessStore:
                 operation="branch",
             ):
                 try:
-                    ws_mgr = get_workspace_manager()
-                    branch_commit = ws_mgr.find_commit_for_event(
-                        agent.id, parent_session.id, provenance_id, before=(position == "before")
-                    )
-                    if not branch_commit and target_rep_id != provenance_id:
-                        branch_commit = ws_mgr.find_commit_for_event(
-                            agent.id,
-                            parent_session.id,
-                            target_rep_id,
-                            before=(position == "before"),
-                        )
                     branch_from = branch_commit or f"origin/session/{parent_session.id}"
                     ws_mgr.create_session_workspace(new_session, agent, branch_from=branch_from)
                     ws_mgr.save_thread_events(

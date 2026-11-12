@@ -866,96 +866,26 @@ def test_tool_grouping_branching() -> None:
     assert s_a.provenance.branch_position == "after"
 
 
-def test_branch_preserves_thread_mode_and_phase() -> None:
-    from seamus.config.models import OperationalMode
-
+def test_branching_preserves_mode_and_phase() -> None:
     store = HarnessStore()
     config = make_complete_config()
-    config.mode = OperationalMode.CHAT
-    store.create_agent(config=config, name="mode-preserve-agent")
-    s_chat = store.create_session("mode-preserve-agent", name="chat-parent")
-    t_chat = s_chat.get_open_thread()
-    assert t_chat.mode == "chat"
-    assert t_chat.phase is None
+    store.create_agent(config=config, name="mode-agent")
+    s = store.create_session("mode-agent", name="parent")
+    t = s.get_open_thread()
+    t.mode = "plan"
+    t.phase = "make"
 
-    t_chat.append_event(TextMessageStartEvent(message_id="u1", role="user"))
-    t_chat.append_event(TextMessageContentEvent(message_id="u1", delta="Hello chat"))
-    t_chat.append_event(TextMessageEndEvent(message_id="u1"))
+    t.append_event(TextMessageStartEvent(message_id="u1", role="user"))
+    t.append_event(TextMessageContentEvent(message_id="u1", delta="Hello"))
+    t.append_event(TextMessageEndEvent(message_id="u1"))
 
-    s_chat_branched = store.branch_session(
-        agent_identifier="mode-preserve-agent",
-        session_identifier="chat-parent",
+    child = store.branch_session(
+        agent_identifier="mode-agent",
+        session_identifier="parent",
         target_id="u1",
         position="after",
     )
-    t_chat_branched = s_chat_branched.get_open_thread()
-    assert t_chat_branched.mode == "chat"
-    assert t_chat_branched.phase is None
-    assert s_chat_branched.config.mode == OperationalMode.CHAT
-
-    # Also verify plan/execute phase is preserved when branching from an execute thread
-    s_plan = store.create_session("mode-preserve-agent", name="plan-parent")
-    t_plan = s_plan.get_open_thread()
-    t_plan.mode = "plan"
-    t_plan.phase = "execute"
-    t_plan.append_event(TextMessageStartEvent(message_id="u2", role="user"))
-    t_plan.append_event(TextMessageContentEvent(message_id="u2", delta="Execute step"))
-    t_plan.append_event(TextMessageEndEvent(message_id="u2"))
-
-    s_plan_branched = store.branch_session(
-        agent_identifier="mode-preserve-agent",
-        session_identifier="plan-parent",
-        target_id="u2",
-        position="before",
-    )
-    t_plan_branched = s_plan_branched.get_open_thread()
-    assert t_plan_branched.mode == "plan"
-    assert t_plan_branched.phase == "execute"
-    assert s_plan_branched.config.mode == OperationalMode.PLAN
-
-
-def test_branch_before_preceding_message_id() -> None:
-    store = HarnessStore()
-    config = make_complete_config()
-    store.create_agent(config=config, name="preceding-id-agent")
-    s = store.create_session("preceding-id-agent", name="parent")
-    t = s.get_open_thread()
-
-    # Turn 1: u1 -> a1
-    t.append_event(TextMessageStartEvent(message_id="u1", role="user"))
-    t.append_event(TextMessageContentEvent(message_id="u1", delta="Msg 1"))
-    t.append_event(TextMessageEndEvent(message_id="u1"))
-    t.append_event({"type": "RUN_STARTED"})
-    t.append_event(TextMessageStartEvent(message_id="a1", role="assistant"))
-    t.append_event(TextMessageContentEvent(message_id="a1", delta="Reply 1"))
-    t.append_event(TextMessageEndEvent(message_id="a1"))
-    t.append_event({"type": "RUN_FINISHED"})
-
-    # Turn 2: u2
-    t.append_event(TextMessageStartEvent(message_id="u2", role="user"))
-    t.append_event(TextMessageContentEvent(message_id="u2", delta="Msg 2"))
-    t.append_event(TextMessageEndEvent(message_id="u2"))
-
-    # Branch BEFORE u1 (first user message): preceding_message_id is None
-    s_b1 = store.branch_session(
-        agent_identifier="preceding-id-agent",
-        session_identifier="parent",
-        target_id="u1",
-        position="before",
-        item_type="user_message",
-    )
-    assert s_b1.provenance is not None
-    assert s_b1.provenance.branch_position == "before"
-    assert s_b1.provenance.preceding_message_id is None
-
-    # Branch BEFORE u2 (second user message): preceding_message_id is 'a1'
-    s_b2 = store.branch_session(
-        agent_identifier="preceding-id-agent",
-        session_identifier="parent",
-        target_id="u2",
-        position="before",
-        item_type="user_message",
-    )
-    assert s_b2.provenance is not None
-    assert s_b2.provenance.branch_position == "before"
-    assert s_b2.provenance.preceding_message_id == "a1"
+    assert child.config.mode == "plan"
+    child_thread = child.get_open_thread()
+    assert child_thread.mode == "plan"
+    assert child_thread.phase == "make"

@@ -77,7 +77,7 @@ class SessionBranchProvenance(BaseModel):
     branched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     branch_position: Literal["before", "after"] = "after"
     item_type: str | None = None
-    preceding_message_id: str | None = None
+    commit_sha: str | None = None
 
 
 class Thread(BaseModel):

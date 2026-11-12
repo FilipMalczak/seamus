@@ -56,14 +56,13 @@ Decision 0022 introduced session branching and lifecycle error handling, permitt
      - `after`: Slices immediately after the last `TOOL_CALL_RESULT` in the group, keeping all existing tool results and continuing execution.
    - Single tool call inferences omit the visual brace to prevent visual clutter, placing singular branch buttons beside the tool call card as with regular bubbles.
 
-5. **Precise Provenance Indicator Placement & Thread Mode Continuity**:
-   - When branching a session, the newly created open thread preserves the parent thread's operational `mode`, `phase`, `active_skills`, `todos`, and `active_plan_id` rather than resetting to `plan/discuss`.
-   - `SessionBranchProvenance` records `preceding_message_id` (the last conversational item retained before the slice point, or `None` if branched before the first message) so `before` branches on sliced-out items remain anchored in the child session.
+5. **Precise Provenance Indicator Placement & Mode Continuity**:
+   - Branched sessions and their primary threads inherit the exact operational `mode` and `phase` from the parent thread at the branch point.
    - For user messages, system events, agent text messages, and reasoning blocks:
-     - If branched before: the provenance indicator line is rendered **above** the target or subsequent bubble (or at the viewport boundary while awaiting user input).
+     - If branched before: the provenance indicator line is rendered **above** the target bubble (or at the top/bottom boundary when target user message was sliced out of history).
      - If branched after: the provenance indicator line is rendered **below** the target bubble.
    - For tool calls (both single tool calls and braced tool groups):
-     - If branched before: the horizontal indicator line runs underneath the tool call bubble(s) at the vertical midpoint (running behind the tool card for a single tool or odd number of calls, and between the upper and lower tool cards for an even number of calls), with the `"branched before <session>"` pill positioned to the right of the tool calls.
+     - If branched before: the horizontal indicator line runs underneath the tool call bubble(s) at the vertical midpoint (or between them for an even number of calls in a group), with the `"branched before/after <commit>"` pill positioned to the right of the tool calls.
      - If branched after: the provenance indicator line is rendered **below** the tool call or braced group.
 
 ## Consequences

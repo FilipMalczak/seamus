@@ -184,6 +184,11 @@ export function BranchProvenanceSeparator({
         ? "branched after"
         : "branched from";
 
+  const targetDisplay =
+    provenance.commit_sha
+      ? provenance.commit_sha.slice(0, 8)
+      : provenance.parent_session_name || provenance.parent_session_id.slice(0, 8);
+
   return (
     <div
       className="branch-provenance-separator"
@@ -198,15 +203,13 @@ export function BranchProvenanceSeparator({
             type="button"
             className="separator-link-btn"
             onClick={() => onNavigateToSession(provenance.parent_session_id)}
-            title={`Navigate to parent session: ${provenance.parent_session_name || provenance.parent_session_id}`}
+            title={`Navigate to parent session: ${provenance.parent_session_name || provenance.parent_session_id}${provenance.commit_sha ? ` (commit ${provenance.commit_sha})` : ""}`}
           >
-            {provenance.parent_session_name ||
-              provenance.parent_session_id.slice(0, 8)}
+            {targetDisplay}
           </button>
         ) : (
           <span className="separator-name">
-            {provenance.parent_session_name ||
-              provenance.parent_session_id.slice(0, 8)}
+            {targetDisplay}
           </span>
         )}
       </div>
@@ -215,60 +218,46 @@ export function BranchProvenanceSeparator({
   );
 }
 
-export function ToolMidProvenanceIndicator({
-  provenances,
+export function ToolGroupProvenanceIndicator({
+  provenance,
   onNavigateToSession,
-  children,
 }: {
-  provenances: SessionBranchProvenance[];
+  provenance: SessionBranchProvenance;
   onNavigateToSession?: (sessionId: string) => void;
-  children: React.ReactNode;
 }) {
-  if (!provenances || provenances.length === 0) {
-    return <>{children}</>;
-  }
+  const label =
+    provenance.branch_position === "before"
+      ? "branched before"
+      : provenance.branch_position === "after"
+        ? "branched after"
+        : "branched from";
+
+  const targetDisplay =
+    provenance.commit_sha
+      ? provenance.commit_sha.slice(0, 8)
+      : provenance.parent_session_name || provenance.parent_session_id.slice(0, 8);
 
   return (
     <div
-      className="tool-branch-before-container"
-      data-testid="branch-provenance-separator"
+      className="tool-group-indicator-row"
+      data-testid="tool-group-indicator-row"
     >
-      <div className="tool-branch-before-line" />
-      <div className="tool-branch-foreground">{children}</div>
-      <div className="tool-branch-pills">
-        {provenances.map((prov, pIdx) => {
-          const label =
-            prov.branch_position === "before"
-              ? "branched before"
-              : prov.branch_position === "after"
-                ? "branched after"
-                : "branched from";
-          return (
-            <div
-              key={`${prov.parent_session_id}-${prov.parent_message_id}-${pIdx}`}
-              className="tool-mid-pill"
-            >
-              <GitFork className="size-3 text-sky-400" />
-              <span className="separator-text">{label}</span>
-              {onNavigateToSession ? (
-                <button
-                  type="button"
-                  className="separator-link-btn"
-                  onClick={() => onNavigateToSession(prov.parent_session_id)}
-                  title={`Navigate to parent session: ${prov.parent_session_name || prov.parent_session_id}`}
-                >
-                  {prov.parent_session_name ||
-                    prov.parent_session_id.slice(0, 8)}
-                </button>
-              ) : (
-                <span className="separator-name">
-                  {prov.parent_session_name ||
-                    prov.parent_session_id.slice(0, 8)}
-                </span>
-              )}
-            </div>
-          );
-        })}
+      <div className="tool-group-indicator-line" />
+      <div className="tool-group-indicator-pill">
+        <GitFork className="size-3 text-sky-400" />
+        <span>{label}</span>
+        {onNavigateToSession ? (
+          <button
+            type="button"
+            className="separator-link-btn"
+            onClick={() => onNavigateToSession(provenance.parent_session_id)}
+            title={`Navigate to parent session: ${provenance.parent_session_name || provenance.parent_session_id}${provenance.commit_sha ? ` (commit ${provenance.commit_sha})` : ""}`}
+          >
+            {targetDisplay}
+          </button>
+        ) : (
+          <span>{targetDisplay}</span>
+        )}
       </div>
     </div>
   );
@@ -281,7 +270,7 @@ export function BubbleBranchActions({
   onBranch,
   direction = "right",
   isGroup = false,
-  mode = "both",
+  onlyPosition,
 }: {
   targetId: string;
   itemType: BranchItemType;
@@ -289,7 +278,7 @@ export function BubbleBranchActions({
   onBranch?: BranchHandler;
   direction?: "left" | "right";
   isGroup?: boolean;
-  mode?: "both" | "before-only" | "after-only";
+  onlyPosition?: "before" | "after";
 }) {
   if (!onBranch) return null;
 
@@ -319,12 +308,14 @@ export function BubbleBranchActions({
             ? "Branch after thinking (keep reasoning, continue processing)"
             : "Branch after this message (message already sent, continue processing)";
 
-  const showBefore = mode === "both" || mode === "before-only";
-  const showAfter = mode === "both" || mode === "after-only";
+  const showBefore = !onlyPosition || onlyPosition === "before";
+  const showAfter = !onlyPosition || onlyPosition === "after";
 
   return (
     <div
-      className={`bubble-branch-actions branch-dir-${direction} branch-mode-${mode}`}
+      className={`bubble-branch-actions branch-dir-${direction} ${
+        onlyPosition ? `branch-only-${onlyPosition}` : ""
+      }`}
     >
       {showBefore && (
         <button
@@ -441,27 +432,12 @@ export function MessageItem({
 
   // Helper to extract provenance entries that match any candidate IDs
   const getProvsFor = (
-    targetIds: (string | undefined)[],
-    expectedItemTypes?: string[]
+    targetIds: (string | undefined)[]
   ): SessionBranchProvenance[] => {
     const validIds = new Set(targetIds.filter(Boolean) as string[]);
     if (validIds.size === 0 || !provenanceList || provenanceList.length === 0)
       return [];
     return provenanceList.filter((p) => {
-      // Allow synthetic resolved IDs (used when a 'before' branch target was sliced out
-      // and resolved to the next message/part in the child session) regardless of item_type
-      for (const vid of validIds) {
-        if (p.parent_message_id === `__resolved_before__:${vid}`) {
-          return true;
-        }
-      }
-      if (
-        expectedItemTypes &&
-        p.item_type &&
-        !expectedItemTypes.includes(p.item_type)
-      ) {
-        return false;
-      }
       if (validIds.has(p.parent_message_id)) return true;
       for (const vid of validIds) {
         if (
@@ -529,7 +505,7 @@ export function MessageItem({
 
         {isSynthetic ? (
           (() => {
-            const synthProvs = getProvsFor([message.id], ["system_event"]);
+            const synthProvs = getProvsFor([message.id]);
             const synthBefore = synthProvs.filter(
               (p) => p.branch_position === "before"
             );
@@ -563,65 +539,74 @@ export function MessageItem({
                   `call-${p.toolCall.id}`,
                   `group-${p.toolCall.id}`,
                 ]);
-                const gProvs = getProvsFor(groupIds, ["tool_call"]);
-                const gBefore = gProvs.filter(
-                  (p) => p.branch_position === "before"
-                );
-                const gAfter = gProvs.filter(
-                  (p) => p.branch_position !== "before"
-                );
+                const gProvs = getProvsFor(groupIds);
                 const groupTargetId = item.parts[0].toolCall.id;
+                const isEven = item.parts.length % 2 === 0;
+                const midIndex = isEven ? item.parts.length / 2 : -1;
 
                 return (
-                  <React.Fragment key={`tool-group-${groupTargetId}-${itemIdx}`}>
-                    <ToolMidProvenanceIndicator
-                      provenances={gBefore}
-                      onNavigateToSession={onNavigateToSession}
-                    >
-                      <div className="tool-group-wrapper assistant-bubble-row">
-                        <div className="tool-group-brace-container">
-                          <div className="tool-group-brace" />
-                          <div className="tool-group-items">
-                            {item.parts.map((p, pIdx) => {
-                              const toolSeq =
-                                getSeq(p.id) ?? getSeq(p.toolCall?.id);
-                              const isFirst = pIdx === 0;
-                              const isLast = pIdx === item.parts.length - 1;
-                              return (
-                                <div key={p.id} className="bubble-row tool-sub-row">
-                                  <ToolCallItem
-                                    toolCall={p.toolCall}
-                                    sequenceIndex={toolSeq}
-                                  />
-                                  {isFirst && (
-                                    <BubbleBranchActions
-                                      targetId={groupTargetId}
-                                      itemType="tool_call"
-                                      onBranch={onBranch}
-                                      direction="right"
-                                      isGroup={true}
-                                      mode="before-only"
-                                    />
-                                  )}
-                                  {isLast && (
-                                    <BubbleBranchActions
-                                      targetId={groupTargetId}
-                                      itemType="tool_call"
-                                      onBranch={onBranch}
-                                      direction="right"
-                                      isGroup={true}
-                                      mode="after-only"
-                                    />
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                    </ToolMidProvenanceIndicator>
-                    {renderSeparators(gAfter)}
-                  </React.Fragment>
+                  <div
+                    key={`tool-group-${groupTargetId}-${itemIdx}`}
+                    className="tool-group-wrapper assistant-bubble-row"
+                  >
+                    <div className="tool-group-brace" />
+                    <div className="tool-group-items">
+                      {item.parts.map((p, pIdx) => {
+                        const toolSeq =
+                          getSeq(p.id) ?? getSeq(p.toolCall?.id);
+                        const isFirst = pIdx === 0;
+                        const isLast = pIdx === item.parts.length - 1;
+                        const isMidpoint = isEven && pIdx === midIndex;
+
+                        return (
+                          <React.Fragment key={p.id}>
+                            {isMidpoint &&
+                              gProvs.map((prov, provIdx) => (
+                                <ToolGroupProvenanceIndicator
+                                  key={`mid-prov-${prov.parent_session_id}-${provIdx}`}
+                                  provenance={prov}
+                                  onNavigateToSession={onNavigateToSession}
+                                />
+                              ))}
+                            <div className="bubble-row tool-sub-row">
+                              <ToolCallItem
+                                toolCall={p.toolCall}
+                                sequenceIndex={toolSeq}
+                              />
+                              {isFirst && (
+                                <BubbleBranchActions
+                                  targetId={groupTargetId}
+                                  itemType="tool_call"
+                                  onBranch={onBranch}
+                                  direction="right"
+                                  isGroup={true}
+                                  onlyPosition="before"
+                                />
+                              )}
+                              {isLast && (
+                                <BubbleBranchActions
+                                  targetId={groupTargetId}
+                                  itemType="tool_call"
+                                  onBranch={onBranch}
+                                  direction="right"
+                                  isGroup={true}
+                                  onlyPosition="after"
+                                />
+                              )}
+                            </div>
+                          </React.Fragment>
+                        );
+                      })}
+                      {!isEven &&
+                        gProvs.map((prov, provIdx) => (
+                          <ToolGroupProvenanceIndicator
+                            key={`bottom-prov-${prov.parent_session_id}-${provIdx}`}
+                            provenance={prov}
+                            onNavigateToSession={onNavigateToSession}
+                          />
+                        ))}
+                    </div>
+                  </div>
                 );
               }
 
@@ -629,10 +614,7 @@ export function MessageItem({
               const partSeq = getSeq(part.id);
 
               if (part.type === "reasoning") {
-                const rProvs = getProvsFor(
-                  [part.id, `${message.id}-reasoning`],
-                  ["bot_thinking"]
-                );
+                const rProvs = getProvsFor([part.id, `${message.id}-reasoning`]);
                 const rBefore = rProvs.filter(
                   (p) => p.branch_position === "before"
                 );
@@ -664,36 +646,26 @@ export function MessageItem({
 
               if (part.type === "tool_call") {
                 const toolSeq = partSeq ?? getSeq(part.toolCall?.id);
-                const tcProvs = getProvsFor(
-                  [part.id, part.toolCall.id, `call-${part.toolCall.id}`],
-                  ["tool_call"]
-                );
-                const tcBefore = tcProvs.filter(
-                  (p) => p.branch_position === "before"
-                );
-                const tcAfter = tcProvs.filter(
-                  (p) => p.branch_position !== "before"
-                );
+                const tcProvs = getProvsFor([
+                  part.id,
+                  part.toolCall.id,
+                  `call-${part.toolCall.id}`,
+                ]);
                 return (
                   <React.Fragment key={part.id}>
-                    <ToolMidProvenanceIndicator
-                      provenances={tcBefore}
-                      onNavigateToSession={onNavigateToSession}
-                    >
-                      <div className="bubble-row assistant-bubble-row">
-                        <ToolCallItem
-                          toolCall={part.toolCall}
-                          sequenceIndex={toolSeq}
-                        />
-                        <BubbleBranchActions
-                          targetId={part.toolCall.id}
-                          itemType="tool_call"
-                          onBranch={onBranch}
-                          direction="right"
-                        />
-                      </div>
-                    </ToolMidProvenanceIndicator>
-                    {renderSeparators(tcAfter)}
+                    <div className="bubble-row assistant-bubble-row">
+                      <ToolCallItem
+                        toolCall={part.toolCall}
+                        sequenceIndex={toolSeq}
+                      />
+                      <BubbleBranchActions
+                        targetId={part.toolCall.id}
+                        itemType="tool_call"
+                        onBranch={onBranch}
+                        direction="right"
+                      />
+                    </div>
+                    {renderSeparators(tcProvs)}
                   </React.Fragment>
                 );
               }
@@ -712,10 +684,11 @@ export function MessageItem({
               if (part.type === "text") {
                 if (!part.content) return null;
                 const textTime = part.timestamp || message.timestamp;
-                const tProvs = getProvsFor(
-                  [part.id, message.id, `text-${part.id}`],
-                  ["bot_message"]
-                );
+                const tProvs = getProvsFor([
+                  part.id,
+                  message.id,
+                  `text-${part.id}`,
+                ]);
                 const tBefore = tProvs.filter(
                   (p) => p.branch_position === "before"
                 );
@@ -772,10 +745,7 @@ export function MessageItem({
           <>
             {!isUser && (message.reasoning || message.isReasoning) && (
               (() => {
-                const rProvs = getProvsFor(
-                  [`${message.id}-reasoning`],
-                  ["bot_thinking"]
-                );
+                const rProvs = getProvsFor([`${message.id}-reasoning`]);
                 const rBefore = rProvs.filter(
                   (p) => p.branch_position === "before"
                 );
@@ -808,10 +778,7 @@ export function MessageItem({
 
             {message.text && (
               (() => {
-                const textProvs = getProvsFor(
-                  [message.id],
-                  isUser ? ["user_message"] : ["bot_message"]
-                );
+                const textProvs = getProvsFor([message.id]);
                 const textBefore = textProvs.filter(
                   (p) => p.branch_position === "before"
                 );
@@ -888,36 +855,22 @@ export function MessageItem({
               (() => {
                 if (message.toolCalls.length === 1) {
                   const tc = message.toolCalls[0];
-                  const tcProvs = getProvsFor(
-                    [tc.id, `call-${tc.id}`],
-                    ["tool_call"]
-                  );
-                  const tcBefore = tcProvs.filter(
-                    (p) => p.branch_position === "before"
-                  );
-                  const tcAfter = tcProvs.filter(
-                    (p) => p.branch_position !== "before"
-                  );
+                  const tcProvs = getProvsFor([tc.id, `call-${tc.id}`]);
                   return (
                     <div className="tool-calls-container">
-                      <ToolMidProvenanceIndicator
-                        provenances={tcBefore}
-                        onNavigateToSession={onNavigateToSession}
-                      >
-                        <div className="bubble-row assistant-bubble-row">
-                          <ToolCallItem
-                            toolCall={tc}
-                            sequenceIndex={getSeq(tc.id)}
-                          />
-                          <BubbleBranchActions
-                            targetId={tc.id}
-                            itemType="tool_call"
-                            onBranch={onBranch}
-                            direction="right"
-                          />
-                        </div>
-                      </ToolMidProvenanceIndicator>
-                      {renderSeparators(tcAfter)}
+                      <div className="bubble-row assistant-bubble-row">
+                        <ToolCallItem
+                          toolCall={tc}
+                          sequenceIndex={getSeq(tc.id)}
+                        />
+                        <BubbleBranchActions
+                          targetId={tc.id}
+                          itemType="tool_call"
+                          onBranch={onBranch}
+                          direction="right"
+                        />
+                      </div>
+                      {renderSeparators(tcProvs)}
                     </div>
                   );
                 }
@@ -928,63 +881,70 @@ export function MessageItem({
                   `call-${tc.id}`,
                   `group-${tc.id}`,
                 ]);
-                const gProvs = getProvsFor(groupIds, ["tool_call"]);
-                const gBefore = gProvs.filter(
-                  (p) => p.branch_position === "before"
-                );
-                const gAfter = gProvs.filter(
-                  (p) => p.branch_position !== "before"
-                );
+                const gProvs = getProvsFor(groupIds);
                 const groupTargetId = message.toolCalls[0].id;
-                const totalCalls = message.toolCalls.length;
+                const isEven = message.toolCalls.length % 2 === 0;
+                const midIndex = isEven ? message.toolCalls.length / 2 : -1;
 
                 return (
                   <div className="tool-calls-container">
-                    <ToolMidProvenanceIndicator
-                      provenances={gBefore}
-                      onNavigateToSession={onNavigateToSession}
-                    >
-                      <div className="tool-group-wrapper assistant-bubble-row">
-                        <div className="tool-group-brace-container">
-                          <div className="tool-group-brace" />
-                          <div className="tool-group-items">
-                            {message.toolCalls.map((tc, pIdx) => {
-                              const isFirst = pIdx === 0;
-                              const isLast = pIdx === totalCalls - 1;
-                              return (
-                                <div key={tc.id} className="bubble-row tool-sub-row">
-                                  <ToolCallItem
-                                    toolCall={tc}
-                                    sequenceIndex={getSeq(tc.id)}
+                    <div className="tool-group-wrapper assistant-bubble-row">
+                      <div className="tool-group-brace" />
+                      <div className="tool-group-items">
+                        {message.toolCalls.map((tc, pIdx) => {
+                          const isFirst = pIdx === 0;
+                          const isLast = pIdx === message.toolCalls!.length - 1;
+                          const isMidpoint = isEven && pIdx === midIndex;
+
+                          return (
+                            <React.Fragment key={tc.id}>
+                              {isMidpoint &&
+                                gProvs.map((prov, provIdx) => (
+                                  <ToolGroupProvenanceIndicator
+                                    key={`mid-prov-${prov.parent_session_id}-${provIdx}`}
+                                    provenance={prov}
+                                    onNavigateToSession={onNavigateToSession}
                                   />
-                                  {isFirst && (
-                                    <BubbleBranchActions
-                                      targetId={groupTargetId}
-                                      itemType="tool_call"
-                                      onBranch={onBranch}
-                                      direction="right"
-                                      isGroup={true}
-                                      mode="before-only"
-                                    />
-                                  )}
-                                  {isLast && (
-                                    <BubbleBranchActions
-                                      targetId={groupTargetId}
-                                      itemType="tool_call"
-                                      onBranch={onBranch}
-                                      direction="right"
-                                      isGroup={true}
-                                      mode="after-only"
-                                    />
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
+                                ))}
+                              <div className="bubble-row tool-sub-row">
+                                <ToolCallItem
+                                  toolCall={tc}
+                                  sequenceIndex={getSeq(tc.id)}
+                                />
+                                {isFirst && (
+                                  <BubbleBranchActions
+                                    targetId={groupTargetId}
+                                    itemType="tool_call"
+                                    onBranch={onBranch}
+                                    direction="right"
+                                    isGroup={true}
+                                    onlyPosition="before"
+                                  />
+                                )}
+                                {isLast && (
+                                  <BubbleBranchActions
+                                    targetId={groupTargetId}
+                                    itemType="tool_call"
+                                    onBranch={onBranch}
+                                    direction="right"
+                                    isGroup={true}
+                                    onlyPosition="after"
+                                  />
+                                )}
+                              </div>
+                            </React.Fragment>
+                          );
+                        })}
+                        {!isEven &&
+                          gProvs.map((prov, provIdx) => (
+                            <ToolGroupProvenanceIndicator
+                              key={`bottom-prov-${prov.parent_session_id}-${provIdx}`}
+                              provenance={prov}
+                              onNavigateToSession={onNavigateToSession}
+                            />
+                          ))}
                       </div>
-                    </ToolMidProvenanceIndicator>
-                    {renderSeparators(gAfter)}
+                    </div>
                   </div>
                 );
               })()
