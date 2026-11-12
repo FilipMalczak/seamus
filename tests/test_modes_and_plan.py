@@ -5,7 +5,12 @@ from uuid import uuid4
 
 import pytest
 
-from seamus.config.models import AgentConfig, InferenceConfig, InferenceFormat
+from seamus.config.models import (
+    AgentConfig,
+    ArtifactsImplementation,
+    InferenceConfig,
+    InferenceFormat,
+)
 from seamus.domain.modes import (
     ModeName,
     get_mode_descriptor,
@@ -129,6 +134,34 @@ def test_available_harness_tools_resolution() -> None:
     assert "plan" not in exec_tools
     assert "make_plan" not in exec_tools
     assert "wait_for_click" not in exec_tools
+
+
+def test_available_harness_tools_resolution_artifacts_none() -> None:
+    # When artifacts_implementation is NONE, all artifact tools and wait_for_click are removed
+    chat_tools = resolve_available_harness_tools(
+        "chat", artifacts_implementation=ArtifactsImplementation.NONE
+    )
+    assert chat_tools == set()
+
+    disc_tools = resolve_available_harness_tools(
+        "plan", "discuss", artifacts_implementation=ArtifactsImplementation.NONE
+    )
+    assert disc_tools == {"plan", "discard"}
+
+    make_tools_no_plan = resolve_available_harness_tools(
+        "plan", "make", has_active_plan=False, artifacts_implementation=ArtifactsImplementation.NONE
+    )
+    assert make_tools_no_plan == {"discard"}
+
+    make_tools_with_plan = resolve_available_harness_tools(
+        "plan", "make", has_active_plan=True, artifacts_implementation=ArtifactsImplementation.NONE
+    )
+    assert make_tools_with_plan == {"discard"}
+
+    exec_tools = resolve_available_harness_tools(
+        "plan", "execute", artifacts_implementation=ArtifactsImplementation.NONE
+    )
+    assert exec_tools == {"discard"}
 
 
 def test_plan_builder_lifecycle(tmp_path: Path) -> None:

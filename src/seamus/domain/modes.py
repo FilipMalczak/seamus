@@ -4,6 +4,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
+from seamus.config.models import ArtifactsImplementation
+
 
 class ModeName(StrEnum):
     """Canonical operational mode identifiers."""
@@ -201,11 +203,17 @@ def resolve_available_harness_tools(
     phase: str | None = None,
     *,
     has_active_plan: bool = False,
+    artifacts_implementation: str | ArtifactsImplementation = ArtifactsImplementation.SEAMUS,
 ) -> set[str]:
     """Determine which harness/artifact tools are exposed for a given mode and phase."""
     descriptor = get_mode_descriptor(mode)
     phase_desc = descriptor.get_phase(phase)
     raw_tools = set(phase_desc.tools if phase_desc is not None else descriptor.tools)
+
+    if artifacts_implementation in (ArtifactsImplementation.NONE, "none"):
+        raw_tools.difference_update(ARTIFACT_RELATED_TOOLS)
+        raw_tools.discard("wait_for_click")
+        return raw_tools
 
     if descriptor.name == ModeName.PLAN.value and phase_desc is not None:
         if phase_desc.name == PlanPhase.MAKE.value:

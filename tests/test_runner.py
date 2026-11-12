@@ -27,6 +27,7 @@ from pydantic import SecretStr
 
 from seamus.config.models import (
     AgentConfig,
+    ArtifactsImplementation,
     InferenceConfig,
     SkillsImplementation,
     TodoImplementation,
@@ -618,6 +619,53 @@ def test_session_agent_runner_skills_implementation_toggle(
     runner.reload_config()
     assert len(captured_kwargs) == 2
     assert captured_kwargs[1]["skills"] is None
+
+
+def test_session_agent_runner_artifacts_implementation_toggle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify _build_deep_agent binds artifact tools only when implementation is seamus."""
+    from unittest.mock import MagicMock
+
+    captured_kwargs: list[dict[str, Any]] = []
+
+    def mock_create_deep_agent(**kwargs: Any) -> Any:
+        captured_kwargs.append(dict(kwargs))
+        mock_graph = MagicMock()
+        mock_graph.nodes = {}
+        return mock_graph
+
+    monkeypatch.setattr("seamus.harness.runner.create_deep_agent", mock_create_deep_agent)
+
+    config = AgentConfig(
+        inference=InferenceConfig(api_key="mock-key"),
+        model_name="mock-model",
+        artifacts_implementation=ArtifactsImplementation.SEAMUS,
+    )
+    agent = Agent(config=config, name="art-toggle-agent")
+    session = agent.create_session(name="art-toggle-session")
+
+    runner = SessionAgentRunner(session=session, agent_entity=agent)
+    assert len(captured_kwargs) == 1
+    tool_names = [t.name for t in captured_kwargs[0]["tools"]]
+    assert "make_artifact" in tool_names
+    assert "make_questionnaire" in tool_names
+    assert "make_form" in tool_names
+    assert "make_plan" in tool_names
+    assert "wait_for_click" in tool_names
+
+    # Switch to NONE and reload
+    session.config.artifacts_implementation = ArtifactsImplementation.NONE
+    runner.reload_config()
+    assert len(captured_kwargs) == 2
+    none_tool_names = [t.name for t in captured_kwargs[1]["tools"]]
+    assert "make_artifact" not in none_tool_names
+    assert "make_questionnaire" not in none_tool_names
+    assert "make_form" not in none_tool_names
+    assert "make_plan" not in none_tool_names
+    assert "wait_for_click" not in none_tool_names
+    assert "plan" in none_tool_names
+    assert "discard" in none_tool_names
 
 
 @pytest.mark.asyncio

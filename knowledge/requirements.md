@@ -291,6 +291,12 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0052-backlog-low-hanging-fruits.md](../decisions/0052-backlog-low-hanging-fruits.md), `src/seamus/domain/entities.py`, `src/seamus/harness/runner.py`, `src/seamus/harness/store.py`, `src/seamus/server/schemas.py`.
 - **Linked Invariants**: [INV-060](./invariants.md#inv-060-explicit-thread-skill-retention-and-token-leakage-guard).
 
+### REQ-050: Configurable Artifacts Implementation Toggle & Gating Guard
+- **Description**: The harness must support an extensible enum setting `artifacts_implementation` (`none` | `seamus`) on `AgentConfig` across template, agent, and session scopes in both JSON APIs and the React UI. Setting `artifacts_implementation="seamus"` enables full status-quo interactive artifact support. Setting `artifacts_implementation="none"` must completely revoke model access to artifact-related tools (`make_artifact`, `make_questionnaire`, `make_form`, `make_plan`, `update_plan`, `edit_plan`, `wait_for_click`), suppress discovery of bundled skills (`artifacts`, `a2ui_components`), and sanitize system prompts of all artifact instructions and `/artifacts` mount paths.
+- **Rationale**: Minimizes context window consumption, eliminates UI hallucination, and declutters prompt instructions for models or tasks that do not need interactive A2UI artifacts or questionnaires.
+- **Provenance**: [0055-artifacts-implementation-toggle.md](../decisions/0055-artifacts-implementation-toggle.md), `src/seamus/config/models.py`, `src/seamus/domain/modes.py`, `src/seamus/harness/prompt.py`, `src/seamus/harness/runner.py`, `src/seamus/harness/skills.py`, `ui/src/components/ConfigModal.tsx`.
+- **Linked Invariants**: [INV-061](./invariants.md#inv-061-artifacts-implementation-capability-gating-and-prompt-sanitization).
+
 
 ## Cross-References
 - [backlog.md](./backlog.md)
@@ -338,4 +344,5 @@ Requirements, rationale, provenance, and stable IDs.
 - [0050-web-search-tool.md](../decisions/0050-web-search-tool.md)
 - [0051-chat-bubble-timestamps-and-sequence-indexing.md](../decisions/0051-chat-bubble-timestamps-and-sequence-indexing.md)
 - [0052-backlog-low-hanging-fruits.md](../decisions/0052-backlog-low-hanging-fruits.md)
+- [0055-artifacts-implementation-toggle.md](../decisions/0055-artifacts-implementation-toggle.md)
 - [persistence.md](./persistence.md)

@@ -40,6 +40,13 @@ class WebSearchImplementation(StrEnum):
     DUCKDUCKGO = "duckduckgo"
 
 
+class ArtifactsImplementation(StrEnum):
+    """Supported artifacts and interactive UI middleware implementations."""
+
+    NONE = "none"
+    SEAMUS = "seamus"
+
+
 class OperationalMode(StrEnum):
     """Supported operational modes."""
 
@@ -171,6 +178,7 @@ class AgentConfig(BaseModel):
     todo_implementation: TodoImplementation = TodoImplementation.SEAMUS
     skills_implementation: SkillsImplementation = SkillsImplementation.SEAMUS
     web_search: WebSearchImplementation = WebSearchImplementation.DUCKDUCKGO
+    artifacts_implementation: ArtifactsImplementation = ArtifactsImplementation.SEAMUS
     thread_message_overlap: int = 5
     repositories: list[ExternalRepositoryConfig] = Field(default_factory=list)
     sandbox_image: str | None = None
@@ -253,6 +261,11 @@ class AgentConfig(BaseModel):
                     overrides.web_search
                     if "web_search" in overrides.model_fields_set
                     else self.web_search
+                ),
+                "artifacts_implementation": (
+                    overrides.artifacts_implementation
+                    if "artifacts_implementation" in overrides.model_fields_set
+                    else self.artifacts_implementation
                 ),
                 "thread_message_overlap": (
                     overrides.thread_message_overlap

@@ -20,7 +20,11 @@ from langchain_core.messages import AIMessage
 from langchain_core.tools import BaseTool, StructuredTool
 from pydantic import BaseModel, ConfigDict, Field
 
-from seamus.config.models import ExternalRepositoryConfig, SkillsImplementation
+from seamus.config.models import (
+    ArtifactsImplementation,
+    ExternalRepositoryConfig,
+    SkillsImplementation,
+)
 from seamus.config.settings import get_system_settings_store, resolve_skill_path
 from seamus.domain.entities import Thread
 from seamus.harness.sandbox import BUNDLED_SKILLS_DIR, get_sandbox_settings
@@ -125,12 +129,16 @@ def parse_skill_markdown(raw_text: str, default_name: str) -> tuple[str, str, st
     return name, description, body, allowed_tools
 
 
+ARTIFACT_RELATED_SKILLS: frozenset[str] = frozenset({"artifacts", "a2ui_components"})
+
+
 def discover_session_skills(
     agent_id: UUID,
     session_id: UUID,
     skills_implementation: SkillsImplementation,
     repositories: Sequence[ExternalRepositoryConfig] | None = None,
     active_skill_names: Sequence[str] | None = None,
+    artifacts_implementation: ArtifactsImplementation = ArtifactsImplementation.SEAMUS,
 ) -> list[DiscoveredSkill]:
     """Discover skills across workspace, mounted projects, and system directories.
 
@@ -212,6 +220,11 @@ def discover_session_skills(
                 skill_file.parent.name if skill_file.parent != host_root else skill_file.stem
             )
             name, description, body, allowed_tools = parse_skill_markdown(raw_text, default_name)
+            if (
+                artifacts_implementation == ArtifactsImplementation.NONE
+                and name in ARTIFACT_RELATED_SKILLS
+            ):
+                continue
             is_active = name not in seen_names
             seen_names.add(name)
             is_loaded = is_active and (name in active_set)

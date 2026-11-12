@@ -476,3 +476,70 @@ def test_plan_prompt_xml_serialization() -> None:
         include_dynamic_context=False,
     )
     assert "<plan>" not in prompt_empty_plan
+
+
+def test_prompt_artifacts_implementation_none() -> None:
+    """Verify that when artifacts_implementation=none, artifact prompt pieces disappear."""
+    from seamus.config.models import ArtifactsImplementation
+    from seamus.harness.prompt import (
+        build_effective_system_prompt,
+        build_operating_environment,
+        build_scaffold_prompt,
+        build_user_inquiry,
+    )
+
+    # 1. user_inquiry returns None
+    inquiry = build_user_inquiry(artifacts_implementation=ArtifactsImplementation.NONE)
+    assert inquiry is None
+
+    # 2. operating environment omits artifacts directory and access
+    env = build_operating_environment(artifacts_implementation=ArtifactsImplementation.NONE)
+    assert env.artifacts_directory is None
+    assert env.artifacts_access is None
+    assert "/artifacts" not in env.filesystem_persistence
+
+    # 3. Scaffold prompt completely omits user_inquiry, artifacts mounts, and tools
+    scaffold = build_scaffold_prompt(artifacts_implementation=ArtifactsImplementation.NONE)
+    assert "<user_inquiry>" not in scaffold
+    assert "<artifacts_directory>" not in scaffold
+    assert "<artifacts_access>" not in scaffold
+    assert "/artifacts" not in scaffold
+    assert "make_artifact" not in scaffold
+    assert "make_questionnaire" not in scaffold
+    assert "make_form" not in scaffold
+    assert "make_plan" not in scaffold
+    assert "wait_for_click" not in scaffold
+
+    # 4. Discuss phase prompt with artifacts_implementation=none
+    discuss_prompt = build_effective_system_prompt(
+        mode="plan",
+        phase="discuss",
+        artifacts_implementation=ArtifactsImplementation.NONE,
+    )
+    assert "<user_inquiry>" not in discuss_prompt
+    assert "/artifacts" not in discuss_prompt
+    assert "make_questionnaire" not in discuss_prompt
+    assert "make_form" not in discuss_prompt
+    assert "make_plan" not in discuss_prompt
+
+    # 5. Make phase prompt with artifacts_implementation=none
+    make_prompt = build_effective_system_prompt(
+        mode="plan",
+        phase="make",
+        artifacts_implementation=ArtifactsImplementation.NONE,
+    )
+    assert "<user_inquiry>" not in make_prompt
+    assert "/artifacts" not in make_prompt
+    assert "make_plan" not in make_prompt
+    assert "update_plan" not in make_prompt
+    assert "edit_plan" not in make_prompt
+    assert "active_plan_context" not in make_prompt
+
+    # 6. Execute phase prompt with artifacts_implementation=none
+    execute_prompt = build_effective_system_prompt(
+        mode="plan",
+        phase="execute",
+        artifacts_implementation=ArtifactsImplementation.NONE,
+    )
+    assert "<user_inquiry>" not in execute_prompt
+    assert "/artifacts" not in execute_prompt

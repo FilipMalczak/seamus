@@ -305,6 +305,11 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-049](./requirements.md#req-049-cross-phase-retained-skills-continuity-across-thread-rollovers), [0052-backlog-low-hanging-fruits.md](../decisions/0052-backlog-low-hanging-fruits.md).
 - **Enforcement**: `src/seamus/domain/entities.py`, `src/seamus/harness/store.py`, `src/seamus/harness/runner.py`, `tests/test_skills.py`.
 
+### INV-061: Artifacts Implementation Capability Gating and Prompt Sanitization
+- **Statement**: When `artifacts_implementation == "none"`, the harness must not bind or expose `make_artifact`, `make_questionnaire`, `make_form`, `make_plan`, `update_plan`, `edit_plan`, or `wait_for_click` tools; must exclude bundled `artifacts` and `a2ui_components` skills from discovery; must omit `/artifacts` mounts and pointers from the operating environment; and must eliminate all inquiry guidelines and plan artifact authoring instructions from the system prompt.
+- **Justification**: [REQ-050](./requirements.md#req-050-configurable-artifacts-implementation-toggle--gating-guard), [0055-artifacts-implementation-toggle.md](../decisions/0055-artifacts-implementation-toggle.md).
+- **Enforcement**: `src/seamus/config/models.py`, `src/seamus/domain/modes.py`, `src/seamus/harness/prompt.py`, `src/seamus/harness/runner.py`, `src/seamus/harness/skills.py`, `tests/test_modes_and_plan.py`, `tests/test_prompt.py`, `tests/test_bundled_skills.py`.
+
 
 ## Cross-References
 - [backlog.md](./backlog.md)
@@ -355,4 +360,5 @@ Properties and rules that must always hold across the repository.
 - [0050-web-search-tool.md](../decisions/0050-web-search-tool.md)
 - [0051-chat-bubble-timestamps-and-sequence-indexing.md](../decisions/0051-chat-bubble-timestamps-and-sequence-indexing.md)
 - [0052-backlog-low-hanging-fruits.md](../decisions/0052-backlog-low-hanging-fruits.md)
+- [0055-artifacts-implementation-toggle.md](../decisions/0055-artifacts-implementation-toggle.md)
 - [persistence.md](./persistence.md)

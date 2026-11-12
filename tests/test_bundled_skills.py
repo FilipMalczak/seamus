@@ -163,3 +163,58 @@ def test_bundled_skills_and_tools_in_inspector() -> None:
     # Verify prompt mentions
     assert "artifacts" in report.prompts.composite
     assert "make_questionnaire" in report.prompts.composite
+
+
+def test_bundled_skills_excluded_when_artifacts_implementation_none() -> None:
+    from seamus.config.models import (
+        AgentConfig,
+        ArtifactsImplementation,
+        InferenceConfig,
+        SkillsImplementation,
+    )
+    from seamus.harness.inspector import (
+        build_agent_inspect_report,
+        extract_session_skills,
+    )
+    from seamus.harness.store import get_harness_store
+
+    store = get_harness_store()
+    agent_name = f"test-no-art-{uuid4().hex[:6]}"
+    cfg = AgentConfig(
+        model_name="dummy",
+        system_prompt="test",
+        inference=InferenceConfig(api_key="dummy"),
+        skills_implementation=SkillsImplementation.DEEPAGENTS,
+        artifacts_implementation=ArtifactsImplementation.NONE,
+    )
+    agent = store.create_agent(config=cfg, name=agent_name)
+    session = list(agent.sessions.values())[0]
+
+    # Verify extract_session_skills excludes bundled artifact skills
+    discovered = extract_session_skills(
+        agent.id,
+        session.id,
+        cfg.skills_implementation,
+        artifacts_implementation=cfg.artifacts_implementation,
+    )
+    names = [s.name for s in discovered]
+    assert "artifacts" not in names
+    assert "a2ui_components" not in names
+
+    # Verify report excludes artifact skills and tools
+    report = build_agent_inspect_report(str(agent.id), str(session.id))
+    assert report.artifacts_implementation == ArtifactsImplementation.NONE
+    report_skill_names = [s.name for s in (report.skills or [])]
+    assert "artifacts" not in report_skill_names
+    assert "a2ui_components" not in report_skill_names
+
+    report_tool_names = [t.name for t in report.tools]
+    assert "make_artifact" not in report_tool_names
+    assert "make_questionnaire" not in report_tool_names
+    assert "make_form" not in report_tool_names
+    assert "make_plan" not in report_tool_names
+    assert "wait_for_click" not in report_tool_names
+
+    # Verify prompt does not contain artifact instructions
+    assert "<user_inquiry>" not in report.prompts.composite
+    assert "/artifacts" not in report.prompts.composite

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Check, Code, Eye, EyeOff, Save, Sliders, Wand2, X } from "lucide-react";
 import type {
   AgentConfig,
+  ArtifactsImplementation,
   SkillsImplementation,
   TodoImplementation,
   WebSearchImplementation,
@@ -166,6 +167,17 @@ export function ConfigModal({
     }
 
     if (
+      "artifacts_implementation" in parsed &&
+      parsed.artifacts_implementation !== null &&
+      !["none", "seamus"].includes(parsed.artifacts_implementation)
+    ) {
+      setError(
+        `Invalid artifacts_implementation '${parsed.artifacts_implementation}'. Allowed values: 'none', 'seamus'.`
+      );
+      return;
+    }
+
+    if (
       parsed.daemons?.naming?.enabled &&
       (!parsed.daemons?.naming?.model || !parsed.daemons.naming.model.trim())
     ) {
@@ -208,6 +220,8 @@ export function ConfigModal({
     parsedDraft?.mode ?? initialConfig.mode ?? "plan";
   const currentWebSearch: WebSearchImplementation =
     parsedDraft?.web_search ?? initialConfig.web_search ?? "duckduckgo";
+  const currentArtifactsImpl: ArtifactsImplementation =
+    parsedDraft?.artifacts_implementation ?? initialConfig.artifacts_implementation ?? "seamus";
   const currentSystemPrompt =
     parsedDraft?.system_prompt !== undefined
       ? parsedDraft.system_prompt
@@ -478,6 +492,24 @@ export function ConfigModal({
                   </select>
                 </div>
 
+                <div className="config-field">
+                  <label className="config-label">Artifacts Support</label>
+                  <select
+                    className="config-select"
+                    value={currentArtifactsImpl}
+                    onChange={(e) =>
+                      updateDraft((d) => {
+                        d.artifacts_implementation = e.target.value;
+                      })
+                    }
+                  >
+                    <option value="seamus">seamus (A2UI &amp; interactive artifacts enabled)</option>
+                    <option value="none">none (Disabled)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="config-form-row">
                 <div className="config-field">
                   <label className="config-label">Web Search</label>
                   <select

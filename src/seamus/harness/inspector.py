@@ -12,6 +12,7 @@ from deepagents.middleware.skills import SKILLS_SYSTEM_PROMPT, SkillMetadata, Sk
 from pydantic import BaseModel, Field, model_validator
 
 from seamus.config.models import (
+    ArtifactsImplementation,
     ExternalRepositoryConfig,
     SkillsImplementation,
     TodoImplementation,
@@ -249,6 +250,7 @@ class AgentInspectReport(BaseModel):
     skills: list[SkillInspectInfo] = Field(default_factory=list)
     skills_implementation: SkillsImplementation = SkillsImplementation.DEEPAGENTS
     web_search: WebSearchImplementation = WebSearchImplementation.DUCKDUCKGO
+    artifacts_implementation: ArtifactsImplementation = ArtifactsImplementation.SEAMUS
     subagents: list[SubAgentInspectInfo] = Field(default_factory=list)
     mounted_repositories: list[MountedRepoInspectInfo] = Field(default_factory=list)
     history: HistoryInspectInfo
@@ -802,6 +804,7 @@ def extract_session_skills(
     skills_implementation: SkillsImplementation,
     repositories: Sequence[ExternalRepositoryConfig] | None = None,
     active_skill_names: Sequence[str] | None = None,
+    artifacts_implementation: ArtifactsImplementation = ArtifactsImplementation.SEAMUS,
 ) -> list[SkillInspectInfo]:
     """Discover skills across workspace, mounted projects, and system directories."""
     skills = discover_session_skills(
@@ -810,6 +813,7 @@ def extract_session_skills(
         skills_implementation=skills_implementation,
         repositories=repositories,
         active_skill_names=active_skill_names,
+        artifacts_implementation=artifacts_implementation,
     )
     return [
         SkillInspectInfo(
@@ -833,6 +837,7 @@ def build_middleware_prompt_sections(
     skills_implementation: SkillsImplementation,
     skills: Sequence[SkillInspectInfo],
     workdir: str = "/workspace",
+    artifacts_implementation: ArtifactsImplementation = ArtifactsImplementation.SEAMUS,
 ) -> str:
     """Assemble the system prompt sections appended at runtime by active DeepAgents middleware."""
     sections: list[str] = []
@@ -850,7 +855,7 @@ def build_middleware_prompt_sections(
             f"{norm_workdir}/.skills",
             f"{norm_workdir}/skills",
         ]
-        if BUNDLED_SKILLS_DIR.is_dir():
+        if artifacts_implementation != ArtifactsImplementation.NONE and BUNDLED_SKILLS_DIR.is_dir():
             skill_sources.append("/skills/bundled")
         sm = SkillsMiddleware(backend=cast(Any, None), sources=skill_sources)
         active_meta: list[SkillMetadata] = [
@@ -955,6 +960,7 @@ def build_agent_inspect_report(
         session.config.skills_implementation,
         repositories=session.config.repositories,
         active_skill_names=thread.active_skills if thread else None,
+        artifacts_implementation=session.config.artifacts_implementation,
     )
 
     if runner is not None:
@@ -1004,6 +1010,7 @@ def build_agent_inspect_report(
             discovered_context=discovered_ctx,
             skills=skills_doc,
             plan=plan_str,
+            artifacts_implementation=session.config.artifacts_implementation,
         )
 
     middleware_prompt_sections = build_middleware_prompt_sections(
@@ -1011,6 +1018,7 @@ def build_agent_inspect_report(
         skills_implementation=session.config.skills_implementation,
         skills=skills,
         workdir=sandbox_settings.workdir,
+        artifacts_implementation=session.config.artifacts_implementation,
     )
 
     scaffold_prompt = (
@@ -1039,6 +1047,7 @@ def build_agent_inspect_report(
         thread.mode,
         thread.phase,
         has_active_plan=bool(session.active_plan_id),
+        artifacts_implementation=session.config.artifacts_implementation,
     )
     tools = [t for t in tools if t.name not in ALL_HARNESS_TOOLS or t.name in allowed_harness_tools]
 
@@ -1156,6 +1165,7 @@ def build_agent_inspect_report(
         skills=skills,
         skills_implementation=session.config.skills_implementation,
         web_search=session.config.web_search,
+        artifacts_implementation=session.config.artifacts_implementation,
         subagents=[],
         mounted_repositories=mounted_repositories,
         history=history_info,

@@ -11,7 +11,7 @@ from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResp
 from langchain_core.messages import AIMessage, SystemMessage
 from pydantic import BaseModel, Field
 
-from seamus.config.models import ExternalRepositoryConfig
+from seamus.config.models import ArtifactsImplementation, ExternalRepositoryConfig
 from seamus.domain.modes import (
     ModeName,
     PlanPhase,
@@ -37,8 +37,8 @@ class OperatingEnvironment(BaseModel):
     projects_access: str = "read-write"
     notes_directory: str | None = None
     notes_access: str | None = None
-    artifacts_directory: str = "/artifacts"
-    artifacts_access: str = "read-only"
+    artifacts_directory: str | None = "/artifacts"
+    artifacts_access: str | None = "read-only"
     filesystem_persistence: str
     execution_sandbox: str
 
@@ -175,6 +175,7 @@ def build_operating_environment(
     workdir: str = DEFAULT_OPERATIONAL_DIR,
     mode: str = ModeName.CHAT.value,
     phase: str | None = None,
+    artifacts_implementation: ArtifactsImplementation = ArtifactsImplementation.SEAMUS,
 ) -> OperatingEnvironment:
     """Return the filesystem persistence and sandbox execution boundary model."""
     resolved_mode, resolved_phase = normalize_mode_and_phase(mode, phase)
@@ -186,6 +187,7 @@ def build_operating_environment(
         if mount_policy.notes_mounted
         else None
     )
+    artifacts_enabled = artifacts_implementation != ArtifactsImplementation.NONE
 
     if mount_policy.workspace_readonly:
         persistence = (
@@ -205,9 +207,14 @@ def build_operating_environment(
                     "for reference.\n"
                 )
             )
-            + "Renderable A2UI artifacts are mounted READ-ONLY at `/artifacts`.\n"
-            f"Anything outside `{workdir}` and `/artifacts` (such as `/tmp` or `/root`) "
-            "is transient and ephemeral, and will be discarded when the sandbox restarts."
+            + (
+                "Renderable A2UI artifacts are mounted READ-ONLY at `/artifacts`.\n"
+                f"Anything outside `{workdir}` and `/artifacts` (such as `/tmp` or `/root`) "
+                "is transient and ephemeral, and will be discarded when the sandbox restarts."
+                if artifacts_enabled
+                else f"Anything outside `{workdir}` (such as `/tmp` or `/root`) "
+                "is transient and ephemeral, and will be discarded when the sandbox restarts."
+            )
         )
     else:
         persistence = (
@@ -216,8 +223,16 @@ def build_operating_environment(
             "All persistent project work, repositories, created files, and deliverables "
             f"MUST be located within `{workdir}`.\n"
             + (
-                "Your session notes from earlier planning phases are located at `/workspace/notes` "
-                "and approved plan artifacts are mounted READ-ONLY at `/artifacts/plans/`.\n"
+                (
+                    "Your session notes from earlier planning phases are located at "
+                    "`/workspace/notes` and approved plan artifacts are mounted "
+                    "READ-ONLY at `/artifacts/plans/`.\n"
+                    if artifacts_enabled
+                    else (
+                        "Your session notes from earlier planning phases are located at "
+                        "`/workspace/notes`.\n"
+                    )
+                )
                 if notes_dir
                 else ""
             )
@@ -256,8 +271,8 @@ def build_operating_environment(
         projects_access="read-write",
         notes_directory=notes_dir,
         notes_access=notes_access,
-        artifacts_directory="/artifacts",
-        artifacts_access="read-only",
+        artifacts_directory="/artifacts" if artifacts_enabled else None,
+        artifacts_access="read-only" if artifacts_enabled else None,
         filesystem_persistence=persistence,
         execution_sandbox=sandbox_desc,
     )
@@ -314,11 +329,13 @@ def build_operational_mode_section(
     *,
     active_plan_id: str | None = None,
     active_plan_title: str | None = None,
+    artifacts_implementation: ArtifactsImplementation = ArtifactsImplementation.SEAMUS,
 ) -> OperationalModeSection:
     """Construct the structured OperationalModeSection for the given mode and phase."""
     resolved_mode, resolved_phase = normalize_mode_and_phase(mode, phase)
     mode_desc = get_mode_descriptor(resolved_mode)
     phase_desc = mode_desc.get_phase(resolved_phase)
+    artifacts_enabled = artifacts_implementation != ArtifactsImplementation.NONE
 
     if resolved_mode == ModeName.CHAT.value or phase_desc is None:
         return OperationalModeSection(
@@ -333,6 +350,11 @@ def build_operational_mode_section(
                 (
                     "Use `ask` when you are genuinely blocked on a user preference or requirement "
                     "that cannot be inferred from the codebase."
+                    if artifacts_enabled
+                    else (
+                        "Ask the user directly when you are genuinely blocked on a user preference "
+                        "or requirement that cannot be inferred from the codebase."
+                    )
                 ),
             ],
             phase_workflow=[
@@ -340,6 +362,17 @@ def build_operational_mode_section(
                 "Implement minimal, well-tested changes and verify them with project checks.",
             ],
         )
+
+    cross_phase_continuity = (
+        "Cross-phase continuity relies strictly on disk state: notes, specifications, "
+        "and requirements recorded in `/workspace` during Discuss (read-only in Make, "
+        "executed in Execute) and the session-local Plan artifact under "
+        "`/artifacts/plans/<plan_id>/` (authored in Make, executed in Execute)."
+        if artifacts_enabled
+        else "Cross-phase continuity relies strictly on disk state: notes, specifications, "
+        "and requirements recorded in `/workspace` during Discuss (read-only in Make, "
+        "executed in Execute)."
+    )
 
     architecture_and_continuity = [
         (
@@ -350,16 +383,11 @@ def build_operational_mode_section(
             "Each phase runs in its own isolated thread with a completely fresh message history "
             "(zero prior chat messages carry over across phases)."
         ),
-        (
-            "Cross-phase continuity relies strictly on disk state: notes, specifications, "
-            "and requirements recorded in `/workspace` during Discuss (read-only in Make, "
-            "executed in Execute) and the session-local Plan artifact under "
-            "`/artifacts/plans/<plan_id>/` (authored in Make, executed in Execute)."
-        ),
+        cross_phase_continuity,
     ]
 
     active_plan_ctx: ActivePlanPromptContext | None = None
-    if active_plan_id:
+    if active_plan_id and artifacts_enabled:
         title_str = active_plan_title or "Plan"
         plan_dir = f"/artifacts/plans/{active_plan_id}"
         plan_path = f"{plan_dir}/plan.md"
@@ -376,187 +404,262 @@ def build_operational_mode_section(
             ),
         )
 
+    phase_description = (
+        phase_desc.description
+        if artifacts_enabled
+        else (
+            "Explore the workspace with read-write access, clarify requirements and trade-offs "
+            "with the user via conversation, and record findings and notes across the workspace "
+            "before calling `plan()`."
+            if phase_desc.name == PlanPhase.DISCUSS.value
+            else (
+                "Synthesize the organized notes in `/workspace/notes` and inspect the read-only "
+                "`/workspace` to author and refine the session's Markdown implementation plan, "
+                "then await user approval."
+                if phase_desc.name == PlanPhase.MAKE.value
+                else (
+                    "Implement and verify the approved plan with full read-write access to "
+                    "`/workspace`."
+                    if phase_desc.name == PlanPhase.EXECUTE.value
+                    else phase_desc.description
+                )
+            )
+        )
+    )
+
     if phase_desc.name == PlanPhase.DISCUSS.value:
+        discuss_objectives = [
+            (
+                "Explore the codebase in `/workspace` (mounted read-write) to understand "
+                "existing architecture, dependencies, conventions, and constraints."
+            ),
+            (
+                "Clarify ambiguities, requirements, user preferences, and design trade-offs "
+                "using blocking questionnaires (`ask`), non-blocking tabbed forms (`form`), "
+                "or conversational discussion."
+                if artifacts_enabled
+                else "Clarify ambiguities, requirements, user preferences, and design trade-offs "
+                "using conversational discussion."
+            ),
+            (
+                "Record and organize all findings, specifications, constraints, and "
+                "requirements in the workspace. You are free to organize your notes, "
+                "research, and documentation in any directory you choose within `/workspace`."
+            ),
+            (
+                "CRITICAL BOUNDARY: Do NOT follow user implementation instructions or write "
+                "code to implement the requested feature/fix during this phase. Do NOT "
+                "author the actual Plan artifact during Discuss. Your sole mission in "
+                "Discuss is to collect and record all necessary requirements, context, and "
+                "technical details."
+                if artifacts_enabled
+                else "CRITICAL BOUNDARY: Do NOT follow user implementation instructions or write "
+                "code to implement the requested feature/fix during this phase. Do NOT "
+                "author the implementation plan during Discuss. Your sole mission in "
+                "Discuss is to collect and record all necessary requirements, context, and "
+                "technical details."
+            ),
+        ]
+        discuss_workflow = [
+            (
+                "1. Read and search `/workspace` to locate relevant code, existing "
+                "abstractions, affected files, and potential edge cases."
+            ),
+            (
+                "2. Proactively ask questions and clarify requirements whenever details or "
+                "trade-offs are uncertain. Use `make_questionnaire` for blocking choices, "
+                "`make_form` for multi-question surveys, or conversational prose."
+                if artifacts_enabled
+                else "2. Proactively ask questions and clarify requirements whenever details or "
+                "trade-offs are uncertain using conversational prose."
+            ),
+            (
+                "3. Document all collected requirements, user decisions, affected file paths, "
+                "and architectural notes in `/workspace` (using any directory structure of "
+                "your choice). The subsequent Make phase will wake up in a new thread with "
+                "NO chat history and will rely entirely on disk state in `/workspace`."
+            ),
+            (
+                "4. Once all requirements, technical details, and constraints are collected "
+                "and documented—and NEVER before—call `plan()` to transition the session into "
+                "the Make phase."
+            ),
+        ]
+        discuss_rules = [
+            (
+                "Call `plan()` ONLY after you have thoroughly collected all requirements, "
+                "verified codebase details, and recorded your findings in `/workspace`. "
+                "Calling `plan()` closes the Discuss thread, spawns a new Make thread, and "
+                "wakes the agent to author the Plan artifact."
+                if artifacts_enabled
+                else "Call `plan()` ONLY after you have thoroughly collected all requirements, "
+                "verified codebase details, and recorded your findings in `/workspace`. "
+                "Calling `plan()` closes the Discuss thread, spawns a new Make thread, and "
+                "wakes the agent to author the plan."
+            ),
+            (
+                "Do NOT attempt to author the Plan artifact (via `make_plan`) or implement "
+                "feature code during Discuss; `make_plan` is only available in Make phase."
+                if artifacts_enabled
+                else "Do NOT attempt to author the plan or implement feature code during Discuss."
+            ),
+            (
+                "Call `discard()` ONLY when explicitly instructed by the user to abandon or "
+                "reset the current planning effort."
+            ),
+        ]
         return OperationalModeSection(
             mode_name=mode_desc.title,
             mode_slug=mode_desc.name,
             mode_description=mode_desc.description,
             phase_name=phase_desc.title,
             phase_slug=phase_desc.name,
-            phase_description=phase_desc.description,
+            phase_description=phase_description,
             architecture_and_continuity=architecture_and_continuity,
-            phase_objectives=[
-                (
-                    "Explore the codebase in `/workspace` (mounted read-write) to understand "
-                    "existing architecture, dependencies, conventions, and constraints."
-                ),
-                (
-                    "Clarify ambiguities, requirements, user preferences, and design trade-offs "
-                    "using blocking questionnaires (`ask`), non-blocking tabbed forms (`form`), "
-                    "or conversational discussion."
-                ),
-                (
-                    "Record and organize all findings, specifications, constraints, and "
-                    "requirements in the workspace. You are free to organize your notes, "
-                    "research, and documentation in any directory you choose within `/workspace`."
-                ),
-                (
-                    "CRITICAL BOUNDARY: Do NOT follow user implementation instructions or write "
-                    "code to implement the requested feature/fix during this phase. Do NOT "
-                    "author the actual Plan artifact during Discuss. Your sole mission in "
-                    "Discuss is to collect and record all necessary requirements, context, and "
-                    "technical details."
-                ),
-            ],
-            phase_workflow=[
-                (
-                    "1. Read and search `/workspace` to locate relevant code, existing "
-                    "abstractions, affected files, and potential edge cases."
-                ),
-                (
-                    "2. Proactively ask questions and clarify requirements whenever details or "
-                    "trade-offs are uncertain. Use `make_questionnaire` for blocking choices, "
-                    "`make_form` for multi-question surveys, or conversational prose."
-                ),
-                (
-                    "3. Document all collected requirements, user decisions, affected file paths, "
-                    "and architectural notes in `/workspace` (using any directory structure of "
-                    "your choice). The subsequent Make phase will wake up in a new thread with "
-                    "NO chat history and will rely entirely on disk state in `/workspace`."
-                ),
-                (
-                    "4. Once all requirements, technical details, and constraints are collected "
-                    "and documented—and NEVER before—call `plan()` to transition the session into "
-                    "the Make phase."
-                ),
-            ],
-            transition_and_discard_rules=[
-                (
-                    "Call `plan()` ONLY after you have thoroughly collected all requirements, "
-                    "verified codebase details, and recorded your findings in `/workspace`. "
-                    "Calling `plan()` closes the Discuss thread, spawns a new Make thread, and "
-                    "wakes the agent to author the Plan artifact."
-                ),
-                (
-                    "Do NOT attempt to author the Plan artifact (via `make_plan`) or implement "
-                    "feature code during Discuss; `make_plan` is only available in Make phase."
-                ),
-                (
-                    "Call `discard()` ONLY when explicitly instructed by the user to abandon or "
-                    "reset the current planning effort."
-                ),
-            ],
+            phase_objectives=discuss_objectives,
+            phase_workflow=discuss_workflow,
+            transition_and_discard_rules=discuss_rules,
         )
 
     if phase_desc.name == PlanPhase.MAKE.value:
+        make_objectives = [
+            (
+                "Read the recorded requirement notes, specifications, and codebase findings "
+                "in `/workspace` (mounted read-only) and verify any remaining technical "
+                "details in `/workspace`."
+            ),
+            (
+                "Author a comprehensive, surgical Markdown implementation plan using "
+                "`make_plan(content, name)` (or refine the existing session plan using "
+                "`update_plan(content)` and `edit_plan(old_string, new_string)`)."
+                if artifacts_enabled
+                else (
+                    "Author a comprehensive, surgical Markdown implementation plan in `/workspace`."
+                )
+            ),
+        ]
+        make_workflow = [
+            (
+                "1. Start by reviewing the requirement notes and findings in `/workspace` to "
+                "recover all requirements, decisions, and context gathered during Discuss."
+            ),
+            (
+                "2. Inspect `/workspace` as needed to confirm exact file paths, signatures, "
+                "and test patterns."
+            ),
+            (
+                "3. Call `make_plan(content=..., name=...)` to publish the Plan artifact tab. "
+                "Once `make_plan` is called, `make_plan` is replaced by `update_plan` (full "
+                "Markdown overwrite) and `edit_plan` (targeted string replacement) for "
+                "subsequent refinements."
+                if artifacts_enabled
+                else "3. Document your comprehensive Markdown implementation plan in `/workspace`."
+            ),
+            (
+                "4. After creating or updating the plan, briefly inform the user that the "
+                "plan is ready in its tab and await either their feedback in chat or their "
+                "approval via the **Proceed** button."
+                if artifacts_enabled
+                else "4. After creating or updating the plan, briefly inform the user that the "
+                "plan is ready and await their feedback or approval in chat."
+            ),
+        ]
+        make_rules = [
+            (
+                "There is NO tool to transition from Make to Execute. The user transitions "
+                "the session to Execute by clicking the **Proceed** button on the Plan tab."
+                if artifacts_enabled
+                else "There is NO tool to transition from Make to Execute. Await user instructions "
+                "to proceed to execution."
+            ),
+            (
+                "Do NOT repeat the full Markdown plan text in your chat response—the plan is "
+                "rendered directly in the Plan tab."
+                if artifacts_enabled
+                else "Present a concise summary of the plan in chat while persisting the full "
+                "document in `/workspace`."
+            ),
+            (
+                "Call `discard()` ONLY when explicitly instructed by the user to discard the "
+                "plan and return to a fresh Discuss thread."
+            ),
+        ]
         return OperationalModeSection(
             mode_name=mode_desc.title,
             mode_slug=mode_desc.name,
             mode_description=mode_desc.description,
             phase_name=phase_desc.title,
             phase_slug=phase_desc.name,
-            phase_description=phase_desc.description,
+            phase_description=phase_description,
             architecture_and_continuity=architecture_and_continuity,
-            phase_objectives=[
-                (
-                    "Read the recorded requirement notes, specifications, and codebase findings "
-                    "in `/workspace` (mounted read-only) and verify any remaining technical "
-                    "details in `/workspace`."
-                ),
-                (
-                    "Author a comprehensive, surgical Markdown implementation plan using "
-                    "`make_plan(content, name)` (or refine the existing session plan using "
-                    "`update_plan(content)` and `edit_plan(old_string, new_string)`)."
-                ),
-            ],
-            phase_workflow=[
-                (
-                    "1. Start by reviewing the requirement notes and findings in `/workspace` to "
-                    "recover all requirements, decisions, and context gathered during Discuss."
-                ),
-                (
-                    "2. Inspect `/workspace` as needed to confirm exact file paths, signatures, "
-                    "and test patterns."
-                ),
-                (
-                    "3. Call `make_plan(content=..., name=...)` to publish the Plan artifact tab. "
-                    "Once `make_plan` is called, `make_plan` is replaced by `update_plan` (full "
-                    "Markdown overwrite) and `edit_plan` (targeted string replacement) for "
-                    "subsequent refinements."
-                ),
-                (
-                    "4. After creating or updating the plan, briefly inform the user that the "
-                    "plan is ready in its tab and await either their feedback in chat or their "
-                    "approval via the **Proceed** button."
-                ),
-            ],
+            phase_objectives=make_objectives,
+            phase_workflow=make_workflow,
             plan_document_specification=build_plan_document_specification(),
-            active_plan_context=active_plan_ctx,
-            transition_and_discard_rules=[
-                (
-                    "There is NO tool to transition from Make to Execute. The user transitions "
-                    "the session to Execute by clicking the **Proceed** button on the Plan tab."
-                ),
-                (
-                    "Do NOT repeat the full Markdown plan text in your chat response—the plan is "
-                    "rendered directly in the Plan tab."
-                ),
-                (
-                    "Call `discard()` ONLY when explicitly instructed by the user to discard the "
-                    "plan and return to a fresh Discuss thread."
-                ),
-            ],
+            active_plan_context=active_plan_ctx if artifacts_enabled else None,
+            transition_and_discard_rules=make_rules,
         )
 
     # PlanPhase.EXECUTE
+    execute_objectives = [
+        (
+            "Read the approved implementation plan from `/artifacts/plans/` and supporting "
+            "notes and specifications in `/workspace`."
+            if artifacts_enabled
+            else "Read the approved implementation plan and supporting notes and specifications "
+            "in `/workspace`."
+        ),
+        (
+            "Execute the plan systematically in `/workspace` (now mounted read-write) and "
+            "run all verification checks specified in the plan."
+        ),
+    ]
+    execute_workflow = [
+        (
+            "1. Immediately read the active plan artifact (pointed to in "
+            "`active_plan_context` or under `/artifacts/plans/`) and inspect supporting "
+            "notes in `/workspace` if additional context is needed."
+            if artifacts_enabled
+            else "1. Immediately read the plan and inspect supporting notes in `/workspace` "
+            "if additional context is needed."
+        ),
+        (
+            "2. Implement each planned change surgically in `/workspace`, following existing "
+            "codebase conventions and invariants."
+        ),
+        (
+            "3. Run the test suite, linters, and type checks specified in the plan's "
+            "Verification Plan section until all checks pass."
+        ),
+        (
+            "4. Present a concise summary of the completed implementation and verification "
+            "results so the user can review and accept the Sync PR."
+        ),
+    ]
+    execute_rules = [
+        (
+            "When the user accepts the Sync PR in the Changes tab, the active plan artifact "
+            "is automatically closed, changes are merged, and a new Discuss thread opens."
+            if artifacts_enabled
+            else "When the user accepts the Sync PR in the Changes tab, changes are merged, "
+            "and a new Discuss thread opens."
+        ),
+        (
+            "Call `discard()` ONLY when explicitly instructed by the user to abort execution, "
+            "discard the active plan, and return to Discuss."
+        ),
+    ]
     return OperationalModeSection(
         mode_name=mode_desc.title,
         mode_slug=mode_desc.name,
         mode_description=mode_desc.description,
         phase_name=phase_desc.title,
         phase_slug=phase_desc.name,
-        phase_description=phase_desc.description,
+        phase_description=phase_description,
         architecture_and_continuity=architecture_and_continuity,
-        phase_objectives=[
-            (
-                "Read the approved implementation plan from `/artifacts/plans/` and supporting "
-                "notes and specifications in `/workspace`."
-            ),
-            (
-                "Execute the plan systematically in `/workspace` (now mounted read-write) and "
-                "run all verification checks specified in the plan."
-            ),
-        ],
-        phase_workflow=[
-            (
-                "1. Immediately read the active plan artifact (pointed to in "
-                "`active_plan_context` or under `/artifacts/plans/`) and inspect supporting "
-                "notes in `/workspace` if additional context is needed."
-            ),
-            (
-                "2. Implement each planned change surgically in `/workspace`, following existing "
-                "codebase conventions and invariants."
-            ),
-            (
-                "3. Run the test suite, linters, and type checks specified in the plan's "
-                "Verification Plan section until all checks pass."
-            ),
-            (
-                "4. Present a concise summary of the completed implementation and verification "
-                "results so the user can review and accept the Sync PR."
-            ),
-        ],
-        active_plan_context=active_plan_ctx,
-        transition_and_discard_rules=[
-            (
-                "When the user accepts the Sync PR in the Changes tab, the active plan artifact "
-                "is automatically closed, changes are merged, and a new Discuss thread opens."
-            ),
-            (
-                "Call `discard()` ONLY when explicitly instructed by the user to abort execution, "
-                "discard the active plan, and return to Discuss."
-            ),
-        ],
+        phase_objectives=execute_objectives,
+        phase_workflow=execute_workflow,
+        active_plan_context=active_plan_ctx if artifacts_enabled else None,
+        transition_and_discard_rules=execute_rules,
     )
 
 
@@ -647,10 +750,17 @@ def build_tool_usage() -> list[str]:
 def build_user_inquiry(
     mode: str = ModeName.CHAT.value,
     phase: str | None = None,
+    artifacts_implementation: ArtifactsImplementation = ArtifactsImplementation.SEAMUS,
 ) -> UserInquiry | None:
     """Return mode- and phase-aware guidelines for user inquiry tools, or None when omitted."""
+    if artifacts_implementation == ArtifactsImplementation.NONE:
+        return None
     resolved_mode, resolved_phase = normalize_mode_and_phase(mode, phase)
-    available = resolve_available_harness_tools(resolved_mode, resolved_phase)
+    available = resolve_available_harness_tools(
+        resolved_mode,
+        resolved_phase,
+        artifacts_implementation=artifacts_implementation,
+    )
 
     if (
         "make_questionnaire" not in available
@@ -798,20 +908,31 @@ def build_scaffold_prompt(
     *,
     active_plan_id: str | None = None,
     active_plan_title: str | None = None,
+    artifacts_implementation: ArtifactsImplementation = ArtifactsImplementation.SEAMUS,
 ) -> str:
     """Construct the base XML prompt scaffold without dynamic context or custom additions."""
     doc = SystemPromptDocument(
         identity=build_default_identity(),
-        operating_environment=build_operating_environment(workdir, mode=mode, phase=phase),
+        operating_environment=build_operating_environment(
+            workdir,
+            mode=mode,
+            phase=phase,
+            artifacts_implementation=artifacts_implementation,
+        ),
         operational_mode=build_operational_mode_section(
             mode=mode,
             phase=phase,
             active_plan_id=active_plan_id,
             active_plan_title=active_plan_title,
+            artifacts_implementation=artifacts_implementation,
         ),
         engineering_discipline=build_engineering_discipline(),
         tool_usage=build_tool_usage(),
-        user_inquiry=build_user_inquiry(mode=mode, phase=phase),
+        user_inquiry=build_user_inquiry(
+            mode=mode,
+            phase=phase,
+            artifacts_implementation=artifacts_implementation,
+        ),
         communication_style=build_communication_style(),
     )
     dumped = doc.model_dump(mode="json", exclude_none=True)
@@ -953,6 +1074,7 @@ def build_effective_system_prompt(
     discovered_context: Sequence[DiscoveredContextItem] | None = None,
     skills: SkillsPromptDocument | None = None,
     plan: str | None = None,
+    artifacts_implementation: ArtifactsImplementation = ArtifactsImplementation.SEAMUS,
 ) -> str:
     """Assemble and serialize the complete effective LM-XML system prompt."""
     dynamic_ctx = (
@@ -974,16 +1096,26 @@ def build_effective_system_prompt(
 
     doc = SystemPromptDocument(
         identity=build_default_identity(),
-        operating_environment=build_operating_environment(workdir, mode=mode, phase=phase),
+        operating_environment=build_operating_environment(
+            workdir,
+            mode=mode,
+            phase=phase,
+            artifacts_implementation=artifacts_implementation,
+        ),
         operational_mode=build_operational_mode_section(
             mode=mode,
             phase=phase,
             active_plan_id=active_plan_id,
             active_plan_title=active_plan_title,
+            artifacts_implementation=artifacts_implementation,
         ),
         engineering_discipline=build_engineering_discipline(),
         tool_usage=build_tool_usage(),
-        user_inquiry=build_user_inquiry(mode=mode, phase=phase),
+        user_inquiry=build_user_inquiry(
+            mode=mode,
+            phase=phase,
+            artifacts_implementation=artifacts_implementation,
+        ),
         communication_style=build_communication_style(),
         dynamic_context=dynamic_ctx,
         discovered_context=list(discovered_context) if discovered_context else None,

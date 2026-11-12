@@ -20,6 +20,8 @@ export type SkillsImplementation = "none" | "deepagents" | "seamus";
 
 export type WebSearchImplementation = "none" | "duckduckgo";
 
+export type ArtifactsImplementation = "none" | "seamus";
+
 export type OperationalMode = "chat" | "plan";
 
 export type ExternalRepositoryConfig = {
@@ -47,6 +49,7 @@ export type AgentConfig = {
   todo_implementation?: TodoImplementation;
   skills_implementation?: SkillsImplementation;
   web_search?: WebSearchImplementation;
+  artifacts_implementation?: ArtifactsImplementation;
   thread_message_overlap?: number;
   repositories?: ExternalRepositoryConfig[];
   sandbox_image?: string | null;
@@ -397,6 +400,7 @@ export interface AgentInspectReport {
   skills?: SkillInspectInfo[];
   skills_implementation?: SkillsImplementation;
   web_search?: WebSearchImplementation;
+  artifacts_implementation?: ArtifactsImplementation;
   subagents: SubAgentInspectInfo[];
   mounted_repositories?: MountedRepoInspectInfo[];
   history: HistoryInspectInfo;

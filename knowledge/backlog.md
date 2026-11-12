@@ -158,7 +158,7 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Provenance**: `src/seamus/harness/runner.py`, `knowledge/backlog.md`.
 
 ### Modular Disablement of Harness Layers and Components
-- **Description**: Provide fine-grained switches to disable specific harness subsystems (e.g. context compaction, specific artifact types) while retaining generic capabilities.
+- **Description**: Provide fine-grained switches to disable specific harness subsystems (e.g. context compaction, specific artifact types) while retaining generic capabilities. Note: artifacts subsystem disablement (`artifacts_implementation = none | seamus`) was implemented in [0055-artifacts-implementation-toggle.md](../decisions/0055-artifacts-implementation-toggle.md) and [REQ-050](./requirements.md#req-050-configurable-artifacts-implementation-toggle--gating-guard).
 - **Why Deferred**: Subsystems currently have unified configuration toggles; granular layer-by-layer disablement requires deep modularization.
 - **Revisit Trigger**: When custom deployment profiles require stripping down harness capabilities to minimal subsets.
 - **Provenance**: `knowledge/backlog.md`.

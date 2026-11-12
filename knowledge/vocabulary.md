@@ -180,6 +180,9 @@ A designated subset of active skills explicitly carried forward across thread bo
 ### Tool Labeling Resource
 The centralized JSON mapping resource (`src/seamus/harness/resources/tool_labeling.json`) defining semantic tool domains (`opensandbox`, `sandbox`, `harness`, `seamus`, `planning`, `artifacts`, `a2ui`, `skills`, `web`, `duckduckgo`) and their associated hex color badges for structured presentation and filtering in the Agent Inspector.
 
+### Artifacts Implementation
+An enum setting (`none` | `seamus`) on `AgentConfig` governing whether interactive A2UI artifacts, questionnaires, forms, and plan artifacts are enabled for an agent session. When set to `none`, the harness excludes all artifact-related tools (`make_artifact`, `make_questionnaire`, `make_form`, `make_plan`, `update_plan`, `edit_plan`, `wait_for_click`), suppresses discovery of bundled skills (`artifacts`, `a2ui_components`), and sanitizes system prompts of all artifact instructions and `/artifacts` mount paths.
+
 ## Cross-References
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
@@ -205,6 +208,7 @@ The centralized JSON mapping resource (`src/seamus/harness/resources/tool_labeli
 - [0050-web-search-tool.md](../decisions/0050-web-search-tool.md)
 - [0051-chat-bubble-timestamps-and-sequence-indexing.md](../decisions/0051-chat-bubble-timestamps-and-sequence-indexing.md)
 - [0052-backlog-low-hanging-fruits.md](../decisions/0052-backlog-low-hanging-fruits.md)
+- [0055-artifacts-implementation-toggle.md](../decisions/0055-artifacts-implementation-toggle.md)
 - [artifacts.md](./artifacts.md)
 - [threads_modes_personas.md](./threads_modes_personas.md)
 - [architecture.md](./architecture.md)

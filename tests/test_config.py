@@ -6,6 +6,7 @@ import pytest
 
 from seamus.config.models import (
     AgentConfig,
+    ArtifactsImplementation,
     InferenceConfig,
     InferenceFormat,
     SkillsImplementation,
@@ -56,6 +57,7 @@ def test_agent_config_copy_with_overrides() -> None:
         system_prompt="Base prompt",
         todo_implementation=TodoImplementation.NONE,
         skills_implementation=SkillsImplementation.NONE,
+        artifacts_implementation=ArtifactsImplementation.NONE,
     )
     overrides = AgentConfig(
         inference=InferenceConfig(api_key="overridden-key"),
@@ -64,6 +66,7 @@ def test_agent_config_copy_with_overrides() -> None:
         system_prompt="Overridden prompt",
         todo_implementation=TodoImplementation.DEEPAGENTS,
         skills_implementation=SkillsImplementation.DEEPAGENTS,
+        artifacts_implementation=ArtifactsImplementation.SEAMUS,
     )
     derived = base.copy_with_overrides(overrides)
 
@@ -73,6 +76,7 @@ def test_agent_config_copy_with_overrides() -> None:
     assert derived.system_prompt == "Overridden prompt"
     assert derived.todo_implementation == TodoImplementation.DEEPAGENTS
     assert derived.skills_implementation == SkillsImplementation.DEEPAGENTS
+    assert derived.artifacts_implementation == ArtifactsImplementation.SEAMUS
     # Ensure original base was not mutated
     assert base.inference.api_key == "base-key"
     assert base.model_name == "openai/gpt-oss-120b"
@@ -80,6 +84,7 @@ def test_agent_config_copy_with_overrides() -> None:
     assert base.system_prompt == "Base prompt"
     assert base.todo_implementation == TodoImplementation.NONE
     assert base.skills_implementation == SkillsImplementation.NONE
+    assert base.artifacts_implementation == ArtifactsImplementation.NONE
     assert base.thread_message_overlap == 5
     assert derived.thread_message_overlap == 5
 
@@ -158,6 +163,25 @@ def test_agent_config_todo_and_skills_implementation_validation() -> None:
 
     with pytest.raises(ValidationError):
         AgentConfig.model_validate({"skills_implementation": "unsupported_value"})
+
+
+def test_agent_config_artifacts_implementation_validation() -> None:
+    from pydantic import ValidationError
+
+    cfg = AgentConfig()
+    assert cfg.artifacts_implementation == ArtifactsImplementation.SEAMUS
+
+    cfg_seamus = AgentConfig.model_validate({"artifacts_implementation": "seamus"})
+    assert cfg_seamus.artifacts_implementation == ArtifactsImplementation.SEAMUS
+
+    cfg_none = AgentConfig(artifacts_implementation=ArtifactsImplementation.NONE)
+    assert cfg_none.artifacts_implementation == ArtifactsImplementation.NONE
+
+    cfg_none_str = AgentConfig.model_validate({"artifacts_implementation": "none"})
+    assert cfg_none_str.artifacts_implementation == ArtifactsImplementation.NONE
+
+    with pytest.raises(ValidationError):
+        AgentConfig.model_validate({"artifacts_implementation": "unsupported_value"})
 
 
 def test_config_template_store_crud() -> None:

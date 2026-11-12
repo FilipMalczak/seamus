@@ -573,3 +573,60 @@ def test_session_and_template_todo_implementation_config(client: TestClient) -> 
     assert good_res.status_code == 200
     assert good_res.json()["config"]["todo_implementation"] == "deepagents"
     assert good_res.json()["config"]["skills_implementation"] == "deepagents"
+
+
+def test_session_and_template_artifacts_implementation_config(client: TestClient) -> None:
+    """Verify artifacts_implementation config across template and session."""
+    # 1. Template validation
+    tmpl_res = client.get("/api/v-alpha/config-template")
+    assert tmpl_res.status_code == 200
+    tmpl_data = tmpl_res.json()["config"]
+    assert tmpl_data["artifacts_implementation"] == "seamus"
+
+    # Invalid template value -> 422
+    tmpl_data["artifacts_implementation"] = "invalid_choice"
+    bad_tmpl_res = client.post("/api/v-alpha/config-template", json=tmpl_data)
+    assert bad_tmpl_res.status_code == 422
+
+    # Valid template value -> 200
+    tmpl_data["artifacts_implementation"] = "none"
+    ok_tmpl_res = client.post("/api/v-alpha/config-template", json=tmpl_data)
+    assert ok_tmpl_res.status_code == 200
+    assert ok_tmpl_res.json()["config"]["artifacts_implementation"] == "none"
+
+    # 2. Session update and validation
+    agent = client.post("/api/v-alpha/agents", json={"name": "art-agent"}).json()
+    session = client.post(
+        f"/api/v-alpha/agent/{agent['id']}/session", json={"name": "art-session"}
+    ).json()
+
+    assert session["config"]["artifacts_implementation"] == "none"
+
+    # Invalid session artifacts_implementation -> 422
+    bad_session_update = {
+        "name": "art-session",
+        "config": {
+            **session["config"],
+            "artifacts_implementation": "invalid_value",
+        },
+    }
+    bad_res = client.post(
+        f"/api/v-alpha/agent/{agent['id']}/session/{session['id']}",
+        json=bad_session_update,
+    )
+    assert bad_res.status_code == 422
+
+    # Valid session update -> 200
+    good_session_update = {
+        "name": "art-session",
+        "config": {
+            **session["config"],
+            "artifacts_implementation": "seamus",
+        },
+    }
+    good_res = client.post(
+        f"/api/v-alpha/agent/{agent['id']}/session/{session['id']}",
+        json=good_session_update,
+    )
+    assert good_res.status_code == 200
+    assert good_res.json()["config"]["artifacts_implementation"] == "seamus"

@@ -17,7 +17,7 @@ from opensandbox.config.connection_sync import ConnectionConfigSync
 from opensandbox.models.sandboxes import PVC, Host, Volume
 from pydantic import BaseModel, Field
 
-from seamus.config.models import ExternalRepositoryConfig
+from seamus.config.models import ArtifactsImplementation, ExternalRepositoryConfig
 from seamus.config.settings import resolve_skill_path
 from seamus.harness.prompt import build_scaffold_prompt
 from seamus.persistence.external_repo import calculate_mount_paths
@@ -350,7 +350,10 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
                 )
         return volumes
 
-    def get_skill_sources(self) -> list[tuple[str, str]]:
+    def get_skill_sources(
+        self,
+        artifacts_implementation: ArtifactsImplementation = ArtifactsImplementation.SEAMUS,
+    ) -> list[tuple[str, str]]:
         """Return the prioritized list of in-sandbox skill sources for DeepAgents.
 
         DeepAgents resolves skill collisions with 'last one wins' (later sources in the
@@ -402,7 +405,7 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
         sources.append((f"{self.settings.workdir}/skills", "Session"))
 
         # Append bundled platform skills (top-most priority, wins against all collisions)
-        if BUNDLED_SKILLS_DIR.is_dir():
+        if artifacts_implementation != ArtifactsImplementation.NONE and BUNDLED_SKILLS_DIR.is_dir():
             sources.append(("/skills/bundled", "Bundled"))
 
         return sources

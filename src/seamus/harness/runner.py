@@ -38,6 +38,7 @@ from langgraph.types import Command
 from pydantic import BaseModel, Field, SecretStr, model_validator
 
 from seamus.config.models import (
+    ArtifactsImplementation,
     InferenceFormat,
     ReasoningEffort,
     SkillsImplementation,
@@ -825,7 +826,9 @@ class SessionAgentRunner:
         self.checkpointer = checkpointer
 
         skill_sources = (
-            sandbox_backend.get_skill_sources()
+            sandbox_backend.get_skill_sources(
+                artifacts_implementation=self.session.config.artifacts_implementation
+            )
             if self.session.config.skills_implementation == SkillsImplementation.DEEPAGENTS
             else None
         )
@@ -949,17 +952,23 @@ class SessionAgentRunner:
             args_schema=DiscardInput,
         )
 
-        artifact_tools = [
-            make_artifact_tool,
-            make_questionnaire_tool,
-            make_form_tool,
-            wait_for_click_tool,
-            plan_tool,
-            make_plan_tool,
-            update_plan_tool,
-            edit_plan_tool,
-            discard_tool,
-        ]
+        if self.session.config.artifacts_implementation == ArtifactsImplementation.NONE:
+            artifact_tools = [
+                plan_tool,
+                discard_tool,
+            ]
+        else:
+            artifact_tools = [
+                make_artifact_tool,
+                make_questionnaire_tool,
+                make_form_tool,
+                wait_for_click_tool,
+                plan_tool,
+                make_plan_tool,
+                update_plan_tool,
+                edit_plan_tool,
+                discard_tool,
+            ]
 
         if self.session.config.web_search == WebSearchImplementation.DUCKDUCKGO:
             artifact_tools.extend(get_web_search_tools())
@@ -1007,6 +1016,7 @@ class SessionAgentRunner:
             target_thread.mode,
             target_thread.phase,
             has_active_plan=has_active_plan,
+            artifacts_implementation=self.session.config.artifacts_implementation,
         )
 
         gated_tools: set[str] = set()
@@ -1419,6 +1429,7 @@ class SessionAgentRunner:
             discovered_context=discovered,
             skills=skills_doc,
             plan=plan_str,
+            artifacts_implementation=self.session.config.artifacts_implementation,
         )
 
     def get_discovered_skills(self, thread: Thread | None = None) -> list[DiscoveredSkill]:
@@ -1435,6 +1446,7 @@ class SessionAgentRunner:
             skills_implementation=self.session.config.skills_implementation,
             repositories=self.session.config.repositories,
             active_skill_names=active_skill_names,
+            artifacts_implementation=self.session.config.artifacts_implementation,
         )
 
     @property
