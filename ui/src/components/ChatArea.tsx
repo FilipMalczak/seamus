@@ -28,7 +28,12 @@ import {
 } from "../api/types";
 import { useThreadStream } from "../hooks/useThreadStream";
 import { computeBubbleSequenceIndices } from "../utils/sequence";
-import { MessageItem, type BranchHandler, type BranchItemType } from "./MessageItem";
+import {
+  BranchProvenanceSeparator,
+  MessageItem,
+  type BranchHandler,
+  type BranchItemType,
+} from "./MessageItem";
 
 interface ChatAreaProps {
   agentId: string | null;
@@ -159,20 +164,30 @@ export function ChatArea({
     [onBranchMessage]
   );
 
-  const augmentedProvenanceList = useMemo(() => {
-    const list =
+  const {
+    augmentedProvenanceList,
+    leadingEmptyProvs,
+    trailingProvs,
+  } = useMemo(() => {
+    const rawList =
       sessionLineage && sessionLineage.length > 0
         ? sessionLineage
         : sessionProvenance
           ? [sessionProvenance]
           : [];
-    if (list.length === 0 || messages.length === 0) return list;
+    if (rawList.length === 0) {
+      return {
+        augmentedProvenanceList: [] as SessionBranchProvenance[],
+        leadingEmptyProvs: [] as SessionBranchProvenance[],
+        trailingProvs: [] as SessionBranchProvenance[],
+      };
+    }
 
     const asstIndices = messages
       .map((m, j) => (m.role === "assistant" ? j : -1))
       .filter((j) => j >= 0);
 
-    return list.map((prov) => {
+    const normalizedList = rawList.map((prov) => {
       const targetId = prov.parent_message_id;
       if (targetId.startsWith("asst-")) {
         const suffix = targetId.slice(5);
@@ -189,6 +204,166 @@ export function ChatArea({
       }
       return prov;
     });
+
+    const leading: SessionBranchProvenance[] = [];
+    const trailing: SessionBranchProvenance[] = [];
+    const resolved: SessionBranchProvenance[] = [];
+
+    // Helper to check if an ID matches a message or any of its parts/toolCalls
+    const messageMatchesId = (
+      msg: (typeof messages)[number],
+      candidateId: string,
+      expectedItemType?: string | null
+    ): boolean => {
+      if (!candidateId) return false;
+      if (msg.id === candidateId) {
+        if (
+          expectedItemType === "bot_thinking" &&
+          msg.parts &&
+          msg.parts.length > 0
+        ) {
+          return false;
+        }
+        return true;
+      }
+      if (`${msg.id}-reasoning` === candidateId) return true;
+      if (`text-${msg.id}` === candidateId) return true;
+      if (msg.parts) {
+        for (const p of msg.parts) {
+          if (p.id === candidateId || `text-${p.id}` === candidateId) {
+            if (expectedItemType === "bot_thinking" && p.type !== "reasoning") {
+              continue;
+            }
+            if (expectedItemType === "bot_message" && p.type !== "text") {
+              continue;
+            }
+            return true;
+          }
+          if (
+            p.type === "tool_call" &&
+            (p.toolCall.id === candidateId ||
+              `call-${p.toolCall.id}` === candidateId ||
+              `group-${p.toolCall.id}` === candidateId)
+          ) {
+            return true;
+          }
+        }
+      }
+      if (msg.toolCalls) {
+        for (const tc of msg.toolCalls) {
+          if (
+            tc.id === candidateId ||
+            `call-${tc.id}` === candidateId ||
+            `group-${tc.id}` === candidateId
+          ) {
+            return true;
+          }
+        }
+      }
+      return false;
+    };
+
+    const getFirstAnchorId = (msg: (typeof messages)[number]): string => {
+      if (msg.parts && msg.parts.length > 0) {
+        const firstPart = msg.parts[0];
+        if (firstPart.type === "tool_call") {
+          return firstPart.toolCall.id;
+        }
+        return firstPart.id;
+      }
+      return msg.id;
+    };
+
+    for (const prov of normalizedList) {
+      const directlyMatched = messages.some((m) =>
+        messageMatchesId(m, prov.parent_message_id, prov.item_type)
+      );
+      if (directlyMatched) {
+        resolved.push(prov);
+        continue;
+      }
+
+      // If this was a 'before' branch (where the target item was sliced out of child history)
+      if (prov.branch_position === "before" && prov.item_type !== "tool_call") {
+        const precId = prov.preceding_message_id;
+        if (!precId) {
+          // Branched before the very first item in the session
+          if (messages.length === 0) {
+            leading.push(prov);
+          } else {
+            const firstAnchor = getFirstAnchorId(messages[0]);
+            resolved.push({
+              ...prov,
+              parent_message_id: `__resolved_before__:${firstAnchor}`,
+            });
+          }
+          continue;
+        } else {
+          // Find which message or part matches precId
+          let matchedMsgIdx = -1;
+          let matchedPartIdx = -1;
+          for (let mIdx = 0; mIdx < messages.length; mIdx++) {
+            const m = messages[mIdx];
+            if (m.parts && m.parts.length > 0) {
+              for (let pIdx = 0; pIdx < m.parts.length; pIdx++) {
+                const p = m.parts[pIdx];
+                if (
+                  p.id === precId ||
+                  `text-${p.id}` === precId ||
+                  `${m.id}-reasoning` === precId ||
+                  (p.type === "tool_call" &&
+                    (p.toolCall.id === precId ||
+                      `call-${p.toolCall.id}` === precId))
+                ) {
+                  matchedMsgIdx = mIdx;
+                  matchedPartIdx = pIdx;
+                }
+              }
+            }
+            if (matchedMsgIdx === -1 && messageMatchesId(m, precId)) {
+              matchedMsgIdx = mIdx;
+            }
+          }
+
+          if (matchedMsgIdx !== -1) {
+            const matchedMsg = messages[matchedMsgIdx];
+            if (
+              matchedPartIdx !== -1 &&
+              matchedMsg.parts &&
+              matchedPartIdx + 1 < matchedMsg.parts.length
+            ) {
+              const nextPart = matchedMsg.parts[matchedPartIdx + 1];
+              const nextAnchor =
+                nextPart.type === "tool_call"
+                  ? nextPart.toolCall.id
+                  : nextPart.id;
+              resolved.push({
+                ...prov,
+                parent_message_id: `__resolved_before__:${nextAnchor}`,
+              });
+            } else if (matchedMsgIdx + 1 < messages.length) {
+              const nextAnchor = getFirstAnchorId(messages[matchedMsgIdx + 1]);
+              resolved.push({
+                ...prov,
+                parent_message_id: `__resolved_before__:${nextAnchor}`,
+              });
+            } else {
+              // No subsequent item yet (waiting for user input or LLM response)
+              trailing.push(prov);
+            }
+            continue;
+          }
+        }
+      }
+
+      resolved.push(prov);
+    }
+
+    return {
+      augmentedProvenanceList: resolved,
+      leadingEmptyProvs: leading,
+      trailingProvs: trailing,
+    };
   }, [sessionLineage, sessionProvenance, messages]);
 
   // Compute 1-based index for each bubble if part of a streak exceeding the threshold
@@ -463,6 +638,13 @@ export function ChatArea({
         ref={viewportRef}
         onScroll={handleScroll}
       >
+        {leadingEmptyProvs.map((prov, pIdx) => (
+          <BranchProvenanceSeparator
+            key={`leading-prov-${prov.parent_session_id}-${prov.parent_message_id}-${pIdx}`}
+            provenance={prov}
+            onNavigateToSession={onNavigateToSession}
+          />
+        ))}
         {messages.length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">
@@ -556,6 +738,13 @@ export function ChatArea({
             );
           })
         )}
+        {trailingProvs.map((prov, pIdx) => (
+          <BranchProvenanceSeparator
+            key={`trailing-prov-${prov.parent_session_id}-${prov.parent_message_id}-${pIdx}`}
+            provenance={prov}
+            onNavigateToSession={onNavigateToSession}
+          />
+        ))}
         <div ref={viewportEndRef} />
       </div>
 

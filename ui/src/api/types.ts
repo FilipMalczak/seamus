@@ -78,6 +78,7 @@ export type SessionBranchProvenance = {
   branched_at: string;
   branch_position?: "before" | "after";
   item_type?: string | null;
+  preceding_message_id?: string | null;
 };
 
 export type ThreadInfo = {

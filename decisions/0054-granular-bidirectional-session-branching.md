@@ -50,19 +50,21 @@ Decision 0022 introduced session branching and lifecycle error handling, permitt
 
 4. **Tool Call Grouping & Visual Brace**:
    - When a single model inference results in more than one tool call, render a visual brace to the left of the group (`.tool-group-brace`).
-   - Sibling tool call bubbles inside a group omit individual branch actions. Instead, a single pair of branch buttons is placed at the top and bottom level of the group brace on the right.
+   - Sibling tool call bubbles inside a group are sized to fit their content (`width: fit-content`), with "Branch Before" placed directly to the right of the first tool call in the group and "Branch After" placed directly to the right of the last tool call in the group.
    - Slicing semantics for tool groups:
      - `before`: Slices immediately prior to the first `TOOL_CALL_RESULT` in the group, restarting all tool executions in the group.
      - `after`: Slices immediately after the last `TOOL_CALL_RESULT` in the group, keeping all existing tool results and continuing execution.
    - Single tool call inferences omit the visual brace to prevent visual clutter, placing singular branch buttons beside the tool call card as with regular bubbles.
 
-5. **Precise Provenance Indicator Placement**:
+5. **Precise Provenance Indicator Placement & Thread Mode Continuity**:
+   - When branching a session, the newly created open thread preserves the parent thread's operational `mode`, `phase`, `active_skills`, `todos`, and `active_plan_id` rather than resetting to `plan/discuss`.
+   - `SessionBranchProvenance` records `preceding_message_id` (the last conversational item retained before the slice point, or `None` if branched before the first message) so `before` branches on sliced-out items remain anchored in the child session.
    - For user messages, system events, agent text messages, and reasoning blocks:
-     - If branched before: the provenance indicator line is rendered **above** the target bubble.
+     - If branched before: the provenance indicator line is rendered **above** the target or subsequent bubble (or at the viewport boundary while awaiting user input).
      - If branched after: the provenance indicator line is rendered **below** the target bubble.
-   - For tool calls:
-     - If single tool call: above if branched before, below if branched after.
-     - If tool call group: if branched before, the indicator line goes **through the middle of the group** (so some tool call bubbles are above it, and some below it); if branched after, the indicator line goes **below the group**.
+   - For tool calls (both single tool calls and braced tool groups):
+     - If branched before: the horizontal indicator line runs underneath the tool call bubble(s) at the vertical midpoint (running behind the tool card for a single tool or odd number of calls, and between the upper and lower tool cards for an even number of calls), with the `"branched before <session>"` pill positioned to the right of the tool calls.
+     - If branched after: the provenance indicator line is rendered **below** the tool call or braced group.
 
 ## Consequences
 
