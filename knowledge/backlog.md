@@ -342,6 +342,11 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: Empowers operators to run controlled experiments, isolate model behavior, debug tool regressions, or restrict access to risky or prone-to-misuse tools without editing code.
 - **Provenance**: `src/seamus/harness/inspector.py`, `src/seamus/harness/runner.py`, `ui/src/components/AgentInspector.tsx`.
 
+### Steerable Wait Timeout Editing in the Inspector
+- **Description**: Expose the per-instance steerable `wait_timeout` in the Agent Inspector's "Steerable" section, next to the empty-queue strategy selector and the default-response field. The `PATCH .../strategy` route already accepts `wait_timeout`, and the API client already forwards it; only the Inspector control is missing, so the timeout is currently configuration-only.
+- **Rationale**: The `wait` strategy blocks a model turn until a response is queued. With the timeout fixed at configuration time, a developer who steps away mid-turn cannot extend the wait from the UI, and the turn fails at an arbitrary point of the scenario.
+- **Provenance**: [0056-steerable-model-provider.md](../decisions/0056-steerable-model-provider.md), `src/seamus/server/routes/sessions.py`, `ui/src/api/client.ts`, `ui/src/components/SteerableInspector.tsx`.
+
 ### Conversational Anchors & Header Close Action for Dedicated Tab Artifacts
 - **Description**: Add conversational anchor indicators in the chat message stream when dedicated tab artifacts (plans, forms, custom surfaces) are created so users can re-open them from conversational context even after closing the tab. Add a close icon (`X`) to the artifact tab header itself (which disappears when an artifact is blocking execution).
 - **Rationale**: Once non-embedded artifact tabs are closed, there is no persistent anchor in the conversation history linking to them.

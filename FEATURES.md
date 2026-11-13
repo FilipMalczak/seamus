@@ -316,10 +316,11 @@ Lightweight, non-agentic one-shot LLM utilities using plain `Instructions: ... I
 
 Drive agents deterministically, without inference cost, by scripting the model responses yourself:
 
-- **First-Class Steerable Provider**: A distinct `InferenceFormat.STEERABLE` that replaces the live LLM with a queue of scripted assistant turns. No API key, no network access, no provider latency.
-- **Rich Scripted Responses**: Each queued turn may carry assistant text, reasoning content (surfaced as AG-UI reasoning events), and any number of tool calls with arbitrary JSON arguments — enough to reproduce any agent behaviour, including tool errors and parallel tool calls.
+- **First-Class Steerable Provider**: A distinct `InferenceFormat.STEERABLE` that replaces the live LLM with a queue of scripted assistant turns. No API key, no network access, no provider latency. Select it as the inference format for the agent or for the naming daemon in the configuration editor.
+- **Rich Scripted Responses**: Each queued turn may carry assistant text, reasoning content (surfaced as AG-UI reasoning events), and any number of tool calls with arbitrary JSON arguments — enough to reproduce any agent behaviour, including tool errors and several tool calls in a single turn.
 - **Configurable Empty-Queue Strategy**: `wait` (the default) blocks the model call until a response is queued, turning the Inspector into a live remote control for driving a session turn by turn; `error` fails the turn loudly and `repeat` returns a fixed default response. The strategy can be switched at runtime, per instance.
-- **Separate Agent & Daemon Inspectors**: Each steerable model is addressed by a session-scoped instance id (`session:{id}:agent`, `session:{id}:daemon:naming`), so the agent model and the naming daemon are steered independently and shown as separate cards.
+- **Separate Agent & Daemon Cards**: Each steerable model is addressed by a session-scoped instance id (`session:{id}:agent`, `session:{id}:daemon:naming`), so the agent model and the naming daemon are steered independently and shown as separate cards in the Inspector.
+- **Unknown-Tool Warnings**: A scripted call to a tool the model never had bound is still emitted exactly as written — so the failure is reproduced — but it is logged as a warning, which makes a typo in a scripted tool name visible instead of silent.
 - **Live Queue Editor in the Agent Inspector**: The `Steerable` sub-tab lists the queued responses in order and lets you append, remove, replace, or clear them, and change the empty-queue strategy at runtime.
 - **Multi-Tool-Call Composer**: One queued turn can request several tool calls at once. The composer accepts any number of tool-call rows (name plus JSON arguments, with known-tool suggestions and validation), and clears every field — including the tool-call rows — once the response is queued.
 - **Queue Import & Export**: Download the queue of any steerable instance as a JSON file, edit it offline, and upload it back. Uploaded files accept both the exported envelope and a bare list of responses. A per-instance toggle decides what an upload does: `Replace` swaps the whole queue, `Extend` keeps the current responses and appends the uploaded ones after them.
@@ -452,7 +453,7 @@ The core configuration models defined in `seamus.config.models`:
 
 ```python
 class SteerableConfig(BaseModel):
-    empty_queue_strategy: SteerableEmptyQueueStrategy = SteerableEmptyQueueStrategy.ERROR
+    empty_queue_strategy: SteerableEmptyQueueStrategy = SteerableEmptyQueueStrategy.WAIT
     default_response: str = "No scripted response available."
     wait_timeout: float = 300.0
 
@@ -493,9 +494,9 @@ class AgentConfig(BaseModel):
 - `inference.base_url`: Target endpoint URL for inference API requests (presets: OpenRouter, OpenAI, and local Ollama `http://localhost:11434/v1`).
 - `inference.api_key`: API key or symbolic vault reference (`${secret('/path')}`). Optional when using Ollama (`ollama` format or port `11434`) and when using the steerable provider.
 - `inference.reasoning_effort`: Reasoning token tier for reasoning models (`default`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`). `"default"` leaves provider parameters untouched.
-- `inference.steerable.empty_queue_strategy`: Behaviour of a steerable model when its queue is empty (`error`, `wait`, or `repeat`).
-- `inference.steerable.default_response`: Text returned by the `repeat` strategy when the queue is empty.
-- `inference.steerable.wait_timeout`: Seconds the `wait` strategy blocks for a response before the turn fails.
+- `inference.steerable.empty_queue_strategy`: Behaviour of a steerable model when its queue is empty (`wait` — the default —, `error`, or `repeat`).
+- `inference.steerable.default_response`: Text returned by the `repeat` strategy when the queue is empty (default: `"No scripted response available."`). Editable at runtime from the Inspector.
+- `inference.steerable.wait_timeout`: Seconds the `wait` strategy blocks for a response before the turn fails (default: `300`). Configuration-only — the Inspector exposes the strategy and the default response, not the timeout.
 - `rules_patterns`: Glob patterns evaluated per inference turn across `/workspace` and mounted `/projects/...`, injecting matching context files into `<discovered_context>`.
 - `repositories`: List of external Git repositories mounted into `/projects/{mount_name}`.
 - `daemons.naming.enabled`: Enables automated thread and session naming daemons (default: `true`).

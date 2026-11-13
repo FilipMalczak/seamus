@@ -31,7 +31,9 @@ place in the UI to author such responses.
   - `empty_queue_strategy: SteerableEmptyQueueStrategy` (`wait` | `error` | `repeat`),
     defaulting to `wait`
   - `default_response: str` — the text returned by the `repeat` strategy
+    (default `"No scripted response available."`)
   - `wait_timeout: float` — how long the `wait` strategy blocks before failing
+    (default `300` seconds)
 - Steerable inference needs no API key. `InferenceConfig.requires_api_key()` is the
   single place that decides whether credentials are mandatory; it returns `False`
   for `steerable` and `ollama`. `AgentConfig.validate_complete()` reuses it, so a
@@ -59,6 +61,11 @@ place in the UI to author such responses.
   remote control: the operator queues the next response from the UI and the
   blocked turn resumes with it. `error` and `repeat` remain available for tests
   that want a turn to fail or to fall back to a canned answer.
+- A scripted tool call naming a tool the model never had bound is still returned
+  verbatim — the point of the provider is to reproduce exactly what the operator
+  scripted, including the failure — but the model logs a warning naming the
+  unknown tool and the known ones, so a typo in a scripted tool name shows up in
+  the logs instead of failing silently.
 - `SteerableModelRegistry` is a process-wide singleton mapping stable instance ids
   to instances. Ids are session scoped: `session:{session_id}:agent` for the
   session's main model and `session:{session_id}:daemon:{daemon}` for a daemon
@@ -144,6 +151,8 @@ inspector. Optional persistence is tracked in the backlog.
   daemon's naming slug separately from the agent's turns.
 - The steerable provider is a distinct format rather than a mode of an existing
   one, so the live-provider code paths stay untouched.
+- A typo in a scripted tool name surfaces as a warning in the logs, because the
+  scripted call is still emitted — and therefore still fails — exactly as written.
 - Queued responses are lost on backend restart; a scripted session must be
   re-armed after a restart.
 - Streaming of scripted responses is chunk-granular, not token-granular.
