@@ -26,6 +26,7 @@ Seamus is an open, self-hosted, deep agent execution harness and developer works
    - [11. 1-Click Zero-Friction Stack Launch](#11-1-click-zero-friction-stack-launch)
    - [12. Local Model Inference & Active Ollama Lifecycle Management](#12-local-model-inference--active-ollama-lifecycle-management)
    - [13. Non-Agentic Daemons & Automated Naming](#13-non-agentic-daemons--automated-naming)
+   - [14. Steerable Model Provider & Inspector Queue Editor](#14-steerable-model-provider--inspector-queue-editor)
 3. [Every Goddamn Flag (Exhaustive Configuration & Reference Manual)](#every-goddamn-flag-exhaustive-configuration--reference-manual)
    - [CLI Flags & Scripts (`run.sh`)](#cli-flags--scripts-runsh)
    - [Complete Environment Variables Reference](#complete-environment-variables-reference)
@@ -311,6 +312,17 @@ Lightweight, non-agentic one-shot LLM utilities using plain `Instructions: ... I
 - **Parallel Slug Model**: User-assigned custom names take precedence over daemon-generated slugs while auto-naming continues running in the background, providing instantaneous fallback if the user clears their custom slug.
 - **Defensive Preemptive Output Parsing**: Resiliently cleans markdown code fences, triple quotes, blockquotes, and conversational prefixes from small or local model outputs into valid slug strings.
 
+### 14. Steerable Model Provider & Inspector Queue Editor
+
+Drive agents deterministically, without inference cost, by scripting the model responses yourself:
+
+- **First-Class Steerable Provider**: A distinct `InferenceFormat.STEERABLE` that replaces the live LLM with a queue of scripted assistant turns. No API key, no network access, no provider latency.
+- **Rich Scripted Responses**: Each queued turn may carry assistant text, reasoning content (surfaced as AG-UI reasoning events), and tool calls with arbitrary JSON arguments — enough to reproduce any agent behaviour, including tool errors.
+- **Configurable Empty-Queue Strategy**: `error` fails the turn loudly, `repeat` returns a fixed default response, and `wait` blocks the model call until a response is queued, turning the Inspector into a live remote control for driving a session turn by turn.
+- **Separate Agent & Daemon Inspectors**: Each steerable model is addressed by a session-scoped instance id (`session:{id}:agent`, `session:{id}:daemon:naming`), so the agent model and the naming daemon are steered independently and shown as separate cards.
+- **Live Queue Editor in the Agent Inspector**: The `Steerable` sub-tab lists the queued responses in order and lets you append, remove, replace, or clear them, and change the empty-queue strategy at runtime.
+- **Test-Ready by Design**: The provider is a plain LangChain chat model, so tests can script a session turn by turn without any live endpoint.
+
 ---
 
 ## Every Goddamn Flag (Exhaustive Configuration & Reference Manual)
@@ -437,11 +449,18 @@ Seamus reads environment variables from the host environment and your local `.en
 The core configuration models defined in `seamus.config.models`:
 
 ```python
+class SteerableConfig(BaseModel):
+    empty_queue_strategy: SteerableEmptyQueueStrategy = SteerableEmptyQueueStrategy.ERROR
+    default_response: str = "No scripted response available."
+    wait_timeout: float = 300.0
+
+
 class InferenceConfig(BaseModel):
     format: InferenceFormat = InferenceFormat.OPENAI
     base_url: str = "https://openrouter.ai/api/v1"
     api_key: str | None = None
     reasoning_effort: ReasoningEffort = ReasoningEffort.DEFAULT
+    steerable: SteerableConfig = Field(default_factory=SteerableConfig)
 
 
 class ExternalRepositoryConfig(BaseModel):
@@ -468,10 +487,13 @@ class AgentConfig(BaseModel):
 
 #### Field Details
 
-- `inference.format`: Format of inference API (`openai` or `ollama`).
+- `inference.format`: Format of inference API (`openai`, `ollama`, or `steerable`).
 - `inference.base_url`: Target endpoint URL for inference API requests (presets: OpenRouter, OpenAI, and local Ollama `http://localhost:11434/v1`).
-- `inference.api_key`: API key or symbolic vault reference (`${secret('/path')}`). Optional when using Ollama (`ollama` format or port `11434`).
+- `inference.api_key`: API key or symbolic vault reference (`${secret('/path')}`). Optional when using Ollama (`ollama` format or port `11434`) and when using the steerable provider.
 - `inference.reasoning_effort`: Reasoning token tier for reasoning models (`default`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`). `"default"` leaves provider parameters untouched.
+- `inference.steerable.empty_queue_strategy`: Behaviour of a steerable model when its queue is empty (`error`, `wait`, or `repeat`).
+- `inference.steerable.default_response`: Text returned by the `repeat` strategy when the queue is empty.
+- `inference.steerable.wait_timeout`: Seconds the `wait` strategy blocks for a response before the turn fails.
 - `rules_patterns`: Glob patterns evaluated per inference turn across `/workspace` and mounted `/projects/...`, injecting matching context files into `<discovered_context>`.
 - `repositories`: List of external Git repositories mounted into `/projects/{mount_name}`.
 - `daemons.naming.enabled`: Enables automated thread and session naming daemons (default: `true`).
@@ -601,6 +623,13 @@ The backend exposes a clean, typed REST API under prefix `/api/v-alpha/`:
 - `POST /api/v-alpha/agents/{agent_id}/sessions/{session_id}/terminal/stream`: Streams shell command execution inside the session's sandbox container via SSE.
 - `GET /api/v-alpha/agents/{agent_id}/sessions/{session_id}/terminal/info`: Returns active sandbox terminal status and operational directory.
 - `POST /api/v-alpha/agents/{agent_id}/sessions/{session_id}/branch`: Branches a new child session from an arbitrary historical item (`target_id`, `position: "before" | "after"`, optional `item_type`), with full backward-compatibility for legacy turn branching (`message_id`, `retry_inference`).
+
+#### Steerable Models
+
+- `GET /api/v-alpha/agent/{agent_identifier}/session/{session_identifier}/steerable`: Lists the session's steerable model instances (agent model and daemons) with their queues, strategies, and known tools.
+- `POST /api/v-alpha/agent/{agent_identifier}/session/{session_identifier}/steerable/{instance_id}/responses`: Appends scripted responses (text, reasoning, tool calls) to a steerable model's queue.
+- `PUT /api/v-alpha/agent/{agent_identifier}/session/{session_identifier}/steerable/{instance_id}/responses`: Replaces a steerable model's whole queue; an empty list clears it.
+- `PATCH /api/v-alpha/agent/{agent_identifier}/session/{session_identifier}/steerable/{instance_id}/strategy`: Updates a steerable model's empty-queue strategy (`error`, `wait`, or `repeat`), default response, and wait timeout.
 
 #### Threads
 

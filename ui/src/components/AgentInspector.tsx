@@ -16,6 +16,7 @@ import {
   FolderOpen,
   Globe,
   Layers,
+  ListOrdered,
   ListTodo,
   Loader2,
   MessageSquare,
@@ -34,6 +35,7 @@ import type {
   ToolInspectInfo,
 } from "../api/types";
 import { MarkdownRenderer } from "./MarkdownRenderer";
+import { SteerableInspector } from "./SteerableInspector";
 
 interface AgentInspectorProps {
   agentId: string | null;
@@ -43,7 +45,15 @@ interface AgentInspectorProps {
   sessionName?: string | null;
 }
 
-type SubTab = "prompt" | "tools" | "skills" | "todos" | "inference" | "messages" | "workspace";
+type SubTab =
+  | "prompt"
+  | "tools"
+  | "skills"
+  | "todos"
+  | "inference"
+  | "messages"
+  | "workspace"
+  | "steerable";
 type PromptLayer = "composite" | "scaffold" | "custom";
 
 export function AgentInspector({
@@ -405,6 +415,18 @@ export function AgentInspector({
           <span>Workspace Files</span>
           <span className="tab-counter">{report.workspace.files.length}</span>
         </button>
+
+        {(report.steerable_models?.length ?? 0) > 0 && (
+          <button
+            type="button"
+            className={`inspector-tab-btn ${subTab === "steerable" ? "active" : ""}`}
+            onClick={() => setSubTab("steerable")}
+          >
+            <ListOrdered className="size-4" />
+            <span>Steerable</span>
+            <span className="tab-counter">{report.steerable_models?.length ?? 0}</span>
+          </button>
+        )}
       </div>
 
       {/* Tab Contents */}
@@ -982,6 +1004,16 @@ export function AgentInspector({
               </div>
             )}
           </div>
+        )}
+
+        {/* TAB: STEERABLE MODELS */}
+        {subTab === "steerable" && (
+          <SteerableInspector
+            agentId={agentId}
+            sessionId={sessionId}
+            instances={report.steerable_models ?? []}
+            onChanged={() => fetchReport(true)}
+          />
         )}
 
         {/* TAB 5: WORKSPACE FILES */}

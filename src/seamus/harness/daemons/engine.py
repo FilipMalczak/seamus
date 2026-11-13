@@ -17,6 +17,52 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+async def _invoke_steerable_daemon(
+    provider: InferenceConfig,
+    model: str,
+    instructions: str,
+    input_payload: str,
+    occupied_slugs: set[str] | None,
+    instance_id: str | None,
+) -> str | None:
+    """Execute a daemon prompt against a steerable (scripted) model."""
+    from seamus.harness.steerable import (
+        DEFAULT_STEERABLE_MODEL_NAME,
+        build_steerable_model,
+        daemon_instance_id,
+    )
+
+    resolved_instance_id = instance_id or daemon_instance_id("default")
+    llm = build_steerable_model(
+        instance_id=resolved_instance_id,
+        role="daemon",
+        config=provider.steerable,
+        model_name=model or DEFAULT_STEERABLE_MODEL_NAME,
+    )
+
+    prompt_text = (
+        f"Instructions:\n{instructions.strip()}\n\nInput:\n{input_payload.strip()}\n\nOutput:\n"
+    )
+
+    try:
+        response = await llm.ainvoke([HumanMessage(content=prompt_text)])
+        raw_output = response.content
+        if isinstance(raw_output, list):
+            raw_output = " ".join(str(item) for item in raw_output)
+
+        slug = parse_loose_slug(str(raw_output), occupied_slugs=occupied_slugs)
+        logger.info(
+            "Steerable daemon invoked on instance %s; raw output: %r; parsed slug: %r",
+            resolved_instance_id,
+            raw_output,
+            slug,
+        )
+        return slug
+    except Exception:
+        logger.exception("Steerable daemon invocation failed on instance %s", resolved_instance_id)
+        return None
+
+
 async def invoke_daemon(
     provider: InferenceConfig,
     model: str,
@@ -24,6 +70,7 @@ async def invoke_daemon(
     input_payload: str,
     occupied_slugs: set[str] | None = None,
     api_key_override: str | None = None,
+    steerable_instance_id: str | None = None,
 ) -> str | None:
     """Execute a one-shot plain-prefill daemon prompt against the specified provider and model.
 
@@ -39,6 +86,16 @@ async def invoke_daemon(
     import os
 
     from seamus.harness.runner import ReasoningChatOpenAI, _ensure_ollama_model
+
+    if provider.format == InferenceFormat.STEERABLE:
+        return await _invoke_steerable_daemon(
+            provider=provider,
+            model=model,
+            instructions=instructions,
+            input_payload=input_payload,
+            occupied_slugs=occupied_slugs,
+            instance_id=steerable_instance_id,
+        )
 
     api_key = api_key_override or provider.api_key or ""
     base_url = provider.base_url or "https://openrouter.ai/api/v1"

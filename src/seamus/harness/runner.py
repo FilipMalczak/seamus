@@ -93,6 +93,13 @@ from seamus.harness.skills import (
     SeamusSkillsMiddleware,
     discover_session_skills,
 )
+from seamus.harness.steerable import (
+    SteerableChatModel,
+    agent_instance_id,
+    build_steerable_model,
+    daemon_instance_id,
+    get_steerable_registry,
+)
 from seamus.harness.todos import (
     SeamusTodoMiddleware,
     render_plan_text,
@@ -676,7 +683,7 @@ class SessionAgentRunner:
         self._pending_clicks: dict[tuple[str, str | None], asyncio.Future[str]] = {}
         self._loaded_secret_versions: dict[tuple[str, str], int] = {}
         self._resolved_system_prompt: str | None = None
-        self._llm: ReasoningChatOpenAI | None = None
+        self._llm: ReasoningChatOpenAI | SteerableChatModel | None = None
 
         if agent is not None:
             self._agent = agent
@@ -725,13 +732,24 @@ class SessionAgentRunner:
             if resolved_config.inference.reasoning_effort != ReasoningEffort.DEFAULT
             else None
         )
-        llm = ReasoningChatOpenAI(
-            model=resolved_config.model_name,
-            api_key=SecretStr(api_key),
-            base_url=base_url,
-            reasoning_effort=reasoning_effort,
-        )
+        if resolved_config.inference.format == InferenceFormat.STEERABLE:
+            llm: ReasoningChatOpenAI | SteerableChatModel = build_steerable_model(
+                instance_id=agent_instance_id(self.session.id),
+                role="agent",
+                config=resolved_config.inference.steerable,
+                model_name=resolved_config.model_name,
+            )
+        else:
+            llm = ReasoningChatOpenAI(
+                model=resolved_config.model_name,
+                api_key=SecretStr(api_key),
+                base_url=base_url,
+                reasoning_effort=reasoning_effort,
+            )
         self._llm = llm
+        # The daemon may be steerable independently of the agent model, so its
+        # instance is registered whenever the daemon provider is steerable.
+        self._ensure_steerable_daemon_instance(resolved_config)
 
         # Prepare Git workspace and isolate agent files under data/
         ws_mgr = get_workspace_manager()
@@ -990,6 +1008,20 @@ class SessionAgentRunner:
             config={"recursion_limit": self.recursion_limit},
         )
 
+    def _ensure_steerable_daemon_instance(self, resolved_config: Any) -> None:
+        """Register the session's daemon steerable instance so it can be queued up front."""
+        naming_cfg = resolved_config.daemons.naming
+        if not naming_cfg.enabled:
+            return
+        provider = naming_cfg.provider or resolved_config.inference
+        if provider.format != InferenceFormat.STEERABLE:
+            return
+        get_steerable_registry().get_or_create(
+            daemon_instance_id(self.session.id),
+            "daemon",
+            provider.steerable,
+        )
+
     def _get_active_plan_title(self) -> str | None:
         """Return the display title of the session's active plan if one exists."""
         if not self.session.active_plan_id:
@@ -1055,6 +1087,9 @@ class SessionAgentRunner:
         """Update the active ReasoningChatOpenAI instance with newly resolved secret values."""
         self._resolved_system_prompt = resolved_config.system_prompt
         if self._llm is None:
+            return
+        if isinstance(self._llm, SteerableChatModel):
+            # Steerable models have no credentials to refresh.
             return
         new_api_key = resolved_config.inference.api_key or ""
         new_base_url = resolved_config.inference.base_url

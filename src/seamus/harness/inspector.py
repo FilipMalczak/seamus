@@ -38,6 +38,10 @@ from seamus.harness.runner import (
 )
 from seamus.harness.sandbox import BUNDLED_SKILLS_DIR, get_sandbox_settings
 from seamus.harness.skills import discover_session_skills, parse_skill_markdown
+from seamus.harness.steerable import (
+    SteerableResponse,
+    get_steerable_registry,
+)
 from seamus.harness.store import get_harness_store
 from seamus.harness.web_search import (
     WEB_SEARCH_TOOL_NAMES,
@@ -231,6 +235,19 @@ class WorkspaceInspectInfo(BaseModel):
     files: list[str] = Field(default_factory=list)
 
 
+class SteerableInspectInfo(BaseModel):
+    """Runtime state of a single steerable model instance."""
+
+    instance_id: str
+    role: str
+    strategy: str
+    default_response: str
+    wait_timeout: float
+    pending_count: int = 0
+    known_tools: list[str] = Field(default_factory=list)
+    responses: list[SteerableResponse] = Field(default_factory=list)
+
+
 class AgentInspectReport(BaseModel):
     """Consolidated agent inspection report as of the latest inference run."""
 
@@ -255,6 +272,7 @@ class AgentInspectReport(BaseModel):
     mounted_repositories: list[MountedRepoInspectInfo] = Field(default_factory=list)
     history: HistoryInspectInfo
     workspace: WorkspaceInspectInfo
+    steerable_models: list[SteerableInspectInfo] = Field(default_factory=list)
 
 
 _CACHED_DEFAULT_TOOLS: list[ToolInspectInfo] | None = None
@@ -1148,6 +1166,20 @@ def build_agent_inspect_report(
                 )
             )
 
+    steerable_models = [
+        SteerableInspectInfo(
+            instance_id=instance.instance_id,
+            role=instance.role,
+            strategy=instance.strategy.value,
+            default_response=instance.default_response,
+            wait_timeout=instance.wait_timeout,
+            pending_count=instance.pending_count,
+            known_tools=list(instance.known_tools),
+            responses=list(instance.responses),
+        )
+        for instance in get_steerable_registry().list_for_session(session.id)
+    ]
+
     return AgentInspectReport(
         agent_id=agent.id,
         agent_name=agent.name,
@@ -1170,4 +1202,5 @@ def build_agent_inspect_report(
         mounted_repositories=mounted_repositories,
         history=history_info,
         workspace=workspace_info,
+        steerable_models=steerable_models,
     )

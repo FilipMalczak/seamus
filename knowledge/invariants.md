@@ -310,6 +310,11 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-050](./requirements.md#req-050-configurable-artifacts-implementation-toggle--gating-guard), [0055-artifacts-implementation-toggle.md](../decisions/0055-artifacts-implementation-toggle.md).
 - **Enforcement**: `src/seamus/config/models.py`, `src/seamus/domain/modes.py`, `src/seamus/harness/prompt.py`, `src/seamus/harness/runner.py`, `src/seamus/harness/skills.py`, `tests/test_modes_and_plan.py`, `tests/test_prompt.py`, `tests/test_bundled_skills.py`.
 
+### INV-062: Steerable Provider Isolation and Credential Freedom
+- **Statement**: A session configured with `inference.format == "steerable"` must initialize without an API key and without any network access to an inference provider. Within a session, the agent model and each daemon model must hold independent response queues, addressed by distinct session-scoped instance ids, so that steering one never consumes or mutates the other. The steerable API surface must expose no `DELETE` method; clearing a queue must be expressed as a replacement with an empty response list, preserving [INV-007](#inv-007-no-resource-deletion-invariant).
+- **Justification**: [REQ-051](./requirements.md#req-051-steerable-scripted-model-provider--inspector-queue-editor), [0056-steerable-model-provider.md](../decisions/0056-steerable-model-provider.md).
+- **Enforcement**: `src/seamus/config/models.py`, `src/seamus/harness/steerable.py`, `src/seamus/harness/runner.py`, `src/seamus/harness/daemons/engine.py`, `src/seamus/server/routes/sessions.py`, `tests/test_steerable.py`, `tests/test_server.py`.
+
 
 ## Cross-References
 - [backlog.md](./backlog.md)
@@ -361,4 +366,5 @@ Properties and rules that must always hold across the repository.
 - [0051-chat-bubble-timestamps-and-sequence-indexing.md](../decisions/0051-chat-bubble-timestamps-and-sequence-indexing.md)
 - [0052-backlog-low-hanging-fruits.md](../decisions/0052-backlog-low-hanging-fruits.md)
 - [0055-artifacts-implementation-toggle.md](../decisions/0055-artifacts-implementation-toggle.md)
+- [0056-steerable-model-provider.md](../decisions/0056-steerable-model-provider.md)
 - [persistence.md](./persistence.md)

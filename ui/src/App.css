@@ -5705,3 +5705,220 @@ a.changes-pr-badge:hover {
 
 
 
+
+/* ---------------------------------------------------------------------------
+   Steerable Model Inspector
+   --------------------------------------------------------------------------- */
+
+.inspector-steerable-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+}
+
+.steerable-error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid rgba(244, 63, 94, 0.35);
+  background: rgba(244, 63, 94, 0.08);
+  color: #fda4af;
+  font-size: 0.8rem;
+}
+
+.steerable-instance-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.steerable-instance-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.steerable-strategy-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.steerable-strategy-select,
+.steerable-default-input,
+.steerable-tool-input,
+.steerable-tool-args-input {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  padding: 0.35rem 0.55rem;
+  font-family: var(--font-mono, monospace);
+}
+
+.steerable-strategy-select {
+  min-width: 16rem;
+}
+
+.steerable-default-input {
+  flex: 1 1 20rem;
+}
+
+.steerable-empty-queue {
+  padding: 0.75rem 0.9rem;
+  border-radius: 6px;
+  border: 1px dashed var(--border-color);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.steerable-queue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.steerable-queue-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+}
+
+.steerable-queue-index {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  padding-top: 0.15rem;
+  flex-shrink: 0;
+}
+
+.steerable-queue-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.steerable-queue-reasoning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  color: #c4b5fd;
+  font-size: 0.78rem;
+  font-style: italic;
+}
+
+.steerable-queue-text {
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.steerable-queue-tool {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.76rem;
+  color: #fbbf24;
+  flex-wrap: wrap;
+}
+
+.steerable-queue-tool-name {
+  font-family: var(--font-mono, monospace);
+  font-weight: 600;
+}
+
+.steerable-queue-tool code {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.steerable-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.steerable-composer-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.steerable-composer-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.steerable-composer-textarea {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-family: inherit;
+  padding: 0.5rem 0.65rem;
+  resize: vertical;
+  min-height: 3.5rem;
+}
+
+.steerable-composer-textarea:focus,
+.steerable-tool-input:focus,
+.steerable-tool-args-input:focus,
+.steerable-strategy-select:focus,
+.steerable-default-input:focus {
+  outline: none;
+  border-color: rgba(56, 189, 248, 0.5);
+}
+
+.steerable-tool-call-fields {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.steerable-tool-input {
+  flex: 0 0 14rem;
+}
+
+.steerable-tool-args-input {
+  flex: 1 1 16rem;
+}
+
+.steerable-composer-error {
+  font-size: 0.72rem;
+  color: #fda4af;
+}
+
+.steerable-composer-actions {
+  display: flex;
+  justify-content: flex-end;
+}

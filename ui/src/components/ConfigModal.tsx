@@ -351,6 +351,7 @@ export function ConfigModal({
                   >
                     <option value="openai">openai (OpenAI-compatible)</option>
                     <option value="ollama">ollama (Local Ollama)</option>
+                    <option value="steerable">steerable (Scripted Responses)</option>
                   </select>
                 </div>
 
@@ -660,6 +661,7 @@ export function ConfigModal({
                       >
                         <option value="openai">openai (OpenAI-compatible)</option>
                         <option value="ollama">ollama (Local Ollama)</option>
+                        <option value="steerable">steerable (Scripted Responses)</option>
                       </select>
                     </div>
 

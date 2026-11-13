@@ -21,10 +21,12 @@ from seamus.harness.inspector import (
     MessageHistoryItem,
     PromptInspectInfo,
     SkillInspectInfo,
+    SteerableInspectInfo,
     SubAgentInspectInfo,
     ToolInspectInfo,
     WorkspaceInspectInfo,
 )
+from seamus.harness.steerable import SteerableResponse
 
 __all__ = [
     "AgentCreateRequest",
@@ -45,6 +47,10 @@ __all__ = [
     "SessionSummaryResponse",
     "SessionUpdateRequest",
     "SkillInspectInfo",
+    "SteerableInspectInfo",
+    "SteerableResponse",
+    "SteerableResponseRequest",
+    "SteerableStrategyRequest",
     "SubAgentInspectInfo",
     "SystemGiteaInfo",
     "SystemInfoResponse",
@@ -334,3 +340,17 @@ class TerminalInfoResponse(BaseModel):
     session_id: UUID
     operational_dir: str
     status: str
+
+
+class SteerableResponseRequest(BaseModel):
+    """Request payload carrying scripted steerable responses."""
+
+    responses: list[SteerableResponse] = Field(default_factory=list)
+
+
+class SteerableStrategyRequest(BaseModel):
+    """Request payload updating a steerable model's empty-queue strategy."""
+
+    strategy: Literal["error", "wait", "repeat"]
+    default_response: str | None = None
+    wait_timeout: float | None = Field(default=None, gt=0)

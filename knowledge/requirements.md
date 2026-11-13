@@ -297,6 +297,12 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0055-artifacts-implementation-toggle.md](../decisions/0055-artifacts-implementation-toggle.md), `src/seamus/config/models.py`, `src/seamus/domain/modes.py`, `src/seamus/harness/prompt.py`, `src/seamus/harness/runner.py`, `src/seamus/harness/skills.py`, `ui/src/components/ConfigModal.tsx`.
 - **Linked Invariants**: [INV-061](./invariants.md#inv-061-artifacts-implementation-capability-gating-and-prompt-sanitization).
 
+### REQ-051: Steerable (Scripted) Model Provider & Inspector Queue Editor
+- **Description**: The harness must support a distinct `steerable` inference format that replaces the live LLM with a queue of scripted assistant responses, each carrying optional assistant text, optional reasoning content, and optional tool calls. The provider must require no API key and no network access, must expose a configurable empty-queue strategy (`error` | `wait` | `repeat`), and must be usable from automated tests. Scoped to a session, the agent model and each daemon model must be independently steerable and independently addressable. The Agent Inspector must expose a dedicated section listing every steerable instance of the session, and must allow the operator to view, append, replace, remove, and clear queued responses, and to change the empty-queue strategy at runtime.
+- **Rationale**: Makes manual verification of UI features (interactive A2UI questionnaires, diff viewers, tool-call lifecycles, error states) deterministic, reproducible, and free of inference cost, and lets a human drive a live session turn by turn.
+- **Provenance**: [0056-steerable-model-provider.md](../decisions/0056-steerable-model-provider.md), `src/seamus/config/models.py`, `src/seamus/harness/steerable.py`, `src/seamus/harness/runner.py`, `src/seamus/harness/daemons/engine.py`, `src/seamus/harness/inspector.py`, `src/seamus/server/routes/sessions.py`, `ui/src/components/SteerableInspector.tsx`, `tests/test_steerable.py`.
+- **Linked Invariants**: [INV-062](./invariants.md#inv-062-steerable-provider-isolation-and-credential-freedom).
+
 
 ## Cross-References
 - [backlog.md](./backlog.md)
@@ -345,4 +351,5 @@ Requirements, rationale, provenance, and stable IDs.
 - [0051-chat-bubble-timestamps-and-sequence-indexing.md](../decisions/0051-chat-bubble-timestamps-and-sequence-indexing.md)
 - [0052-backlog-low-hanging-fruits.md](../decisions/0052-backlog-low-hanging-fruits.md)
 - [0055-artifacts-implementation-toggle.md](../decisions/0055-artifacts-implementation-toggle.md)
+- [0056-steerable-model-provider.md](../decisions/0056-steerable-model-provider.md)
 - [persistence.md](./persistence.md)

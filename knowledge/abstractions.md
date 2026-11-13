@@ -18,9 +18,10 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 
 ### `seamus.config` (`src/seamus/config`)
 - Configuration abstractions and stores.
-- `InferenceFormat`: Supported inference protocol shapes (`openai`, `ollama`).
+- `InferenceFormat`: Supported inference protocol shapes (`openai`, `ollama`, `steerable`).
 - `ReasoningEffort`: Supported model reasoning effort tiers (`default`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`).
-- `InferenceConfig`: Provider settings (format, base URL, optional API key, and `reasoning_effort: ReasoningEffort` defaulting to `default`; API key is optional for Ollama).
+- `InferenceConfig`: Provider settings (format, base URL, optional API key, `reasoning_effort: ReasoningEffort` defaulting to `default`, and `steerable: SteerableConfig`; the API key is optional for Ollama and steerable). Exposes `requires_api_key()` as the single place deciding whether credentials are mandatory.
+- `SteerableConfig` / `SteerableEmptyQueueStrategy`: Configuration of the steerable provider (`empty_queue_strategy` of `error` | `wait` | `repeat`, `default_response`, `wait_timeout`).
 - `TodoImplementation`: Supported planning/todo list implementations (`none`, `deepagents`, `seamus`).
 - `SkillsImplementation`: Supported skills discovery and disclosure middleware implementations (`none`, `deepagents`, `seamus`).
 - `WebSearchImplementation`: Supported web search tool implementations (`none`, `duckduckgo`).
@@ -48,6 +49,11 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 ### `seamus.harness` (`src/seamus/harness`)
 - Execution engine, sandbox integration, and state storage.
 - `ReasoningChatOpenAI`: `ChatOpenAI` subclass extracting OpenAI-compatible and OpenRouter reasoning fields (`reasoning`, `reasoning_content`, `reasoning_details`) into `additional_kwargs["reasoning_content"]` and passing configured `reasoning_effort` for non-default tiers.
+- `SteerableChatModel` (`seamus.harness.steerable`): `BaseChatModel` subclass replaying scripted responses instead of calling a provider. Implements `_generate`, `_agenerate`, `_stream`, and `_astream`, emitting reasoning (via `additional_kwargs["reasoning_content"]`), text, and tool calls as discrete chunks. Exposes `instance` (the backing `SteerableInstance`) and `bind_tools` (records known tool names).
+- `SteerableResponse` / `SteerableToolCall`: One scripted assistant turn (`text`, `reasoning`, `tool_calls`) and a single scripted tool call (`name`, `args`).
+- `SteerableInstance`: Runtime state of one steerable model — the response queue, the empty-queue strategy, the default response, the wait timeout, and the known tool names. Queue mutation is guarded by a `threading.Condition`; the `wait` strategy blocks the model call until a response is pushed.
+- `SteerableModelRegistry`: Process-wide singleton mapping session-scoped instance ids (`session:{id}:agent`, `session:{id}:daemon:{daemon}`) to `SteerableInstance`s. Owns the queues so the Inspector can read and edit them while the model consumes from them.
+- `SteerableInspectInfo`: Inspector projection of a steerable instance (instance id, role, strategy, default response, wait timeout, pending count, known tools, queued responses).
 - `SeamusLangGraphAgent`: `LangGraphAgent` subclass preserving full checkpoint message history in `langgraph_default_merge_state` and configuring LangGraph's `recursion_limit` (defaulting to 250 via `DEFAULT_RECURSION_LIMIT`).
 - `SandboxSettings`: Runtime configuration for connecting to `opensandbox-server` and configuring sandbox container image, timeouts, operational directory (`/workspace`), and shared workspace volume.
 - `get_or_create_sandbox_api_key`: Autogenerates and retrieves the internal runtime-managed API key for `opensandbox-server` authentication without exposing secrets to users.
@@ -71,7 +77,8 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 
 ### `seamus.harness.daemons` (`src/seamus/harness/daemons`)
 - Non-agentic background daemon utilities and naming services.
-- `DaemonNamingConfig` & `DaemonsConfig`: Configuration models under `AgentConfig` configuring daemon services (`enabled`, `provider` inheriting agent inference by default, explicit `model`).
+- `DaemonNamingConfig` & `DaemonsConfig`: Configuration models under `AgentConfig` configuring daemon services (`enabled`, `provider` inheriting agent inference by default, explicit `model`). A daemon provider may itself use the `steerable` format, giving the daemon its own independently scripted queue.
+- `SteerableResponseRequest` / `SteerableStrategyRequest` (`seamus.server.schemas`): API payloads for replacing a steerable queue and for updating its empty-queue strategy.
 - `parse_loose_slug`: Preemptive loose parser unwrapping markdown code blocks, quotes, blockquotes, and label prefixes, sanitizing into valid slugs and resolving collisions against occupied slugs via numeric suffixes (`-2`, `-3`).
 - `format_thread_history`: Formats thread message trajectories, created artifacts (`[Artifact: <kind> "<title>"]`), and user actions (`[Artifact Action: ...]`) into clean prompt transcripts.
 - `invoke_daemon`: One-shot prompt runner using plain `Instructions: ... Input: ... Output:` prefill against OpenAI-compatible and Ollama endpoints without tools or multi-turn state.

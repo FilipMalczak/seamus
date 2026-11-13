@@ -144,6 +144,18 @@ A specialized declarative Markdown document artifact (`family="plans"`, `exposit
 ### Bundled Skill
 A core harness platform skill maintained directly in repository source (`src/seamus/skills/bundled/`), mounted into OpenSandbox at `/skills/bundled` with highest precedence over session and system skills, and surfaced in the Agent Inspector.
 
+### Steerable Model
+A distinct inference provider format (`inference.format = "steerable"`) that replaces the live LLM with a queue of scripted assistant turns, each carrying optional text, optional reasoning, and optional tool calls. Requires no credentials and no network access, making agent behaviour deterministic and reproducible for local testing. See [0056-steerable-model-provider.md](../decisions/0056-steerable-model-provider.md).
+
+### Steerable Instance
+One steerable model within a session, addressed by a session-scoped id: `session:{session_id}:agent` for the session's main model and `session:{session_id}:daemon:{daemon}` for a daemon. Each instance owns an independent response queue, so the agent model and a daemon model are steered separately. Queued responses are consumed in order, one per model turn.
+
+### Empty-Queue Strategy
+The configured behaviour of a steerable instance when its response queue is empty: `error` (fail the turn loudly), `repeat` (return the configured default response), or `wait` (block until a response is queued, letting a human drive the session turn by turn).
+
+### Steerable Queue
+The ordered list of scripted assistant turns belonging to a steerable instance, editable live from the Agent Inspector's "Steerable" section. The queue lives in memory in the process-wide steerable registry.
+
 ### Secret Reference
 A symbolic string interpolation expression (`${secret('/path')}` or `${secret(path='/path', field='value')}`) embedded inside configuration fields (`InferenceConfig`, `AgentConfig`, `ConfigTemplate`). Evaluated strictly in memory against the OpenBao KV v2 vault (`secret/`) so cleartext credentials are never persisted to disk or Git. See [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md).
 

@@ -6,9 +6,15 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 
+from seamus.config.models import SteerableEmptyQueueStrategy
 from seamus.domain.resolution import EntityNotFoundError, resolve_session
-from seamus.harness.inspector import AgentInspectReport, build_agent_inspect_report
+from seamus.harness.inspector import (
+    AgentInspectReport,
+    SteerableInspectInfo,
+    build_agent_inspect_report,
+)
 from seamus.harness.runner import SessionBusyError, get_runner_registry
+from seamus.harness.steerable import get_steerable_registry
 from seamus.harness.store import SlugConflictError, get_harness_store
 from seamus.persistence.workspace import get_workspace_manager
 from seamus.server.schemas import (
@@ -18,6 +24,8 @@ from seamus.server.schemas import (
     SessionDiffResponse,
     SessionModeSwitchRequest,
     SessionUpdateRequest,
+    SteerableResponseRequest,
+    SteerableStrategyRequest,
     TerminalInfoResponse,
     TerminalStreamRequest,
     ThreadResponse,
@@ -313,6 +321,129 @@ async def inspect_session_agent(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate inspect report: {exc}",
         ) from exc
+
+
+def _resolve_steerable_instance(session_identifier: str, instance_id: str) -> Any:
+    """Return the steerable instance or raise a 404 HTTP error."""
+    registry = get_steerable_registry()
+    instance = registry.get(instance_id)
+    if instance is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Steerable instance '{instance_id}' was not found.",
+        )
+    return instance
+
+
+def _steerable_to_inspect(instance: Any) -> SteerableInspectInfo:
+    """Convert a steerable instance into its inspector representation."""
+    return SteerableInspectInfo(
+        instance_id=instance.instance_id,
+        role=instance.role,
+        strategy=instance.strategy.value,
+        default_response=instance.default_response,
+        wait_timeout=instance.wait_timeout,
+        pending_count=instance.pending_count,
+        known_tools=list(instance.known_tools),
+        responses=list(instance.responses),
+    )
+
+
+@router.get("/{session_identifier}/steerable", response_model=list[SteerableInspectInfo])
+async def list_steerable_models(
+    agent_identifier: str,
+    session_identifier: str,
+) -> list[SteerableInspectInfo]:
+    """List the steerable model instances registered for the session."""
+    store = get_harness_store()
+    try:
+        agent = store.resolve_agent(agent_identifier)
+        session = resolve_session(agent, session_identifier)
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return [
+        _steerable_to_inspect(instance)
+        for instance in get_steerable_registry().list_for_session(session.id)
+    ]
+
+
+@router.post(
+    "/{session_identifier}/steerable/{instance_id}/responses",
+    response_model=SteerableInspectInfo,
+)
+async def append_steerable_response(
+    agent_identifier: str,
+    session_identifier: str,
+    instance_id: str,
+    payload: SteerableResponseRequest,
+) -> SteerableInspectInfo:
+    """Append scripted responses to a steerable model's queue."""
+    store = get_harness_store()
+    try:
+        agent = store.resolve_agent(agent_identifier)
+        resolve_session(agent, session_identifier)
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    instance = _resolve_steerable_instance(session_identifier, instance_id)
+    for response in payload.responses:
+        instance.push(response)
+    return _steerable_to_inspect(instance)
+
+
+@router.put(
+    "/{session_identifier}/steerable/{instance_id}/responses",
+    response_model=SteerableInspectInfo,
+)
+async def replace_steerable_responses(
+    agent_identifier: str,
+    session_identifier: str,
+    instance_id: str,
+    payload: SteerableResponseRequest,
+) -> SteerableInspectInfo:
+    """Replace the whole scripted response queue of a steerable model.
+
+    An empty ``responses`` list clears the queue. The API exposes no DELETE
+    routes (INV-007), so clearing is expressed as a replacement.
+    """
+    store = get_harness_store()
+    try:
+        agent = store.resolve_agent(agent_identifier)
+        resolve_session(agent, session_identifier)
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    instance = _resolve_steerable_instance(session_identifier, instance_id)
+    instance.replace(payload.responses)
+    return _steerable_to_inspect(instance)
+
+
+@router.patch(
+    "/{session_identifier}/steerable/{instance_id}/strategy",
+    response_model=SteerableInspectInfo,
+)
+async def update_steerable_strategy(
+    agent_identifier: str,
+    session_identifier: str,
+    instance_id: str,
+    payload: SteerableStrategyRequest,
+) -> SteerableInspectInfo:
+    """Update the empty-queue strategy of a steerable model."""
+    store = get_harness_store()
+    try:
+        agent = store.resolve_agent(agent_identifier)
+        resolve_session(agent, session_identifier)
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    instance = _resolve_steerable_instance(session_identifier, instance_id)
+    instance.strategy = SteerableEmptyQueueStrategy(payload.strategy)
+    if payload.default_response is not None:
+        instance.default_response = payload.default_response
+    if payload.wait_timeout is not None:
+        instance.wait_timeout = payload.wait_timeout
+    return _steerable_to_inspect(instance)
 
 
 @router.get(

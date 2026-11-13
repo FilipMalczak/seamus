@@ -15,6 +15,15 @@ class InferenceFormat(StrEnum):
 
     OPENAI = "openai"
     OLLAMA = "ollama"
+    STEERABLE = "steerable"
+
+
+class SteerableEmptyQueueStrategy(StrEnum):
+    """Behaviour of a steerable model when its response queue is empty."""
+
+    ERROR = "error"
+    WAIT = "wait"
+    REPEAT = "repeat"
 
 
 class TodoImplementation(StrEnum):
@@ -66,6 +75,14 @@ class ReasoningEffort(StrEnum):
     XHIGH = "xhigh"
 
 
+class SteerableConfig(BaseModel):
+    """Configuration of a steerable (scripted) model provider."""
+
+    empty_queue_strategy: SteerableEmptyQueueStrategy = SteerableEmptyQueueStrategy.ERROR
+    default_response: str = "No scripted response available."
+    wait_timeout: float = 300.0
+
+
 class InferenceConfig(BaseModel):
     """Inference API connection and credentials configuration."""
 
@@ -73,6 +90,7 @@ class InferenceConfig(BaseModel):
     base_url: str = "https://openrouter.ai/api/v1"
     api_key: str | None = None
     reasoning_effort: ReasoningEffort = ReasoningEffort.DEFAULT
+    steerable: SteerableConfig = Field(default_factory=SteerableConfig)
 
     @model_validator(mode="after")
     def _validate_secret_refs(self) -> Self:
@@ -85,11 +103,15 @@ class InferenceConfig(BaseModel):
                     raise ValueError(str(exc)) from exc
         return self
 
+    def requires_api_key(self) -> bool:
+        """Return True if this inference configuration needs an API key to operate."""
+        if self.format in (InferenceFormat.STEERABLE, InferenceFormat.OLLAMA):
+            return False
+        return "11434" not in (self.base_url or "")
+
     def is_complete(self) -> bool:
         """Return True if all required inference fields are present and non-empty."""
-        requires_api_key = self.format != InferenceFormat.OLLAMA and "11434" not in (
-            self.base_url or ""
-        )
+        requires_api_key = self.requires_api_key()
         return bool(
             self.format
             and self.base_url
@@ -208,9 +230,8 @@ class AgentConfig(BaseModel):
                 missing.append("model_name")
             if not self.inference.base_url or not self.inference.base_url.strip():
                 missing.append("inference.base_url")
-            requires_api_key = self.inference.format != InferenceFormat.OLLAMA and "11434" not in (
-                self.inference.base_url or ""
-            )
+            requires_api_key = self.inference.requires_api_key()
+
             if requires_api_key and (
                 not self.inference.api_key or not self.inference.api_key.strip()
             ):

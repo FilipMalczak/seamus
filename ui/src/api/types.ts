@@ -8,7 +8,7 @@ export type ReasoningEffort =
   | "xhigh";
 
 export type InferenceConfig = {
-  format: "openai" | "ollama";
+  format: "openai" | "ollama" | "steerable";
   base_url: string;
   api_key?: string | null;
   reasoning_effort?: ReasoningEffort;
@@ -383,6 +383,30 @@ export interface MountedRepoInspectInfo {
   gitea_repo_url?: string | null;
 }
 
+export type SteerableEmptyQueueStrategy = "error" | "wait" | "repeat";
+
+export interface SteerableToolCall {
+  name: string;
+  args: Record<string, unknown>;
+}
+
+export interface SteerableResponse {
+  text?: string | null;
+  reasoning?: string | null;
+  tool_calls?: SteerableToolCall[];
+}
+
+export interface SteerableInspectInfo {
+  instance_id: string;
+  role: string;
+  strategy: SteerableEmptyQueueStrategy;
+  default_response: string;
+  wait_timeout: number;
+  pending_count: number;
+  known_tools?: string[];
+  responses?: SteerableResponse[];
+}
+
 export interface AgentInspectReport {
   agent_id: string;
   agent_name: string | null;
@@ -405,6 +429,7 @@ export interface AgentInspectReport {
   mounted_repositories?: MountedRepoInspectInfo[];
   history: HistoryInspectInfo;
   workspace: WorkspaceInspectInfo;
+  steerable_models?: SteerableInspectInfo[];
 }
 
 export interface TerminalStreamRequest {

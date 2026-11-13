@@ -9,6 +9,9 @@ import type {
   ConfigTemplateResponse,
   SessionDetail,
   SessionDiffResponse,
+  SteerableEmptyQueueStrategy,
+  SteerableInspectInfo,
+  SteerableResponse,
   SystemInfoResponse,
   SystemSettings,
   SystemSettingsResponse,
@@ -463,6 +466,87 @@ export async function getAgentInspection(
   }
   const res = await fetch(url.toString());
   return handleResponse<AgentInspectReport>(res);
+}
+
+function steerableBaseUrl(agentId: string, sessionId: string): string {
+  return `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(
+    sessionId
+  )}/steerable`;
+}
+
+export async function getSteerableModels(
+  agentId: string,
+  sessionId: string
+): Promise<SteerableInspectInfo[]> {
+  const res = await fetch(steerableBaseUrl(agentId, sessionId));
+  return handleResponse<SteerableInspectInfo[]>(res);
+}
+
+export async function appendSteerableResponses(
+  agentId: string,
+  sessionId: string,
+  instanceId: string,
+  responses: SteerableResponse[]
+): Promise<SteerableInspectInfo> {
+  const res = await fetch(
+    `${steerableBaseUrl(agentId, sessionId)}/${encodeURIComponent(instanceId)}/responses`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ responses }),
+    }
+  );
+  return handleResponse<SteerableInspectInfo>(res);
+}
+
+export async function replaceSteerableResponses(
+  agentId: string,
+  sessionId: string,
+  instanceId: string,
+  responses: SteerableResponse[]
+): Promise<SteerableInspectInfo> {
+  const res = await fetch(
+    `${steerableBaseUrl(agentId, sessionId)}/${encodeURIComponent(instanceId)}/responses`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ responses }),
+    }
+  );
+  return handleResponse<SteerableInspectInfo>(res);
+}
+
+export async function clearSteerableResponses(
+  agentId: string,
+  sessionId: string,
+  instanceId: string
+): Promise<SteerableInspectInfo> {
+  // The API exposes no DELETE routes (INV-007); clearing is a replacement
+  // with an empty response list.
+  return replaceSteerableResponses(agentId, sessionId, instanceId, []);
+}
+
+export async function updateSteerableStrategy(
+  agentId: string,
+  sessionId: string,
+  instanceId: string,
+  strategy: SteerableEmptyQueueStrategy,
+  defaultResponse?: string,
+  waitTimeout?: number
+): Promise<SteerableInspectInfo> {
+  const res = await fetch(
+    `${steerableBaseUrl(agentId, sessionId)}/${encodeURIComponent(instanceId)}/strategy`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        strategy,
+        default_response: defaultResponse,
+        wait_timeout: waitTimeout,
+      }),
+    }
+  );
+  return handleResponse<SteerableInspectInfo>(res);
 }
 
 export async function getSessionDiff(

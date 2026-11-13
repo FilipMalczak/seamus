@@ -42,6 +42,12 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## Deferred
 
+### Optional Persistence of Steerable Model Queues
+- **Description**: Optionally persist steerable model response queues (for example under `<session_workspace>/data/steerable/<instance_id>.json`, committed alongside session state) so that a scripted session survives a backend restart and its queue becomes visible in the Changes diff view. The queue is currently held in memory in the process-wide steerable registry only, so a restart discards it and the session must be re-armed.
+- **Why Deferred**: The queue is a live steering surface for the current process. Persisting it would require resolving the same multi-worker consistency caveats the in-memory store already carries (see the technical-debt entry on in-memory store state isolation), and Git-backed persistence would commit what is essentially scratch state into the session history.
+- **Revisit Trigger**: When scripted sessions need to survive backend restarts, or when the same scripted scenario must be replayed across processes (for example in the end-to-end test suite).
+- **Provenance**: [0056-steerable-model-provider.md](../decisions/0056-steerable-model-provider.md), `src/seamus/harness/steerable.py`.
+
 ### Automated Plan Cleanup & Task Pruning Tool
 - **Description**: Add a specialized planning maintenance tool (e.g. `clean_todo_plan` / `prune_todos`) that automatically garbage-collects completed subtrees, purges abandoned tasks, and compacts the active task tree to conserve context tokens in long multi-turn sessions.
 - **Why Deferred**: The core planning toolset (`create_todo_item`, `edit_todo_item`, `delete_todo_item`) fully supports explicit task management and deletion. Automated pruning and garbage-collection policies require additional heuristics to ensure users and agents do not lose necessary audit context mid-session.
@@ -280,12 +286,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Description**: Conduct a thorough review and audit of the Plan mode and planner implementation (`PlanBuilder`, prompt composition, `make_plan` tool lifecycle, phase transitions, and UI presentation). In particular, evaluate whether the current A2UI structure and tool mechanics provide optimal model steerability, assess how user comments and section-level revisions should be incorporated, and review whether the prompt instructions and sandbox handoff (`/artifacts/plans/<id>/plan.md`) cleanly support execution across long tasks.
 - **Rationale**: Plan mode was quickly composed across multiple iterations (initial mode scaffolding, Adaptive Cards migration, and A2UI decoupling). A dedicated review pass will consolidate lessons learned, eliminate residual rough edges, and prepare the foundation for rich plan commenting and section-level revisions.
 - **Provenance**: [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md), [0033-decouple-plans-and-submissions-from-a2ui.md](../decisions/0033-decouple-plans-and-submissions-from-a2ui.md), `src/seamus/harness/artifacts.py`, `src/seamus/harness/prompt.py`.
-
-### Steerable Model Implementation for Local Manual Testing
-- **Description**: Introduce a steerable model provider for local development and manual testing. The steerable model allows developers to script, step through, or interactively inject specific model responses, text chunks, and tool calls (such as `make_questionnaire` inquiries, custom A2UI artifacts, or specific error states) into active sessions without incurring live LLM API costs or dealing with non-deterministic completions.
-- **Rationale**: Greatly streamlines local manual verification of UI features (like interactive A2UI questionnaires, diff viewers, and error handling) and reduces turnaround time for frontend and harness developers.
-- **Provenance**: `src/seamus/harness/runner.py`, `tests/test_runner.py`, [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md).
-
 
 ### Configuration Synchronization (Template-to-Agent and Agent-to-Session)
 - **Description**: Implement mechanisms to synchronize configurations across entity hierarchies:

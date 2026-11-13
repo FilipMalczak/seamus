@@ -109,9 +109,11 @@ def test_ui_root_serving(tmp_path: Path) -> None:
 def test_no_delete_invariant_on_routes() -> None:
     """Enforce INV-007: No DELETE routes exist anywhere in the application."""
     app = create_app()
-    for route in app.routes:
-        methods: set[str] = getattr(route, "methods", set())
-        assert "DELETE" not in methods, f"Forbidden DELETE method found on route: {route}"
+    # The OpenAPI schema is the authoritative route table: it includes routes
+    # mounted through nested routers, which a scan of `app.routes` alone misses.
+    paths = app.openapi().get("paths", {})
+    for path, operations in paths.items():
+        assert "delete" not in operations, f"Forbidden DELETE method found on route: {path}"
 
 
 def test_config_template_endpoints(client: TestClient) -> None:

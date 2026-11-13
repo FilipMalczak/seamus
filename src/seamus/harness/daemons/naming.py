@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from seamus.harness.daemons.engine import invoke_daemon
 from seamus.harness.daemons.formatter import format_thread_history
+from seamus.harness.steerable import daemon_instance_id
 from seamus.persistence.workspace import get_workspace_manager
 
 if TYPE_CHECKING:
@@ -57,6 +58,10 @@ def is_stepback_trigger(count: int) -> bool:
 
 def _resolve_daemon_api_key(runner: SessionAgentRunner) -> str | None:
     """Extract resolved active API key from the runner's LLM if available and not symbolic."""
+    from seamus.harness.steerable import SteerableChatModel
+
+    if isinstance(runner._llm, SteerableChatModel):
+        return None
     if runner._llm and runner._llm.openai_api_key:
         from pydantic import SecretStr
 
@@ -95,6 +100,7 @@ async def execute_thread_naming(runner: SessionAgentRunner, thread: Thread) -> s
         input_payload=input_payload,
         occupied_slugs=occupied,
         api_key_override=active_key if naming_cfg.provider is None else None,
+        steerable_instance_id=daemon_instance_id(runner.session.id),
     )
     if not slug:
         return None
@@ -166,6 +172,7 @@ async def execute_session_naming(runner: SessionAgentRunner) -> str | None:
         input_payload=input_payload,
         occupied_slugs=occupied,
         api_key_override=active_key if naming_cfg.provider is None else None,
+        steerable_instance_id=daemon_instance_id(runner.session.id),
     )
     if not slug:
         return None
