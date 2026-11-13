@@ -211,3 +211,35 @@ export function steerableQueueFilename(instanceId: string): string {
   const safe = instanceId.replace(/[^a-zA-Z0-9._-]+/g, "-");
   return `steerable-queue-${safe}.json`;
 }
+
+/** How an uploaded queue file changes the queue it is uploaded into. */
+export type SteerableUploadMode = "replace" | "extend";
+
+/** The upload modes offered by the Inspector, in display order. */
+export const STEERABLE_UPLOAD_MODES: SteerableUploadMode[] = ["replace", "extend"];
+
+/** Human-readable labels for the upload modes. */
+export const STEERABLE_UPLOAD_MODE_LABELS: Record<SteerableUploadMode, string> = {
+  replace: "Replace",
+  extend: "Extend",
+};
+
+/** The queue mutation an upload performs. */
+export type SteerableUploadPlan =
+  | { kind: "replace"; responses: SteerableResponse[] }
+  | { kind: "append"; responses: SteerableResponse[] };
+
+/**
+ * Plan the queue mutation for an uploaded file.
+ *
+ * `replace` swaps the whole queue for the uploaded responses, while `extend`
+ * keeps the existing responses and appends the uploaded ones after them. The
+ * plan names the backend operation so the caller never has to re-derive the
+ * meaning of the mode.
+ */
+export function planSteerableUpload(
+  mode: SteerableUploadMode,
+  responses: SteerableResponse[]
+): SteerableUploadPlan {
+  return { kind: mode === "extend" ? "append" : "replace", responses };
+}

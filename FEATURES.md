@@ -322,7 +322,7 @@ Drive agents deterministically, without inference cost, by scripting the model r
 - **Separate Agent & Daemon Inspectors**: Each steerable model is addressed by a session-scoped instance id (`session:{id}:agent`, `session:{id}:daemon:naming`), so the agent model and the naming daemon are steered independently and shown as separate cards.
 - **Live Queue Editor in the Agent Inspector**: The `Steerable` sub-tab lists the queued responses in order and lets you append, remove, replace, or clear them, and change the empty-queue strategy at runtime.
 - **Multi-Tool-Call Composer**: One queued turn can request several tool calls at once. The composer accepts any number of tool-call rows (name plus JSON arguments, with known-tool suggestions and validation), and clears every field — including the tool-call rows — once the response is queued.
-- **Queue Import & Export**: Download the queue of any steerable instance as a JSON file, edit it offline, and upload it back to replace the queue. Uploaded files accept both the exported envelope and a bare list of responses.
+- **Queue Import & Export**: Download the queue of any steerable instance as a JSON file, edit it offline, and upload it back. Uploaded files accept both the exported envelope and a bare list of responses. A per-instance toggle decides what an upload does: `Replace` swaps the whole queue, `Extend` keeps the current responses and appends the uploaded ones after them.
 - **Test-Ready by Design**: The provider is a plain LangChain chat model, so tests can script a session turn by turn without any live endpoint.
 
 ---

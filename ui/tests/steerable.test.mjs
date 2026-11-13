@@ -4,8 +4,11 @@ import {
   buildToolCallDrafts,
   parseSteerableQueueFile,
   parseToolCallDraft,
+  planSteerableUpload,
   serializeSteerableQueue,
   steerableQueueFilename,
+  STEERABLE_UPLOAD_MODE_LABELS,
+  STEERABLE_UPLOAD_MODES,
 } from "../src/utils/steerable.ts";
 
 test("parseToolCallDraft - untouched draft yields no call and no error", () => {
@@ -171,4 +174,28 @@ test("steerableQueueFilename - sanitizes the instance id", () => {
     steerableQueueFilename("session:abc:agent"),
     "steerable-queue-session-abc-agent.json"
   );
+});
+
+test("STEERABLE_UPLOAD_MODES - offers replace and extend", () => {
+  assert.deepEqual(STEERABLE_UPLOAD_MODES, ["replace", "extend"]);
+  assert.equal(STEERABLE_UPLOAD_MODE_LABELS.replace, "Replace");
+  assert.equal(STEERABLE_UPLOAD_MODE_LABELS.extend, "Extend");
+});
+
+test("planSteerableUpload - replace swaps the whole queue", () => {
+  const plan = planSteerableUpload("replace", [{ text: "one" }]);
+  assert.equal(plan.kind, "replace");
+  assert.deepEqual(plan.responses, [{ text: "one" }]);
+});
+
+test("planSteerableUpload - extend appends to the existing queue", () => {
+  const plan = planSteerableUpload("extend", [{ text: "two" }]);
+  assert.equal(plan.kind, "append");
+  assert.deepEqual(plan.responses, [{ text: "two" }]);
+});
+
+test("planSteerableUpload - an empty upload is still a valid plan", () => {
+  assert.equal(planSteerableUpload("replace", []).kind, "replace");
+  assert.equal(planSteerableUpload("extend", []).kind, "append");
+  assert.deepEqual(planSteerableUpload("extend", []).responses, []);
 });

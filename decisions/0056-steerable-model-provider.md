@@ -111,8 +111,14 @@ place in the UI to author such responses.
 - The queue of an instance can be exported to a JSON file and imported back.
   The exported envelope records the originating instance id, the export time, and
   the strategy, alongside the responses. An uploaded file may also be a bare list
-  of responses, which makes hand-written scripts usable; uploading replaces the
-  queue.
+  of responses, which makes hand-written scripts usable.
+- Each instance card carries an upload-mode toggle with two options: `Replace`
+  (the default) swaps the whole queue for the uploaded responses, while `Extend`
+  keeps the current responses and appends the uploaded ones after them. The two
+  modes map onto the existing API operations — a replacement (`PUT`) and an
+  append (`POST`) — so extending a queue never has to re-send the responses that
+  are already in it, and a response pushed by the model between the upload and
+  the request is not lost.
 - The parsing and serialization rules live in `ui/src/utils/steerable.ts` as
   pure functions, so they are covered by the UI test suite independently of the
   component.

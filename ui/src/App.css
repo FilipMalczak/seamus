@@ -5910,6 +5910,46 @@ a.changes-pr-badge:hover {
   display: none;
 }
 
+.steerable-upload-mode {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid rgba(63, 63, 70, 0.9);
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.steerable-upload-mode-option {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1.2;
+  color: #a3a3a3;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.steerable-upload-mode-option + .steerable-upload-mode-option {
+  border-left: 1px solid rgba(63, 63, 70, 0.9);
+}
+
+.steerable-upload-mode-option:hover:not(:disabled) {
+  background: #27272a;
+  color: #e4e4e7;
+}
+
+.steerable-upload-mode-option.is-active {
+  background: rgba(63, 63, 70, 0.9);
+  color: #fafafa;
+}
+
+.steerable-upload-mode-option:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .steerable-tool-call-list {
   display: flex;
   flex-direction: column;

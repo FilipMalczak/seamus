@@ -154,7 +154,7 @@ One steerable model within a session, addressed by a session-scoped id: `session
 The configured behaviour of a steerable instance when its response queue is empty: `wait` (the default — block until a response is queued, letting a human drive the session turn by turn), `error` (fail the turn loudly), or `repeat` (return the configured default response).
 
 ### Steerable Queue
-The ordered list of scripted assistant turns belonging to a steerable instance, editable live from the Agent Inspector's "Steerable" section. The queue lives in memory in the process-wide steerable registry. It can be exported to a JSON file and imported back, which replaces the queue of the target instance.
+The ordered list of scripted assistant turns belonging to a steerable instance, editable live from the Agent Inspector's "Steerable" section. The queue lives in memory in the process-wide steerable registry. It can be exported to a JSON file and imported back; an import either replaces the queue of the target instance or extends it with the uploaded responses.
 
 ### Secret Reference
 A symbolic string interpolation expression (`${secret('/path')}` or `${secret(path='/path', field='value')}`) embedded inside configuration fields (`InferenceConfig`, `AgentConfig`, `ConfigTemplate`). Evaluated strictly in memory against the OpenBao KV v2 vault (`secret/`) so cleartext credentials are never persisted to disk or Git. See [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md).

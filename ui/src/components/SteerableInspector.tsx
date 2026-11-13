@@ -25,8 +25,12 @@ import {
   buildToolCallDrafts,
   EMPTY_TOOL_ARGS,
   parseSteerableQueueFile,
+  planSteerableUpload,
   serializeSteerableQueue,
   steerableQueueFilename,
+  STEERABLE_UPLOAD_MODE_LABELS,
+  STEERABLE_UPLOAD_MODES,
+  type SteerableUploadMode,
   type ToolCallDraft,
 } from "../utils/steerable";
 
@@ -102,6 +106,7 @@ function SteerableInstanceCard({
   onError,
 }: InstanceCardProps) {
   const [draft, setDraft] = useState<DraftState>(EMPTY_DRAFT);
+  const [uploadMode, setUploadMode] = useState<SteerableUploadMode>("replace");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const responses = instance.responses ?? [];
 
@@ -189,13 +194,23 @@ function SteerableInstanceCard({
       onError(parsed.error);
       return;
     }
+    // "Replace" swaps the queue for the uploaded responses, "Extend" keeps the
+    // current responses and appends the uploaded ones after them.
+    const plan = planSteerableUpload(uploadMode, parsed.responses);
     onRun(instance.instance_id, () =>
-      replaceSteerableResponses(
-        agentId,
-        sessionId,
-        instance.instance_id,
-        parsed.responses
-      )
+      plan.kind === "replace"
+        ? replaceSteerableResponses(
+            agentId,
+            sessionId,
+            instance.instance_id,
+            plan.responses
+          )
+        : appendSteerableResponses(
+            agentId,
+            sessionId,
+            instance.instance_id,
+            plan.responses
+          )
     );
   };
 
@@ -225,12 +240,40 @@ function SteerableInstanceCard({
             <Download className="size-3.5" />
             <span>Download</span>
           </button>
+          <div
+            className="steerable-upload-mode"
+            role="group"
+            aria-label="Queue upload mode"
+            title={
+              uploadMode === "replace"
+                ? "An uploaded file replaces the whole queue"
+                : "An uploaded file is appended to the current queue"
+            }
+          >
+            {STEERABLE_UPLOAD_MODES.map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                className={`steerable-upload-mode-option${
+                  uploadMode === mode ? " is-active" : ""
+                }`}
+                disabled={busy}
+                onClick={() => setUploadMode(mode)}
+              >
+                {STEERABLE_UPLOAD_MODE_LABELS[mode]}
+              </button>
+            ))}
+          </div>
           <button
             type="button"
             className="btn-secondary btn-sm"
             disabled={busy}
             onClick={() => fileInputRef.current?.click()}
-            title="Upload a JSON queue file, replacing the current queue"
+            title={
+              uploadMode === "replace"
+                ? "Upload a JSON queue file, replacing the current queue"
+                : "Upload a JSON queue file, appending to the current queue"
+            }
           >
             <Upload className="size-3.5" />
             <span>Upload</span>
