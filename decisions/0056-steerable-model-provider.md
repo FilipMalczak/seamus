@@ -28,7 +28,8 @@ place in the UI to author such responses.
 
 - Add `InferenceFormat.STEERABLE = "steerable"` alongside `openai` and `ollama`.
 - Add `SteerableConfig` nested on `InferenceConfig`:
-  - `empty_queue_strategy: SteerableEmptyQueueStrategy` (`error` | `wait` | `repeat`)
+  - `empty_queue_strategy: SteerableEmptyQueueStrategy` (`wait` | `error` | `repeat`),
+    defaulting to `wait`
   - `default_response: str` — the text returned by the `repeat` strategy
   - `wait_timeout: float` — how long the `wait` strategy blocks before failing
 - Steerable inference needs no API key. `InferenceConfig.requires_api_key()` is the
@@ -53,6 +54,11 @@ place in the UI to author such responses.
   tool names captured by `bind_tools`. Queue mutation is guarded by a
   `threading.Condition`; the `wait` strategy blocks the model call until a
   response is pushed or `wait_timeout` elapses.
+- The default empty-queue strategy is `wait`. A freshly armed instance therefore
+  holds the model turn instead of failing it, which is what makes the Inspector a
+  remote control: the operator queues the next response from the UI and the
+  blocked turn resumes with it. `error` and `repeat` remain available for tests
+  that want a turn to fail or to fall back to a canned answer.
 - `SteerableModelRegistry` is a process-wide singleton mapping stable instance ids
   to instances. Ids are session scoped: `session:{session_id}:agent` for the
   session's main model and `session:{session_id}:daemon:{daemon}` for a daemon
@@ -95,8 +101,21 @@ place in the UI to author such responses.
 - The Agent Inspector gains a "Steerable" sub-tab, rendered only when the session
   has steerable instances. Each instance gets its own card (agent and daemon are
   separate cards) showing the queued responses in order, the empty-queue strategy
-  selector, a composer for text / reasoning / tool call (with JSON argument
+  selector, a composer for text / reasoning / tool calls (with JSON argument
   validation and known-tool suggestions), per-item removal, and clear-queue.
+- A single queued response may carry several tool calls. The composer holds a
+  list of tool-call rows (name plus JSON arguments) instead of a single pair of
+  fields, and the whole composer — text, reasoning, and every tool-call row — is
+  reset once the response is queued, so the next response does not silently
+  repeat the previous tool calls.
+- The queue of an instance can be exported to a JSON file and imported back.
+  The exported envelope records the originating instance id, the export time, and
+  the strategy, alongside the responses. An uploaded file may also be a bare list
+  of responses, which makes hand-written scripts usable; uploading replaces the
+  queue.
+- The parsing and serialization rules live in `ui/src/utils/steerable.ts` as
+  pure functions, so they are covered by the UI test suite independently of the
+  component.
 - `ConfigModal` offers `steerable (Scripted Responses)` as an inference format for
   both the agent and the naming daemon.
 
@@ -113,6 +132,8 @@ inspector. Optional persistence is tracked in the backlog.
   tool errors — deterministically and without inference costs.
 - The `wait` strategy turns the Inspector into a live remote control: the model
   blocks until a response is queued, letting a human drive a session turn by turn.
+  It is the default, so an unconfigured steerable instance waits rather than
+  failing the turn.
 - Agent and daemon models are steered independently, so a developer can script a
   daemon's naming slug separately from the agent's turns.
 - The steerable provider is a distinct format rather than a mode of an existing

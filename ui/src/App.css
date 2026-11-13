@@ -5899,10 +5899,36 @@ a.changes-pr-badge:hover {
   border-color: rgba(56, 189, 248, 0.5);
 }
 
+.steerable-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.steerable-file-input {
+  display: none;
+}
+
+.steerable-tool-call-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
 .steerable-tool-call-fields {
   display: flex;
+  align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
+}
+
+.steerable-tool-call-index {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  min-width: 1.4rem;
 }
 
 .steerable-tool-input {

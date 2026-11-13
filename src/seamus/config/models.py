@@ -78,7 +78,7 @@ class ReasoningEffort(StrEnum):
 class SteerableConfig(BaseModel):
     """Configuration of a steerable (scripted) model provider."""
 
-    empty_queue_strategy: SteerableEmptyQueueStrategy = SteerableEmptyQueueStrategy.ERROR
+    empty_queue_strategy: SteerableEmptyQueueStrategy = SteerableEmptyQueueStrategy.WAIT
     default_response: str = "No scripted response available."
     wait_timeout: float = 300.0
 

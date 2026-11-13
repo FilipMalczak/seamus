@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test": "node --test tests/sequence.test.mjs"
+    "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
     "@a2ui/react": "^0.15.0",

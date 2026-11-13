@@ -43,7 +43,7 @@ Persistent record of work intentionally left outstanding across the project, mai
 ## Deferred
 
 ### Optional Persistence of Steerable Model Queues
-- **Description**: Optionally persist steerable model response queues (for example under `<session_workspace>/data/steerable/<instance_id>.json`, committed alongside session state) so that a scripted session survives a backend restart and its queue becomes visible in the Changes diff view. The queue is currently held in memory in the process-wide steerable registry only, so a restart discards it and the session must be re-armed.
+- **Description**: Optionally persist steerable model response queues (for example under `<session_workspace>/data/steerable/<instance_id>.json`, committed alongside session state) so that a scripted session survives a backend restart and its queue becomes visible in the Changes diff view. The queue is currently held in memory in the process-wide steerable registry only, so a restart discards it and the session must be re-armed. The Inspector's queue export/import covers the manual case (download a queue as JSON, upload it into another session), but not automatic, session-scoped persistence.
 - **Why Deferred**: The queue is a live steering surface for the current process. Persisting it would require resolving the same multi-worker consistency caveats the in-memory store already carries (see the technical-debt entry on in-memory store state isolation), and Git-backed persistence would commit what is essentially scratch state into the session history.
 - **Revisit Trigger**: When scripted sessions need to survive backend restarts, or when the same scripted scenario must be replayed across processes (for example in the end-to-end test suite).
 - **Provenance**: [0056-steerable-model-provider.md](../decisions/0056-steerable-model-provider.md), `src/seamus/harness/steerable.py`.
@@ -388,9 +388,9 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Provenance**: `src/seamus/harness/runner.py`, `src/seamus/telemetry.py`.
 
 ### Comprehensive End-to-End Test Suite with Steerable LLM Mocking
-- **Description**: Construct an automated end-to-end integration and UI test suite running against the container stack, leveraging steerable/replayable model responses to test multi-turn interactive flows predictably.
+- **Description**: Construct an automated end-to-end integration and UI test suite running against the container stack, leveraging steerable/replayable model responses to test multi-turn interactive flows predictably. The Inspector's queue export/import already provides the file format for shipping a scripted scenario between processes.
 - **Rationale**: Complements unit tests by validating the full browser-to-backend-to-sandbox loop without live LLM costs.
-- **Provenance**: `tests/`, `ui/tests/`, `src/seamus/harness/runner.py`.
+- **Provenance**: `tests/`, `ui/tests/`, `src/seamus/harness/runner.py`, `ui/src/utils/steerable.ts`.
 
 ### Alternative Formatting and Presentation Formats in `answers.md`
 - **Description**: Explore and evaluate alternative markdown representations for structured questionnaire and form responses in `answers.md`. In particular, test displaying multiple-choice sets and checkbox options explicitly showing both affirmative and negative selections (e.g. `<option label>: yes/no` or markdown task list checkmarks `- [x] <option>` / `- [ ] <option>`), tabular answer matrices, or grouped question sections.

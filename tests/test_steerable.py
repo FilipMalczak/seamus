@@ -17,6 +17,7 @@ from seamus.config.models import (
 from seamus.config.template import ConfigTemplateStore, reset_config_template_store
 from seamus.harness.steerable import (
     SteerableChatModel,
+    SteerableInstance,
     SteerableQueueEmptyError,
     SteerableResponse,
     SteerableToolCall,
@@ -37,9 +38,7 @@ def reset_globals() -> None:
         inference=InferenceConfig(
             format=InferenceFormat.STEERABLE,
             base_url="https://openrouter.ai/api/v1",
-            steerable=SteerableConfig(
-                empty_queue_strategy=SteerableEmptyQueueStrategy.ERROR,
-            ),
+            steerable=SteerableConfig(),
         ),
         model_name="steerable-model",
     )
@@ -67,6 +66,13 @@ def test_steerable_config_requires_no_api_key() -> None:
 
     agent_config = AgentConfig(inference=config, model_name="steerable-model")
     agent_config.validate_complete()
+
+
+def test_default_empty_queue_strategy_is_wait() -> None:
+    """The steerable provider waits for a scripted response by default."""
+    instance = SteerableInstance(instance_id="x", role="agent")
+    assert SteerableConfig().empty_queue_strategy is SteerableEmptyQueueStrategy.WAIT
+    assert instance.strategy is SteerableEmptyQueueStrategy.WAIT
 
 
 def test_queue_consumed_in_order() -> None:
@@ -100,6 +106,28 @@ def test_response_carries_text_reasoning_and_tool_calls() -> None:
     call = message.tool_calls[0]
     assert call["name"] == "ls"
     assert call["args"] == {"path": "/workspace"}
+
+
+def test_response_carries_multiple_tool_calls() -> None:
+    """A single scripted response may request several tool calls."""
+    instance = _instance()
+    instance.push(
+        SteerableResponse(
+            text="Running two tools",
+            tool_calls=[
+                SteerableToolCall(name="ls", args={"path": "/workspace"}),
+                SteerableToolCall(name="read_file", args={"path": "/workspace/a.txt"}),
+            ],
+        )
+    )
+
+    model = SteerableChatModel(instance_id=instance.instance_id)
+    message = model.invoke([HumanMessage(content="go")])
+
+    assert len(message.tool_calls) == 2
+    assert [call["name"] for call in message.tool_calls] == ["ls", "read_file"]
+    assert message.tool_calls[0]["args"] == {"path": "/workspace"}
+    assert message.tool_calls[1]["args"] == {"path": "/workspace/a.txt"}
 
 
 def test_stream_emits_reasoning_text_and_tool_call_chunks() -> None:
@@ -314,7 +342,7 @@ def test_steerable_api_roundtrip(client: TestClient) -> None:
     listed = {entry["instance_id"]: entry for entry in list_res.json()}
     assert instance_id in listed
     assert listed[instance_id]["role"] == "agent"
-    assert listed[instance_id]["strategy"] == "error"
+    assert listed[instance_id]["strategy"] == "wait"
     assert listed[instance_id]["pending_count"] == 0
 
     # 2. Append
@@ -337,6 +365,27 @@ def test_steerable_api_roundtrip(client: TestClient) -> None:
     assert replaced["pending_count"] == 1
     assert replaced["responses"][0]["text"] == "only one"
     assert replaced["responses"][0]["reasoning"] == "because"
+
+    # 3b. Append a response carrying several tool calls at once.
+    multi_res = client.post(
+        f"{base}/{instance_id}/responses",
+        json={
+            "responses": [
+                {
+                    "text": "two tools",
+                    "tool_calls": [
+                        {"name": "ls", "args": {"path": "/"}},
+                        {"name": "read_file", "args": {"path": "/a.txt"}},
+                    ],
+                }
+            ]
+        },
+    )
+    assert multi_res.status_code == 200
+    multi_data = multi_res.json()
+    assert multi_data["pending_count"] == 2
+    assert len(multi_data["responses"][1]["tool_calls"]) == 2
+    assert multi_data["responses"][1]["tool_calls"][1]["name"] == "read_file"
 
     # 4. Strategy
     strategy_res = client.patch(

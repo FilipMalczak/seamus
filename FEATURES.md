@@ -317,10 +317,12 @@ Lightweight, non-agentic one-shot LLM utilities using plain `Instructions: ... I
 Drive agents deterministically, without inference cost, by scripting the model responses yourself:
 
 - **First-Class Steerable Provider**: A distinct `InferenceFormat.STEERABLE` that replaces the live LLM with a queue of scripted assistant turns. No API key, no network access, no provider latency.
-- **Rich Scripted Responses**: Each queued turn may carry assistant text, reasoning content (surfaced as AG-UI reasoning events), and tool calls with arbitrary JSON arguments — enough to reproduce any agent behaviour, including tool errors.
-- **Configurable Empty-Queue Strategy**: `error` fails the turn loudly, `repeat` returns a fixed default response, and `wait` blocks the model call until a response is queued, turning the Inspector into a live remote control for driving a session turn by turn.
+- **Rich Scripted Responses**: Each queued turn may carry assistant text, reasoning content (surfaced as AG-UI reasoning events), and any number of tool calls with arbitrary JSON arguments — enough to reproduce any agent behaviour, including tool errors and parallel tool calls.
+- **Configurable Empty-Queue Strategy**: `wait` (the default) blocks the model call until a response is queued, turning the Inspector into a live remote control for driving a session turn by turn; `error` fails the turn loudly and `repeat` returns a fixed default response. The strategy can be switched at runtime, per instance.
 - **Separate Agent & Daemon Inspectors**: Each steerable model is addressed by a session-scoped instance id (`session:{id}:agent`, `session:{id}:daemon:naming`), so the agent model and the naming daemon are steered independently and shown as separate cards.
 - **Live Queue Editor in the Agent Inspector**: The `Steerable` sub-tab lists the queued responses in order and lets you append, remove, replace, or clear them, and change the empty-queue strategy at runtime.
+- **Multi-Tool-Call Composer**: One queued turn can request several tool calls at once. The composer accepts any number of tool-call rows (name plus JSON arguments, with known-tool suggestions and validation), and clears every field — including the tool-call rows — once the response is queued.
+- **Queue Import & Export**: Download the queue of any steerable instance as a JSON file, edit it offline, and upload it back to replace the queue. Uploaded files accept both the exported envelope and a bare list of responses.
 - **Test-Ready by Design**: The provider is a plain LangChain chat model, so tests can script a session turn by turn without any live endpoint.
 
 ---

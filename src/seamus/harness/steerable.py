@@ -63,7 +63,7 @@ class SteerableInstance(BaseModel):
 
     instance_id: str
     role: str
-    strategy: SteerableEmptyQueueStrategy = SteerableEmptyQueueStrategy.ERROR
+    strategy: SteerableEmptyQueueStrategy = SteerableEmptyQueueStrategy.WAIT
     default_response: str = "No scripted response available."
     wait_timeout: float = 300.0
     responses: list[SteerableResponse] = Field(default_factory=list)
