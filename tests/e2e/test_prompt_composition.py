@@ -32,7 +32,7 @@ async def _inspect(client: httpx.AsyncClient, ctx: dict[str, Any]) -> dict[str, 
         f"/api/v-alpha/agent/{ctx['agent_id']}/session/{ctx['session_id']}/inspect"
     )
     assert response.status_code == 200
-    return response.json()
+    return dict(response.json())
 
 
 @pytest.mark.asyncio

@@ -249,7 +249,7 @@ test("REQ-021: the diff style can be switched between unified and split", async 
   await unmount();
 });
 
-test("REQ-024: the changed-files sidebar can be collapsed and restored", async () => {
+test("REQ-021: the changed-files sidebar can be collapsed and restored", async () => {
   const { container, unmount } = await renderChanges();
   await settle();
 

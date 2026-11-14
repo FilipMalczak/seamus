@@ -32,6 +32,7 @@ async def _drain(runner: Any, *, timeout: float = 30.0) -> None:
     if task is not None and not task.done():
         await asyncio.wait_for(asyncio.shield(task), timeout=timeout)
 
+
 # The tools that the *chat* mode exposes for the artifacts subsystem. The
 # plan lifecycle tools (`plan`, `make_plan`, ...) belong to the plan mode and
 # its phases, so they are asserted separately.
@@ -44,7 +45,7 @@ async def _inspect(client: httpx.AsyncClient, ctx: dict[str, Any]) -> dict[str, 
         f"/api/v-alpha/agent/{ctx['agent_id']}/session/{ctx['session_id']}/inspect"
     )
     assert response.status_code == 200
-    return response.json()
+    return dict(response.json())
 
 
 async def _tool_names(client: httpx.AsyncClient, ctx: dict[str, Any]) -> set[str]:

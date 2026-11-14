@@ -68,7 +68,9 @@ async def test_a_named_agent_keeps_its_name(
     client: httpx.AsyncClient,
 ) -> None:
     """REQ-040: a user-assigned name takes precedence over the generated slug."""
-    created = await client.post("/api/v-alpha/agents", json={**_config_payload(), "name": "my-agent"})
+    created = await client.post(
+        "/api/v-alpha/agents", json={**_config_payload(), "name": "my-agent"}
+    )
     assert created.status_code == 201
 
     assert created.json()["name"] == "my-agent"

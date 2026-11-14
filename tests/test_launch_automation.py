@@ -275,3 +275,60 @@ def test_ci_workflow_runs_the_end_to_end_suite() -> None:
     workflow = CI_PATH.read_text(encoding="utf-8")
 
     assert re.search(r"pytest\s+tests/e2e", workflow)
+
+
+def test_pyproject_and_uv_lock_require_python_312() -> None:
+    """REQ-001 / INV-001: Python >=3.12 and synchronized uv lockfile in project and CI."""
+    import tomllib
+
+    pyproject_path = REPO_ROOT / "pyproject.toml"
+    uv_lock_path = REPO_ROOT / "uv.lock"
+    assert pyproject_path.is_file()
+    assert uv_lock_path.is_file()
+    assert uv_lock_path.stat().st_size > 0
+
+    pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    requires_python = pyproject["project"]["requires-python"]
+    assert ">=3.12" in requires_python
+
+    workflow = CI_PATH.read_text(encoding="utf-8")
+    assert "uv python install 3.12" in workflow
+    assert "uv sync --frozen" in workflow
+
+
+def test_ci_workflow_runs_static_verification_checks() -> None:
+    """REQ-002 / INV-002: CI must enforce ruff formatting, ruff lint, mypy, and pytest."""
+    workflow = CI_PATH.read_text(encoding="utf-8")
+
+    assert "ruff format --check" in workflow
+    assert "ruff check" in workflow
+    assert "mypy" in workflow
+    assert "pytest" in workflow
+
+
+def test_knowledge_and_decisions_exist_and_use_relative_links() -> None:
+    """REQ-003 / INV-003: required knowledge docs exist and Markdown links are relative."""
+    knowledge_dir = REPO_ROOT / "knowledge"
+    decisions_dir = REPO_ROOT / "decisions"
+    assert decisions_dir.is_dir()
+
+    required_knowledge = (
+        "vocabulary.md",
+        "requirements.md",
+        "invariants.md",
+        "architecture.md",
+        "abstractions.md",
+        "conventions.md",
+        "backlog.md",
+        "test_coverage.md",
+    )
+    for filename in required_knowledge:
+        assert (knowledge_dir / filename).is_file(), f"Missing knowledge/{filename}"
+
+    for directory in (knowledge_dir, decisions_dir):
+        for md_file in sorted(directory.glob("*.md")):
+            content = md_file.read_text(encoding="utf-8")
+            for target in re.findall(r"\[[^\]]+\]\(([^)]+)\)", content):
+                assert not target.startswith(("/", "file://")), (
+                    f"{md_file.relative_to(REPO_ROOT)} contains non-relative link: {target}"
+                )

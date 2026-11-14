@@ -20,8 +20,8 @@ from typing import Any
 import httpx
 import pytest
 
+from seamus.config.models import ExternalRepositoryConfig
 from seamus.harness.runner import get_runner_registry
-from seamus.harness.steerable import SteerableToolCall
 
 
 async def _drain(runner: Any, *, timeout: float = 30.0) -> None:
@@ -37,7 +37,7 @@ async def _inspect(client: httpx.AsyncClient, ctx: dict[str, Any]) -> dict[str, 
         f"/api/v-alpha/agent/{ctx['agent_id']}/session/{ctx['session_id']}/inspect"
     )
     assert response.status_code == 200
-    return response.json()
+    return dict(response.json())
 
 
 @pytest.mark.asyncio
@@ -49,17 +49,13 @@ async def test_a_configured_repository_is_reported_as_mounted(
     """REQ-036: the configured repository is mounted under `/projects/<name>`."""
     ctx = make_session("external-repo", mode="chat")
 
-    # The repository configuration is part of the agent configuration.
-    from seamus.harness.store import get_harness_store
-
-    agent = get_harness_store().resolve_agent(ctx["agent_id"])
     session = ctx["session"]
     session.config.repositories = [
-        {
-            "id": "repo-1",
-            "url": "https://github.com/example/widgets.git",
-            "branch": "main",
-        }
+        ExternalRepositoryConfig(
+            id="repo-1",
+            url="https://github.com/example/widgets.git",
+            branch="main",
+        )
     ]
 
     body = await _inspect(client, ctx)
@@ -80,13 +76,18 @@ async def test_two_repositories_with_the_same_name_get_distinct_mounts(
     """INV-043: colliding mount names are suffixed so they stay distinct."""
     ctx = make_session("external-repo-collision", mode="chat")
 
-    from seamus.harness.store import get_harness_store
-
-    agent = get_harness_store().resolve_agent(ctx["agent_id"])
     session = ctx["session"]
     session.config.repositories = [
-        {"id": "a", "url": "https://github.com/example/widgets.git", "branch": "main"},
-        {"id": "b", "url": "https://github.com/other/widgets.git", "branch": "main"},
+        ExternalRepositoryConfig(
+            id="a",
+            url="https://github.com/example/widgets.git",
+            branch="main",
+        ),
+        ExternalRepositoryConfig(
+            id="b",
+            url="https://github.com/other/widgets.git",
+            branch="main",
+        ),
     ]
 
     body = await _inspect(client, ctx)
@@ -104,17 +105,14 @@ async def test_repository_credentials_are_not_exposed(
     """INV-043: the credentials are reported as a flag, never as a value."""
     ctx = make_session("external-repo-credentials", mode="chat")
 
-    from seamus.harness.store import get_harness_store
-
-    agent = get_harness_store().resolve_agent(ctx["agent_id"])
     session = ctx["session"]
     session.config.repositories = [
-        {
-            "id": "repo-1",
-            "url": "https://github.com/example/private.git",
-            "branch": "main",
-            "credentials": "ghp_super_secret_token",
-        }
+        ExternalRepositoryConfig(
+            id="repo-1",
+            url="https://github.com/example/private.git",
+            branch="main",
+            credentials="ghp_super_secret_token",
+        )
     ]
 
     body = await _inspect(client, ctx)
@@ -132,12 +130,13 @@ async def test_a_repository_without_credentials_is_reported_as_unconfigured(
     """INV-043: a public repository reports no credentials."""
     ctx = make_session("external-repo-public", mode="chat")
 
-    from seamus.harness.store import get_harness_store
-
-    agent = get_harness_store().resolve_agent(ctx["agent_id"])
     session = ctx["session"]
     session.config.repositories = [
-        {"id": "repo-1", "url": "https://github.com/example/public.git", "branch": "main"}
+        ExternalRepositoryConfig(
+            id="repo-1",
+            url="https://github.com/example/public.git",
+            branch="main",
+        )
     ]
 
     body = await _inspect(client, ctx)
@@ -156,12 +155,13 @@ async def test_the_sandbox_mounts_the_repository_under_projects(
     """REQ-036: the repository is mounted into the sandbox under `/projects/`."""
     ctx = make_session("external-repo-mount", mode="chat")
 
-    from seamus.harness.store import get_harness_store
-
-    agent = get_harness_store().resolve_agent(ctx["agent_id"])
     session = ctx["session"]
     session.config.repositories = [
-        {"id": "repo-1", "url": "https://github.com/example/widgets.git", "branch": "main"}
+        ExternalRepositoryConfig(
+            id="repo-1",
+            url="https://github.com/example/widgets.git",
+            branch="main",
+        )
     ]
 
     queue_agent_turn(ctx["session_id"], text="Hello.")
