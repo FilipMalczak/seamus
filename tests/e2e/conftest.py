@@ -62,13 +62,17 @@ from tests.e2e.stub_sandbox import StubSandboxBackend, StubSandboxSettings
 
 @pytest.fixture(autouse=True)
 def reset_globals(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """Reset every process-wide singleton and isolate per-test workspace state."""
+    """Reset every process-wide singleton and isolate per-test workspace state.
+
+    E2E tests default to in-memory persistence so the parallel suite stays fast;
+    tests that exercise Gitea-backed Git/Sync PRs opt in via ``gitea_enabled``.
+    """
     from seamus.persistence.config import get_persistence_settings
 
-    if os.environ.get("SEAMUS_PERSISTENCE_ENABLED", "false").lower() != "true":
-        ws_dir = tmp_path / "workspace"
-        ws_dir.mkdir(parents=True, exist_ok=True)
-        monkeypatch.setenv("SEAMUS_WORKSPACE_DIR", str(ws_dir))
+    ws_dir = tmp_path / "workspace"
+    ws_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("SEAMUS_PERSISTENCE_ENABLED", "false")
+    monkeypatch.setenv("SEAMUS_WORKSPACE_DIR", str(ws_dir))
 
     get_persistence_settings.cache_clear()
     reset_config_template_store(None)
@@ -286,17 +290,28 @@ async def running_runner(steerable_store: HarnessStore) -> Any:
 
 
 @pytest.fixture
-def gitea_enabled() -> None:
-    """Skip a test when Gitea-backed persistence is unavailable.
-
-    The end-to-end suite runs against an ephemeral Gitea container when Docker
-    is available (see ``tests/conftest.py``). When it is not, persistence is
-    disabled and the Git-backed behaviours under test cannot be exercised.
-    """
+def gitea_enabled(
+    ephemeral_gitea_session: dict[str, str | int] | None,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Enable Gitea-backed persistence for tests that exercise Git/Sync PRs."""
     from seamus.persistence.config import get_persistence_settings
 
-    if not get_persistence_settings().enabled:
-        pytest.skip("Gitea-backed persistence is disabled for this test run")
+    assert ephemeral_gitea_session is not None, (
+        "Gitea-backed persistence is unavailable (ephemeral_gitea_session is None)"
+    )
+
+    ws_dir = tmp_path / "gitea_workspace"
+    ws_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("SEAMUS_PERSISTENCE_ENABLED", "true")
+    monkeypatch.setenv("SEAMUS_WORKSPACE_DIR", str(ws_dir))
+    get_persistence_settings.cache_clear()
+    reset_workspace_manager(None)
+
+    assert get_persistence_settings().enabled, (
+        "Gitea-backed persistence failed to enable for this test"
+    )
 
 
 @pytest.fixture

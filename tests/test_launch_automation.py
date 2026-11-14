@@ -230,7 +230,6 @@ def test_run_script_rejects_unknown_options(run_script: str) -> None:
     assert "exit 1" in run_script
 
 
-@pytest.mark.skipif(shutil.which("bash") is None, reason="bash is not available")
 def test_run_script_help_exits_successfully() -> None:
     """REQ-010: `--help` must not attempt to start anything."""
     result = subprocess.run(
@@ -247,7 +246,6 @@ def test_run_script_help_exits_successfully() -> None:
     assert "--clean" in result.stdout
 
 
-@pytest.mark.skipif(shutil.which("bash") is None, reason="bash is not available")
 def test_run_script_rejects_unknown_flags() -> None:
     """REQ-010: an unknown flag must exit non-zero."""
     result = subprocess.run(
@@ -266,15 +264,15 @@ def test_ci_workflow_runs_the_python_and_frontend_suites() -> None:
     """REQ-028: CI must exercise both the Python and the frontend suites."""
     workflow = CI_PATH.read_text(encoding="utf-8")
 
-    assert "pytest" in workflow
-    assert "npm test" in workflow or "npm run test" in workflow
+    assert "./test.sh --backend" in workflow
+    assert "./test.sh --ui" in workflow
 
 
 def test_ci_workflow_runs_the_end_to_end_suite() -> None:
     """REQ-052: the deterministic end-to-end suite must run in CI."""
     workflow = CI_PATH.read_text(encoding="utf-8")
 
-    assert re.search(r"pytest\s+tests/e2e", workflow)
+    assert "./test.sh --e2e" in workflow
 
 
 def test_pyproject_and_uv_lock_require_python_312() -> None:
@@ -303,7 +301,7 @@ def test_ci_workflow_runs_static_verification_checks() -> None:
     assert "ruff format --check" in workflow
     assert "ruff check" in workflow
     assert "mypy" in workflow
-    assert "pytest" in workflow
+    assert "./test.sh --backend" in workflow
 
 
 def test_knowledge_and_decisions_exist_and_use_relative_links() -> None:

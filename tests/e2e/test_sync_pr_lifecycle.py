@@ -23,6 +23,8 @@ from seamus.harness.runner import get_runner_registry
 from seamus.harness.steerable import SteerableToolCall
 from seamus.persistence.workspace import get_workspace_manager
 
+pytestmark = pytest.mark.gitea
+
 
 async def _drain(runner: Any, *, timeout: float = 60.0) -> None:
     """Wait for a runner's active turn to finish."""

@@ -202,13 +202,25 @@ Seamus automatically snapshots working copies to internal Gitea storage (`projec
 
 ## Code Quality & Verification
 
-Run all verification tools through `uv` and `npm`:
+Run test suites via `./test.sh` (defaults to `--backend` and `--docker` when omitted) and static checks through `uv` and `npm`:
 
 ```bash
-# Backend test suite
-uv run pytest
-# e2e test suote
-uv run pytest --e2e -n auto -v
+# Backend unit and integration tests (default: --backend --docker)
+./test.sh
+./test.sh --backend --docker
+
+# Backend unit and integration tests in-memory (no Docker Gitea)
+./test.sh --backend --in-memory
+
+# End-to-end test suite only (runs in parallel with --e2e; --in-memory deselects @pytest.mark.gitea tests)
+./test.sh --e2e
+./test.sh --e2e --in-memory
+
+# Frontend React tests
+./test.sh --ui
+
+# All test suites (--backend, --e2e, and --ui)
+./test.sh --all
 
 # Python linting and code formatting checks
 uv run ruff check .
@@ -239,6 +251,7 @@ uv run ruff check --fix .
 ├── Dockerfile           # Backend container build specification
 ├── docker-compose.yml   # Multi-service container orchestration (frontend, backend, opensandbox, gitea, postgres)
 ├── run.sh               # One-click health check, launch, and browser opening script
+├── test.sh              # Unified test runner (--backend, --e2e, --ui, --all)
 ├── pyproject.toml       # Python dependencies, Ruff, Mypy, and Pytest configuration
 ├── uv.lock              # Deterministic Python lockfile
 ├── .env.template        # Environment configuration template

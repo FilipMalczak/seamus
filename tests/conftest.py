@@ -1,13 +1,15 @@
 """Global pytest fixtures and test environment configuration."""
 
+import fcntl
+import json
 import logging
 import os
 import re
 import shutil
 import subprocess
 import time
-import warnings
 from collections.abc import Generator
+from pathlib import Path
 from uuid import uuid4
 
 import httpx
@@ -74,25 +76,17 @@ def is_docker_available() -> bool:
         return False
 
 
-@pytest.fixture(scope="session")
-def ephemeral_gitea_session(
-    tmp_path_factory: pytest.TempPathFactory,
-) -> Generator[dict[str, str | int] | None, None, None]:
-    """Session-scoped fixture starting an ephemeral Gitea container with SQLite and dynamic port."""
-    if not is_docker_available():
-        if os.environ.get("SEAMUS_TEST_IN_MEMORY", "").lower() in ("true", "1", "yes"):
-            logger.info("SEAMUS_TEST_IN_MEMORY is set; running tests with persistence disabled.")
-        else:
-            warnings.warn(
-                "Docker is not available; disabling persistence for tests.",
-                stacklevel=2,
-            )
-        yield None
-        return
+def _gitea_shared_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Return a directory shared across pytest-xdist workers for coordinating Gitea."""
+    base = tmp_path_factory.getbasetemp()
+    if os.environ.get("PYTEST_XDIST_WORKER"):
+        return base.parent
+    return base
 
+
+def _start_gitea_container() -> dict[str, str | int]:
+    """Start an ephemeral Gitea container, wait for health, and create the admin user."""
     container_name = f"seamus-test-gitea-{uuid4().hex[:8]}"
-    workspace_root = tmp_path_factory.mktemp("test_workspaces")
-
     run_cmd = [
         "docker",
         "run",
@@ -124,14 +118,8 @@ def ephemeral_gitea_session(
     try:
         subprocess.run(run_cmd, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as exc:
-        warnings.warn(
-            f"Failed to start test Gitea: {exc.stderr}; falling back to disabled persistence.",
-            stacklevel=2,
-        )
-        yield None
-        return
+        raise RuntimeError(f"Failed to start test Gitea container: {exc.stderr}") from exc
 
-    # Extract dynamic host port
     try:
         port_proc = subprocess.run(
             ["docker", "port", container_name, "3000"],
@@ -145,17 +133,11 @@ def ephemeral_gitea_session(
         port = int(port_match.group(1))
     except Exception as exc:
         subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
-        warnings.warn(
-            f"Failed to resolve Gitea port: {exc}; falling back to disabled persistence.",
-            stacklevel=2,
-        )
-        yield None
-        return
+        raise RuntimeError(f"Failed to resolve test Gitea port: {exc}") from exc
 
     gitea_url = f"http://127.0.0.1:{port}"
 
-    # Poll until Gitea is healthy
-    deadline = time.time() + 25.0
+    deadline = time.time() + 45.0
     ready = False
     while time.time() < deadline:
         try:
@@ -169,16 +151,17 @@ def ephemeral_gitea_session(
         time.sleep(0.5)
 
     if not ready:
-        subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
-        warnings.warn(
-            f"Test Gitea container on port {port} failed to become healthy; falling back.",
-            stacklevel=2,
+        logs = subprocess.run(
+            ["docker", "logs", "--tail", "50", container_name],
+            capture_output=True,
+            text=True,
         )
-        yield None
-        return
+        subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
+        raise RuntimeError(
+            f"Test Gitea container on port {port} failed to become healthy within 45s.\n"
+            f"Logs:\n{logs.stdout}\n{logs.stderr}"
+        )
 
-    # Create admin user
-    user_created = False
     create_cmd = [
         "docker",
         "exec",
@@ -198,33 +181,84 @@ def ephemeral_gitea_session(
         "--admin",
         "--must-change-password=false",
     ]
+    user_proc: subprocess.CompletedProcess[str] | None = None
     for _ in range(5):
         user_proc = subprocess.run(create_cmd, capture_output=True, text=True)
         if user_proc.returncode == 0:
-            user_created = True
             break
         time.sleep(1.0)
-
-    if not user_created:
+    else:
+        stderr = user_proc.stderr if user_proc is not None else "unknown error"
         subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
-        warnings.warn(
-            f"Failed to create admin user in test Gitea: {user_proc.stderr}; falling back.",
-            stacklevel=2,
-        )
-        yield None
-        return
+        raise RuntimeError(f"Failed to create admin user in test Gitea: {stderr}")
 
-    session_info: dict[str, str | int] = {
+    return {
         "container_name": container_name,
         "port": port,
         "url": gitea_url,
+    }
+
+
+@pytest.fixture(scope="session")
+def ephemeral_gitea_session(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Generator[dict[str, str | int] | None, None, None]:
+    """Session-scoped fixture sharing one ephemeral Gitea container across xdist workers."""
+    if os.environ.get("SEAMUS_TEST_IN_MEMORY", "").lower() in ("true", "1", "yes"):
+        logger.info("SEAMUS_TEST_IN_MEMORY is set; running tests with persistence disabled.")
+        yield None
+        return
+
+    if not is_docker_available():
+        raise RuntimeError(
+            "Docker is not available, but SEAMUS_TEST_IN_MEMORY is not enabled. "
+            "Start Docker or set SEAMUS_TEST_IN_MEMORY=true."
+        )
+
+    shared_root = _gitea_shared_root(tmp_path_factory)
+    lock_path = shared_root / "gitea_session.lock"
+    info_path = shared_root / "gitea_session.json"
+    refs_path = shared_root / "gitea_session_refs.json"
+
+    with open(lock_path, "a+") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        try:
+            if info_path.exists():
+                gitea_info: dict[str, str | int] = json.loads(info_path.read_text())
+                refs = int(refs_path.read_text()) if refs_path.exists() else 0
+                refs_path.write_text(str(refs + 1))
+            else:
+                gitea_info = _start_gitea_container()
+                info_path.write_text(json.dumps(gitea_info))
+                refs_path.write_text("1")
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
+
+    workspace_root = tmp_path_factory.mktemp("test_workspaces")
+    session_info: dict[str, str | int] = {
+        **gitea_info,
         "workspace_dir": str(workspace_root),
     }
 
     try:
         yield session_info
     finally:
-        subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
+        with open(lock_path, "a+") as lock_file:
+            fcntl.flock(lock_file, fcntl.LOCK_EX)
+            try:
+                refs = int(refs_path.read_text()) if refs_path.exists() else 1
+                remaining = refs - 1
+                if remaining <= 0:
+                    subprocess.run(
+                        ["docker", "rm", "-f", str(gitea_info["container_name"])],
+                        capture_output=True,
+                    )
+                    info_path.unlink(missing_ok=True)
+                    refs_path.unlink(missing_ok=True)
+                else:
+                    refs_path.write_text(str(remaining))
+            finally:
+                fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 @pytest.fixture(autouse=True, scope="session")

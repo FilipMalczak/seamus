@@ -33,14 +33,10 @@ and `node --test` under `ui/tests/`) and verified against the test bodies.
 
 | Suite | Location | Files | Count | Notes |
 | --- | --- | ---: | ---: | --- |
-| End-to-end | `tests/e2e/` | 22 | 158 | Docker mode: 152 pass, 6 `xfail`. In-memory mode: 148 pass, 4 skipped (`test_sync_pr_lifecycle.py`), 6 `xfail` |
-| Unit & Config | `tests/` | 34 | 366 | 364 pass, 2 `xfail` (`test_personas.py`) |
-| **Total (Python)** | `tests/` | **56** | **524** | **Docker mode: 516 pass, 8 `xfail`. In-memory mode: 512 pass, 4 skipped, 8 `xfail`** |
+| End-to-end | `tests/e2e/` | 22 | 161 | All 161 pass (non-Gitea tests run in-memory; `test_sync_pr_lifecycle.py` opts into the shared Gitea container via `gitea_enabled`) |
+| Unit & Config | `tests/` | 34 | 382 | 382 pass |
+| **Total (Python)** | `tests/` | **56** | **543** | **543 pass, 0 skipped, 0 `xfail`** |
 | **Frontend** | `ui/tests/` | **16** | **247** | Node-native suite; 247 pass, 0 failed |
-
-The four skipped Python tests in `SEAMUS_TEST_IN_MEMORY=true` mode are the four Gitea-backed
-tests in `tests/e2e/test_sync_pr_lifecycle.py`, which require live Gitea persistence and run in
-the Docker pytest job.
 
 ### End-to-end suite breakdown (`tests/e2e/`)
 
@@ -273,7 +269,7 @@ unimplemented or broken in production code and are cross-linked in [`backlog.md`
 ## Residual Structural Gaps
 
 1. **Real sandbox container provisioning** — `tests/e2e/` uses `StubSandboxBackend` (`tests/e2e/stub_sandbox.py`); live OpenSandbox container mounts (`/workspace`, `/projects`, read-only skills) are only mocked in `tests/test_sandbox.py`. Tracked in [`backlog.md`](./backlog.md#end-to-end-coverage-of-real-sandbox-container-provisioning).
-2. **Gitea-gated Sync PR E2E tests** — the 4 tests in `tests/e2e/test_sync_pr_lifecycle.py` skip under `SEAMUS_TEST_IN_MEMORY=true` and execute only when Gitea persistence is enabled.
+2. **Shared Gitea Sync PR E2E tests** — the 4 tests in `tests/e2e/test_sync_pr_lifecycle.py` opt into the shared ephemeral Gitea container via `gitea_enabled` while the rest of `tests/e2e/` defaults to in-memory persistence so the parallel suite stays fast.
 3. **React hook pure-reducer seam (`useThreadStream`)** — `useThreadStream` is executed in `ui/tests/chatArea.test.mjs` through `ChatArea` and a scripted SSE `fetch` stub, but edge-case SSE reduction transitions are not yet isolated into a pure reducer test without modifying `ui/src/`. Tracked in [`backlog.md`](./backlog.md#extract-pure-event-reducer-from-usethreadstream-for-direct-unit-testing).
 4. **Live model / Ollama / browser automation** — real LLM inference, live Ollama daemon calls (`tests/test_runner.py` uses mocks), and full Playwright browser DOM/CSS layout remain outside this baseline by design.
 
