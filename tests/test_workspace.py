@@ -490,7 +490,18 @@ def test_sync_session_workspace_auto_pulls_external_changes(
     (ext_skill_dir / "SKILL.md").write_text("---\nname: custom\n---\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(external_clone), "add", "-A"], check=True)
     subprocess.run(
-        ["git", "-C", str(external_clone), "commit", "-m", "external manual skill addition"],
+        [
+            "git",
+            "-C",
+            str(external_clone),
+            "-c",
+            "user.name=External User",
+            "-c",
+            "user.email=external@seamus.local",
+            "commit",
+            "-m",
+            "external manual skill addition",
+        ],
         check=True,
     )
     subprocess.run(
