@@ -207,6 +207,8 @@ Run all verification tools through `uv` and `npm`:
 ```bash
 # Backend test suite
 uv run pytest
+# e2e test suote
+uv run pytest --e2e -n auto -v
 
 # Python linting and code formatting checks
 uv run ruff check .
