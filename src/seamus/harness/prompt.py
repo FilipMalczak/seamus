@@ -425,8 +425,9 @@ def build_operational_mode_section(
             if phase_desc.name == PlanPhase.DISCUSS.value
             else (
                 "Synthesize the organized notes in `/workspace/notes` and inspect the read-only "
-                "`/workspace` to author and refine the session's Markdown implementation plan, "
-                "then await user approval."
+                "`/workspace` to author and present the session's Markdown implementation plan, "
+                "await user approval in chat, and call `start_executing()` to transition to "
+                "Execute."
                 if phase_desc.name == PlanPhase.MAKE.value
                 else (
                     "Implement and verify the approved plan with full read-write access to "
@@ -545,8 +546,22 @@ def build_operational_mode_section(
                 "`update_plan(content)` and `edit_plan(old_string, new_string)`)."
                 if artifacts_enabled
                 else (
-                    "Author a comprehensive, surgical Markdown implementation plan in `/workspace`."
+                    "Author and present a comprehensive, surgical Markdown implementation plan "
+                    "in chat, then await user approval before calling `start_executing()`."
                 )
+            ),
+            *(
+                []
+                if artifacts_enabled
+                else [
+                    (
+                        "CRITICAL BOUNDARY: Do NOT attempt to implement, edit files, or execute "
+                        "any part of the plan during Make—even after the user approves the plan "
+                        "in chat. When you receive approval to proceed, your ONLY action is to "
+                        "call `start_executing()`, which transitions the session to the Execute "
+                        "phase where implementation happens."
+                    )
+                ]
             ),
         ]
         make_workflow = [
@@ -564,15 +579,18 @@ def build_operational_mode_section(
                 "Markdown overwrite) and `edit_plan` (targeted string replacement) for "
                 "subsequent refinements."
                 if artifacts_enabled
-                else "3. Document your comprehensive Markdown implementation plan in `/workspace`."
+                else "3. Author and present your comprehensive Markdown implementation plan in "
+                "chat (remember `/workspace` is mounted read-only in Make)."
             ),
             (
                 "4. After creating or updating the plan, briefly inform the user that the "
                 "plan is ready in its tab and await either their feedback in chat or their "
                 "approval via the **Proceed** button."
                 if artifacts_enabled
-                else "4. After creating or updating the plan, briefly inform the user that the "
-                "plan is ready and await their feedback or approval in chat."
+                else "4. After presenting or refining the plan, await the user's feedback or "
+                "explicit approval in chat. Once the user approves proceeding, do NOT start "
+                "implementing or running commands here—immediately call `start_executing()` and "
+                "nothing else so the Execute phase can take over."
             ),
         ]
         make_rules = [
@@ -580,15 +598,19 @@ def build_operational_mode_section(
                 "There is NO tool to transition from Make to Execute. The user transitions "
                 "the session to Execute by clicking the **Proceed** button on the Plan tab."
                 if artifacts_enabled
-                else "There is NO tool to transition from Make to Execute. Await user instructions "
-                "to proceed to execution."
+                else "When the user gives approval to proceed, you MUST NOT perform any "
+                "implementation work, file edits, or execution steps in Make. Call "
+                "`start_executing()` immediately (and ONLY after presenting the plan and "
+                "receiving user approval); `start_executing()` closes the Make thread, opens a "
+                "fresh Execute thread with read-write workspace access, and wakes the agent to "
+                "begin execution."
             ),
             (
                 "Do NOT repeat the full Markdown plan text in your chat response—the plan is "
                 "rendered directly in the Plan tab."
                 if artifacts_enabled
-                else "Present a concise summary of the plan in chat while persisting the full "
-                "document in `/workspace`."
+                else "Present the full Markdown implementation plan clearly in your chat response "
+                "(since `/workspace` is read-only and no Plan artifact tab is active)."
             ),
             (
                 "Call `discard()` ONLY when explicitly instructed by the user to discard the "

@@ -471,3 +471,44 @@ async def test_edit_plan_updates_plan_artifact_on_disk(
         f"/api/v-alpha/agent/{ctx['agent_id']}/session/{ctx['session_id']}/artifact/plans/{plan_id}"
     )
     assert detail.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_start_executing_transitions_make_to_execute_when_artifacts_none(
+    client: httpx.AsyncClient,
+    make_session: Any,
+    queue_agent_turn: Any,
+    resolve_session: Any,
+) -> None:
+    """REQ-050 / INV-028: ``start_executing`` moves Make -> Execute in a fresh auto-woken thread."""
+    ctx = make_session(
+        "start-exec-transition",
+        mode="plan",
+        phase=PlanPhase.MAKE.value,
+        artifacts_implementation="none",
+    )
+    queue_agent_turn(
+        ctx["session_id"],
+        tool_calls=[SteerableToolCall(name="start_executing", args={})],
+    )
+    # Auto-woken Execute turn
+    queue_agent_turn(ctx["session_id"], text="Executing approved plan.")
+
+    res = await client.post(
+        f"/api/v-alpha/agent/{ctx['agent_id']}/session/{ctx['session_id']}/input",
+        json={"message": "Approved, please start executing."},
+    )
+    assert res.status_code == 202
+
+    session = resolve_session(ctx["session_id"])
+    runner = get_runner_registry().get_runner(session)
+    await _drain(runner)
+
+    # Wait for the auto-woken Execute thread to finish its turn
+    open_thread = await _wait_for_status(session, AgentStatus.AWAITING_USER)
+    assert open_thread.mode == "plan"
+    assert open_thread.phase == PlanPhase.EXECUTE.value
+    assert str(open_thread.id) != ctx["thread_id"]
+
+    open_threads = [t for t in session.threads.values() if t.is_open]
+    assert len(open_threads) == 1

@@ -595,6 +595,15 @@ class PlanTransitionInput(BaseModel):
     )
 
 
+class StartExecutingInput(BaseModel):
+    """Input schema for the start_executing() phase transition tool."""
+
+    retained_skills: list[str] = Field(
+        default_factory=list,
+        description="Optional list of active skill names to retain into the new thread.",
+    )
+
+
 class MakePlanInput(BaseModel):
     """Input schema for the make_plan tool in Plan/Make phase."""
 
@@ -940,6 +949,17 @@ class SessionAgentRunner:
             args_schema=PlanTransitionInput,
         )
 
+        start_executing_tool = StructuredTool.from_function(
+            name="start_executing",
+            description=(
+                "Transition the session from the Make phase to the Execute phase in a new "
+                "thread. Call only after presenting the implementation plan and receiving user "
+                "approval when artifacts are disabled."
+            ),
+            func=self.handle_start_executing,
+            args_schema=StartExecutingInput,
+        )
+
         make_plan_tool = StructuredTool.from_function(
             name="make_plan",
             description=(
@@ -983,6 +1003,7 @@ class SessionAgentRunner:
         if self.session.config.artifacts_implementation == ArtifactsImplementation.NONE:
             artifact_tools = [
                 plan_tool,
+                start_executing_tool,
                 discard_tool,
             ]
         else:
@@ -1932,6 +1953,26 @@ class SessionAgentRunner:
         )
         self._pending_retained_skills = retained_skills
         return "Transitioning session to Plan/Make phase in a new thread."
+
+    def handle_start_executing(self, retained_skills: list[str] | None = None) -> str:
+        """Transition from Plan/Make to Plan/Execute in a new thread and auto-wake."""
+        open_thread = self.session.get_open_thread()
+        if open_thread.mode != ModeName.PLAN.value or open_thread.phase != PlanPhase.MAKE.value:
+            raise ValueError(
+                "The 'start_executing' tool can only be called during the Plan/Make phase."
+            )
+        if self.session.config.artifacts_implementation != ArtifactsImplementation.NONE:
+            raise ValueError(
+                "The 'start_executing' tool is only available when artifacts_implementation is "
+                "'none'."
+            )
+        self._pending_phase_transition = (
+            ModeName.PLAN.value,
+            PlanPhase.EXECUTE.value,
+            True,
+        )
+        self._pending_retained_skills = retained_skills
+        return "Transitioning session to Plan/Execute phase in a new thread."
 
     def handle_make_plan(
         self,

@@ -101,7 +101,36 @@ async def test_disabling_artifacts_keeps_the_plan_lifecycle_tools(
 
     assert "plan" in names
     assert "discard" in names
+    assert "start_executing" not in names
     assert not (ARTIFACT_TOOLS & names)
+
+
+@pytest.mark.asyncio
+async def test_disabling_artifacts_exposes_start_executing_in_plan_make(
+    client: httpx.AsyncClient,
+    make_session: Any,
+) -> None:
+    """REQ-050: plan/make exposes start_executing only when artifacts_implementation=none."""
+    ctx_none = make_session(
+        "gating-start-exec-none",
+        mode="plan",
+        phase="make",
+        artifacts_implementation="none",
+    )
+    names_none = await _tool_names(client, ctx_none)
+    assert "start_executing" in names_none
+    assert "discard" in names_none
+    assert "make_plan" not in names_none
+
+    ctx_seamus = make_session(
+        "gating-start-exec-seamus",
+        mode="plan",
+        phase="make",
+        artifacts_implementation="seamus",
+    )
+    names_seamus = await _tool_names(client, ctx_seamus)
+    assert "start_executing" not in names_seamus
+    assert "make_plan" in names_seamus
 
 
 @pytest.mark.asyncio

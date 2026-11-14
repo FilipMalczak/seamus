@@ -36,6 +36,7 @@ ALL_HARNESS_TOOLS: frozenset[str] = frozenset(
         "edit_plan",
         "wait_for_click",
         "plan",
+        "start_executing",
         "discard",
     }
 )
@@ -135,7 +136,7 @@ PLAN_MAKE_PHASE = PhaseDescriptor(
         notes_mounted=True,
         notes_readonly=True,
     ),
-    tools=("make_plan", "update_plan", "edit_plan", "discard"),
+    tools=("make_plan", "update_plan", "edit_plan", "start_executing", "discard"),
 )
 
 PLAN_EXECUTE_PHASE = PhaseDescriptor(
@@ -215,6 +216,7 @@ def resolve_available_harness_tools(
         raw_tools.discard("wait_for_click")
         return raw_tools
 
+    raw_tools.discard("start_executing")
     if descriptor.name == ModeName.PLAN.value and phase_desc is not None:
         if phase_desc.name == PlanPhase.MAKE.value:
             if has_active_plan:

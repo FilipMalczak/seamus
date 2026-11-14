@@ -345,6 +345,7 @@ def get_default_tools_inspect_info() -> list[ToolInspectInfo]:
             MakeQuestionnaireInput,
             PlanTransitionInput,
             SeamusTodoListMiddleware,
+            StartExecutingInput,
             UpdatePlanInput,
             WaitForClickInput,
         )
@@ -387,6 +388,15 @@ def get_default_tools_inspect_info() -> list[ToolInspectInfo]:
                 ),
                 func=lambda *args, **kwargs: "OK",
                 args_schema=PlanTransitionInput,
+            ),
+            StructuredTool.from_function(
+                name="start_executing",
+                description=(
+                    "Transition the session from the Make phase to the Execute phase "
+                    "in a new thread when artifacts are disabled."
+                ),
+                func=lambda *args, **kwargs: "OK",
+                args_schema=StartExecutingInput,
             ),
             StructuredTool.from_function(
                 name="make_plan",
