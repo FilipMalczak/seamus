@@ -230,7 +230,6 @@ def test_run_script_rejects_unknown_options(run_script: str) -> None:
     assert "exit 1" in run_script
 
 
-@pytest.mark.skipif(shutil.which("bash") is None, reason="bash is not available")
 def test_run_script_help_exits_successfully() -> None:
     """REQ-010: `--help` must not attempt to start anything."""
     result = subprocess.run(
@@ -247,7 +246,6 @@ def test_run_script_help_exits_successfully() -> None:
     assert "--clean" in result.stdout
 
 
-@pytest.mark.skipif(shutil.which("bash") is None, reason="bash is not available")
 def test_run_script_rejects_unknown_flags() -> None:
     """REQ-010: an unknown flag must exit non-zero."""
     result = subprocess.run(

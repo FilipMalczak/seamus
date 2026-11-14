@@ -111,8 +111,6 @@ jobs:
   test-e2e:
     name: Pytest (End-to-End, Steerable LLM)
     runs-on: ubuntu-latest
-    env:
-      SEAMUS_TEST_IN_MEMORY: "true"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

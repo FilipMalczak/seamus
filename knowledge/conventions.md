@@ -57,7 +57,7 @@ Project-specific implementation, tooling, and development conventions not fully 
 - `frontend` job runs on `ubuntu-latest` executing `npm ci` and `npm run build` (`tsc -b && vite build`) in `ui/`.
 - `test-docker` job executes the full test suite on `ubuntu-latest` using the ephemeral Gitea container persistence fixture.
 - `test-in-memory` job executes the test suite on `ubuntu-latest` in parallel with `SEAMUS_TEST_IN_MEMORY=true` (disabling Docker persistence) to guarantee fast feedback and verify pure in-memory execution isolation.
-- `test-e2e` job executes `uv run pytest tests/e2e` on `ubuntu-latest` with `SEAMUS_TEST_IN_MEMORY=true`. The suite needs neither an API key nor a live container, so it runs in seconds on every push.
+- `test-e2e` job executes `uv run pytest tests/e2e --e2e -n auto -v` on `ubuntu-latest`. Non-Gitea e2e tests default to in-memory persistence for speed, while `tests/e2e/test_sync_pr_lifecycle.py` opts into the shared ephemeral Gitea container via `gitea_enabled`.
 - The `frontend` job additionally runs `npm test` (Node native test runner) after `npm run build`.
 - Cross-platform macOS and Windows runner support is deferred and tracked as technical debt.
 - Package publishing and deployment stages are omitted.

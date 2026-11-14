@@ -133,8 +133,8 @@ async def test_discovered_skills_are_serialized_as_pure_tags(
     body = await _inspect(client, ctx)
     composite = body["prompts"]["composite"]
 
-    if "<available_skills>" not in composite:
-        pytest.skip("no skills were discovered for this session")
+    assert "<available_skills>" in composite
+    assert "</available_skills>" in composite
 
     skills_block = composite[
         composite.index("<available_skills>") : composite.index("</available_skills>")
