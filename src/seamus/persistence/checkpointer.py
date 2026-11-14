@@ -30,12 +30,6 @@ from seamus.vault.interpolator import explode_secret_references
 logger = logging.getLogger(__name__)
 
 
-_ROLE_ALIASES: dict[str, str] = {
-    "human": "user",
-    "ai": "assistant",
-}
-
-
 def extract_readable_messages(checkpoint: Checkpoint) -> list[dict[str, Any]]:
     """Extract a human-readable list of messages from checkpoint channel values."""
     values = checkpoint.get("channel_values", {}) if isinstance(checkpoint, dict) else {}
@@ -54,8 +48,6 @@ def extract_readable_messages(checkpoint: Checkpoint) -> list[dict[str, Any]]:
             id_val = getattr(msg, "id", None)
             tool_calls = getattr(msg, "tool_calls", None)
             tool_call_id = getattr(msg, "tool_call_id", None)
-
-        role = _ROLE_ALIASES.get(str(role), str(role))
 
         item: dict[str, Any] = {
             "id": id_val,

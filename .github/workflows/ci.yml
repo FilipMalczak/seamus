@@ -82,7 +82,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
-      - name: Run pytest (docker persistence enabled)
+      - name: Run unit and integration tests (docker persistence enabled)
         run: uv run pytest
 
   test-in-memory:
@@ -105,7 +105,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
-      - name: Run pytest (in-memory mode)
+      - name: Run unit and integration tests (in-memory mode)
         run: uv run pytest
 
   test-e2e:
@@ -132,5 +132,5 @@ jobs:
       # `steerable` inference provider and an in-process sandbox stub, so it
       # needs neither an API key nor a live container.
       - name: Run end-to-end tests
-        run: uv run pytest tests/e2e -v
+        run: uv run pytest tests/e2e --e2e -v
 

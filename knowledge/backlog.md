@@ -263,6 +263,11 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## TODO
 
+### Parallelize End-to-End Test Suite Execution
+- **Description**: Investigate and enable parallel execution for `tests/e2e/` (e.g. via `pytest-xdist` with `-n auto` or worker-scoped isolation). Because e2e tests currently share process-global singletons (`HarnessStore`, `RunnerRegistry`, `SteerableRegistry`, `WorkspaceManager`, `SystemSettingsStore`, and `tmp_path` overrides) and run sequentially, the full e2e suite takes nearly an hour. Ensure worker-isolated state/temp directories and test whether `pytest-xdist` or CI matrix sharding cuts runtime safely without flakiness.
+- **Rationale**: E2E tests are gated behind `--e2e` by default due to their long sequential runtime; parallelizing them will make on-demand local runs and CI feedback loops dramatically faster.
+- **Provenance**: [0057-e2e-test-suite.md](../decisions/0057-e2e-test-suite.md), [0058-coverage-baseline-and-tiering.md](../decisions/0058-coverage-baseline-and-tiering.md), `tests/e2e/conftest.py`, `.github/workflows/ci.yml`.
+
 ### End-to-End Coverage of Real Sandbox Container Provisioning
 - **Description**: The e2e suite substitutes an in-process stub for the OpenSandbox container, so real container provisioning, the `/workspace` ↔ `data/` mount, and the read-only `plan/make` mount policy are never exercised against a live container. Add a container-backed e2e job (or an opt-in test tier) that provisions a real sandbox and asserts the mount layout and write rejection.
 - **Rationale**: The stub enforces the read-only rule but does not prove the production backend does. `tests/test_sandbox.py` covers the backend against a mocked OpenSandbox API, which leaves the seam between the backend and a real container untested.

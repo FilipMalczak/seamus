@@ -21,6 +21,27 @@ from seamus.persistence.workspace import reset_workspace_manager
 logger = logging.getLogger(__name__)
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Register CLI options for optional test suites."""
+    parser.addoption(
+        "--e2e",
+        action="store_true",
+        default=False,
+        help="Run end-to-end tests under tests/e2e/.",
+    )
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Skip end-to-end tests unless --e2e is explicitly passed."""
+    run_e2e = bool(config.getoption("--e2e"))
+    skip_e2e = pytest.mark.skip(reason="need --e2e option to run")
+    for item in items:
+        if "tests/e2e" in str(item.path).replace("\\", "/"):
+            item.add_marker(pytest.mark.e2e)
+            if not run_e2e:
+                item.add_marker(skip_e2e)
+
+
 def is_docker_available() -> bool:
     """Return True if docker binary exists, daemon is responsive, and not explicitly disabled."""
     if os.environ.get("SEAMUS_TEST_IN_MEMORY", "").lower() in ("true", "1", "yes"):

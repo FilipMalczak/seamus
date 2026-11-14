@@ -602,6 +602,17 @@ def get_default_tools_inspect_info() -> list[ToolInspectInfo]:
         ]
 
 
+_INSPECT_ROLE_ALIASES: dict[str, str] = {
+    "human": "user",
+    "ai": "assistant",
+}
+
+
+def _normalize_inspect_role(raw_role: Any) -> str:
+    role = str(raw_role or "unknown")
+    return _INSPECT_ROLE_ALIASES.get(role, role)
+
+
 def extract_thread_messages(
     agent_id: UUID,
     session_id: UUID,
@@ -626,7 +637,7 @@ def extract_thread_messages(
         items = [
             MessageHistoryItem(
                 id=str(m.get("id")) if m.get("id") else None,
-                role=m.get("role", "unknown"),
+                role=_normalize_inspect_role(m.get("role", "unknown")),
                 content=m.get("content") or "",
                 tool_calls=m.get("tool_calls"),
                 tool_call_id=m.get("tool_call_id"),
@@ -665,7 +676,7 @@ def extract_thread_messages(
                 items = [
                     MessageHistoryItem(
                         id=str(m.get("id")) if m.get("id") else None,
-                        role=m.get("role", "unknown"),
+                        role=_normalize_inspect_role(m.get("role", "unknown")),
                         content=m.get("content") or "",
                         tool_calls=m.get("tool_calls"),
                         tool_call_id=m.get("tool_call_id"),
