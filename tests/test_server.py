@@ -495,6 +495,84 @@ def test_session_diff_endpoint(client: TestClient) -> None:
     assert missing_res.status_code == 404
 
 
+def test_session_diff_includes_mounted_repos(client: TestClient, tmp_path: Path) -> None:
+    """Verify GET /diff includes mounted repository changes, commits, and branch changes."""
+    import subprocess
+    from uuid import UUID
+
+    from seamus.config.models import ExternalRepositoryConfig
+    from seamus.persistence.config import PersistenceSettings
+    from seamus.persistence.external_repo import ExternalRepositoryManager
+
+    ext_mgr = ExternalRepositoryManager(
+        workspace_root=tmp_path / "ext_ws",
+        settings=PersistenceSettings(workspace_dir=tmp_path / "ext_ws", enabled=False),
+    )
+    agent_res = client.post(
+        "/api/v-alpha/agent",
+        json={
+            "name": "mounted-diff-agent",
+            "config": {
+                "repositories": [
+                    {
+                        "id": "repo-1",
+                        "url": "https://github.com/example/mounted-proj.git",
+                        "branch": "main",
+                    }
+                ]
+            },
+        },
+    )
+    assert agent_res.status_code == 201
+    agent_id = agent_res.json()["id"]
+
+    session_res = client.post(
+        f"/api/v-alpha/agent/{agent_id}/session",
+        json={"name": "mounted-diff-session"},
+    )
+    assert session_res.status_code == 201
+    session_id = session_res.json()["id"]
+
+    repo_cfg = ExternalRepositoryConfig(
+        id="repo-1",
+        url="https://github.com/example/mounted-proj.git",
+        branch="main",
+    )
+    repo_dir = ext_mgr.provision_session_working_copy(
+        agent_id=UUID(agent_id),
+        session_id=UUID(session_id),
+        repo_config=repo_cfg,
+        mount_name="mounted-proj",
+    )
+    subprocess.run(["git", "checkout", "-b", "fix/bug"], cwd=repo_dir, check=True)
+    (repo_dir / "README.md").write_text("# Updated\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=repo_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "Update README"], cwd=repo_dir, check=True)
+
+    with (
+        patch(
+            "seamus.persistence.workspace.GitWorkspaceManager.get_sync_pr_diff",
+            return_value=(None, ""),
+        ),
+        patch(
+            "seamus.persistence.external_repo.get_external_repo_manager",
+            return_value=ext_mgr,
+        ),
+    ):
+        diff_res = client.get(f"/api/v-alpha/agent/{agent_id}/session/{session_id}/diff")
+        assert diff_res.status_code == 200
+        data = diff_res.json()
+        assert len(data["mounted_repos"]) == 1
+        mounted = data["mounted_repos"][0]
+        assert mounted["mount_name"] == "mounted-proj"
+        assert mounted["configured_branch"] == "main"
+        assert mounted["current_branch"] == "fix/bug"
+        assert mounted["branch_changed"] is True
+        assert len(mounted["commits"]) == 1
+        assert mounted["commits"][0]["message"] == "Update README"
+        assert "Updated" in mounted["diff"]
+
+
 def test_session_and_template_todo_implementation_config(client: TestClient) -> None:
     """Verify todo_implementation and skills_implementation config across template and session."""
     # 1. Template validation

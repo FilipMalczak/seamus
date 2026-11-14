@@ -280,12 +280,36 @@ export interface VaultTokenResponse {
   token: string | null;
 }
 
+export type MountedRepoCommitInfo = {
+  sha: string;
+  short_sha: string;
+  message: string;
+  author: string;
+  date: string;
+};
+
+export type MountedRepoDiffInfo = {
+  attachment_id: string;
+  mount_name: string;
+  mount_path: string;
+  url: string;
+  configured_branch: string;
+  current_branch: string;
+  branch_changed: boolean;
+  base_commit: string;
+  head_commit: string;
+  commits: MountedRepoCommitInfo[];
+  diff: string;
+  has_uncommitted_changes: boolean;
+};
+
 export type SessionDiffResponse = {
   agent_id: string;
   session_id: string;
   pr_number: number | null;
   pr_url: string | null;
   diff: string;
+  mounted_repos?: MountedRepoDiffInfo[];
 };
 
 export interface ToolLabelInfo {

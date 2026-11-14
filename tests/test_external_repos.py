@@ -254,3 +254,62 @@ def test_provision_session_working_copy_checks_out_configured_branch(tmp_path: P
         check=True,
     ).stdout.strip()
     assert active_branch == "master"
+
+
+def test_get_working_copy_changes_tracks_commits_branches_and_uncommitted(tmp_path: Path) -> None:
+    ws_root = tmp_path / "workspaces"
+    settings = PersistenceSettings(workspace_dir=ws_root, enabled=False)
+    manager = ExternalRepositoryManager(workspace_root=ws_root, settings=settings)
+
+    agent_id = uuid4()
+    session_id = uuid4()
+    repo_cfg = ExternalRepositoryConfig(
+        id="att-changes",
+        url="https://github.com/example/demo-repo.git",
+        branch="main",
+    )
+    repo_dir = manager.provision_session_working_copy(
+        agent_id=agent_id,
+        session_id=session_id,
+        repo_config=repo_cfg,
+        mount_name="demo-repo",
+    )
+
+    # 1. Clean initial mount
+    clean = manager.get_working_copy_changes(agent_id, session_id, repo_cfg, "demo-repo")
+    assert clean is not None
+    assert clean["configured_branch"] == "main"
+    assert clean["current_branch"] == "main"
+    assert clean["branch_changed"] is False
+    assert clean["commits"] == []
+    assert clean["diff"] == ""
+    assert clean["has_uncommitted_changes"] is False
+
+    # 2. Switch branch, commit a file, and leave an untracked file
+    subprocess.run(["git", "checkout", "-b", "feat/new-api"], cwd=repo_dir, check=True)
+    (repo_dir / "api.py").write_text("def handler():\n    return 'ok'\n", encoding="utf-8")
+    subprocess.run(["git", "add", "api.py"], cwd=repo_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "Add API handler"], cwd=repo_dir, check=True)
+
+    (repo_dir / "notes.txt").write_text("untracked note\n", encoding="utf-8")
+
+    changes = manager.get_working_copy_changes(agent_id, session_id, repo_cfg, "demo-repo")
+    assert changes is not None
+    assert changes["configured_branch"] == "main"
+    assert changes["current_branch"] == "feat/new-api"
+    assert changes["branch_changed"] is True
+    assert changes["has_uncommitted_changes"] is True
+    assert len(changes["commits"]) == 1
+    assert changes["commits"][0]["message"] == "Add API handler"
+    assert "api.py" in changes["diff"]
+    assert "notes.txt" in changes["diff"]
+
+    # Ensure ordinary git status still sees notes.txt as untracked (index not mutated)
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=repo_dir,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert "?? notes.txt" in status

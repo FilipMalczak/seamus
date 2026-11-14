@@ -19,6 +19,8 @@ from seamus.harness.store import SlugConflictError, get_harness_store
 from seamus.persistence.workspace import get_workspace_manager
 from seamus.server.schemas import (
     BranchSessionRequest,
+    MountedRepoCommitInfo,
+    MountedRepoDiffInfo,
     SessionCreateRequest,
     SessionDetailResponse,
     SessionDiffResponse,
@@ -465,6 +467,41 @@ async def get_session_diff(
     ws_mgr = get_workspace_manager()
     active_pr, diff_text = ws_mgr.get_sync_pr_diff(session, agent)
 
+    mounted_repos: list[MountedRepoDiffInfo] = []
+    if session.config.repositories:
+        from seamus.persistence.external_repo import (
+            calculate_mount_paths,
+            get_external_repo_manager,
+        )
+
+        ext_mgr = get_external_repo_manager()
+        mount_paths = calculate_mount_paths(session.config.repositories)
+        for repo_cfg in session.config.repositories:
+            mount_name = mount_paths.get(repo_cfg.id, "repo")
+            changes = ext_mgr.get_working_copy_changes(
+                session.agent_id,
+                session.id,
+                repo_cfg,
+                mount_name,
+            )
+            if changes is not None:
+                mounted_repos.append(
+                    MountedRepoDiffInfo(
+                        attachment_id=changes["attachment_id"],
+                        mount_name=changes["mount_name"],
+                        mount_path=changes["mount_path"],
+                        url=changes["url"],
+                        configured_branch=changes["configured_branch"],
+                        current_branch=changes["current_branch"],
+                        branch_changed=changes["branch_changed"],
+                        base_commit=changes["base_commit"],
+                        head_commit=changes["head_commit"],
+                        commits=[MountedRepoCommitInfo(**c) for c in changes["commits"]],
+                        diff=changes["diff"],
+                        has_uncommitted_changes=changes["has_uncommitted_changes"],
+                    )
+                )
+
     pr_number: int | None = None
     pr_url: str | None = None
     if active_pr is not None:
@@ -488,6 +525,7 @@ async def get_session_diff(
         pr_number=pr_number,
         pr_url=pr_url,
         diff=diff_text,
+        mounted_repos=mounted_repos,
     )
 
 

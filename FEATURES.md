@@ -240,7 +240,7 @@ A desktop-grade React 19 single-page application built with Vite and TypeScript:
 - **1:2 Ergonomic Layout Resizer**: Split layout defaulting to 1:2 (`33.33%` navigation tree / `66.67%` main panel). Features boundary clamping, double-click instant 1:2 reset, and persistent local storage sizing.
 - **URL State Synchronization**: Active agent, session, thread, and workspace tab are synchronized with browser URL query parameters (`?agent=...&session=...&thread=...&tab=...`), enabling browser back/forward history navigation and shareable deep links.
 - **Real-Time SSE Streaming**: Live AG-UI event streaming with token-by-token text generation, expandable reasoning blocks, and lifecycle state badges.
-- **Changes Diff Viewer**: Dedicated `[Changes]` tab with hierarchical directory tree navigation, flat list view, git status badges (`[A]` Added, `[M]` Modified, `[D]` Deleted, `[R]` Renamed), diff stats (`+N / -M`), and syntax-highlighted unified diffs.
+- **Changes Diff Viewer**: Dedicated `[Changes]` tab with hierarchical directory tree navigation, flat list view, git status badges (`[A]` Added, `[M]` Modified, `[D]` Deleted, `[R]` Renamed), diff stats (`+N / -M`), syntax-highlighted unified diffs, and mounted external repository tracking (showing uncommitted/untracked changes, new commits, and branch changes since initial mount).
 - **Interactive Web Terminal & Shell Emulator**: Dedicated `[Terminal]` tab connected directly to the active session's OpenSandbox container. Features real-time Server-Sent Events (SSE) streaming output, command history navigation (`↑`/`↓`), quick action shortcuts, process interruption (Cancel / `Ctrl+C`), and dynamic working directory tracking across commands.
 - **Granular Bidirectional Chat Branching & Tool Grouping**: Every chat bubble, reasoning block, tool execution, user message, and synthetic event features contextual "Branch Before" and "Branch After" action buttons oriented toward the center of the viewport (left of user bubbles, right of assistant/system bubbles):
   - *Vertical Layout & Header Pinning*: Branch buttons are arranged vertically at constant fixed size (matching the ~32px height of a collapsed bubble). When a bubble is expanded or multi-line, "Branch Before" sticks to the top of the bubble and "Branch After" sticks to the lower border of the bottom.
@@ -269,7 +269,6 @@ Inspect exactly what the language model sees and executes via the UI `[Inspector
 - **Registered Tool Schemas & Semantic Label Badges**: Interactive accordion displaying formatted JSON Schema parameter definitions for every tool exposed to the agent, augmented by semantic colored badges (`opensandbox`, `harness`, `planning`, `web`, `skills`) loaded from `tool_labeling.json` with interactive category filtering.
 - **Active Todos Checklist**: Real-time inspection of active task planning items managed by DeepAgents `TodoListMiddleware`.
 - **Runtime Inference Parameters**: Model identifier, base URL, sampling parameters, and masked credential references.
-- **Complete Message Trajectory**: Inspect raw message payloads, token counts, and tool call results.
 
 ### 10. Telemetry & Observability (Pydantic Logfire & OpenTelemetry)
 

@@ -315,14 +315,42 @@ class VaultTokenResponse(BaseModel):
     token: str | None = None
 
 
+class MountedRepoCommitInfo(BaseModel):
+    """Commit recorded in a mounted external repository since initial mount."""
+
+    sha: str
+    short_sha: str
+    message: str
+    author: str
+    date: str
+
+
+class MountedRepoDiffInfo(BaseModel):
+    """Diff, commits, and branch state for a mounted external repository."""
+
+    attachment_id: str
+    mount_name: str
+    mount_path: str
+    url: str
+    configured_branch: str
+    current_branch: str
+    branch_changed: bool = False
+    base_commit: str
+    head_commit: str
+    commits: list[MountedRepoCommitInfo] = Field(default_factory=list)
+    diff: str = ""
+    has_uncommitted_changes: bool = False
+
+
 class SessionDiffResponse(BaseModel):
-    """Response model containing active Sync PR diff for a session."""
+    """Response model containing active Sync PR diff and mounted repo changes for a session."""
 
     agent_id: UUID
     session_id: UUID
     pr_number: int | None = None
     pr_url: str | None = None
     diff: str = ""
+    mounted_repos: list[MountedRepoDiffInfo] = Field(default_factory=list)
 
 
 class TerminalStreamRequest(BaseModel):

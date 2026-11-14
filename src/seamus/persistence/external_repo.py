@@ -13,7 +13,7 @@ from collections import Counter, defaultdict
 from collections.abc import Sequence
 from io import BytesIO
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from seamus.config.models import ExternalRepositoryConfig
@@ -298,6 +298,7 @@ class ExternalRepositoryManager:
                 (working_copy / "README.md").write_text(f"# {mount_name}\n", encoding="utf-8")
                 self._run_git(working_copy, ["add", "README.md"])
                 self._run_git(working_copy, ["commit", "-m", "Initial commit"])
+                self._record_initial_base_commit(agent_id, session_id, repo_config, working_copy)
             return working_copy
 
         repo_name = self.get_project_repo_name(project_id)
@@ -326,10 +327,145 @@ class ExternalRepositoryManager:
                             target_branch,
                             mount_name,
                         )
+            self._record_initial_base_commit(agent_id, session_id, repo_config, working_copy)
         else:
             self._configure_git_identity(working_copy)
 
         return working_copy
+
+    def _get_base_commit_file(
+        self,
+        agent_id: UUID,
+        session_id: UUID,
+        attachment_id: str,
+    ) -> Path:
+        return self.get_session_indexes_dir(agent_id, session_id) / f"{attachment_id}.base_commit"
+
+    def _record_initial_base_commit(
+        self,
+        agent_id: UUID,
+        session_id: UUID,
+        repo_config: ExternalRepositoryConfig,
+        working_copy: Path,
+    ) -> str | None:
+        """Persist the initial HEAD SHA at mount time outside the working tree."""
+        head_res = self._run_git(working_copy, ["rev-parse", "HEAD"], check=False)
+        if head_res.returncode != 0:
+            return None
+        head_sha = head_res.stdout.strip()
+        if not head_sha:
+            return None
+        base_file = self._get_base_commit_file(agent_id, session_id, repo_config.id)
+        base_file.parent.mkdir(parents=True, exist_ok=True)
+        base_file.write_text(head_sha, encoding="utf-8")
+        return head_sha
+
+    def _resolve_base_commit(
+        self,
+        agent_id: UUID,
+        session_id: UUID,
+        repo_config: ExternalRepositoryConfig,
+        working_copy: Path,
+        head_commit: str,
+    ) -> str:
+        """Resolve the base commit SHA for diffing changes since initial mount."""
+        base_file = self._get_base_commit_file(agent_id, session_id, repo_config.id)
+        candidates: list[str] = []
+        if base_file.exists():
+            recorded = base_file.read_text(encoding="utf-8").strip()
+            if recorded:
+                candidates.append(recorded)
+        candidates.extend([f"origin/{repo_config.branch}", repo_config.branch])
+
+        for ref in candidates:
+            res = self._run_git(
+                working_copy, ["rev-parse", "--verify", f"{ref}^{{commit}}"], check=False
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                return res.stdout.strip()
+        return head_commit
+
+    def get_working_copy_changes(
+        self,
+        agent_id: UUID,
+        session_id: UUID,
+        repo_config: ExternalRepositoryConfig,
+        mount_name: str,
+    ) -> dict[str, Any] | None:
+        """Return commits, branch status, and unified diff since initial mount."""
+        working_copy = self.get_working_copy_path(agent_id, session_id, mount_name)
+        if not (working_copy / ".git").exists():
+            return None
+
+        head_res = self._run_git(working_copy, ["rev-parse", "HEAD"], check=False)
+        if head_res.returncode != 0 or not head_res.stdout.strip():
+            return None
+        head_commit = head_res.stdout.strip()
+
+        branch_res = self._run_git(working_copy, ["symbolic-ref", "--short", "HEAD"], check=False)
+        current_branch = (
+            branch_res.stdout.strip()
+            if branch_res.returncode == 0 and branch_res.stdout.strip()
+            else head_commit[:8]
+        )
+        branch_changed = current_branch != repo_config.branch
+
+        base_commit = self._resolve_base_commit(
+            agent_id, session_id, repo_config, working_copy, head_commit
+        )
+
+        commits: list[dict[str, str]] = []
+        if base_commit != head_commit:
+            log_res = self._run_git(
+                working_copy,
+                ["log", "--format=%H%x1f%h%x1f%s%x1f%an%x1f%aI", f"{base_commit}..HEAD"],
+                check=False,
+            )
+            if log_res.returncode == 0:
+                for line in log_res.stdout.splitlines():
+                    parts = line.split("\x1f")
+                    if len(parts) == 5:
+                        commits.append(
+                            {
+                                "sha": parts[0],
+                                "short_sha": parts[1],
+                                "message": parts[2],
+                                "author": parts[3],
+                                "date": parts[4],
+                            }
+                        )
+
+        status_res = self._run_git(working_copy, ["status", "--porcelain"], check=False)
+        has_uncommitted_changes = bool(status_res.stdout.strip())
+
+        indexes_dir = self.get_session_indexes_dir(agent_id, session_id)
+        indexes_dir.mkdir(parents=True, exist_ok=True)
+        alt_index = indexes_dir / f"{repo_config.id}.diff.idx"
+        env = {"GIT_INDEX_FILE": str(alt_index.resolve())}
+        self._run_git(working_copy, ["read-tree", head_commit], env=env)
+        self._run_git(working_copy, ["add", "-A", "--", "."], env=env)
+        diff_res = self._run_git(
+            working_copy,
+            ["diff", "--cached", "--no-color", base_commit],
+            env=env,
+            check=False,
+        )
+        diff_text = diff_res.stdout if diff_res.returncode in (0, 1) else ""
+
+        return {
+            "attachment_id": repo_config.id,
+            "mount_name": mount_name,
+            "mount_path": f"/projects/{mount_name}",
+            "url": repo_config.url,
+            "configured_branch": repo_config.branch,
+            "current_branch": current_branch,
+            "branch_changed": branch_changed,
+            "base_commit": base_commit,
+            "head_commit": head_commit,
+            "commits": commits,
+            "diff": diff_text,
+            "has_uncommitted_changes": has_uncommitted_changes,
+        }
 
     def checkpoint_working_copy(
         self,

@@ -19,7 +19,6 @@ import {
   ListOrdered,
   ListTodo,
   Loader2,
-  MessageSquare,
   MinusCircle,
   RefreshCw,
   ShieldCheck,
@@ -51,7 +50,6 @@ type SubTab =
   | "skills"
   | "todos"
   | "inference"
-  | "messages"
   | "workspace"
   | "steerable";
 type PromptLayer = "composite" | "scaffold" | "custom";
@@ -394,16 +392,6 @@ export function AgentInspector({
         >
           <Cpu className="size-4" />
           <span>Inference & Runtime</span>
-        </button>
-
-        <button
-          type="button"
-          className={`inspector-tab-btn ${subTab === "messages" ? "active" : ""}`}
-          onClick={() => setSubTab("messages")}
-        >
-          <MessageSquare className="size-4" />
-          <span>Trajectory</span>
-          <span className="tab-counter">{report.history.message_count}</span>
         </button>
 
         <button
@@ -950,59 +938,6 @@ export function AgentInspector({
                 </div>
               </div>
             </div>
-          </div>
-        )}
-
-        {/* TAB 4: MESSAGE TRAJECTORY */}
-        {subTab === "messages" && (
-          <div className="inspector-messages-panel">
-            <div className="messages-panel-header">
-              <p>
-                Showing <strong>{report.history.messages.length} conversation turns</strong> in this
-                session's active thread.
-              </p>
-            </div>
-
-            {report.history.messages.length === 0 ? (
-              <div className="messages-empty">
-                <MessageSquare className="size-8 text-slate-500" />
-                <p>No messages recorded for this thread yet.</p>
-              </div>
-            ) : (
-              <div className="messages-list">
-                {report.history.messages.map((msg, idx) => (
-                  <div key={msg.id || idx} className={`message-inspect-item role-${msg.role}`}>
-                    <div className="msg-header">
-                      <span className={`role-badge role-${msg.role}`}>{msg.role}</span>
-                      {msg.id && <code className="msg-id">{msg.id.slice(0, 8)}</code>}
-                    </div>
-
-                    {msg.content && (
-                      <div className="msg-content">
-                        <MarkdownRenderer content={msg.content} variant="assistant" />
-                      </div>
-                    )}
-
-                    {msg.tool_calls && msg.tool_calls.length > 0 && (
-                      <div className="msg-tool-calls">
-                        <span className="tool-calls-title">Tool Invocations:</span>
-                        {msg.tool_calls.map((tc, tcIdx) => (
-                          <div key={tcIdx} className="msg-tool-call-box">
-                            <div className="call-header">
-                              <Wrench className="size-3.5 text-amber-400" />
-                              <span className="call-name">{String(tc.name || "Tool Call")}</span>
-                            </div>
-                            <pre className="call-args">
-                              <code>{JSON.stringify(tc.args || {}, null, 2)}</code>
-                            </pre>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         )}
 

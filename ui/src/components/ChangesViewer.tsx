@@ -11,8 +11,11 @@ import {
   ExternalLink,
   Eye,
   Folder,
+  FolderGit2,
   FolderOpen,
   FolderTree,
+  GitBranch,
+  GitCommitHorizontal,
   GitPullRequest,
   Layers,
   List,
@@ -28,7 +31,13 @@ import {
 import { parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
 import { getSessionDiff, listArtifacts } from "../api/client";
-import type { AgentStatus, ArtifactInfo, SessionDiffResponse, ThreadInfo } from "../api/types";
+import type {
+  AgentStatus,
+  ArtifactInfo,
+  MountedRepoDiffInfo,
+  SessionDiffResponse,
+  ThreadInfo,
+} from "../api/types";
 import { ArtifactRenderer } from "./ArtifactRenderer";
 
 interface ChangesViewerProps {
@@ -90,6 +99,14 @@ interface RenderableArtifactItem {
   rawPath: string;
   fileDiff: FileDiffMetadata;
   originalIndex: number;
+}
+
+interface ParsedMountedRepo {
+  repo: MountedRepoDiffInfo;
+  files: IndexedFileDiff[];
+  filteredFiles: IndexedFileDiff[];
+  tree: FileTreeNode;
+  keyPrefix: string;
 }
 
 function buildFileTree(files: IndexedFileDiff[]): FileTreeNode {
@@ -339,6 +356,61 @@ export function ChangesViewer({
     [filteredArtifactIndexedDiffs]
   );
 
+  const mountedRepoEntries = useMemo<ParsedMountedRepo[]>(() => {
+    const repos = diffData?.mounted_repos ?? [];
+    let nextIndex = deliverableDiffs.length + artifactItems.length;
+    const q = filterQuery.trim().toLowerCase();
+
+    return repos
+      .map((repo) => {
+        let parsedFiles: FileDiffMetadata[] = [];
+        if (repo.diff && repo.diff.trim().length > 0) {
+          try {
+            parsedFiles = parsePatchFiles(repo.diff).flatMap((p) => p.files);
+          } catch (err) {
+            console.error(`Failed to parse diff for mounted repo ${repo.mount_name}:`, err);
+          }
+        }
+        const files: IndexedFileDiff[] = parsedFiles.map((fileDiff) => ({
+          fileDiff,
+          originalIndex: nextIndex++,
+        }));
+        const filteredFiles = q
+          ? files.filter(
+              (item) =>
+                (item.fileDiff.name || "").toLowerCase().includes(q) ||
+                repo.mount_name.toLowerCase().includes(q)
+            )
+          : files;
+        const tree = buildFileTree(filteredFiles);
+        return {
+          repo,
+          files,
+          filteredFiles,
+          tree,
+          keyPrefix: `repo:${repo.attachment_id}:`,
+        };
+      })
+      .filter(
+        (entry) =>
+          entry.files.length > 0 ||
+          entry.repo.branch_changed ||
+          entry.repo.commits.length > 0
+      );
+  }, [diffData?.mounted_repos, deliverableDiffs.length, artifactItems.length, filterQuery]);
+
+  const visibleMountedRepos = useMemo<ParsedMountedRepo[]>(() => {
+    const q = filterQuery.trim().toLowerCase();
+    if (!q) return mountedRepoEntries;
+    return mountedRepoEntries.filter(
+      (entry) =>
+        entry.filteredFiles.length > 0 ||
+        entry.repo.mount_name.toLowerCase().includes(q) ||
+        entry.repo.current_branch.toLowerCase().includes(q) ||
+        entry.repo.configured_branch.toLowerCase().includes(q)
+    );
+  }, [mountedRepoEntries, filterQuery]);
+
   const totalStats = useMemo(() => {
     let additions = 0;
     let deletions = 0;
@@ -352,11 +424,31 @@ export function ChangesViewer({
       additions += stats.additions;
       deletions += stats.deletions;
     }
+    for (const entry of mountedRepoEntries) {
+      for (const { fileDiff } of entry.files) {
+        const stats = getFileStats(fileDiff);
+        additions += stats.additions;
+        deletions += stats.deletions;
+      }
+    }
     return { additions, deletions };
-  }, [deliverableDiffs, artifactItems]);
+  }, [deliverableDiffs, artifactItems, mountedRepoEntries]);
 
-  const totalFilesCount = deliverableDiffs.length + artifactItems.length;
-  const hasAnyFiles = filteredDeliverables.length > 0 || filteredArtifactItems.length > 0;
+  const mountedFilesCount = useMemo(
+    () => mountedRepoEntries.reduce((sum, entry) => sum + entry.files.length, 0),
+    [mountedRepoEntries]
+  );
+  const filteredMountedFilesCount = useMemo(
+    () => visibleMountedRepos.reduce((sum, entry) => sum + entry.filteredFiles.length, 0),
+    [visibleMountedRepos]
+  );
+  const totalFilesCount = deliverableDiffs.length + artifactItems.length + mountedFilesCount;
+  const filteredFilesCount =
+    filteredDeliverables.length + filteredArtifactItems.length + filteredMountedFilesCount;
+  const hasAnyFiles =
+    filteredDeliverables.length > 0 ||
+    filteredArtifactItems.length > 0 ||
+    visibleMountedRepos.length > 0;
 
   const toggleFile = (fileName: string) => {
     setExpandedFiles((prev) => ({
@@ -376,10 +468,16 @@ export function ChangesViewer({
     const allPaths = [
       ...deliverableDiffs.map((f, idx) => f.name || `file-${idx}`),
       ...artifactItems.map((item) => item.rawPath),
+      ...mountedRepoEntries.flatMap((entry) =>
+        entry.files.map(
+          ({ fileDiff, originalIndex }) =>
+            `${entry.keyPrefix}${fileDiff.name || `file-${originalIndex}`}`
+        )
+      ),
     ];
     if (allPaths.length === 0) return true;
     return allPaths.every((name) => expandedFiles[name] ?? true);
-  }, [deliverableDiffs, artifactItems, expandedFiles]);
+  }, [deliverableDiffs, artifactItems, mountedRepoEntries, expandedFiles]);
 
   const toggleAllFiles = () => {
     const nextState = !allFilesExpanded;
@@ -391,15 +489,21 @@ export function ChangesViewer({
     for (const item of artifactItems) {
       updated[item.rawPath] = nextState;
     }
+    for (const entry of mountedRepoEntries) {
+      for (const { fileDiff, originalIndex } of entry.files) {
+        const name = fileDiff.name || `file-${originalIndex}`;
+        updated[`${entry.keyPrefix}${name}`] = nextState;
+      }
+    }
     setExpandedFiles(updated);
   };
 
-  const handleSelectFile = (index: number, fileName: string) => {
+  const handleSelectFile = (index: number, fileKey: string) => {
     setActiveFileIndex(index);
     // Ensure the selected file is expanded in the diff viewport
     setExpandedFiles((prev) => ({
       ...prev,
-      [fileName]: true,
+      [fileKey]: true,
     }));
     const element = document.getElementById(`diff-file-${index}`);
     if (element) {
@@ -417,22 +521,27 @@ export function ChangesViewer({
     }
   };
 
-  const hasDiffContent = totalFilesCount > 0;
+  const hasDiffContent = totalFilesCount > 0 || mountedRepoEntries.length > 0;
 
   // Render recursive tree node
-  const renderTreeNode = (node: FileTreeNode, level: number = 0): React.ReactNode => {
+  const renderTreeNode = (
+    node: FileTreeNode,
+    level: number = 0,
+    keyPrefix: string = ""
+  ): React.ReactNode => {
     if (node.isDirectory) {
       if (node.path === "") {
         // Root node
-        return node.children.map((child) => renderTreeNode(child, level));
+        return node.children.map((child) => renderTreeNode(child, level, keyPrefix));
       }
-      const isFolderOpen = expandedFolders[node.path] ?? true;
+      const folderKey = `${keyPrefix}${node.path}`;
+      const isFolderOpen = expandedFolders[folderKey] ?? true;
       return (
-        <div key={node.path} className="changes-tree-dir-group">
+        <div key={folderKey} className="changes-tree-dir-group">
           <div
             className="changes-tree-dir-row"
             style={{ paddingLeft: `${level * 14 + 10}px` }}
-            onClick={() => toggleFolder(node.path)}
+            onClick={() => toggleFolder(folderKey)}
             role="button"
             tabIndex={0}
           >
@@ -452,7 +561,7 @@ export function ChangesViewer({
           </div>
           {isFolderOpen && (
             <div className="changes-tree-dir-children">
-              {node.children.map((child) => renderTreeNode(child, level + 1))}
+              {node.children.map((child) => renderTreeNode(child, level + 1, keyPrefix))}
             </div>
           )}
         </div>
@@ -465,13 +574,14 @@ export function ChangesViewer({
     const status = getChangeStatus(fileDiff?.type || "change");
     const stats = fileDiff ? getFileStats(fileDiff) : { additions: 0, deletions: 0 };
     const isActive = activeFileIndex === fileIdx;
+    const fileKey = `${keyPrefix}${node.path}`;
 
     return (
       <div
-        key={node.path}
+        key={fileKey}
         className={`changes-tree-file-row ${isActive ? "active" : ""}`}
         style={{ paddingLeft: `${level * 14 + 10}px` }}
-        onClick={() => handleSelectFile(fileIdx, node.path)}
+        onClick={() => handleSelectFile(fileIdx, fileKey)}
         role="button"
         tabIndex={0}
       >
@@ -489,7 +599,7 @@ export function ChangesViewer({
     );
   };
 
-  const renderFileListRows = (items: IndexedFileDiff[]) => {
+  const renderFileListRows = (items: IndexedFileDiff[], keyPrefix: string = "") => {
     return items.map(({ fileDiff, originalIndex }) => {
       const rawName = fileDiff.name || `file-${originalIndex}`;
       const status = getChangeStatus(fileDiff.type || "change");
@@ -498,12 +608,13 @@ export function ChangesViewer({
       const baseName = parts[parts.length - 1];
       const dirPath = parts.slice(0, parts.length - 1).join("/");
       const isActive = activeFileIndex === originalIndex;
+      const fileKey = `${keyPrefix}${rawName}`;
 
       return (
         <div
-          key={`${rawName}-${originalIndex}`}
+          key={`${fileKey}-${originalIndex}`}
           className={`changes-list-file-row ${isActive ? "active" : ""}`}
-          onClick={() => handleSelectFile(originalIndex, rawName)}
+          onClick={() => handleSelectFile(originalIndex, fileKey)}
           role="button"
           tabIndex={0}
         >
@@ -536,23 +647,24 @@ export function ChangesViewer({
     });
   };
 
-  const renderDiffCards = (items: IndexedFileDiff[]) => {
+  const renderDiffCards = (items: IndexedFileDiff[], keyPrefix: string = "") => {
     return items.map(({ fileDiff, originalIndex }) => {
       const fileName = fileDiff.name || `file-${originalIndex}`;
-      const isExpanded = expandedFiles[fileName] ?? true;
+      const fileKey = `${keyPrefix}${fileName}`;
+      const isExpanded = expandedFiles[fileKey] ?? true;
       const status = getChangeStatus(fileDiff.type || "change");
       const stats = getFileStats(fileDiff);
       const isCopied = copiedPath === fileName;
 
       return (
         <article
-          key={`${fileName}-${originalIndex}`}
+          key={`${fileKey}-${originalIndex}`}
           id={`diff-file-${originalIndex}`}
           className={`changes-file-diff-item ${isExpanded ? "expanded" : "collapsed"}`}
         >
           <header
             className="changes-file-card-header"
-            onClick={() => toggleFile(fileName)}
+            onClick={() => toggleFile(fileKey)}
             role="button"
             tabIndex={0}
             aria-expanded={isExpanded}
@@ -563,7 +675,7 @@ export function ChangesViewer({
                 className="changes-file-chevron-btn"
                 onClick={(e) => {
                   e.stopPropagation();
-                  toggleFile(fileName);
+                  toggleFile(fileKey);
                 }}
                 aria-label={isExpanded ? "Collapse file" : "Expand file"}
               >
@@ -922,7 +1034,7 @@ export function ChangesViewer({
                     <span className="changes-sidebar-title">Files Changed</span>
                     <span className="changes-sidebar-count-badge">
                       {filterQuery.trim()
-                        ? `${filteredDeliverables.length + filteredArtifactItems.length} / ${totalFilesCount}`
+                        ? `${filteredFilesCount} / ${totalFilesCount}`
                         : totalFilesCount}
                     </span>
                   </div>
@@ -1020,6 +1132,45 @@ export function ChangesViewer({
                           )}
                         </div>
                       )}
+
+                      {visibleMountedRepos.map((entry) => (
+                        <div key={entry.repo.attachment_id}>
+                          {(filteredDeliverables.length > 0 || filteredArtifactItems.length > 0) && (
+                            <div className="changes-group-separator" />
+                          )}
+                          <div className="changes-group-section">
+                            <div className="changes-group-header">
+                              <FolderGit2 className="size-3.5 text-emerald-400" />
+                              <span className="changes-group-title" title={entry.repo.mount_path}>
+                                {entry.repo.mount_name}
+                              </span>
+                              <span className="changes-mounted-branch-pill" title={`Configured: ${entry.repo.configured_branch}`}>
+                                {entry.repo.branch_changed
+                                  ? `${entry.repo.configured_branch} → ${entry.repo.current_branch}`
+                                  : entry.repo.current_branch}
+                              </span>
+                              <span className="changes-group-badge">{entry.filteredFiles.length}</span>
+                            </div>
+                            {entry.filteredFiles.length > 0 ? (
+                              viewMode === "tree" ? (
+                                <div className="changes-tree-view">
+                                  {renderTreeNode(entry.tree, 0, entry.keyPrefix)}
+                                </div>
+                              ) : (
+                                <div className="changes-list-view">
+                                  {renderFileListRows(entry.filteredFiles, entry.keyPrefix)}
+                                </div>
+                              )
+                            ) : (
+                              <div className="changes-mounted-no-files-note">
+                                {entry.repo.branch_changed
+                                  ? `Branch changed (${entry.repo.configured_branch} → ${entry.repo.current_branch})`
+                                  : `${entry.repo.commits.length} commit${entry.repo.commits.length === 1 ? "" : "s"}`}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
                     </>
                   )}
                 </div>
@@ -1113,6 +1264,72 @@ export function ChangesViewer({
                         </div>
                       </section>
                     )}
+
+                    {visibleMountedRepos.map((entry) => (
+                      <section key={entry.repo.attachment_id} className="changes-diff-group">
+                        {(filteredDeliverables.length > 0 || filteredArtifactItems.length > 0) && (
+                          <div className="changes-diff-group-divider">
+                            <div className="changes-diff-divider-line" />
+                            <span className="changes-diff-divider-text">
+                              Mounted Repo: {entry.repo.mount_name}
+                            </span>
+                            <div className="changes-diff-divider-line" />
+                          </div>
+                        )}
+                        <div className="changes-diff-group-header changes-mounted-repo-header">
+                          <div className="changes-mounted-repo-title">
+                            <FolderGit2 className="size-4 text-emerald-400" />
+                            <span>{entry.repo.mount_name}</span>
+                            <code className="changes-mounted-repo-path">{entry.repo.mount_path}</code>
+                            <span className="changes-diff-group-count">
+                              ({entry.filteredFiles.length} file{entry.filteredFiles.length === 1 ? "" : "s"})
+                            </span>
+                          </div>
+                          <div className="changes-mounted-repo-meta">
+                            <span
+                              className={`changes-mounted-branch-badge ${
+                                entry.repo.branch_changed ? "changed" : ""
+                              }`}
+                              title={`Initial configured branch: ${entry.repo.configured_branch}`}
+                            >
+                              <GitBranch className="size-3" />
+                              {entry.repo.branch_changed
+                                ? `${entry.repo.configured_branch} → ${entry.repo.current_branch}`
+                                : entry.repo.current_branch}
+                            </span>
+                            {entry.repo.commits.length > 0 && (
+                              <span className="changes-mounted-commits-badge">
+                                <GitCommitHorizontal className="size-3" />
+                                {entry.repo.commits.length} commit{entry.repo.commits.length === 1 ? "" : "s"}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {entry.repo.commits.length > 0 && (
+                          <div className="changes-mounted-commits-list">
+                            {entry.repo.commits.map((commit) => (
+                              <div key={commit.sha} className="changes-mounted-commit-row">
+                                <GitCommitHorizontal className="size-3.5 text-emerald-400 shrink-0" />
+                                <code className="changes-mounted-commit-sha">{commit.short_sha}</code>
+                                <span className="changes-mounted-commit-msg">{commit.message}</span>
+                                <span className="changes-mounted-commit-author">{commit.author}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {entry.filteredFiles.length > 0 ? (
+                          <div className="changes-diff-cards">
+                            {renderDiffCards(entry.filteredFiles, entry.keyPrefix)}
+                          </div>
+                        ) : (
+                          <div className="changes-mounted-empty-diff">
+                            No net file changes relative to initial mount ({entry.repo.configured_branch}).
+                          </div>
+                        )}
+                      </section>
+                    ))}
                   </>
                 )}
               </div>

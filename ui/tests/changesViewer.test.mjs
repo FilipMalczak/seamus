@@ -78,6 +78,7 @@ function installFetchStub(options = {}) {
               ? options.prUrl
               : "http://gitea.local/seamus/agent-x/pulls/7",
           diff: "diff" in options ? options.diff : DIFF,
+          mounted_repos: options.mountedRepos ?? [],
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
@@ -362,6 +363,55 @@ test("REQ-021: an empty diff renders the no-changes state", async () => {
   await settle();
 
   assert.ok(container.querySelector(".changes-empty-state"));
+
+  await unmount();
+});
+
+test("mounted repo diffs, branch changes, and commits are rendered in the Changes tab", async () => {
+  const mountedDiff = `diff --git a/app.py b/app.py
+index 1111111..2222222 100644
+--- a/app.py
++++ b/app.py
+@@ -1 +1,2 @@
+ print("hi")
++print("updated")
+`;
+  const { container, unmount } = await renderChanges({
+    diff: "",
+    mountedRepos: [
+      {
+        attachment_id: "att-1",
+        mount_name: "my-service",
+        mount_path: "/projects/my-service",
+        url: "https://github.com/example/my-service.git",
+        configured_branch: "main",
+        current_branch: "feat/auth",
+        branch_changed: true,
+        base_commit: "aaaaaaa",
+        head_commit: "bbbbbbb",
+        commits: [
+          {
+            sha: "bbbbbbb123456",
+            short_sha: "bbbbbbb",
+            message: "Implement auth middleware",
+            author: "Seamus Agent",
+            date: "2026-11-14T22:00:00+00:00",
+          },
+        ],
+        diff: mountedDiff,
+        has_uncommitted_changes: false,
+      },
+    ],
+  });
+  await settle();
+
+  assert.equal(container.querySelector(".changes-empty-state"), null);
+  assert.match(container.textContent, /my-service/);
+  assert.match(container.textContent, /main → feat\/auth/);
+  assert.match(container.textContent, /1 commit/);
+  assert.match(container.textContent, /Implement auth middleware/);
+  assert.match(container.textContent, /app\.py/);
+  assert.match(container.querySelector(".changes-diff-summary-count").textContent, /1 changed file/);
 
   await unmount();
 });
