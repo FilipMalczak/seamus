@@ -45,6 +45,10 @@ Project-specific implementation, tooling, and development conventions not fully 
 - Test suite execution uses an ephemeral, dedicated Gitea container (`tests/conftest.py`) with SQLite and dynamic port assignment (`127.0.0.1::3000`), completely shielding the live development stack (`http://localhost:3001`, `.seamus/workspaces`) from test pollution and permitting parallel test runs.
 - Logfire test assertions use `TestExporter` and `SimpleSpanProcessor` with `send_to_logfire=False`.
 - Frontend builds verified with `npm run build` in `ui/`.
+- End-to-end tests live under `tests/e2e/` and drive the real harness stack over the public HTTP API. Only two substitutions are permitted: the live inference provider (replaced by the `steerable` scripted provider) and the OpenSandbox container (replaced by the in-process host-filesystem stub in `tests/e2e/stub_sandbox.py`). No API key, network access, or live container may be required.
+- End-to-end tests are organised around user-observable behaviour (conversation streaming, plan and artifact lifecycles, session termination, branching, mode switching, thread acceptance, Sync PR lifecycle, inspector reporting, telemetry span hierarchy), not around line coverage.
+- A specified-but-unimplemented behaviour is recorded as a non-strict `xfail` test whose reason names the backlog entry tracking it. Existing tests are never weakened or removed to accommodate a gap.
+- Frontend component tests live under `ui/tests/` and run on Node's native test runner (`npm test`). They load real production components from `ui/src` (bundled with esbuild) and assert on rendered output, so a test can never drift from the implementation.
 
 ## Continuous Integration Conventions
 - Automated CI pipeline maintained under `.github/workflows/ci.yml`.
@@ -53,6 +57,8 @@ Project-specific implementation, tooling, and development conventions not fully 
 - `frontend` job runs on `ubuntu-latest` executing `npm ci` and `npm run build` (`tsc -b && vite build`) in `ui/`.
 - `test-docker` job executes the full test suite on `ubuntu-latest` using the ephemeral Gitea container persistence fixture.
 - `test-in-memory` job executes the test suite on `ubuntu-latest` in parallel with `SEAMUS_TEST_IN_MEMORY=true` (disabling Docker persistence) to guarantee fast feedback and verify pure in-memory execution isolation.
+- `test-e2e` job executes `uv run pytest tests/e2e` on `ubuntu-latest` with `SEAMUS_TEST_IN_MEMORY=true`. The suite needs neither an API key nor a live container, so it runs in seconds on every push.
+- The `frontend` job additionally runs `npm test` (Node native test runner) after `npm run build`.
 - Cross-platform macOS and Windows runner support is deferred and tracked as technical debt.
 - Package publishing and deployment stages are omitted.
 
@@ -75,6 +81,7 @@ Project-specific implementation, tooling, and development conventions not fully 
 - [0023-github-actions-ci-pipeline.md](../decisions/0023-github-actions-ci-pipeline.md)
 - [0031-SUPERSEDED-migrate-a2ui-to-adaptive-cards.md](../decisions/0031-SUPERSEDED-migrate-a2ui-to-adaptive-cards.md)
 - [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md)
+- [0057-e2e-test-suite.md](../decisions/0057-e2e-test-suite.md)
 - [artifacts.md](./artifacts.md)
 - [abstractions.md](./abstractions.md)
 - [backlog.md](./backlog.md)

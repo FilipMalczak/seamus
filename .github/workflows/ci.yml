@@ -39,7 +39,7 @@ jobs:
         run: uv run mypy
 
   frontend:
-    name: Frontend Build & Typecheck
+    name: Frontend Build, Typecheck & Tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -60,6 +60,9 @@ jobs:
 
       - name: Build frontend
         run: npm run build
+
+      - name: Run frontend tests
+        run: npm test
 
   test-docker:
     name: Pytest (Ubuntu, Docker)
@@ -104,4 +107,30 @@ jobs:
 
       - name: Run pytest (in-memory mode)
         run: uv run pytest
+
+  test-e2e:
+    name: Pytest (End-to-End, Steerable LLM)
+    runs-on: ubuntu-latest
+    env:
+      SEAMUS_TEST_IN_MEMORY: "true"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      # The end-to-end suite drives the real harness with the scripted
+      # `steerable` inference provider and an in-process sandbox stub, so it
+      # needs neither an API key nor a live container.
+      - name: Run end-to-end tests
+        run: uv run pytest tests/e2e -v
 

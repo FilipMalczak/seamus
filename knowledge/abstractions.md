@@ -151,6 +151,15 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `plan`: Agent tool transitioning session from Discuss phase to Make phase in a fresh thread.
 - `discard`: Agent tool available across all Plan phases resetting session to Discuss and clearing active plans.
 
+### Test Subsystem (`tests/e2e`, `ui/tests`)
+- `StubSandboxBackend` (`tests/e2e/stub_sandbox.py`): In-process stand-in for `SeamusOpenSandboxBackend` that maps the in-sandbox `/workspace` path onto the session's host `data/` directory and executes shell commands with `subprocess` on the host. Implements the filesystem and execution surface the runner depends on (`ls`, `read`, `write`, `edit`, `delete`, `glob`, `grep`, `execute`, `upload_files`, `download_files`, `destroy`, `close`, `reconfigure_mounts`, `get_skill_sources`), so the harness stack runs unmodified without a live OpenSandbox container. Enforces the read-only workspace policy by refusing writes and command execution while the workspace is mounted read-only.
+- `e2e_client` fixture (`tests/e2e/conftest.py`): A `TestClient` bound to the real FastAPI application, with the stub sandbox installed and the steerable registry reset between tests.
+- `make_session` fixture (`tests/e2e/conftest.py`): Creates an agent and session over the public HTTP API with a `steerable` inference configuration, returning the resolved identifiers.
+- `queue_agent_turn` fixture (`tests/e2e/conftest.py`): Pushes a scripted assistant turn (text, reasoning, and/or tool calls) onto the session's agent steerable queue.
+- `resolve_session` fixture (`tests/e2e/conftest.py`): Resolves the session's active runner and drains its in-flight turn, so a test can assert on the completed event history deterministically.
+- `loadModule` helper (`ui/tests/helpers/loadModule.mjs`): Bundles a real production module from `ui/src` with esbuild and evaluates it in an isolated context, so frontend tests exercise shipped code rather than a copy.
+- `domShim` helper (`ui/tests/helpers/domShim.mjs`): Minimal DOM/React shim providing `renderToStaticMarkup`-style output for component assertions without a browser.
+
 ## Design Principles
 - **Explicit over Implicit**: Prefer concrete, simple classes and protocols rather than speculative abstraction layers.
 - **Separation of Concerns**: Keep framework/harness mechanics separate from application and agent domain code.
@@ -194,8 +203,10 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - [0046-daemons-naming.md](../decisions/0046-daemons-naming.md)
 - [0047-discovered-context-and-project-skills.md](../decisions/0047-discovered-context-and-project-skills.md)
 - [0048-native-lmxml-skills-system.md](../decisions/0048-native-lmxml-skills-system.md)
+- [0057-e2e-test-suite.md](../decisions/0057-e2e-test-suite.md)
 - [artifacts.md](./artifacts.md)
 - [architecture.md](./architecture.md)
 - [persistence.md](./persistence.md)
 - [backlog.md](./backlog.md)
 - [conventions.md](./conventions.md)
+- [test_coverage.md](./test_coverage.md)

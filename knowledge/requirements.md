@@ -303,10 +303,18 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0056-steerable-model-provider.md](../decisions/0056-steerable-model-provider.md), `src/seamus/config/models.py`, `src/seamus/harness/steerable.py`, `src/seamus/harness/runner.py`, `src/seamus/harness/daemons/engine.py`, `src/seamus/harness/inspector.py`, `src/seamus/server/routes/sessions.py`, `ui/src/components/SteerableInspector.tsx`, `ui/src/utils/steerable.ts`, `tests/test_steerable.py`, `ui/tests/steerable.test.mjs`.
 - **Linked Invariants**: [INV-062](./invariants.md#inv-062-steerable-provider-isolation-and-credential-freedom).
 
+### REQ-052: Deterministic End-to-End Test Coverage of Features, Requirements, and Invariants
+- **Description**: The repository must maintain an end-to-end test suite that drives the real harness stack (config store, harness store, workspace manager, DeepAgent runner, artifact resolver, and FastAPI routes) over the public HTTP API, substituting only the live LLM (with the `steerable` scripted provider) and the OpenSandbox container (with an in-process host-filesystem stub). The suite must be deterministic, require no API key and no network access, and run in seconds so it can execute on every push. Coverage must be organised around the behaviours a user observes — conversation streaming, plan and artifact lifecycles, session termination, granular branching, mode switching, thread acceptance, Sync PR lifecycle, inspector reporting, and telemetry span hierarchy — rather than around line coverage. The frontend must maintain a Node-native component test suite that loads real production components from `ui/src` and asserts on rendered output. Where a specified behaviour is not yet implemented, the suite must document the gap with a non-strict `xfail` test referencing the backlog entry that tracks it, rather than omitting the test or weakening an existing one.
+- **Rationale**: The behaviours that matter most to a user are emergent across module boundaries; per-module unit tests cannot observe them. A deterministic, free, fast end-to-end suite converts the feature/requirement/invariant catalogue into an executable specification and prevents regressions in the seams between modules. Documenting known gaps as `xfail` tests keeps the intended behaviour visible without blocking the pipeline on unimplemented work.
+- **Provenance**: [0057-e2e-test-suite.md](../decisions/0057-e2e-test-suite.md), [0056-steerable-model-provider.md](../decisions/0056-steerable-model-provider.md), `tests/e2e/`, `ui/tests/`, `.github/workflows/ci.yml`.
+- **Linked Invariants**: [INV-063](./invariants.md#inv-063-deterministic-end-to-end-test-harness-isolation), [INV-002](./invariants.md#inv-002-zero-tooling-check-failures).
+- **Coverage Map**: [test_coverage.md](./test_coverage.md) maps every requirement and invariant to the tests that confirm it, and records the undertested surface.
+
 
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [invariants.md](./invariants.md)
+- [test_coverage.md](./test_coverage.md)
 - [threads_modes_personas.md](./threads_modes_personas.md)
 - [artifacts.md](./artifacts.md)
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
@@ -352,4 +360,5 @@ Requirements, rationale, provenance, and stable IDs.
 - [0052-backlog-low-hanging-fruits.md](../decisions/0052-backlog-low-hanging-fruits.md)
 - [0055-artifacts-implementation-toggle.md](../decisions/0055-artifacts-implementation-toggle.md)
 - [0056-steerable-model-provider.md](../decisions/0056-steerable-model-provider.md)
+- [0057-e2e-test-suite.md](../decisions/0057-e2e-test-suite.md)
 - [persistence.md](./persistence.md)

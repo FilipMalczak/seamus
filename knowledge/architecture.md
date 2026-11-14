@@ -97,6 +97,9 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 17. **Steerable Model Provider Subsystem (`seamus.harness.steerable`)**:
     - Location: `src/seamus/harness/steerable.py`, `src/seamus/harness/runner.py`, `src/seamus/harness/daemons/engine.py`, `src/seamus/harness/inspector.py`, `src/seamus/server/routes/sessions.py`, `ui/src/components/SteerableInspector.tsx`, `ui/src/utils/steerable.ts`
     - Responsibility: Provides the `steerable` inference format, a distinct provider that replaces the live LLM with a queue of scripted assistant turns (text, reasoning, tool calls) for deterministic, cost-free local testing and manual verification. Requires no credentials and no network access. Owns a process-wide registry (`SteerableModelRegistry`) of session-scoped instances, so the session's agent model and each daemon model are steered independently and addressed separately (`session:{id}:agent`, `session:{id}:daemon:{daemon}`). Supports three empty-queue strategies: `wait` (the default — block until a response is queued from the Inspector, turning the Inspector into a live remote control), `error` (fail the turn loudly), and `repeat` (return a fixed default response). The Inspector exposes each instance as a separate card with a queue editor (append, replace, remove, clear), a runtime strategy selector, a composer for text, reasoning, and any number of tool calls, and queue import/export to and from JSON files, with a per-instance toggle choosing whether an import replaces the queue or extends it; the steerable API deliberately exposes no `DELETE` method.
+18. **End-to-End Test Harness (`tests/e2e`, `ui/tests`)**:
+    - Location: `tests/e2e/`, `ui/tests/`
+    - Responsibility: Deterministic end-to-end verification of user-observable behaviour across module boundaries. `tests/e2e/` drives the real harness stack (config store, harness store, workspace manager, DeepAgent runner, artifact resolver, FastAPI routes) over the public HTTP API, substituting only the live inference provider (with the `steerable` scripted provider) and the OpenSandbox container (with the in-process host-filesystem stub in `tests/e2e/stub_sandbox.py`). `tests/e2e/conftest.py` provides the session-scoped fixtures (`client`, `make_session`, `queue_agent_turn`, `resolve_session`) that arm a scripted model queue and drain the runner's active turn. `ui/tests/` runs under Node's native test runner, loading real production components from `ui/src` via esbuild and rendering them to static markup, so frontend assertions cannot drift from the implementation. Specified-but-unimplemented behaviour is recorded as non-strict `xfail` tests whose reasons name the tracking backlog entry.
 
 ## Cross-References
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
@@ -143,6 +146,7 @@ Seamus is a deep agent harness engineered for full developer ownership, inspecti
 - [0048-native-lmxml-skills-system.md](../decisions/0048-native-lmxml-skills-system.md)
 - [0055-artifacts-implementation-toggle.md](../decisions/0055-artifacts-implementation-toggle.md)
 - [0056-steerable-model-provider.md](../decisions/0056-steerable-model-provider.md)
+- [0057-e2e-test-suite.md](../decisions/0057-e2e-test-suite.md)
 - [artifacts.md](./artifacts.md)
 - [threads_modes_personas.md](./threads_modes_personas.md)
 - [abstractions.md](./abstractions.md)
