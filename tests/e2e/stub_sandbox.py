@@ -48,6 +48,85 @@ TRANSIENT_DIR = "transient"
 
 
 @dataclass
+class _StubSandboxMessage:
+    """A single streamed output line, mirroring the OpenSandbox message shape."""
+
+    text: str
+
+
+@dataclass
+class _StubSandboxExecution:
+    """The result of a streamed command execution."""
+
+    exit_code: int
+    logs: Any
+
+
+class _StubSandboxCommands:
+    """The ``sandbox.commands`` surface used by the terminal streaming route."""
+
+    def __init__(self, backend: StubSandboxBackend) -> None:
+        self._backend = backend
+
+    def run(
+        self,
+        command: str,
+        opts: Any = None,
+        handlers: Any = None,
+    ) -> _StubSandboxExecution:
+        """Run a command on the host and deliver its output to the handlers."""
+        backend = self._backend
+        backend.executed_commands.append(command)
+
+        workdir = getattr(opts, "working_directory", None) or backend.settings.workdir
+        host_cwd = backend._resolve(workdir)
+        translated = backend._translate_command(command)
+
+        completed = subprocess.run(  # noqa: S602 - test-only stub executing scripted commands
+            translated,
+            shell=True,
+            cwd=str(host_cwd),
+            capture_output=True,
+            text=True,
+            check=False,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        )
+
+        stdout_lines = [backend._virtualize_text(line) for line in completed.stdout.splitlines()]
+        stderr_lines = [backend._virtualize_text(line) for line in completed.stderr.splitlines()]
+
+        if handlers is not None:
+            on_stdout = getattr(handlers, "on_stdout", None)
+            if on_stdout is not None:
+                for line in stdout_lines:
+                    on_stdout(_StubSandboxMessage(text=line))
+            on_stderr = getattr(handlers, "on_stderr", None)
+            if on_stderr is not None:
+                for line in stderr_lines:
+                    on_stderr(_StubSandboxMessage(text=line))
+
+        return _StubSandboxExecution(
+            exit_code=completed.returncode,
+            logs=_StubSandboxLogs(stdout=stdout_lines, stderr=stderr_lines),
+        )
+
+
+@dataclass
+class _StubSandboxLogs:
+    """Captured output of a streamed command execution."""
+
+    stdout: list[str]
+    stderr: list[str]
+
+
+class _StubSandboxClient:
+    """A minimal stand-in for the OpenSandbox client object."""
+
+    def __init__(self, backend: StubSandboxBackend) -> None:
+        self.commands = _StubSandboxCommands(backend)
+
+
+@dataclass
 class StubSandboxSettings:
     """Minimal settings surface used by the runner and the terminal route."""
 
@@ -480,11 +559,38 @@ class StubSandboxBackend:
         return self.download_files(paths)
 
     # ------------------------------------------------------------------
+    # Terminal streaming
+    # ------------------------------------------------------------------
+
+    @property
+    def _sandbox(self) -> _StubSandboxClient:
+        """Return a client shim exposing the OpenSandbox ``commands.run`` API.
+
+        The runner's terminal streaming path talks to ``backend._sandbox``; the
+        stub exposes the same surface so the route can be exercised end to end
+        without a live container.
+        """
+        return _StubSandboxClient(self)
+
+    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
+    def _virtualize_text(self, text: str) -> str:
+        """Rewrite host paths in command output back into in-sandbox paths."""
+        replacements = [
+            (str(self.data_dir.resolve()), "/workspace"),
+        ]
+        if self.artifacts_dir is not None:
+            replacements.append((str(self.artifacts_dir.resolve()), "/artifacts"))
+        virtualized = text
+        for host, virtual in replacements:
+            virtualized = virtualized.replace(host, virtual)
+        return virtualized
+
     def _translate_command(self, command: str) -> str:
         """Rewrite in-sandbox absolute paths into host paths."""
+
         replacements = [
             ("/workspace", str(self.data_dir.resolve())),
         ]

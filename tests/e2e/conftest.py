@@ -175,7 +175,26 @@ def make_session(steerable_store: HarnessStore) -> Any:
         mode: str = "plan",
         phase: str | None = None,
         naming_daemon: bool = False,
+        system_prompt: str | None = None,
+        todo_implementation: str | None = None,
+        skills_implementation: str | None = None,
+        artifacts_implementation: str | None = None,
+        web_search: str | None = None,
     ) -> dict[str, Any]:
+        # Only the fields the caller actually overrides are passed, so the
+        # model defaults apply to everything else.
+        overrides: dict[str, Any] = {}
+        if system_prompt is not None:
+            overrides["system_prompt"] = system_prompt
+        if todo_implementation is not None:
+            overrides["todo_implementation"] = todo_implementation
+        if skills_implementation is not None:
+            overrides["skills_implementation"] = skills_implementation
+        if artifacts_implementation is not None:
+            overrides["artifacts_implementation"] = artifacts_implementation
+        if web_search is not None:
+            overrides["web_search"] = web_search
+
         config = AgentConfig(
             inference=InferenceConfig(
                 format=InferenceFormat.STEERABLE,
@@ -190,6 +209,7 @@ def make_session(steerable_store: HarnessStore) -> Any:
                     model="steerable-model" if naming_daemon else None,
                 )
             ),
+            **overrides,
         )
         agent = steerable_store.create_agent(config=config, name=name)
 

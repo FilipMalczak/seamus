@@ -44,7 +44,13 @@ export async function loadModule(relativePath) {
     target: "node20",
     jsx: "automatic",
     loader: { ".ts": "ts", ".tsx": "tsx" },
-    external: ["react", "react-dom", "react-dom/server", "react/jsx-runtime"],
+    external: [
+      "react",
+      "react-dom",
+      "react-dom/client",
+      "react-dom/server",
+      "react/jsx-runtime",
+    ],
     write: false,
     logLevel: "silent",
   });
