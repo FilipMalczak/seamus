@@ -7,15 +7,7 @@ Two concerns are covered:
   emit request spans for API calls while excluding health probes.
 * **Timestamps** — AG-UI events must carry an authoritative emission
   timestamp so the UI can render bubble times from the backend rather than
-  from client-side render time (see the technical-debt entry
-  "Chat Bubble Timestamps Reflect Client-Side Render Time Rather Than
-  Server/LLM Event Emission Time" in ``knowledge/backlog.md``).
-
-The timestamp expectations are currently *not* met by the implementation:
-events are emitted without a ``timestamp`` value. Those assertions are
-therefore marked ``xfail(strict=False)`` so the suite documents the gap
-without blocking, and they will start passing once the backend propagates
-emission timestamps.
+  from client-side render time.
 """
 
 from __future__ import annotations
@@ -123,13 +115,6 @@ async def test_api_request_emits_span_but_health_probe_does_not(
     assert api_spans, "no span emitted for the API request"
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "Backend does not yet stamp AG-UI events with an emission timestamp; "
-        "tracked as technical debt in knowledge/backlog.md"
-    ),
-)
 @pytest.mark.asyncio
 async def test_events_carry_authoritative_emission_timestamps(
     client: httpx.AsyncClient,
@@ -163,13 +148,6 @@ async def test_events_carry_authoritative_emission_timestamps(
     assert not missing, f"events without an emission timestamp: {sorted(set(missing))}"
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "Backend does not yet stamp AG-UI events with an emission timestamp; "
-        "tracked as technical debt in knowledge/backlog.md"
-    ),
-)
 @pytest.mark.asyncio
 async def test_streamed_events_expose_timestamps_to_clients(
     client: httpx.AsyncClient,

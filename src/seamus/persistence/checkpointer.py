@@ -30,6 +30,12 @@ from seamus.vault.interpolator import explode_secret_references
 logger = logging.getLogger(__name__)
 
 
+_ROLE_ALIASES: dict[str, str] = {
+    "human": "user",
+    "ai": "assistant",
+}
+
+
 def extract_readable_messages(checkpoint: Checkpoint) -> list[dict[str, Any]]:
     """Extract a human-readable list of messages from checkpoint channel values."""
     values = checkpoint.get("channel_values", {}) if isinstance(checkpoint, dict) else {}
@@ -48,6 +54,8 @@ def extract_readable_messages(checkpoint: Checkpoint) -> list[dict[str, Any]]:
             id_val = getattr(msg, "id", None)
             tool_calls = getattr(msg, "tool_calls", None)
             tool_call_id = getattr(msg, "tool_call_id", None)
+
+        role = _ROLE_ALIASES.get(str(role), str(role))
 
         item: dict[str, Any] = {
             "id": id_val,
@@ -267,6 +275,10 @@ class GitCheckpointSaver(MemorySaver):
             )
 
             messages = extract_readable_messages(checkpoint)
+            if not messages:
+                cp_tuple = self.get_tuple(config)
+                if cp_tuple is not None and isinstance(cp_tuple.checkpoint, dict):
+                    messages = extract_readable_messages(cp_tuple.checkpoint)
             if messages:
                 self.workspace_manager.save_thread_messages(
                     self.agent_id, self.session_id, target_uuid, messages
@@ -376,9 +388,9 @@ class GitCheckpointSaver(MemorySaver):
             if self.inner is not None
             else super().put(config, checkpoint, metadata, new_versions)
         )
-        self._checkpoint_external_repositories(config, checkpoint)
-        self._save_checkpoint_to_disk(config, checkpoint)
-        self._trigger_git_commit(config, checkpoint)
+        self._checkpoint_external_repositories(res, checkpoint)
+        self._save_checkpoint_to_disk(res, checkpoint)
+        self._trigger_git_commit(res, checkpoint)
         return res
 
     async def aput(
@@ -390,9 +402,9 @@ class GitCheckpointSaver(MemorySaver):
     ) -> RunnableConfig:
         if self.inner is not None:
             res = await self.inner.aput(config, checkpoint, metadata, new_versions)
-            self._checkpoint_external_repositories(config, checkpoint)
-            self._save_checkpoint_to_disk(config, checkpoint)
-            self._trigger_git_commit(config, checkpoint)
+            self._checkpoint_external_repositories(res, checkpoint)
+            self._save_checkpoint_to_disk(res, checkpoint)
+            self._trigger_git_commit(res, checkpoint)
             return res
         return await super().aput(config, checkpoint, metadata, new_versions)
 

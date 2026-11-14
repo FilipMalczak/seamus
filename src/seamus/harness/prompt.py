@@ -171,6 +171,17 @@ def build_default_identity() -> str:
     )
 
 
+def build_persona_identity(persona: str = "coder") -> str:
+    """Return the identity block for the configured agent persona."""
+    normalized = persona.strip().lower() if persona else "coder"
+    if not normalized or normalized == "coder":
+        return build_default_identity()
+    return (
+        f"You are Seamus, an autonomous AI agent operating with the {persona.strip()} persona.\n"
+        "You collaborate with the user to plan, execute, and verify tasks within your domain."
+    )
+
+
 def build_operating_environment(
     workdir: str = DEFAULT_OPERATIONAL_DIR,
     mode: str = ModeName.CHAT.value,
@@ -909,10 +920,11 @@ def build_scaffold_prompt(
     active_plan_id: str | None = None,
     active_plan_title: str | None = None,
     artifacts_implementation: ArtifactsImplementation = ArtifactsImplementation.SEAMUS,
+    persona: str = "coder",
 ) -> str:
     """Construct the base XML prompt scaffold without dynamic context or custom additions."""
     doc = SystemPromptDocument(
-        identity=build_default_identity(),
+        identity=build_persona_identity(persona),
         operating_environment=build_operating_environment(
             workdir,
             mode=mode,
@@ -1075,6 +1087,7 @@ def build_effective_system_prompt(
     skills: SkillsPromptDocument | None = None,
     plan: str | None = None,
     artifacts_implementation: ArtifactsImplementation = ArtifactsImplementation.SEAMUS,
+    persona: str = "coder",
 ) -> str:
     """Assemble and serialize the complete effective LM-XML system prompt."""
     dynamic_ctx = (
@@ -1095,7 +1108,7 @@ def build_effective_system_prompt(
     plan_text = plan.strip() if plan and plan.strip() else None
 
     doc = SystemPromptDocument(
-        identity=build_default_identity(),
+        identity=build_persona_identity(persona),
         operating_environment=build_operating_environment(
             workdir,
             mode=mode,

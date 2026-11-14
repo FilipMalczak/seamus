@@ -237,15 +237,6 @@ async def test_artifact_click_rejects_an_unknown_button(
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "The submit route dispatches a hardcoded 'submit' button id, but the harness "
-        "generates artifacts whose submit button is 'submit_btn', so the route rejects "
-        "every artifact the harness itself produces. Tracked by the 'Artifact submit route "
-        "dispatches an undeclared button id' entry in knowledge/backlog.md."
-    ),
-)
 async def test_artifact_submit_is_accepted(
     client: httpx.AsyncClient,
     make_session: Any,

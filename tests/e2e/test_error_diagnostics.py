@@ -9,15 +9,6 @@ The failure is produced deterministically with the ``steerable`` provider's
 ``error`` empty-queue strategy: an empty queue raises
 ``SteerableQueueEmptyError`` inside the agent run, which is exactly the kind
 of unhandled provider failure the invariant describes.
-
-Two of the expectations below are *not* met by the implementation today. The
-AG-UI layer converts a provider exception into a ``RunErrorEvent`` that
-carries only a message, so the runner's enriched ``RUN_ERROR`` payload (with
-``error_type`` and ``traceback``) is never produced on the real path — it is
-only reachable when the exception escapes the agent run entirely. Those
-assertions are marked ``xfail(strict=False)`` so the suite documents the gap
-without blocking, and they will start passing once the error payload is
-propagated. The gap is tracked in ``knowledge/backlog.md``.
 """
 
 from __future__ import annotations
@@ -167,15 +158,6 @@ async def test_a_failing_turn_marks_the_thread_as_failed(
     assert thread.status.value == "ERROR"
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "The AG-UI layer converts a provider exception into a RunErrorEvent "
-        "that carries only a message, so the runner's enriched RUN_ERROR "
-        "payload (error_type, traceback) is never produced on the real path; "
-        "tracked in knowledge/backlog.md"
-    ),
-)
 @pytest.mark.asyncio
 async def test_a_failing_turn_persists_the_error_type_and_traceback(
     client: httpx.AsyncClient,
@@ -209,14 +191,6 @@ async def test_a_failing_turn_persists_the_error_type_and_traceback(
     assert "SteerableQueueEmptyError" in (_event_field(error, "traceback") or "")
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "The AG-UI layer converts a provider exception into a RunErrorEvent "
-        "that carries only a message, so the error type never reaches the "
-        "client; tracked in knowledge/backlog.md"
-    ),
-)
 @pytest.mark.asyncio
 async def test_the_streamed_run_error_exposes_the_error_type(
     client: httpx.AsyncClient,

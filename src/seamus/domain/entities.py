@@ -1,6 +1,7 @@
 """Domain entities for agents, sessions, threads, and execution lifecycle."""
 
 import re
+import time
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Literal
@@ -136,7 +137,13 @@ class Thread(BaseModel):
         self.last_touched_at = datetime.now(UTC)
 
     def append_event(self, event: Any) -> None:
-        """Append an event to the thread's history and touch timestamp."""
+        """Append an event to the thread's history, stamping emission timestamp if absent."""
+        now_ms = int(time.time() * 1000)
+        if isinstance(event, dict):
+            if event.get("timestamp") is None:
+                event["timestamp"] = now_ms
+        elif hasattr(event, "timestamp") and getattr(event, "timestamp", None) is None:
+            event.timestamp = now_ms
         self.events.append(event)
         self.touch()
 

@@ -75,14 +75,6 @@ async def test_inspect_report_exposes_tools_without_secrets(
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason=(
-        "The inspector cannot reconstruct conversation history yet: the "
-        "checkpointer never writes messages.json and the checkpoint decoder "
-        "returns no messages, so history.message_count stays 0."
-    ),
-    strict=False,
-)
 async def test_inspect_report_reflects_conversation_history(
     client: httpx.AsyncClient,
     make_session: Any,
