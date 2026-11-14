@@ -653,6 +653,7 @@ def test_session_agent_runner_artifacts_implementation_toggle(
     assert "make_form" in tool_names
     assert "make_plan" in tool_names
     assert "wait_for_click" in tool_names
+    assert "start_executing" not in tool_names
 
     # Switch to NONE and reload
     session.config.artifacts_implementation = ArtifactsImplementation.NONE
@@ -665,7 +666,51 @@ def test_session_agent_runner_artifacts_implementation_toggle(
     assert "make_plan" not in none_tool_names
     assert "wait_for_click" not in none_tool_names
     assert "plan" in none_tool_names
+    assert "start_executing" in none_tool_names
     assert "discard" in none_tool_names
+
+
+def test_handle_start_executing_gating_and_transition(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify handle_start_executing only runs in plan/make with artifacts=none."""
+    from unittest.mock import MagicMock
+
+    def mock_create_deep_agent(**kwargs: Any) -> Any:
+        mock_graph = MagicMock()
+        mock_graph.nodes = {}
+        return mock_graph
+
+    monkeypatch.setattr("seamus.harness.runner.create_deep_agent", mock_create_deep_agent)
+
+    config = AgentConfig(
+        inference=InferenceConfig(api_key="mock-key"),
+        model_name="mock-model",
+        artifacts_implementation=ArtifactsImplementation.NONE,
+    )
+    agent = Agent(config=config, name="start-exec-agent")
+    session = agent.create_session(name="start-exec-session")
+    session.get_open_thread().mode = "plan"
+    session.get_open_thread().phase = "make"
+    runner = SessionAgentRunner(session=session, agent_entity=agent)
+
+    # Valid call in plan/make with artifacts_implementation=none
+    msg = runner.handle_start_executing(retained_skills=["python"])
+    assert "Plan/Execute" in msg
+    assert runner._pending_phase_transition == ("plan", "execute", True)
+    assert runner._pending_retained_skills == ["python"]
+
+    # Fails if artifacts_implementation is seamus
+    runner._pending_phase_transition = None
+    session.config.artifacts_implementation = ArtifactsImplementation.SEAMUS
+    with pytest.raises(ValueError, match="artifacts_implementation is 'none'"):
+        runner.handle_start_executing()
+
+    # Fails outside plan/make
+    session.config.artifacts_implementation = ArtifactsImplementation.NONE
+    session.get_open_thread().phase = "discuss"
+    with pytest.raises(ValueError, match="Plan/Make phase"):
+        runner.handle_start_executing()
 
 
 @pytest.mark.asyncio

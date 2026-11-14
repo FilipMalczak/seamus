@@ -22,6 +22,7 @@
     "grep": ["sandbox", "opensandbox"],
     "execute": ["sandbox", "opensandbox"],
     "plan": ["planning", "harness", "seamus"],
+    "start_executing": ["planning", "harness", "seamus"],
     "discard": ["planning", "harness", "seamus"],
     "make_plan": ["planning", "artifacts", "seamus"],
     "update_plan": ["planning", "artifacts", "seamus"],

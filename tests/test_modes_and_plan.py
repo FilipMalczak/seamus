@@ -151,17 +151,34 @@ def test_available_harness_tools_resolution_artifacts_none() -> None:
     make_tools_no_plan = resolve_available_harness_tools(
         "plan", "make", has_active_plan=False, artifacts_implementation=ArtifactsImplementation.NONE
     )
-    assert make_tools_no_plan == {"discard"}
+    assert make_tools_no_plan == {"start_executing", "discard"}
 
     make_tools_with_plan = resolve_available_harness_tools(
         "plan", "make", has_active_plan=True, artifacts_implementation=ArtifactsImplementation.NONE
     )
-    assert make_tools_with_plan == {"discard"}
+    assert make_tools_with_plan == {"start_executing", "discard"}
+
+    assert "start_executing" not in chat_tools
+    assert "start_executing" not in disc_tools
 
     exec_tools = resolve_available_harness_tools(
         "plan", "execute", artifacts_implementation=ArtifactsImplementation.NONE
     )
     assert exec_tools == {"discard"}
+
+    # When artifacts_implementation is SEAMUS, start_executing is never exposed
+    assert "start_executing" not in resolve_available_harness_tools(
+        "plan",
+        "make",
+        has_active_plan=False,
+        artifacts_implementation=ArtifactsImplementation.SEAMUS,
+    )
+    assert "start_executing" not in resolve_available_harness_tools(
+        "plan",
+        "make",
+        has_active_plan=True,
+        artifacts_implementation=ArtifactsImplementation.SEAMUS,
+    )
 
 
 def test_plan_builder_lifecycle(tmp_path: Path) -> None:

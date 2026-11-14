@@ -521,6 +521,7 @@ def test_prompt_artifacts_implementation_none() -> None:
     assert "make_questionnaire" not in discuss_prompt
     assert "make_form" not in discuss_prompt
     assert "make_plan" not in discuss_prompt
+    assert "start_executing" not in discuss_prompt
 
     # 5. Make phase prompt with artifacts_implementation=none
     make_prompt = build_effective_system_prompt(
@@ -534,6 +535,16 @@ def test_prompt_artifacts_implementation_none() -> None:
     assert "update_plan" not in make_prompt
     assert "edit_plan" not in make_prompt
     assert "active_plan_context" not in make_prompt
+    assert "start_executing" in make_prompt
+
+    # 5b. Make phase prompt with artifacts_implementation=seamus uses Proceed button
+    make_prompt_seamus = build_effective_system_prompt(
+        mode="plan",
+        phase="make",
+        artifacts_implementation=ArtifactsImplementation.SEAMUS,
+    )
+    assert "start_executing" not in make_prompt_seamus
+    assert "Proceed" in make_prompt_seamus
 
     # 6. Execute phase prompt with artifacts_implementation=none
     execute_prompt = build_effective_system_prompt(
@@ -543,3 +554,4 @@ def test_prompt_artifacts_implementation_none() -> None:
     )
     assert "<user_inquiry>" not in execute_prompt
     assert "/artifacts" not in execute_prompt
+    assert "start_executing" not in execute_prompt
