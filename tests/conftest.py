@@ -6,10 +6,12 @@ import logging
 import os
 import re
 import shutil
+import socket
 import subprocess
 import time
 from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import httpx
@@ -57,23 +59,43 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
                 item.add_marker(skip_e2e)
 
 
-def is_docker_available() -> bool:
-    """Return True if docker binary exists, daemon is responsive, and not explicitly disabled."""
-    if os.environ.get("SEAMUS_TEST_IN_MEMORY", "").lower() in ("true", "1", "yes"):
-        return False
-    if not shutil.which("docker"):
+def _probe_runtime(cmd: list[str]) -> bool:
+    """Return True if the given container runtime CLI is installed and responsive."""
+    if not all(shutil.which(part) for part in cmd if not part.startswith("-")):
         return False
     try:
         res = subprocess.run(
-            ["docker", "info"],
+            [*cmd, "info"],
             capture_output=True,
             text=True,
-            timeout=3,
+            timeout=5,
             check=False,
         )
         return res.returncode == 0
     except (subprocess.SubprocessError, OSError):
         return False
+
+
+def get_container_runtime() -> list[str] | None:
+    """Return the available container runtime command prefix (docker or nerdctl), or None."""
+    if os.environ.get("SEAMUS_TEST_IN_MEMORY", "").lower() in ("true", "1", "yes"):
+        return None
+    for candidate in (["docker"], ["nerdctl"], ["sudo", "-n", "nerdctl"]):
+        if _probe_runtime(candidate):
+            return candidate
+    return None
+
+
+def is_docker_available() -> bool:
+    """Return True if a supported container runtime (Docker or containerd/nerdctl) is available."""
+    return get_container_runtime() is not None
+
+
+def _allocate_ephemeral_port() -> int:
+    """Bind an ephemeral localhost TCP port and return its port number."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
 
 
 def _gitea_shared_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
@@ -84,18 +106,24 @@ def _gitea_shared_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return base
 
 
-def _start_gitea_container() -> dict[str, str | int]:
+def _start_gitea_container(runtime: list[str]) -> dict[str, Any]:
     """Start an ephemeral Gitea container, wait for health, and create the admin user."""
     container_name = f"seamus-test-gitea-{uuid4().hex[:8]}"
+    # nerdctl's dynamic host port allocation can fall back to a static port; pick one explicitly.
+    port_arg = (
+        "127.0.0.1::3000"
+        if runtime[-1] == "docker"
+        else f"127.0.0.1:{_allocate_ephemeral_port()}:3000"
+    )
     run_cmd = [
-        "docker",
+        *runtime,
         "run",
         "-d",
         "--rm",
         "--name",
         container_name,
         "-p",
-        "127.0.0.1::3000",
+        port_arg,
         "-e",
         "USER_UID=1000",
         "-e",
@@ -122,17 +150,19 @@ def _start_gitea_container() -> dict[str, str | int]:
 
     try:
         port_proc = subprocess.run(
-            ["docker", "port", container_name, "3000"],
+            [*runtime, "port", container_name, "3000"],
             check=True,
             capture_output=True,
             text=True,
         )
         port_match = re.search(r":(\d+)$", port_proc.stdout.strip())
         if not port_match:
-            raise RuntimeError(f"Could not parse port from docker port output: {port_proc.stdout}")
+            raise RuntimeError(
+                f"Could not parse port from {runtime[-1]} port output: {port_proc.stdout}"
+            )
         port = int(port_match.group(1))
     except Exception as exc:
-        subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
+        subprocess.run([*runtime, "rm", "-f", container_name], capture_output=True)
         raise RuntimeError(f"Failed to resolve test Gitea port: {exc}") from exc
 
     gitea_url = f"http://127.0.0.1:{port}"
@@ -152,18 +182,18 @@ def _start_gitea_container() -> dict[str, str | int]:
 
     if not ready:
         logs = subprocess.run(
-            ["docker", "logs", "--tail", "50", container_name],
+            [*runtime, "logs", "--tail", "50", container_name],
             capture_output=True,
             text=True,
         )
-        subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
+        subprocess.run([*runtime, "rm", "-f", container_name], capture_output=True)
         raise RuntimeError(
             f"Test Gitea container on port {port} failed to become healthy within 45s.\n"
             f"Logs:\n{logs.stdout}\n{logs.stderr}"
         )
 
     create_cmd = [
-        "docker",
+        *runtime,
         "exec",
         "-u",
         "1000:1000",
@@ -189,30 +219,33 @@ def _start_gitea_container() -> dict[str, str | int]:
         time.sleep(1.0)
     else:
         stderr = user_proc.stderr if user_proc is not None else "unknown error"
-        subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
+        subprocess.run([*runtime, "rm", "-f", container_name], capture_output=True)
         raise RuntimeError(f"Failed to create admin user in test Gitea: {stderr}")
 
     return {
         "container_name": container_name,
         "port": port,
         "url": gitea_url,
+        "runtime": runtime,
     }
 
 
 @pytest.fixture(scope="session")
 def ephemeral_gitea_session(
     tmp_path_factory: pytest.TempPathFactory,
-) -> Generator[dict[str, str | int] | None, None, None]:
+) -> Generator[dict[str, Any] | None, None, None]:
     """Session-scoped fixture sharing one ephemeral Gitea container across xdist workers."""
     if os.environ.get("SEAMUS_TEST_IN_MEMORY", "").lower() in ("true", "1", "yes"):
         logger.info("SEAMUS_TEST_IN_MEMORY is set; running tests with persistence disabled.")
         yield None
         return
 
-    if not is_docker_available():
+    runtime = get_container_runtime()
+    if runtime is None:
         raise RuntimeError(
-            "Docker is not available, but SEAMUS_TEST_IN_MEMORY is not enabled. "
-            "Start Docker or set SEAMUS_TEST_IN_MEMORY=true."
+            "No container runtime (Docker or containerd/nerdctl) is available, "
+            "but SEAMUS_TEST_IN_MEMORY is not enabled. "
+            "Start Docker/containerd or set SEAMUS_TEST_IN_MEMORY=true."
         )
 
     shared_root = _gitea_shared_root(tmp_path_factory)
@@ -224,18 +257,18 @@ def ephemeral_gitea_session(
         fcntl.flock(lock_file, fcntl.LOCK_EX)
         try:
             if info_path.exists():
-                gitea_info: dict[str, str | int] = json.loads(info_path.read_text())
+                gitea_info: dict[str, Any] = json.loads(info_path.read_text())
                 refs = int(refs_path.read_text()) if refs_path.exists() else 0
                 refs_path.write_text(str(refs + 1))
             else:
-                gitea_info = _start_gitea_container()
+                gitea_info = _start_gitea_container(runtime)
                 info_path.write_text(json.dumps(gitea_info))
                 refs_path.write_text("1")
         finally:
             fcntl.flock(lock_file, fcntl.LOCK_UN)
 
     workspace_root = tmp_path_factory.mktemp("test_workspaces")
-    session_info: dict[str, str | int] = {
+    session_info: dict[str, Any] = {
         **gitea_info,
         "workspace_dir": str(workspace_root),
     }
@@ -249,8 +282,9 @@ def ephemeral_gitea_session(
                 refs = int(refs_path.read_text()) if refs_path.exists() else 1
                 remaining = refs - 1
                 if remaining <= 0:
+                    runtime_cmd = gitea_info.get("runtime", runtime)
                     subprocess.run(
-                        ["docker", "rm", "-f", str(gitea_info["container_name"])],
+                        [*runtime_cmd, "rm", "-f", str(gitea_info["container_name"])],
                         capture_output=True,
                     )
                     info_path.unlink(missing_ok=True)
@@ -263,7 +297,7 @@ def ephemeral_gitea_session(
 
 @pytest.fixture(autouse=True, scope="session")
 def configure_test_environment(
-    ephemeral_gitea_session: dict[str, str | int] | None,
+    ephemeral_gitea_session: dict[str, Any] | None,
     tmp_path_factory: pytest.TempPathFactory,
 ) -> Generator[None, None, None]:
     """Configure persistence settings and environment variables for the entire test session."""
