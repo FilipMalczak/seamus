@@ -1376,7 +1376,6 @@ class SessionAgentRunner:
                 from opensandbox.models.execd import RunCommandOpts
                 from opensandbox.models.execd_sync import ExecutionHandlersSync
 
-                sandbox = backend._sandbox
                 handlers = ExecutionHandlersSync(
                     on_stdout=on_stdout,
                     on_stderr=on_stderr,
@@ -1385,7 +1384,12 @@ class SessionAgentRunner:
                     working_directory=initial_workdir,
                     timeout=timedelta(seconds=effective_timeout) if effective_timeout else None,
                 )
-                execution = sandbox.commands.run(wrapped_command, opts=opts, handlers=handlers)
+
+                def _exec_in_sandbox() -> Any:
+                    sandbox = backend._sandbox
+                    return sandbox.commands.run(wrapped_command, opts=opts, handlers=handlers)
+
+                execution = backend.run_with_recovery(_exec_in_sandbox)
 
                 # Fallback delivery for mocked / non-streaming execution handlers in tests
                 if not delivered_any and hasattr(execution, "logs"):

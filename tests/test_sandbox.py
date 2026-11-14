@@ -372,3 +372,137 @@ def test_sandbox_build_skill_volumes_tilde_expansion_and_missing_skipped(
     assert volumes[0].host is not None
     assert volumes[0].host.path == str(existing_skill.resolve())
     assert volumes[0].read_only is True
+
+
+def _make_not_found_exc(sandbox_id: str = "stale-sbx") -> Any:
+    from opensandbox.exceptions.sandbox import SandboxApiException, SandboxError
+
+    return SandboxApiException(
+        message=f"Sandbox {sandbox_id} not found.",
+        status_code=404,
+        error=SandboxError(
+            code="DOCKER::SANDBOX_NOT_FOUND",
+            message=f"Sandbox {sandbox_id} not found.",
+        ),
+    )
+
+
+def test_seamus_opensandbox_backend_recovers_on_sandbox_not_found(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stale_sandbox = MagicMock()
+    stale_sandbox.id = "stale-sbx"
+    stale_sandbox.commands.run.side_effect = _make_not_found_exc("stale-sbx")
+
+    fresh_execution = MagicMock()
+    fresh_execution.logs.stdout = [MagicMock(text="ok")]
+    fresh_execution.logs.stderr = []
+    fresh_execution.exit_code = 0
+
+    fresh_sandbox = MagicMock()
+    fresh_sandbox.id = "fresh-sbx"
+    fresh_sandbox.commands.run.return_value = fresh_execution
+
+    monkeypatch.setattr(
+        "seamus.harness.sandbox.SandboxSync.create",
+        MagicMock(return_value=fresh_sandbox),
+    )
+
+    backend = SeamusOpenSandboxBackend(
+        agent_id=uuid4(),
+        session_id=uuid4(),
+        data_dir=tmp_path / "data",
+        sandbox=stale_sandbox,
+    )
+
+    res = backend.execute("echo ok")
+    assert res.output == "ok"
+    assert res.exit_code == 0
+    stale_sandbox.close.assert_called_once()
+    fresh_sandbox.commands.run.assert_called_once()
+    assert backend._active_sandbox is fresh_sandbox
+
+
+def test_seamus_opensandbox_backend_does_not_retry_indefinitely_or_swallow_other_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from opensandbox.exceptions.sandbox import SandboxApiException, SandboxError
+
+    # 1. Second SANDBOX_NOT_FOUND propagates without infinite retry
+    stale_sandbox = MagicMock()
+    stale_sandbox.id = "stale-sbx"
+    stale_sandbox.commands.run.side_effect = _make_not_found_exc("stale-sbx")
+
+    also_missing = MagicMock()
+    also_missing.id = "also-missing"
+    also_missing.commands.run.side_effect = _make_not_found_exc("also-missing")
+
+    create_mock = MagicMock(return_value=also_missing)
+    monkeypatch.setattr("seamus.harness.sandbox.SandboxSync.create", create_mock)
+
+    backend = SeamusOpenSandboxBackend(
+        agent_id=uuid4(),
+        session_id=uuid4(),
+        data_dir=tmp_path / "data",
+        sandbox=stale_sandbox,
+    )
+
+    with pytest.raises(SandboxApiException):
+        backend.execute("echo ok")
+    create_mock.assert_called_once()
+
+    # 2. Unrelated 500 error propagates immediately without recreating
+    server_err_sandbox = MagicMock()
+    server_err_sandbox.id = "err-sbx"
+    server_err_sandbox.commands.run.side_effect = SandboxApiException(
+        message="Internal server error",
+        status_code=500,
+        error=SandboxError(code="INTERNAL_ERROR", message="boom"),
+    )
+    create_mock.reset_mock()
+    backend2 = SeamusOpenSandboxBackend(
+        agent_id=uuid4(),
+        session_id=uuid4(),
+        data_dir=tmp_path / "data",
+        sandbox=server_err_sandbox,
+    )
+
+    with pytest.raises(SandboxApiException):
+        backend2.execute("echo ok")
+    create_mock.assert_not_called()
+
+
+def test_seamus_opensandbox_backend_download_files_recovers_on_sandbox_not_found(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stale_sandbox = MagicMock()
+    stale_sandbox.id = "stale-sbx"
+    stale_sandbox.files.read_bytes.side_effect = _make_not_found_exc("stale-sbx")
+    # _classify_read_error calls self.execute(); return OTHER so error contains SANDBOX_NOT_FOUND
+    other_exec = MagicMock()
+    other_exec.logs.stdout = [MagicMock(text="OTHER")]
+    other_exec.logs.stderr = []
+    other_exec.exit_code = 0
+    stale_sandbox.commands.run.return_value = other_exec
+
+    fresh_sandbox = MagicMock()
+    fresh_sandbox.id = "fresh-sbx"
+    fresh_sandbox.files.read_bytes.return_value = b"hello"
+
+    monkeypatch.setattr(
+        "seamus.harness.sandbox.SandboxSync.create",
+        MagicMock(return_value=fresh_sandbox),
+    )
+
+    backend = SeamusOpenSandboxBackend(
+        agent_id=uuid4(),
+        session_id=uuid4(),
+        data_dir=tmp_path / "data",
+        sandbox=stale_sandbox,
+    )
+
+    responses = backend.download_files(["/workspace/test.txt"])
+    assert len(responses) == 1
+    assert responses[0].error is None
+    assert responses[0].content == b"hello"
+    assert backend._active_sandbox is fresh_sandbox

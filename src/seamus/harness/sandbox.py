@@ -5,15 +5,22 @@ import logging
 import os
 import secrets
 import shutil
+from collections.abc import Callable
 from datetime import timedelta
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar, cast
 from uuid import UUID
 
+from deepagents.backends.protocol import (
+    ExecuteResponse,
+    FileDownloadResponse,
+    FileUploadResponse,
+)
 from langchain_opensandbox import OpenSandboxBackend
 from opensandbox import SandboxSync
 from opensandbox.config.connection_sync import ConnectionConfigSync
+from opensandbox.exceptions.sandbox import SandboxApiException
 from opensandbox.models.sandboxes import PVC, Host, Volume
 from pydantic import BaseModel, Field
 
@@ -23,6 +30,20 @@ from seamus.harness.prompt import build_scaffold_prompt
 from seamus.persistence.external_repo import calculate_mount_paths
 
 logger = logging.getLogger(__name__)
+_T = TypeVar("_T")
+
+
+def is_sandbox_not_found(exc: BaseException) -> bool:
+    """Return True when exc indicates the remote OpenSandbox container no longer exists."""
+    if not isinstance(exc, SandboxApiException):
+        return False
+    if exc.status_code == 404:
+        return True
+    err_code = getattr(exc.error, "code", None) or ""
+    if "SANDBOX_NOT_FOUND" in err_code:
+        return True
+    return "SANDBOX_NOT_FOUND" in str(exc)
+
 
 DEFAULT_OPERATIONAL_DIR = "/workspace"
 DEFAULT_API_KEY_FILE = Path(".seamus/opensandbox/api_key")
@@ -457,6 +478,67 @@ class SeamusOpenSandboxBackend(OpenSandboxBackend):  # type: ignore[misc]
                 },
             )
         return self._active_sandbox
+
+    def _reset_stale_sandbox(self) -> None:
+        """Close local transport for a vanished sandbox and clear the cached reference."""
+        stale_id = self._active_sandbox.id if self._active_sandbox is not None else None
+        logger.warning(
+            "OpenSandbox %s not found for session %s; resetting to provision a fresh container",
+            stale_id,
+            self.session_id,
+        )
+        self.close()
+        self._active_sandbox = None
+
+    def run_with_recovery(self, fn: Callable[[], _T]) -> _T:
+        """Execute fn, recreating the sandbox once if the remote container was not found."""
+        try:
+            return fn()
+        except SandboxApiException as exc:
+            if not is_sandbox_not_found(exc):
+                raise
+            self._reset_stale_sandbox()
+            return fn()
+
+    def execute(
+        self,
+        command: str,
+        *,
+        timeout: int | None = None,
+    ) -> ExecuteResponse:
+        """Execute a shell command, recovering once if the remote sandbox vanished."""
+        return cast(
+            ExecuteResponse,
+            self.run_with_recovery(
+                lambda: super(SeamusOpenSandboxBackend, self).execute(command, timeout=timeout)
+            ),
+        )
+
+    def upload_files(self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
+        """Upload files into the sandbox, recovering once if the remote sandbox vanished."""
+        responses = cast(
+            list[FileUploadResponse],
+            self.run_with_recovery(
+                lambda: super(SeamusOpenSandboxBackend, self).upload_files(files)
+            ),
+        )
+        if any(r.error and "SANDBOX_NOT_FOUND" in r.error for r in responses):
+            self._reset_stale_sandbox()
+            return cast(list[FileUploadResponse], super().upload_files(files))
+        return responses
+
+    def download_files(self, paths: list[str]) -> list[FileDownloadResponse]:
+        """Download files from the sandbox, recovering once if the remote sandbox vanished."""
+        responses = cast(
+            list[FileDownloadResponse],
+            self.run_with_recovery(
+                lambda: super(SeamusOpenSandboxBackend, self).download_files(paths)
+            ),
+        )
+        if any(r.error and "SANDBOX_NOT_FOUND" in r.error for r in responses):
+            self._reset_stale_sandbox()
+            return cast(list[FileDownloadResponse], super().download_files(paths))
+        return responses
 
     def destroy(self) -> None:
         """Terminate the remote sandbox container and release local HTTP resources."""
