@@ -19,8 +19,10 @@ from seamus.harness.store import SlugConflictError, get_harness_store
 from seamus.persistence.workspace import get_workspace_manager
 from seamus.server.schemas import (
     BranchSessionRequest,
+    MountedRepoBranchInfo,
     MountedRepoCommitInfo,
     MountedRepoDiffInfo,
+    MountedRepoUncommittedFile,
     SessionCreateRequest,
     SessionDetailResponse,
     SessionDiffResponse,
@@ -497,18 +499,39 @@ async def get_session_diff(
                         base_commit=changes["base_commit"],
                         head_commit=changes["head_commit"],
                         commits=[MountedRepoCommitInfo(**c) for c in changes["commits"]],
+                        local_branches=[
+                            MountedRepoBranchInfo(**b) for b in changes.get("local_branches", [])
+                        ],
+                        uncommitted_files=[
+                            MountedRepoUncommittedFile(**u)
+                            for u in changes.get("uncommitted_files", [])
+                        ],
                         diff=changes["diff"],
                         has_uncommitted_changes=changes["has_uncommitted_changes"],
+                        gitea_repo_url=changes.get("gitea_repo_url"),
+                        gitea_semantic_branch_url=changes.get("gitea_semantic_branch_url"),
+                        gitea_checkpoint_branch_url=changes.get("gitea_checkpoint_branch_url"),
+                        gitea_compare_url=changes.get("gitea_compare_url"),
                     )
                 )
 
     pr_number: int | None = None
     pr_url: str | None = None
+    session_branch_url: str | None = None
+    compare_url: str | None = None
+    persist_settings = ws_mgr.settings
+    if persist_settings.enabled and persist_settings.gitea_external_url:
+        agent_gitea_base = (
+            f"{persist_settings.gitea_external_url.rstrip('/')}/"
+            f"{persist_settings.gitea_admin_user}/agent-{agent.id}"
+        )
+        session_branch_url = f"{agent_gitea_base}/src/branch/session/{session.id}"
+        compare_url = f"{agent_gitea_base}/compare/main...session/{session.id}"
+
     if active_pr is not None:
         raw_number = active_pr.get("number")
         if raw_number is not None:
             pr_number = int(raw_number)
-        persist_settings = ws_mgr.settings
         if (
             pr_number is not None
             and persist_settings.enabled
@@ -524,6 +547,8 @@ async def get_session_diff(
         session_id=session.id,
         pr_number=pr_number,
         pr_url=pr_url,
+        session_branch_url=session_branch_url,
+        compare_url=compare_url,
         diff=diff_text,
         mounted_repos=mounted_repos,
     )

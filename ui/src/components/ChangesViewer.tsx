@@ -16,6 +16,7 @@ import {
   FolderTree,
   GitBranch,
   GitCommitHorizontal,
+  GitMerge,
   GitPullRequest,
   Layers,
   List,
@@ -904,6 +905,31 @@ export function ChangesViewer({
             ) : (
               <span className="changes-pr-badge changes-pr-none">No active Sync PR</span>
             )}
+            {diffData?.compare_url && (
+              <a
+                href={diffData.compare_url}
+                target="_blank"
+                rel="noreferrer"
+                className="changes-gitea-link-pill"
+                title="Compare session branch against main in Gitea"
+              >
+                <span>Compare main...session</span>
+                <ExternalLink className="size-3" />
+              </a>
+            )}
+            {diffData?.session_branch_url && (
+              <a
+                href={diffData.session_branch_url}
+                target="_blank"
+                rel="noreferrer"
+                className="changes-gitea-link-pill"
+                title="Browse session branch in Gitea"
+              >
+                <GitBranch className="size-3" />
+                <span>Branch</span>
+                <ExternalLink className="size-3" />
+              </a>
+            )}
           </div>
           {(agentName || sessionName) && (
             <div className="changes-subtitle">
@@ -1279,7 +1305,20 @@ export function ChangesViewer({
                         <div className="changes-diff-group-header changes-mounted-repo-header">
                           <div className="changes-mounted-repo-title">
                             <FolderGit2 className="size-4 text-emerald-400" />
-                            <span>{entry.repo.mount_name}</span>
+                            {entry.repo.gitea_repo_url ? (
+                              <a
+                                href={entry.repo.gitea_repo_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="changes-mounted-repo-link"
+                                title="Open mirror repository in Gitea"
+                              >
+                                <span>{entry.repo.mount_name}</span>
+                                <ExternalLink className="size-3" />
+                              </a>
+                            ) : (
+                              <span>{entry.repo.mount_name}</span>
+                            )}
                             <code className="changes-mounted-repo-path">{entry.repo.mount_path}</code>
                             <span className="changes-diff-group-count">
                               ({entry.filteredFiles.length} file{entry.filteredFiles.length === 1 ? "" : "s"})
@@ -1303,19 +1342,138 @@ export function ChangesViewer({
                                 {entry.repo.commits.length} commit{entry.repo.commits.length === 1 ? "" : "s"}
                               </span>
                             )}
+                            {entry.repo.has_uncommitted_changes && (
+                              <span className="changes-mounted-uncommitted-badge">
+                                {(entry.repo.uncommitted_files?.length ?? 0) > 0
+                                  ? `${entry.repo.uncommitted_files!.length} uncommitted`
+                                  : "Uncommitted changes"}
+                              </span>
+                            )}
                           </div>
                         </div>
+
+                        {(entry.repo.gitea_compare_url ||
+                          entry.repo.gitea_semantic_branch_url ||
+                          entry.repo.gitea_checkpoint_branch_url) && (
+                          <div className="changes-mounted-gitea-links">
+                            {entry.repo.gitea_compare_url && (
+                              <a
+                                href={entry.repo.gitea_compare_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="changes-gitea-link-pill"
+                                title="Compare changes since initial mount in Gitea"
+                              >
+                                <span>Compare in Gitea</span>
+                                <ExternalLink className="size-3" />
+                              </a>
+                            )}
+                            {entry.repo.gitea_semantic_branch_url && (
+                              <a
+                                href={entry.repo.gitea_semantic_branch_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="changes-gitea-link-pill"
+                                title="Browse semantic branch in Gitea"
+                              >
+                                <GitBranch className="size-3" />
+                                <span>Semantic Branch</span>
+                                <ExternalLink className="size-3" />
+                              </a>
+                            )}
+                            {entry.repo.gitea_checkpoint_branch_url && (
+                              <a
+                                href={entry.repo.gitea_checkpoint_branch_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="changes-gitea-link-pill"
+                                title="Browse checkpoint snapshots in Gitea"
+                              >
+                                <span>Checkpoints</span>
+                                <ExternalLink className="size-3" />
+                              </a>
+                            )}
+                          </div>
+                        )}
+
+                        {(entry.repo.local_branches?.length ?? 0) > 1 && (
+                          <div className="changes-mounted-branches-strip">
+                            <span className="changes-mounted-strip-label">Local branches:</span>
+                            {entry.repo.local_branches!.map((b) => (
+                              <span
+                                key={b.name}
+                                className={`changes-mounted-local-branch ${b.is_current ? "current" : ""}`}
+                                title={`HEAD at ${b.short_sha}`}
+                              >
+                                <GitBranch className="size-3" />
+                                <span>{b.name}</span>
+                                <code>{b.short_sha}</code>
+                              </span>
+                            ))}
+                          </div>
+                        )}
 
                         {entry.repo.commits.length > 0 && (
                           <div className="changes-mounted-commits-list">
                             {entry.repo.commits.map((commit) => (
                               <div key={commit.sha} className="changes-mounted-commit-row">
-                                <GitCommitHorizontal className="size-3.5 text-emerald-400 shrink-0" />
-                                <code className="changes-mounted-commit-sha">{commit.short_sha}</code>
+                                {commit.is_merge ? (
+                                  <GitMerge className="size-3.5 text-violet-400 shrink-0" />
+                                ) : (
+                                  <GitCommitHorizontal className="size-3.5 text-emerald-400 shrink-0" />
+                                )}
+                                {commit.gitea_url ? (
+                                  <a
+                                    href={commit.gitea_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="changes-mounted-commit-sha-link"
+                                    title="View commit in Gitea"
+                                  >
+                                    <code>{commit.short_sha}</code>
+                                    <ExternalLink className="size-2.5" />
+                                  </a>
+                                ) : (
+                                  <code className="changes-mounted-commit-sha">{commit.short_sha}</code>
+                                )}
+                                {commit.is_merge && (
+                                  <span className="changes-mounted-merge-pill">Merge</span>
+                                )}
+                                {commit.refs?.map((refName) => (
+                                  <span key={refName} className="changes-mounted-ref-pill">
+                                    {refName}
+                                  </span>
+                                ))}
                                 <span className="changes-mounted-commit-msg">{commit.message}</span>
                                 <span className="changes-mounted-commit-author">{commit.author}</span>
                               </div>
                             ))}
+                          </div>
+                        )}
+
+                        {(entry.repo.uncommitted_files?.length ?? 0) > 0 && (
+                          <div className="changes-mounted-uncommitted-list">
+                            <div className="changes-mounted-uncommitted-header">
+                              Working tree / staged changes ({entry.repo.uncommitted_files!.length})
+                            </div>
+                            <div className="changes-mounted-uncommitted-items">
+                              {entry.repo.uncommitted_files!.map((uf) => (
+                                <div key={`${uf.path}-${uf.status}`} className="changes-mounted-uncommitted-row">
+                                  <code className="changes-mounted-uncommitted-path">{uf.path}</code>
+                                  <div className="changes-mounted-uncommitted-tags">
+                                    {uf.staged && (
+                                      <span className="changes-mounted-tag staged">staged</span>
+                                    )}
+                                    {uf.unstaged && uf.status !== "untracked" && (
+                                      <span className="changes-mounted-tag unstaged">unstaged</span>
+                                    )}
+                                    <span className={`changes-mounted-tag status-${uf.status}`}>
+                                      {uf.status}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         )}
 

@@ -313,3 +313,78 @@ def test_get_working_copy_changes_tracks_commits_branches_and_uncommitted(tmp_pa
         check=True,
     ).stdout
     assert "?? notes.txt" in status
+    assert len(changes["local_branches"]) == 2
+    assert any(b["name"] == "feat/new-api" and b["is_current"] for b in changes["local_branches"])
+    assert any(
+        u["path"] == "notes.txt" and u["status"] == "untracked"
+        for u in changes["uncommitted_files"]
+    )
+
+
+def test_get_working_copy_changes_tracks_merges_staged_and_gitea_links(tmp_path: Path) -> None:
+    ws_root = tmp_path / "workspaces"
+    offline_settings = PersistenceSettings(workspace_dir=ws_root, enabled=False)
+    manager = ExternalRepositoryManager(workspace_root=ws_root, settings=offline_settings)
+
+    agent_id = uuid4()
+    session_id = uuid4()
+    repo_cfg = ExternalRepositoryConfig(
+        id="att-merge",
+        url="https://github.com/example/merge-repo.git",
+        branch="master",
+    )
+    repo_dir = manager.provision_session_working_copy(
+        agent_id=agent_id,
+        session_id=session_id,
+        repo_config=repo_cfg,
+        mount_name="merge-repo",
+    )
+
+    # Create a side branch, commit, switch back to master and merge --no-ff
+    subprocess.run(["git", "checkout", "-b", "topic/feature"], cwd=repo_dir, check=True)
+    (repo_dir / "feat.txt").write_text("feature\n", encoding="utf-8")
+    subprocess.run(["git", "add", "feat.txt"], cwd=repo_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "Feature commit"], cwd=repo_dir, check=True)
+    subprocess.run(["git", "checkout", "master"], cwd=repo_dir, check=True)
+    subprocess.run(
+        ["git", "merge", "--no-ff", "topic/feature", "-m", "Merge topic/feature"],
+        cwd=repo_dir,
+        check=True,
+    )
+
+    # Stage a new file and modify an existing file without staging
+    (repo_dir / "staged.txt").write_text("staged\n", encoding="utf-8")
+    subprocess.run(["git", "add", "staged.txt"], cwd=repo_dir, check=True)
+    (repo_dir / "feat.txt").write_text("feature edited\n", encoding="utf-8")
+
+    # Enable Gitea URL generation on settings
+    manager.settings = PersistenceSettings(
+        workspace_dir=ws_root,
+        enabled=True,
+        gitea_external_url="http://localhost:3001",
+        gitea_admin_user="seamus",
+    )
+
+    changes = manager.get_working_copy_changes(agent_id, session_id, repo_cfg, "merge-repo")
+    assert changes is not None
+    assert changes["gitea_repo_url"] is not None
+    assert "http://localhost:3001/seamus/project-" in changes["gitea_repo_url"]
+    assert f"/src/branch/seamus/semantic/{session_id}/merge-repo" in (
+        changes["gitea_semantic_branch_url"] or ""
+    )
+    assert f"/src/branch/seamus/checkpoints/{session_id}/merge-repo" in (
+        changes["gitea_checkpoint_branch_url"] or ""
+    )
+    assert "/compare/" in (changes["gitea_compare_url"] or "")
+
+    merge_commits = [c for c in changes["commits"] if c["is_merge"]]
+    assert len(merge_commits) == 1
+    assert merge_commits[0]["message"] == "Merge topic/feature"
+    assert len(merge_commits[0]["parents"]) == 2
+    assert "/commit/" in (merge_commits[0]["gitea_url"] or "")
+
+    uncommitted_by_path = {u["path"]: u for u in changes["uncommitted_files"]}
+    assert uncommitted_by_path["staged.txt"]["staged"] is True
+    assert uncommitted_by_path["staged.txt"]["status"] == "added"
+    assert uncommitted_by_path["feat.txt"]["unstaged"] is True
+    assert uncommitted_by_path["feat.txt"]["status"] == "modified"
