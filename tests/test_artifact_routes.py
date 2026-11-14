@@ -196,3 +196,138 @@ async def test_artifact_click_closes_and_updates_state(tmp_path: Any, monkeypatc
         state_data = json.loads(state_file.read_text())
         assert state_data["clicksLeft"]["submit"] == 0
         assert state_data["last_event"]["context"]["backgroundColor"] == "blue"
+
+
+@pytest.mark.asyncio
+async def test_artifact_routes_corrupted_manifest_deleted_dir_and_quota_exhausted(
+    tmp_path: Any, monkeypatch: Any
+) -> None:
+    """I-L-006, E-E-002, E-E-006: Corrupted manifest, deleted dir, and exhausted quota."""
+    import shutil
+
+    monkeypatch.setenv("SEAMUS_PERSISTENCE_ENABLED", "false")
+    ws_mgr = GitWorkspaceManager()
+    ws_mgr.workspace_root = tmp_path
+    reset_workspace_manager(ws_mgr)
+
+    store = HarnessStore()
+    reset_harness_store(store)
+
+    agent_config = AgentConfig(
+        model_name="test-model",
+        inference=InferenceConfig(api_key="test-key"),
+    )
+    agent = store.create_agent(config=agent_config, name="test-agent-err")
+    session = store.create_session(
+        agent_identifier=str(agent.id),
+        config=agent_config,
+        name="test-session-err",
+    )
+
+    from seamus.harness.artifacts import ArtifactBuilder
+
+    artifacts_dir = ws_mgr.get_session_artifacts_dir(agent.id, session.id)
+    ArtifactBuilder.create_artifact(
+        artifacts_dir=artifacts_dir,
+        family="custom",
+        uuid="single-click",
+        manifest={
+            "name": "Single Click",
+            "exposition": "embedded",
+            "blocking": False,
+            "buttons": [{"id": "once", "clicks": 1}],
+        },
+        components=[
+            {"id": "root", "component": "Column", "children": ["once"]},
+            {"id": "once", "component": "Button", "child": "lbl"},
+            {"id": "lbl", "component": "Text", "text": "Once"},
+        ],
+    )
+
+    # Corrupted manifest.json
+    bad_dir = artifacts_dir / "custom" / "corrupt-art"
+    bad_dir.mkdir(parents=True, exist_ok=True)
+    (bad_dir / "body.json").write_text("[]", encoding="utf-8")
+    (bad_dir / "manifest.json").write_text("{ bad json", encoding="utf-8")
+
+    app = create_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        # I-L-006: Corrupted manifest returns 400
+        bad_res = await client.get(
+            f"/api/v-alpha/agent/{agent.id}/session/{session.id}/artifact/custom/corrupt-art"
+        )
+        assert bad_res.status_code == 400
+
+        # E-E-006: First click succeeds; immediate second click rejected with 400
+        ok_click = await client.post(
+            f"/api/v-alpha/agent/{agent.id}/session/{session.id}/artifact/custom/single-click/click",
+            json={"button_id": "once"},
+        )
+        assert ok_click.status_code == 200
+        dup_click = await client.post(
+            f"/api/v-alpha/agent/{agent.id}/session/{session.id}/artifact/custom/single-click/click",
+            json={"button_id": "once"},
+        )
+        assert dup_click.status_code == 400
+
+        # E-E-002: Delete directory on disk -> 404 by UUID, 400 by family/UUID
+        shutil.rmtree(artifacts_dir / "custom" / "single-click")
+        gone_by_uuid = await client.post(
+            f"/api/v-alpha/agent/{agent.id}/session/{session.id}/artifact/single-click/click",
+            json={"button_id": "once"},
+        )
+        assert gone_by_uuid.status_code == 404
+        gone_by_family = await client.post(
+            f"/api/v-alpha/agent/{agent.id}/session/{session.id}/artifact/custom/single-click/click",
+            json={"button_id": "once"},
+        )
+        assert gone_by_family.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_artifact_routes_session_isolation(tmp_path: Any, monkeypatch: Any) -> None:
+    """E-F-004: Two sessions maintain isolated artifact lists and states."""
+    monkeypatch.setenv("SEAMUS_PERSISTENCE_ENABLED", "false")
+    ws_mgr = GitWorkspaceManager()
+    ws_mgr.workspace_root = tmp_path
+    reset_workspace_manager(ws_mgr)
+
+    store = HarnessStore()
+    reset_harness_store(store)
+
+    agent_config = AgentConfig(
+        model_name="test-model",
+        inference=InferenceConfig(api_key="test-key"),
+    )
+    agent = store.create_agent(config=agent_config, name="iso-agent")
+    s1 = store.create_session(agent_identifier=str(agent.id), config=agent_config, name="s1")
+    s2 = store.create_session(agent_identifier=str(agent.id), config=agent_config, name="s2")
+
+    from seamus.harness.artifacts import ArtifactBuilder
+
+    ArtifactBuilder.create_artifact(
+        artifacts_dir=ws_mgr.get_session_artifacts_dir(agent.id, s1.id),
+        family="custom",
+        uuid="art-s1",
+        manifest={"name": "S1 Art"},
+        components=[{"id": "root", "component": "Text", "text": "S1"}],
+    )
+    ArtifactBuilder.create_artifact(
+        artifacts_dir=ws_mgr.get_session_artifacts_dir(agent.id, s2.id),
+        family="custom",
+        uuid="art-s2",
+        manifest={"name": "S2 Art"},
+        components=[{"id": "root", "component": "Text", "text": "S2"}],
+    )
+
+    app = create_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        l1 = await client.get(f"/api/v-alpha/agent/{agent.id}/session/{s1.id}/artifact")
+        l2 = await client.get(f"/api/v-alpha/agent/{agent.id}/session/{s2.id}/artifact")
+        assert [a["uuid"] for a in l1.json()] == ["art-s1"]
+        assert [a["uuid"] for a in l2.json()] == ["art-s2"]
+
+        cross = await client.get(
+            f"/api/v-alpha/agent/{agent.id}/session/{s1.id}/artifact/custom/art-s2"
+        )
+        assert cross.status_code == 404

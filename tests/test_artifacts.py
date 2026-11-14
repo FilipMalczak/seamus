@@ -1446,3 +1446,343 @@ def test_questionnaire_answers_md_choice_id_and_other_writein(tmp_path: Path) ->
     assert "> Production ready" in content
     assert "empty_unmapped" not in content
     assert "empty_list_unmapped" not in content
+
+
+def test_artifact_builder_supplied_and_auto_uuid_isolation(tmp_path: Path) -> None:
+    """U-A-005, U-A-006, U-A-008: supplied/auto UUIDs and isolated filesystem side-effects."""
+    from uuid import UUID
+
+    sentinel = tmp_path / "unrelated.txt"
+    sentinel.write_text("keep me", encoding="utf-8")
+
+    artifacts_dir = tmp_path / "artifacts"
+    manifest = ArtifactManifest(name="UUID Test", exposition="embedded")
+    components: list[dict[str, Any]] = [
+        {"id": "root", "component": "Column", "children": ["txt"]},
+        {"id": "txt", "component": "Text", "text": "Hello"},
+    ]
+
+    supplied = "123e4567-e89b-12d3-a456-426614174000"
+    res_supplied = ArtifactBuilder.create_artifact(
+        artifacts_dir=artifacts_dir,
+        family="custom",
+        manifest=manifest,
+        components=components,
+        uuid=supplied,
+    )
+    assert res_supplied == supplied
+    assert (artifacts_dir / "custom" / supplied).is_dir()
+
+    auto_1 = ArtifactBuilder.create_artifact(
+        artifacts_dir=artifacts_dir,
+        family="custom",
+        manifest=manifest,
+        components=components,
+    )
+    auto_2 = ArtifactBuilder.create_artifact(
+        artifacts_dir=artifacts_dir,
+        family="custom",
+        manifest=manifest,
+        components=components,
+    )
+    assert auto_1 != auto_2
+    assert UUID(auto_1).version == 4
+    assert UUID(auto_2).version == 4
+
+    # Only expected files exist inside the artifact directory; unrelated files untouched
+    created_files = {p.name for p in (artifacts_dir / "custom" / supplied).iterdir()}
+    assert created_files == {"body.json", "manifest.json", "state.json"}
+    assert sentinel.read_text(encoding="utf-8") == "keep me"
+
+
+def test_questionnaire_defaults_validation_and_submit_button(tmp_path: Path) -> None:
+    """U-Q-002, U-Q-004, U-Q-006, U-Q-007: Question validation, defaults, and submit button."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        Question.model_validate({"answers": ["Yes", "No"]})
+    with pytest.raises(ValidationError):
+        Question.model_validate({"body": "Missing answers?"})
+
+    q_single = Question(body="Single?", answers=["A", "B"])
+    assert q_single.multiple_choice is False
+    assert q_single.write_in is False
+
+    q_multi = Question(body="Multi?", answers=["X", "Y"], multiple_choice=True)
+    artifacts_dir = tmp_path / "artifacts"
+
+    # blocking=False creates a non-blocking questionnaire
+    q_uuid = QuestionnaireBuilder.create_questionnaire(
+        artifacts_dir=artifacts_dir,
+        questions=[q_single, q_multi],
+        title="Defaults Check",
+        blocking=False,
+    )
+    resolver = ArtifactResolver(artifacts_dir)
+    assert resolver.has_open_blocking_artifact() is False
+
+    info = resolver.load_artifact("questionnaires", q_uuid)
+    assert info.manifest.blocking is False
+    assert len(info.manifest.buttons) == 1
+    submit_btn = info.manifest.buttons[0]
+    assert submit_btn.id == "submit_btn"
+    assert submit_btn.unblocking is True
+    assert submit_btn.closing is True
+
+    choicesets = [c for c in info.body if c.get("component") == "ChoiceSet"]
+    assert len(choicesets) == 2
+    assert choicesets[0]["isMultiSelect"] is False
+    assert choicesets[0]["value"] == ""
+    assert choicesets[1]["isMultiSelect"] is True
+    assert choicesets[1]["value"] == []
+
+    buttons = [c for c in info.body if c.get("component") == "Button"]
+    assert len(buttons) == 1
+    assert buttons[0]["action"]["event"]["name"] == "submit_questionnaire"
+
+
+@pytest.mark.asyncio
+async def test_wait_for_click_nonexistent_fresh_and_button_filter(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """U-W-001, U-W-002, U-W-003, U-W-006: wait_for_click error, fresh=False/True, and button_id."""
+    from seamus.domain.entities import AgentStatus
+    from seamus.persistence import GitWorkspaceManager, reset_workspace_manager
+
+    monkeypatch.setenv("SEAMUS_PERSISTENCE_ENABLED", "false")
+    ws_mgr = GitWorkspaceManager()
+    ws_mgr.workspace_root = tmp_path
+    reset_workspace_manager(ws_mgr)
+
+    store = HarnessStore()
+    config = _make_agent_config()
+    agent = store.create_agent(config=config, name="agent-wait")
+    session = store.create_session(agent_identifier=str(agent.id), name="session-wait")
+    runner = SessionAgentRunner(session=session)
+
+    # U-W-001: non-existent artifact raises ValueError
+    with pytest.raises(ValueError, match="does not exist"):
+        await runner.handle_wait_for_click("nonexistent-uuid")
+
+    artifacts_dir = ws_mgr.get_session_artifacts_dir(session.agent_id, session.id)
+    art_uuid = ArtifactBuilder.create_artifact(
+        artifacts_dir=artifacts_dir,
+        family="custom",
+        manifest=ArtifactManifest(
+            name="Wait Test",
+            buttons=[
+                ManifestButton(id="btn_alpha", clicks="*"),
+                ManifestButton(id="btn_beta", clicks="*"),
+            ],
+        ),
+        components=[
+            {"id": "root", "component": "Column", "children": ["btn_alpha", "btn_beta"]},
+            {"id": "btn_alpha", "component": "Button", "child": "l1"},
+            {"id": "l1", "component": "Text", "text": "Alpha"},
+            {"id": "btn_beta", "component": "Button", "child": "l2"},
+            {"id": "l2", "component": "Text", "text": "Beta"},
+        ],
+    )
+
+    interactions_dir = artifacts_dir / "custom" / art_uuid / "interactions"
+    interactions_dir.mkdir(parents=True, exist_ok=True)
+    (interactions_dir / "btn_alpha.json").write_text(
+        json.dumps({"choice": "one"}), encoding="utf-8"
+    )
+
+    thread = session.get_open_thread()
+    assert thread is not None
+    thread.status = AgentStatus.EXECUTING_TOOL
+
+    # U-W-003: fresh=False returns existing click without suspending
+    res_raw = await runner.handle_wait_for_click(art_uuid, fresh=False)
+    res = json.loads(res_raw)
+    assert res["artifact_id"] == art_uuid
+    assert res["button_id"] == "btn_alpha"
+    assert res["context"] == {"choice": "one"}
+    assert thread.status == AgentStatus.EXECUTING_TOOL
+
+    # U-W-006: fresh=False with matching button_id (including hyphen/underscore normalization)
+    res_filtered = json.loads(
+        await runner.handle_wait_for_click(art_uuid, button_id="btn-alpha", fresh=False)
+    )
+    assert res_filtered["button_id"] == "btn-alpha"
+    assert res_filtered["context"] == {"choice": "one"}
+    assert thread.status == AgentStatus.EXECUTING_TOOL
+
+    # U-W-006: fresh=False with different button_id does not match and suspends (times out)
+    with pytest.raises(TimeoutError):
+        await runner.handle_wait_for_click(
+            art_uuid, button_id="btn_beta", fresh=False, timeout=0.05
+        )
+
+    # U-W-002 & U-W-05: fresh=True ignores existing click, suspends with pending_wait, and times out
+    import asyncio
+
+    thread.status = AgentStatus.EXECUTING_TOOL
+    wait_task = asyncio.create_task(runner.handle_wait_for_click(art_uuid, fresh=True))
+    await asyncio.sleep(0.05)
+    assert thread.status == AgentStatus.AWAITING_USER
+    session_dir = ws_mgr.get_session_workspace_path(session.agent_id, session.id)
+    pending_wait = (
+        session_dir / "agent" / "state" / "threads" / str(thread.id) / "pending_wait.json"
+    )
+    assert pending_wait.is_file()
+    assert json.loads(pending_wait.read_text(encoding="utf-8"))["artifact_id"] == art_uuid
+    assert (art_uuid, None) in runner._pending_clicks
+    wait_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await wait_task
+
+    with pytest.raises(TimeoutError):
+        await runner.handle_wait_for_click(art_uuid, fresh=True, timeout=0.05)
+
+
+def test_dispatch_button_click_returns_all_widget_data_and_drops_dynamic_context(
+    tmp_path: Path,
+) -> None:
+    """U-W-04, U-W-07, U-S-004: ClickResult shape, widget data, and dynamic context."""
+    artifacts_dir = tmp_path / "artifacts"
+    art_uuid = ArtifactBuilder.create_artifact(
+        artifacts_dir=artifacts_dir,
+        family="custom",
+        manifest=ArtifactManifest(
+            name="Context Filter",
+            buttons=[ManifestButton(id="inspect_btn", clicks="*")],
+        ),
+        components=[
+            {"id": "root", "component": "Column", "children": ["inspect_btn"]},
+            {
+                "id": "inspect_btn",
+                "component": "Button",
+                "child": "lbl",
+                "action": {
+                    "event": {
+                        "name": "inspect_event",
+                        "context": {
+                            "static_key": "allowed",
+                            "dynamic_ptr": {"path": "/secret"},
+                        },
+                    }
+                },
+            },
+            {"id": "lbl", "component": "Text", "text": "Inspect"},
+        ],
+    )
+
+    result = dispatch_button_click(
+        artifacts_dir=artifacts_dir,
+        family="custom",
+        uuid=art_uuid,
+        button_id="inspect_btn",
+        event="inspect_event",
+        data={"field_a": "val_a", "field_b": ["x", "y"]},
+        timestamp="2026-11-14T12:00:00Z",
+    )
+
+    assert result.artifact_id == art_uuid
+    assert result.button_id == "inspect_btn"
+    assert result.event == "inspect_event"
+    assert result.timestamp == "2026-11-14T12:00:00Z"
+    assert result.data == {"field_a": "val_a", "field_b": ["x", "y"]}
+    assert result.context == {"static_key": "allowed"}
+    assert "dynamic_ptr" not in result.context
+
+
+def test_questionnaire_multiple_choice_deselected_empty_list(tmp_path: Path) -> None:
+    """E-F-005: Deselecting multiple-choice options records an empty list in state and result."""
+    artifacts_dir = tmp_path / "artifacts"
+    q = Question(body="Pick tags", answers=["Tag1", "Tag2"], multiple_choice=True)
+    q_uuid = QuestionnaireBuilder.create_questionnaire(
+        artifacts_dir=artifacts_dir,
+        questions=[q],
+        title="Multi Empty",
+    )
+    art_dir = artifacts_dir / "questionnaires" / q_uuid
+    schema = json.loads((art_dir / "schema.json").read_text(encoding="utf-8"))
+    choice_id = schema["questions"][0]["choice_id"]
+
+    result = dispatch_button_click(
+        artifacts_dir=artifacts_dir,
+        family="questionnaires",
+        uuid=q_uuid,
+        button_id="submit_btn",
+        data={choice_id: []},
+        timestamp="2026-11-14T12:00:00Z",
+    )
+    assert result.data[choice_id] == []
+    state = json.loads((art_dir / "state.json").read_text(encoding="utf-8"))
+    assert state["last_event"]["data"][choice_id] == []
+    assert (art_dir / "answers.md").is_file()
+
+
+def test_artifact_resolver_persistence_and_corrupted_files(tmp_path: Path) -> None:
+    """I-L-003, I-L-006, E-E-001: Resolver persistence and corrupted file handling."""
+    artifacts_dir = tmp_path / "artifacts"
+    q_uuid = QuestionnaireBuilder.create_questionnaire(
+        artifacts_dir=artifacts_dir,
+        questions=[Question(body="Continue?", answers=["Yes", "No"])],
+        title="Persist Test",
+    )
+    dispatch_button_click(
+        artifacts_dir=artifacts_dir,
+        family="questionnaires",
+        uuid=q_uuid,
+        button_id="submit_btn",
+        data={"q_1": "yes"},
+        timestamp="2026-11-14T10:00:00Z",
+    )
+
+    # Simulate process restart with a fresh ArtifactResolver instance
+    fresh_resolver = ArtifactResolver(artifacts_dir)
+    loaded = fresh_resolver.load_artifact("questionnaires", q_uuid)
+    assert loaded.is_closed is True
+    assert loaded.state.last_event is not None
+    assert loaded.state.last_event["timestamp"] == "2026-11-14T10:00:00Z"
+
+    # E-E-001: Corrupted state.json / body.json fall back gracefully
+    art_dir = artifacts_dir / "questionnaires" / q_uuid
+    (art_dir / "state.json").write_text("{ bad json", encoding="utf-8")
+    (art_dir / "body.json").write_text("{ bad json", encoding="utf-8")
+    degraded = fresh_resolver.load_artifact("questionnaires", q_uuid)
+    assert degraded.body == []
+    assert degraded.state.last_event is None
+
+    # I-L-006: Corrupted manifest.json raises on load_artifact and is skipped in list_artifacts
+    bad_dir = artifacts_dir / "custom" / "bad-manifest"
+    bad_dir.mkdir(parents=True, exist_ok=True)
+    (bad_dir / "body.json").write_text("[]", encoding="utf-8")
+    (bad_dir / "manifest.json").write_text("{ bad json", encoding="utf-8")
+    with pytest.raises(ValueError):
+        fresh_resolver.load_artifact("custom", "bad-manifest")
+    listed_uuids = {a.uuid for a in fresh_resolver.list_artifacts()}
+    assert q_uuid in listed_uuids
+    assert "bad-manifest" not in listed_uuids
+
+
+@pytest.mark.asyncio
+async def test_concurrent_artifact_creation(tmp_path: Path) -> None:
+    """I-L-005, U-L-003: 50 concurrent artifact creations succeed without race conditions."""
+    import asyncio
+
+    artifacts_dir = tmp_path / "artifacts"
+    manifest = ArtifactManifest(name="Concurrent", exposition="embedded")
+    components: list[dict[str, Any]] = [
+        {"id": "root", "component": "Column", "children": ["t"]},
+        {"id": "t", "component": "Text", "text": "Item"},
+    ]
+
+    async def _create(idx: int) -> str:
+        family = "custom" if idx % 2 == 0 else "forms"
+        return await asyncio.to_thread(
+            ArtifactBuilder.create_artifact,
+            artifacts_dir=artifacts_dir,
+            family=family,
+            manifest=manifest,
+            components=components,
+        )
+
+    uuids = await asyncio.gather(*[_create(i) for i in range(50)])
+    assert len(set(uuids)) == 50
+    resolver = ArtifactResolver(artifacts_dir)
+    assert len(resolver.list_artifacts()) == 50
