@@ -13,7 +13,7 @@ from collections import Counter, defaultdict
 from collections.abc import Sequence
 from io import BytesIO
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from seamus.config.models import ExternalRepositoryConfig
@@ -298,6 +298,7 @@ class ExternalRepositoryManager:
                 (working_copy / "README.md").write_text(f"# {mount_name}\n", encoding="utf-8")
                 self._run_git(working_copy, ["add", "README.md"])
                 self._run_git(working_copy, ["commit", "-m", "Initial commit"])
+                self._record_initial_base_commit(agent_id, session_id, repo_config, working_copy)
             return working_copy
 
         repo_name = self.get_project_repo_name(project_id)
@@ -326,10 +327,241 @@ class ExternalRepositoryManager:
                             target_branch,
                             mount_name,
                         )
+            self._record_initial_base_commit(agent_id, session_id, repo_config, working_copy)
         else:
             self._configure_git_identity(working_copy)
 
         return working_copy
+
+    def _get_base_commit_file(
+        self,
+        agent_id: UUID,
+        session_id: UUID,
+        attachment_id: str,
+    ) -> Path:
+        return self.get_session_indexes_dir(agent_id, session_id) / f"{attachment_id}.base_commit"
+
+    def _record_initial_base_commit(
+        self,
+        agent_id: UUID,
+        session_id: UUID,
+        repo_config: ExternalRepositoryConfig,
+        working_copy: Path,
+    ) -> str | None:
+        """Persist the initial HEAD SHA at mount time outside the working tree."""
+        head_res = self._run_git(working_copy, ["rev-parse", "HEAD"], check=False)
+        if head_res.returncode != 0:
+            return None
+        head_sha = head_res.stdout.strip()
+        if not head_sha:
+            return None
+        base_file = self._get_base_commit_file(agent_id, session_id, repo_config.id)
+        base_file.parent.mkdir(parents=True, exist_ok=True)
+        base_file.write_text(head_sha, encoding="utf-8")
+        return head_sha
+
+    def _resolve_base_commit(
+        self,
+        agent_id: UUID,
+        session_id: UUID,
+        repo_config: ExternalRepositoryConfig,
+        working_copy: Path,
+        head_commit: str,
+    ) -> str:
+        """Resolve the base commit SHA for diffing changes since initial mount."""
+        base_file = self._get_base_commit_file(agent_id, session_id, repo_config.id)
+        candidates: list[str] = []
+        if base_file.exists():
+            recorded = base_file.read_text(encoding="utf-8").strip()
+            if recorded:
+                candidates.append(recorded)
+        candidates.extend([f"origin/{repo_config.branch}", repo_config.branch])
+
+        for ref in candidates:
+            res = self._run_git(
+                working_copy, ["rev-parse", "--verify", f"{ref}^{{commit}}"], check=False
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                return res.stdout.strip()
+        return head_commit
+
+    def get_working_copy_changes(
+        self,
+        agent_id: UUID,
+        session_id: UUID,
+        repo_config: ExternalRepositoryConfig,
+        mount_name: str,
+    ) -> dict[str, Any] | None:
+        """Return commits, branch status, and unified diff since initial mount."""
+        working_copy = self.get_working_copy_path(agent_id, session_id, mount_name)
+        if not (working_copy / ".git").exists():
+            return None
+
+        head_res = self._run_git(working_copy, ["rev-parse", "HEAD"], check=False)
+        if head_res.returncode != 0 or not head_res.stdout.strip():
+            return None
+        head_commit = head_res.stdout.strip()
+
+        branch_res = self._run_git(working_copy, ["symbolic-ref", "--short", "HEAD"], check=False)
+        current_branch = (
+            branch_res.stdout.strip()
+            if branch_res.returncode == 0 and branch_res.stdout.strip()
+            else head_commit[:8]
+        )
+        branch_changed = current_branch != repo_config.branch
+
+        base_commit = self._resolve_base_commit(
+            agent_id, session_id, repo_config, working_copy, head_commit
+        )
+
+        canonical_url = canonicalize_git_url(repo_config.url)
+        project_id = derive_project_id(canonical_url)
+        repo_name = self.get_project_repo_name(project_id)
+        gitea_base: str | None = None
+        if self.settings.enabled and self.settings.gitea_external_url:
+            gitea_base = (
+                f"{self.settings.gitea_external_url.rstrip('/')}/"
+                f"{self.settings.gitea_admin_user}/{repo_name}"
+            )
+
+        commits: list[dict[str, Any]] = []
+        if base_commit != head_commit:
+            log_res = self._run_git(
+                working_copy,
+                [
+                    "log",
+                    "--format=%H%x1f%h%x1f%s%x1f%an%x1f%aI%x1f%P%x1f%D",
+                    f"{base_commit}..HEAD",
+                ],
+                check=False,
+            )
+            if log_res.returncode == 0:
+                for line in log_res.stdout.splitlines():
+                    parts = line.split("\x1f")
+                    if len(parts) == 7:
+                        sha = parts[0]
+                        parents = [p for p in parts[5].split() if p]
+                        refs = [r.strip() for r in parts[6].split(",") if r.strip()]
+                        commits.append(
+                            {
+                                "sha": sha,
+                                "short_sha": parts[1],
+                                "message": parts[2],
+                                "author": parts[3],
+                                "date": parts[4],
+                                "parents": parents,
+                                "is_merge": len(parents) > 1,
+                                "refs": refs,
+                                "gitea_url": f"{gitea_base}/commit/{sha}" if gitea_base else None,
+                            }
+                        )
+
+        local_branches: list[dict[str, Any]] = []
+        branches_res = self._run_git(
+            working_copy,
+            [
+                "for-each-ref",
+                "--format=%(refname:short)\t%(objectname:short)\t%(HEAD)",
+                "refs/heads",
+            ],
+            check=False,
+        )
+        if branches_res.returncode == 0:
+            for line in branches_res.stdout.splitlines():
+                parts = line.split("\t")
+                if len(parts) == 3:
+                    local_branches.append(
+                        {
+                            "name": parts[0],
+                            "short_sha": parts[1],
+                            "is_current": parts[2].strip() == "*",
+                        }
+                    )
+
+        status_res = self._run_git(working_copy, ["status", "--porcelain"], check=False)
+        uncommitted_files: list[dict[str, Any]] = []
+        for line in status_res.stdout.splitlines():
+            if len(line) < 4:
+                continue
+            xy = line[:2]
+            raw_path = line[3:]
+            if xy == "??":
+                uncommitted_files.append(
+                    {
+                        "path": raw_path,
+                        "status": "untracked",
+                        "staged": False,
+                        "unstaged": True,
+                    }
+                )
+            else:
+                staged = xy[0] != " "
+                unstaged = xy[1] != " "
+                code = xy[0] if staged else xy[1]
+                status_map = {
+                    "M": "modified",
+                    "A": "added",
+                    "D": "deleted",
+                    "R": "renamed",
+                    "C": "copied",
+                    "U": "unmerged",
+                }
+                uncommitted_files.append(
+                    {
+                        "path": raw_path,
+                        "status": status_map.get(code, "modified"),
+                        "staged": staged,
+                        "unstaged": unstaged,
+                    }
+                )
+        has_uncommitted_changes = len(uncommitted_files) > 0
+
+        indexes_dir = self.get_session_indexes_dir(agent_id, session_id)
+        indexes_dir.mkdir(parents=True, exist_ok=True)
+        alt_index = indexes_dir / f"{repo_config.id}.diff.idx"
+        env = {"GIT_INDEX_FILE": str(alt_index.resolve())}
+        self._run_git(working_copy, ["read-tree", head_commit], env=env)
+        self._run_git(working_copy, ["add", "-A", "--", "."], env=env)
+        diff_res = self._run_git(
+            working_copy,
+            ["diff", "--cached", "--no-color", base_commit],
+            env=env,
+            check=False,
+        )
+        diff_text = diff_res.stdout if diff_res.returncode in (0, 1) else ""
+
+        return {
+            "attachment_id": repo_config.id,
+            "mount_name": mount_name,
+            "mount_path": f"/projects/{mount_name}",
+            "url": repo_config.url,
+            "configured_branch": repo_config.branch,
+            "current_branch": current_branch,
+            "branch_changed": branch_changed,
+            "base_commit": base_commit,
+            "head_commit": head_commit,
+            "commits": commits,
+            "local_branches": local_branches,
+            "uncommitted_files": uncommitted_files,
+            "diff": diff_text,
+            "has_uncommitted_changes": has_uncommitted_changes,
+            "gitea_repo_url": gitea_base,
+            "gitea_semantic_branch_url": (
+                f"{gitea_base}/src/branch/seamus/semantic/{session_id}/{mount_name}"
+                if gitea_base
+                else None
+            ),
+            "gitea_checkpoint_branch_url": (
+                f"{gitea_base}/src/branch/seamus/checkpoints/{session_id}/{mount_name}"
+                if gitea_base
+                else None
+            ),
+            "gitea_compare_url": (
+                f"{gitea_base}/compare/{base_commit}...{head_commit}"
+                if gitea_base and base_commit != head_commit
+                else None
+            ),
+        }
 
     def checkpoint_working_copy(
         self,

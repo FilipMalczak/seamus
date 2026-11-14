@@ -78,6 +78,7 @@ function installFetchStub(options = {}) {
               ? options.prUrl
               : "http://gitea.local/seamus/agent-x/pulls/7",
           diff: "diff" in options ? options.diff : DIFF,
+          mounted_repos: options.mountedRepos ?? [],
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
@@ -362,6 +363,115 @@ test("REQ-021: an empty diff renders the no-changes state", async () => {
   await settle();
 
   assert.ok(container.querySelector(".changes-empty-state"));
+
+  await unmount();
+});
+
+test("mounted repo diffs, branch changes, and commits are rendered in the Changes tab", async () => {
+  const mountedDiff = `diff --git a/app.py b/app.py
+index 1111111..2222222 100644
+--- a/app.py
++++ b/app.py
+@@ -1 +1,2 @@
+ print("hi")
++print("updated")
+`;
+  const { container, unmount } = await renderChanges({
+    diff: "",
+    mountedRepos: [
+      {
+        attachment_id: "att-1",
+        mount_name: "my-service",
+        mount_path: "/projects/my-service",
+        url: "https://github.com/example/my-service.git",
+        configured_branch: "main",
+        current_branch: "feat/auth",
+        branch_changed: true,
+        base_commit: "aaaaaaa",
+        head_commit: "bbbbbbb",
+        commits: [
+          {
+            sha: "bbbbbbb123456",
+            short_sha: "bbbbbbb",
+            message: "Implement auth middleware",
+            author: "Seamus Agent",
+            date: "2026-11-14T22:00:00+00:00",
+          },
+        ],
+        diff: mountedDiff,
+        has_uncommitted_changes: false,
+      },
+    ],
+  });
+  await settle();
+
+  assert.equal(container.querySelector(".changes-empty-state"), null);
+  assert.match(container.textContent, /my-service/);
+  assert.match(container.textContent, /main → feat\/auth/);
+  assert.match(container.textContent, /1 commit/);
+  assert.match(container.textContent, /Implement auth middleware/);
+  assert.match(container.textContent, /app\.py/);
+  assert.match(container.querySelector(".changes-diff-summary-count").textContent, /1 changed file/);
+
+  await unmount();
+});
+
+test("mounted repo Gitea links, merge badges, branches, and uncommitted breakdown render", async () => {
+  const { container, unmount } = await renderChanges({
+    diff: "",
+    mountedRepos: [
+      {
+        attachment_id: "att-2",
+        mount_name: "linked-repo",
+        mount_path: "/projects/linked-repo",
+        url: "https://github.com/example/linked-repo.git",
+        configured_branch: "master",
+        current_branch: "master",
+        branch_changed: false,
+        base_commit: "1111111",
+        head_commit: "2222222",
+        commits: [
+          {
+            sha: "2222222abcdef",
+            short_sha: "2222222",
+            message: "Merge branch 'topic'",
+            author: "Seamus Agent",
+            date: "2026-11-14T22:10:00+00:00",
+            parents: ["1111111", "3333333"],
+            is_merge: true,
+            refs: ["HEAD -> master"],
+            gitea_url: "http://gitea.local/seamus/project-abc/commit/2222222abcdef",
+          },
+        ],
+        local_branches: [
+          { name: "master", short_sha: "2222222", is_current: true },
+          { name: "topic", short_sha: "3333333", is_current: false },
+        ],
+        uncommitted_files: [
+          { path: "wip.py", status: "modified", staged: false, unstaged: true },
+        ],
+        diff: "",
+        has_uncommitted_changes: true,
+        gitea_repo_url: "http://gitea.local/seamus/project-abc",
+        gitea_semantic_branch_url: "http://gitea.local/seamus/project-abc/src/branch/seamus/semantic/s/linked-repo",
+        gitea_checkpoint_branch_url: "http://gitea.local/seamus/project-abc/src/branch/seamus/checkpoints/s/linked-repo",
+        gitea_compare_url: "http://gitea.local/seamus/project-abc/compare/1111111...2222222",
+      },
+    ],
+  });
+  await settle();
+
+  assert.match(container.textContent, /Compare in Gitea/);
+  assert.match(container.textContent, /Semantic Branch/);
+  assert.match(container.textContent, /Checkpoints/);
+  assert.match(container.textContent, /Merge/);
+  assert.match(container.textContent, /Local branches:/);
+  assert.match(container.textContent, /wip\.py/);
+  assert.match(container.textContent, /1 uncommitted/);
+
+  const commitLink = container.querySelector(".changes-mounted-commit-sha-link");
+  assert.ok(commitLink);
+  assert.equal(commitLink.getAttribute("href"), "http://gitea.local/seamus/project-abc/commit/2222222abcdef");
 
   await unmount();
 });

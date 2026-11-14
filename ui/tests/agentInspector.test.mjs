@@ -457,14 +457,11 @@ test("REQ-018: the steerable tab is absent when there are no steerable instances
   await unmount();
 });
 
-test("REQ-018: the trajectory tab reports the message count", async () => {
+test("the inspector does not render a trajectory tab", async () => {
   const { container, unmount } = await renderInspector();
   await settle();
 
-  await click(tab(container, "Trajectory"));
-
-  assert.match(container.textContent, /hello/);
-  assert.match(container.textContent, /hi/);
+  assert.equal(tab(container, "Trajectory"), undefined);
 
   await unmount();
 });

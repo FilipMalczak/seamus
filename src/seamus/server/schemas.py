@@ -315,14 +315,71 @@ class VaultTokenResponse(BaseModel):
     token: str | None = None
 
 
+class MountedRepoCommitInfo(BaseModel):
+    """Commit recorded in a mounted external repository since initial mount."""
+
+    sha: str
+    short_sha: str
+    message: str
+    author: str
+    date: str
+    parents: list[str] = Field(default_factory=list)
+    is_merge: bool = False
+    refs: list[str] = Field(default_factory=list)
+    gitea_url: str | None = None
+
+
+class MountedRepoBranchInfo(BaseModel):
+    """Local branch present in a mounted external repository."""
+
+    name: str
+    short_sha: str
+    is_current: bool = False
+
+
+class MountedRepoUncommittedFile(BaseModel):
+    """Uncommitted working-tree or staged change in a mounted external repository."""
+
+    path: str
+    status: str
+    staged: bool = False
+    unstaged: bool = False
+
+
+class MountedRepoDiffInfo(BaseModel):
+    """Diff, commits, and branch state for a mounted external repository."""
+
+    attachment_id: str
+    mount_name: str
+    mount_path: str
+    url: str
+    configured_branch: str
+    current_branch: str
+    branch_changed: bool = False
+    base_commit: str
+    head_commit: str
+    commits: list[MountedRepoCommitInfo] = Field(default_factory=list)
+    local_branches: list[MountedRepoBranchInfo] = Field(default_factory=list)
+    uncommitted_files: list[MountedRepoUncommittedFile] = Field(default_factory=list)
+    diff: str = ""
+    has_uncommitted_changes: bool = False
+    gitea_repo_url: str | None = None
+    gitea_semantic_branch_url: str | None = None
+    gitea_checkpoint_branch_url: str | None = None
+    gitea_compare_url: str | None = None
+
+
 class SessionDiffResponse(BaseModel):
-    """Response model containing active Sync PR diff for a session."""
+    """Response model containing active Sync PR diff and mounted repo changes for a session."""
 
     agent_id: UUID
     session_id: UUID
     pr_number: int | None = None
     pr_url: str | None = None
+    session_branch_url: str | None = None
+    compare_url: str | None = None
     diff: str = ""
+    mounted_repos: list[MountedRepoDiffInfo] = Field(default_factory=list)
 
 
 class TerminalStreamRequest(BaseModel):

@@ -3125,103 +3125,6 @@ body {
   font-weight: 500;
 }
 
-/* Messages Panel */
-.inspector-messages-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.messages-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.message-inspect-item {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-
-.message-inspect-item.role-user {
-  border-left: 3px solid var(--accent-primary);
-}
-
-.message-inspect-item.role-assistant {
-  border-left: 3px solid #34d399;
-}
-
-.msg-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.role-badge {
-  font-size: 0.68rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-
-.role-badge.role-user {
-  background: rgba(56, 189, 248, 0.15);
-  color: var(--accent-primary);
-}
-
-.role-badge.role-assistant {
-  background: rgba(16, 185, 129, 0.15);
-  color: #34d399;
-}
-
-.msg-id {
-  font-size: 0.7rem;
-  color: var(--text-muted);
-}
-
-.msg-tool-calls {
-  margin-top: 0.5rem;
-  padding-top: 0.5rem;
-  border-top: 1px dashed var(--border-color);
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.tool-calls-title {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-}
-
-.msg-tool-call-box {
-  background: #090d16;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 0.5rem 0.75rem;
-}
-
-.call-header {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: #facc15;
-}
-
-.call-args code {
-  font-size: 0.72rem;
-  color: #94a3b8;
-}
-
 /* Workspace Files Panel */
 .inspector-workspace-panel {
   display: flex;
@@ -4958,6 +4861,313 @@ a.changes-pr-badge:hover {
   border-radius: 4px;
   background: rgba(168, 85, 247, 0.1);
   border: 1px solid rgba(168, 85, 247, 0.25);
+}
+
+/* Mounted Repository Changes */
+.changes-mounted-branch-pill {
+  font-size: 0.68rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: 4px;
+  padding: 1px 6px;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.changes-mounted-no-files-note {
+  padding: 6px 12px;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+.changes-mounted-repo-header {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.changes-mounted-repo-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.changes-mounted-repo-path {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  background: rgba(15, 23, 42, 0.6);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.changes-mounted-repo-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.changes-mounted-branch-badge,
+.changes-mounted-commits-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: #cbd5e1;
+}
+
+.changes-mounted-branch-badge.changed {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.35);
+  color: #fbbf24;
+}
+
+.changes-mounted-commits-badge {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.28);
+  color: #34d399;
+}
+
+.changes-mounted-commits-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+}
+
+.changes-mounted-commit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+}
+
+.changes-mounted-commit-sha {
+  font-size: 0.72rem;
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.1);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.changes-mounted-commit-msg {
+  color: #e2e8f0;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.changes-mounted-commit-author {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+.changes-mounted-empty-diff {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  padding: 10px 12px;
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+}
+
+.changes-gitea-link-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 4px;
+  padding: 2px 8px;
+  text-decoration: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.changes-gitea-link-pill:hover {
+  background: rgba(56, 189, 248, 0.18);
+  border-color: rgba(56, 189, 248, 0.45);
+}
+
+.changes-mounted-repo-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #f1f5f9;
+  text-decoration: none;
+}
+
+.changes-mounted-repo-link:hover {
+  color: #38bdf8;
+  text-decoration: underline;
+}
+
+.changes-mounted-uncommitted-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #fbbf24;
+}
+
+.changes-mounted-gitea-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.changes-mounted-branches-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 0.75rem;
+}
+
+.changes-mounted-strip-label {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.changes-mounted-local-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.1);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  color: #cbd5e1;
+}
+
+.changes-mounted-local-branch.current {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #34d399;
+}
+
+.changes-mounted-local-branch code {
+  font-size: 0.68rem;
+  opacity: 0.8;
+}
+
+.changes-mounted-commit-sha-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.72rem;
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  padding: 1px 6px;
+  border-radius: 3px;
+  text-decoration: none;
+}
+
+.changes-mounted-commit-sha-link:hover {
+  background: rgba(16, 185, 129, 0.2);
+}
+
+.changes-mounted-merge-pill {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #c084fc;
+  background: rgba(168, 85, 247, 0.15);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  padding: 0 5px;
+  border-radius: 3px;
+}
+
+.changes-mounted-ref-pill {
+  font-size: 0.68rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  padding: 0 5px;
+  border-radius: 3px;
+}
+
+.changes-mounted-uncommitted-list {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  background: rgba(245, 158, 11, 0.06);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 6px;
+}
+
+.changes-mounted-uncommitted-header {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: #fbbf24;
+  margin-bottom: 6px;
+}
+
+.changes-mounted-uncommitted-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.changes-mounted-uncommitted-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.76rem;
+}
+
+.changes-mounted-uncommitted-path {
+  color: #e2e8f0;
+}
+
+.changes-mounted-uncommitted-tags {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.changes-mounted-tag {
+  font-size: 0.68rem;
+  padding: 0 6px;
+  border-radius: 3px;
+  background: rgba(148, 163, 184, 0.14);
+  color: #cbd5e1;
+}
+
+.changes-mounted-tag.staged {
+  background: rgba(16, 185, 129, 0.14);
+  color: #34d399;
+}
+
+.changes-mounted-tag.unstaged {
+  background: rgba(245, 158, 11, 0.14);
+  color: #fbbf24;
 }
 
 /* Artifact Card Diff vs Rendered Mode Toggle */

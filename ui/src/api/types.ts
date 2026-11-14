@@ -280,12 +280,61 @@ export interface VaultTokenResponse {
   token: string | null;
 }
 
+export type MountedRepoCommitInfo = {
+  sha: string;
+  short_sha: string;
+  message: string;
+  author: string;
+  date: string;
+  parents?: string[];
+  is_merge?: boolean;
+  refs?: string[];
+  gitea_url?: string | null;
+};
+
+export type MountedRepoBranchInfo = {
+  name: string;
+  short_sha: string;
+  is_current: boolean;
+};
+
+export type MountedRepoUncommittedFile = {
+  path: string;
+  status: string;
+  staged: boolean;
+  unstaged: boolean;
+};
+
+export type MountedRepoDiffInfo = {
+  attachment_id: string;
+  mount_name: string;
+  mount_path: string;
+  url: string;
+  configured_branch: string;
+  current_branch: string;
+  branch_changed: boolean;
+  base_commit: string;
+  head_commit: string;
+  commits: MountedRepoCommitInfo[];
+  local_branches?: MountedRepoBranchInfo[];
+  uncommitted_files?: MountedRepoUncommittedFile[];
+  diff: string;
+  has_uncommitted_changes: boolean;
+  gitea_repo_url?: string | null;
+  gitea_semantic_branch_url?: string | null;
+  gitea_checkpoint_branch_url?: string | null;
+  gitea_compare_url?: string | null;
+};
+
 export type SessionDiffResponse = {
   agent_id: string;
   session_id: string;
   pr_number: number | null;
   pr_url: string | null;
+  session_branch_url?: string | null;
+  compare_url?: string | null;
   diff: string;
+  mounted_repos?: MountedRepoDiffInfo[];
 };
 
 export interface ToolLabelInfo {
