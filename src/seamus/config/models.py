@@ -196,6 +196,7 @@ class AgentConfig(BaseModel):
     inference: InferenceConfig = Field(default_factory=InferenceConfig)
     model_name: str = "openai/gpt-oss-120b"
     mode: str = OperationalMode.PLAN.value
+    persona: str = "coder"
     system_prompt: str | None = None
     todo_implementation: TodoImplementation = TodoImplementation.SEAMUS
     skills_implementation: SkillsImplementation = SkillsImplementation.SEAMUS
@@ -263,6 +264,9 @@ class AgentConfig(BaseModel):
                     else self.model_name
                 ),
                 "mode": (overrides.mode if "mode" in overrides.model_fields_set else self.mode),
+                "persona": (
+                    overrides.persona if "persona" in overrides.model_fields_set else self.persona
+                ),
                 "system_prompt": (
                     overrides.system_prompt
                     if "system_prompt" in overrides.model_fields_set

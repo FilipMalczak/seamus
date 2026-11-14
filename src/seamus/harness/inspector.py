@@ -602,6 +602,17 @@ def get_default_tools_inspect_info() -> list[ToolInspectInfo]:
         ]
 
 
+_INSPECT_ROLE_ALIASES: dict[str, str] = {
+    "human": "user",
+    "ai": "assistant",
+}
+
+
+def _normalize_inspect_role(raw_role: Any) -> str:
+    role = str(raw_role or "unknown")
+    return _INSPECT_ROLE_ALIASES.get(role, role)
+
+
 def extract_thread_messages(
     agent_id: UUID,
     session_id: UUID,
@@ -626,7 +637,7 @@ def extract_thread_messages(
         items = [
             MessageHistoryItem(
                 id=str(m.get("id")) if m.get("id") else None,
-                role=m.get("role", "unknown"),
+                role=_normalize_inspect_role(m.get("role", "unknown")),
                 content=m.get("content") or "",
                 tool_calls=m.get("tool_calls"),
                 tool_call_id=m.get("tool_call_id"),
@@ -665,27 +676,56 @@ def extract_thread_messages(
                 items = [
                     MessageHistoryItem(
                         id=str(m.get("id")) if m.get("id") else None,
-                        role=m.get("role", "unknown"),
+                        role=_normalize_inspect_role(m.get("role", "unknown")),
                         content=m.get("content") or "",
                         tool_calls=m.get("tool_calls"),
                         tool_call_id=m.get("tool_call_id"),
                     )
                     for m in extracted
                 ]
-                return items, checkpoint_step
+                if items:
+                    return items, checkpoint_step
             except Exception:
                 logger.exception("Failed to decode checkpoint")
 
     # 3. Fall back to thread.events if present
     items = []
+    open_messages: dict[str, dict[str, Any]] = {}
     for ev in thread.events:
         ev_type = getattr(ev, "type", None) or (ev.get("type") if isinstance(ev, dict) else None)
-        if ev_type == "TEXT_MESSAGE_END":
-            txt = getattr(ev, "content", None) or (
-                ev.get("content") if isinstance(ev, dict) else ""
+        ev_type_str = str(getattr(ev_type, "value", ev_type) or "")
+        if ev_type_str == "TEXT_MESSAGE_START":
+            msg_id = getattr(ev, "message_id", None) or (
+                ev.get("message_id") if isinstance(ev, dict) else None
             )
-            items.append(MessageHistoryItem(role="assistant", content=txt))
-        elif ev_type == "USER_INPUT":
+            role = (
+                getattr(ev, "role", None)
+                or (ev.get("role") if isinstance(ev, dict) else None)
+                or "assistant"
+            )
+            if msg_id:
+                open_messages[str(msg_id)] = {"role": str(role), "chunks": []}
+        elif ev_type_str == "TEXT_MESSAGE_CONTENT":
+            msg_id = getattr(ev, "message_id", None) or (
+                ev.get("message_id") if isinstance(ev, dict) else None
+            )
+            delta = getattr(ev, "delta", None) or (ev.get("delta") if isinstance(ev, dict) else "")
+            if msg_id and str(msg_id) in open_messages and delta:
+                open_messages[str(msg_id)]["chunks"].append(str(delta))
+        elif ev_type_str == "TEXT_MESSAGE_END":
+            msg_id = getattr(ev, "message_id", None) or (
+                ev.get("message_id") if isinstance(ev, dict) else None
+            )
+            if msg_id and str(msg_id) in open_messages:
+                entry = open_messages.pop(str(msg_id))
+                items.append(
+                    MessageHistoryItem(
+                        id=str(msg_id),
+                        role=entry["role"],
+                        content="".join(entry["chunks"]),
+                    )
+                )
+        elif ev_type_str == "USER_INPUT":
             txt = getattr(ev, "input", None) or (ev.get("input") if isinstance(ev, dict) else "")
             items.append(MessageHistoryItem(role="user", content=txt))
 
@@ -953,6 +993,7 @@ def build_agent_inspect_report(
         mode=thread.mode,
         phase=thread.phase,
         active_plan_id=session.active_plan_id,
+        persona=session.config.persona,
     )
     custom_prompt = (session.config.system_prompt or "").strip()
     data_dir = ws_mgr.get_session_data_dir(agent.id, session.id)
@@ -1029,6 +1070,7 @@ def build_agent_inspect_report(
             skills=skills_doc,
             plan=plan_str,
             artifacts_implementation=session.config.artifacts_implementation,
+            persona=session.config.persona,
         )
 
     middleware_prompt_sections = build_middleware_prompt_sections(

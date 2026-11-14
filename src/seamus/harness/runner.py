@@ -312,6 +312,16 @@ class ReasoningChatOpenAI(ChatOpenAI):
 class SeamusLangGraphAgent(LangGraphAgent):  # type: ignore[misc]
     """LangGraphAgent subclass that preserves full checkpoint message history in graph input."""
 
+    async def _handle_stream_events(self, input: RunAgentInput) -> AsyncGenerator[Any, None]:
+        """Capture exception type and traceback before LangGraphAgent converts it."""
+        self._last_error: tuple[str, str] | None = None
+        try:
+            async for event in super()._handle_stream_events(input):
+                yield event
+        except Exception as exc:
+            self._last_error = (type(exc).__name__, traceback.format_exc())
+            raise
+
     def langgraph_default_merge_state(
         self,
         state: Any,
@@ -1465,6 +1475,7 @@ class SessionAgentRunner:
             skills=skills_doc,
             plan=plan_str,
             artifacts_implementation=self.session.config.artifacts_implementation,
+            persona=self.session.config.persona,
         )
 
     def get_discovered_skills(self, thread: Thread | None = None) -> list[DiscoveredSkill]:
@@ -1495,6 +1506,7 @@ class SessionAgentRunner:
             phase=open_thread.phase,
             active_plan_id=self.session.active_plan_id,
             active_plan_title=self._get_active_plan_title(),
+            persona=self.session.config.persona,
         )
 
     @property
@@ -2305,7 +2317,25 @@ class SessionAgentRunner:
         data: dict[str, Any],
     ) -> str:
         """Transitional bridge for dispatch_artifact_submission to dispatch_artifact_click."""
-        click_res = await self.dispatch_artifact_click(kind, name, "submit", data)
+        ws_mgr = get_workspace_manager()
+        artifacts_dir = ws_mgr.get_session_artifacts_dir(self.session.agent_id, self.session.id)
+        button_id = "submit"
+        try:
+            manifest = ArtifactResolver(artifacts_dir).load_manifest(kind, name)
+            declared_ids = {btn.id for btn in manifest.buttons}
+            if "submit" not in declared_ids:
+                if "submit_btn" in declared_ids:
+                    button_id = "submit_btn"
+                else:
+                    for candidate in manifest.buttons:
+                        if "submit" in candidate.id.lower() or (
+                            candidate.unblocking and candidate.closing
+                        ):
+                            button_id = candidate.id
+                            break
+        except Exception:
+            pass
+        click_res = await self.dispatch_artifact_click(kind, name, button_id, data)
         return str(click_res.button_id)
 
     async def dispatch_user_input(
@@ -2489,6 +2519,14 @@ class SessionAgentRunner:
                 ):
                     try:
                         async for event in request_agent.run(input_data):
+                            if getattr(event, "type", None) == EventType.RUN_ERROR:
+                                last_err = getattr(request_agent, "_last_error", None)
+                                if last_err is not None:
+                                    err_type, err_tb = last_err
+                                    if hasattr(event, "model_copy"):
+                                        event = event.model_copy(
+                                            update={"error_type": err_type, "traceback": err_tb}
+                                        )
                             self._update_status_from_event(thread, event)
                             thread.append_event(event)
                             await self.broadcaster.broadcast(event)
