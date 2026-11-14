@@ -416,3 +416,58 @@ async def test_wait_for_click_suspends_turn_until_artifact_click(
 
     await _drain(runner)
     assert runner._active_task is None or runner._active_task.done()
+
+
+@pytest.mark.asyncio
+async def test_edit_plan_updates_plan_artifact_on_disk(
+    client: httpx.AsyncClient,
+    make_session: Any,
+    queue_agent_turn: Any,
+    resolve_session: Any,
+    session_dir: Any,
+) -> None:
+    """edit_plan updates plan.md on disk and is observable via GET /artifact/plans/{id}."""
+    ctx = make_session("edit-plan", mode="plan", phase=PlanPhase.MAKE.value)
+    queue_agent_turn(
+        ctx["session_id"],
+        tool_calls=[
+            SteerableToolCall(
+                name="make_plan",
+                args={"title": "Editable Plan", "content": "# Plan\n\nStep 1: {{TODO}}\n"},
+            ),
+        ],
+    )
+    queue_agent_turn(
+        ctx["session_id"],
+        tool_calls=[
+            SteerableToolCall(
+                name="edit_plan",
+                args={"old_string": "{{TODO}}", "new_string": "Implemented"},
+            ),
+        ],
+    )
+    queue_agent_turn(ctx["session_id"], text="Plan updated.")
+
+    res = await client.post(
+        f"/api/v-alpha/agent/{ctx['agent_id']}/session/{ctx['session_id']}/input",
+        json={"message": "Create and edit the plan."},
+    )
+    assert res.status_code == 202
+
+    session = resolve_session(ctx["session_id"])
+    runner = get_runner_registry().get_runner(session)
+    await _drain(runner)
+
+    plan_id = session.active_plan_id
+    assert plan_id is not None
+    dirs = session_dir(session)
+    plan_md = dirs["artifacts"] / "plans" / str(plan_id) / "plan.md"
+    assert plan_md.is_file()
+    content = plan_md.read_text(encoding="utf-8")
+    assert "Implemented" in content
+    assert "{{TODO}}" not in content
+
+    detail = await client.get(
+        f"/api/v-alpha/agent/{ctx['agent_id']}/session/{ctx['session_id']}/artifact/plans/{plan_id}"
+    )
+    assert detail.status_code == 200
