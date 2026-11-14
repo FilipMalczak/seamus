@@ -109,7 +109,7 @@ function toValidUax31Identifier(id: string): string {
  * Normalizes components into standard A2UI basicCatalog specifications.
  * Seamlessly adapts legacy or custom shapes (like ChoiceSet -> ChoicePicker, Text variant 'bold' -> Markdown body).
  */
-function normalizeComponents(components: any): Array<Record<string, any>> {
+export function normalizeComponents(components: any): Array<Record<string, any>> {
   let rawList = components;
   if (typeof rawList === "string") {
     try {
@@ -322,25 +322,30 @@ function normalizeComponents(components: any): Array<Record<string, any>> {
       if (variant && !["default", "primary", "borderless"].includes(variant)) {
         variant = "default";
       }
-      const action = c.action || {
-        event: {
+      const rawAction = c.action && typeof c.action === "object" ? c.action : {};
+      // Clone into a strict A2UI Action object (event or functionCall only) so
+      // custom Seamus keys like `comments: "push"` don't fail Zod validation
+      // while remaining intact on the original `artifact.body` for click handling.
+      const action: Record<string, any> = {};
+      if (rawAction.event && typeof rawAction.event === "object") {
+        const cleanEvent: Record<string, any> = { ...rawAction.event };
+        if (cleanEvent.context && typeof cleanEvent.context === "object") {
+          const cleanContext: Record<string, any> = {};
+          for (const [k, v] of Object.entries(cleanEvent.context)) {
+            if (!(v && typeof v === "object" && "path" in (v as any))) {
+              cleanContext[k] = v;
+            }
+          }
+          cleanEvent.context = cleanContext;
+        }
+        action.event = cleanEvent;
+      } else if (rawAction.functionCall && typeof rawAction.functionCall === "object") {
+        action.functionCall = { ...rawAction.functionCall };
+      } else {
+        action.event = {
           name: c.id || "button_click",
           context: {},
-        },
-      };
-      if (
-        action.event &&
-        typeof action.event === "object" &&
-        action.event.context &&
-        typeof action.event.context === "object"
-      ) {
-        const cleanContext: Record<string, any> = {};
-        for (const [k, v] of Object.entries(action.event.context)) {
-          if (!(v && typeof v === "object" && "path" in (v as any))) {
-            cleanContext[k] = v;
-          }
-        }
-        action.event.context = cleanContext;
+        };
       }
 
       if (!c.child || typeof c.child !== "string") {

@@ -27,6 +27,7 @@ import { cleanupModules, loadModule } from "./helpers/loadModule.mjs";
 let cleanupDom;
 let React;
 let A2UIArtifactRenderer;
+let normalizeComponents;
 
 /**
  * A representative artifact.
@@ -88,7 +89,7 @@ async function settle(ms = 30) {
 before(async () => {
   cleanupDom = setupClientDom();
   React = (await import("react")).default;
-  ({ A2UIArtifactRenderer } = await loadModule("components/A2UIArtifactRenderer.tsx"));
+  ({ A2UIArtifactRenderer, normalizeComponents } = await loadModule("components/A2UIArtifactRenderer.tsx"));
 });
 
 after(async () => {
@@ -268,4 +269,88 @@ test("REQ-033: a plan artifact is titled after its family when unnamed", async (
   assert.match(container.querySelector(".artifact-header-title").textContent, /Plan/);
 
   await unmount();
+});
+
+test("REQ-033: plan review_btn with action.comments passes A2UI validation without mutating body", async () => {
+  const { MessageProcessor, basicCatalog } = await import("@a2ui/web_core/v1_0");
+  const rawBody = [
+    { id: "root", component: "Column", children: ["plan_content", "plan_actions"] },
+    { id: "plan_content", component: "Text", text: "# Plan\n\nStep 1" },
+    { id: "plan_actions", component: "Row", children: ["review_btn", "proceed_btn"] },
+    {
+      id: "review_btn",
+      component: "Button",
+      child: "review_label",
+      variant: "default",
+      action: { comments: "push", event: { name: "review_plan" } },
+    },
+    { id: "review_label", component: "Text", text: "Review" },
+    {
+      id: "proceed_btn",
+      component: "Button",
+      child: "proceed_label",
+      variant: "primary",
+      action: { event: { name: "proceed_plan", context: { approved: true } } },
+    },
+    { id: "proceed_label", component: "Text", text: "Proceed to Execution" },
+  ];
+
+  const normalized = normalizeComponents(rawBody);
+  const normReviewBtn = normalized.find((c) => c.id === "review_btn");
+  assert.ok(normReviewBtn);
+  assert.deepEqual(normReviewBtn.action, { event: { name: "review_plan" } });
+  assert.equal("comments" in normReviewBtn.action, false);
+
+  // Original body must retain action.comments for click-time comment pushing
+  assert.equal(rawBody[3].action.comments, "push");
+
+  // MessageProcessor must accept the normalized components without Zod validation errors
+  const proc = new MessageProcessor([basicCatalog]);
+  proc.processMessages([
+    { version: "1.0", createSurface: { surfaceId: "plan-test", catalogId: basicCatalog.id } },
+    { version: "1.0", updateDataModel: { surfaceId: "plan-test", path: "/", value: {} } },
+    { version: "1.0", updateComponents: { surfaceId: "plan-test", components: normalized } },
+  ]);
+  assert.ok(proc.model.getSurface("plan-test"));
+  proc.dispose();
+
+  // Also verify A2UIArtifactRenderer renders the plan without an error banner
+  const { container, unmount } = await renderArtifact({
+    artifact: makeArtifact({
+      family: "plans",
+      manifest: {
+        name: "My Plan",
+        exposition: "tabbed",
+        blocking: false,
+        commentable: true,
+        buttons: [
+          { id: "review_btn", clicks: "*", unblocking: false, closing: false },
+          { id: "proceed_btn", clicks: "*", unblocking: true, closing: true },
+        ],
+      },
+      body: rawBody,
+    }),
+  });
+  await settle();
+
+  assert.equal(container.querySelector(".artifact-error-banner"), null);
+
+  await unmount();
+});
+
+test("REQ-033: normalizeComponents synthesizes default event when action only has comments", () => {
+  const normalized = normalizeComponents([
+    { id: "root", component: "Column", children: ["review_btn"] },
+    {
+      id: "review_btn",
+      component: "Button",
+      child: "review_label",
+      action: { comments: "push" },
+    },
+    { id: "review_label", component: "Text", text: "Review" },
+  ]);
+
+  const normBtn = normalized.find((c) => c.id === "review_btn");
+  assert.ok(normBtn);
+  assert.deepEqual(normBtn.action, { event: { name: "review_btn", context: {} } });
 });
