@@ -376,3 +376,55 @@ def test_notes_directory_and_sandbox_mount_policy(tmp_path: Path) -> None:
     assert vol_ro is not None
     assert vol_ro.mount_path == "/workspace/notes"
     assert vol_ro.read_only is True
+
+
+def test_plan_tool_preconditions_duplicate_plan_and_edit_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """U-012, U-013, U-014, E-010: handle_plan/make_plan preconditions and edit_plan behavior."""
+    from seamus.domain.modes import PlanPhase
+    from seamus.persistence import GitWorkspaceManager, reset_workspace_manager
+
+    monkeypatch.setenv("SEAMUS_PERSISTENCE_ENABLED", "false")
+    ws_mgr = GitWorkspaceManager()
+    ws_mgr.workspace_root = tmp_path
+    reset_workspace_manager(ws_mgr)
+
+    store = HarnessStore()
+    config = AgentConfig(
+        model_name="gpt-4o",
+        inference=InferenceConfig(api_key="test-key"),
+    )
+    agent = store.create_agent(config=config, name="plan-precond-agent")
+    session = store.create_session(
+        agent_identifier=str(agent.id),
+        name="plan-precond-session",
+    )
+    thread = session.get_open_thread()
+    thread.mode = ModeName.CHAT.value
+    runner = SessionAgentRunner(session=session)
+
+    # U-012: handle_plan outside Plan/Discuss raises ValueError
+    with pytest.raises(ValueError, match="Plan/Discuss"):
+        runner.handle_plan()
+
+    # Transition thread to Plan/Make
+    thread.mode = ModeName.PLAN.value
+    thread.phase = PlanPhase.MAKE.value
+
+    runner.handle_make_plan(content="Step 1: {{TODO}}\nStep 2: {{TODO}}\n", title="My Plan")
+
+    # U-013: duplicate make_plan raises ValueError
+    with pytest.raises(ValueError, match="already exists"):
+        runner.handle_make_plan(content="Another plan", title="Dup")
+
+    # U-014: edit_plan with ambiguous old_string (appears twice) raises ValueError
+    with pytest.raises(ValueError):
+        runner.handle_edit_plan(old_string="{{TODO}}", new_string="Done")
+
+    # E-010: unique old_string succeeds and updates plan.md on disk
+    runner.handle_edit_plan(old_string="Step 1: {{TODO}}", new_string="Step 1: Implemented")
+    artifacts_dir = ws_mgr.get_session_artifacts_dir(agent.id, session.id)
+    assert session.active_plan_id is not None
+    plan_md = artifacts_dir / "plans" / session.active_plan_id / "plan.md"
+    assert "Step 1: Implemented" in plan_md.read_text(encoding="utf-8")

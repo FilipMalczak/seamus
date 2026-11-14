@@ -21,6 +21,19 @@ from seamus.persistence.workspace import reset_workspace_manager
 logger = logging.getLogger(__name__)
 
 
+def pytest_load_initial_conftests(
+    early_config: pytest.Config, parser: pytest.Parser, args: list[str]
+) -> None:
+    """Default e2e-only runs to parallel xdist execution while keeping non-e2e sequential."""
+    has_e2e = "--e2e" in args
+    targets_e2e_only = any("tests/e2e" in arg.replace("\\", "/") for arg in args)
+    has_numprocesses = any(
+        arg == "-n" or arg.startswith("-n") or arg.startswith("--numprocesses") for arg in args
+    )
+    if has_e2e and targets_e2e_only and not has_numprocesses:
+        args.extend(["-n", "auto"])
+
+
 def pytest_addoption(parser: pytest.Parser) -> None:
     """Register CLI options for optional test suites."""
     parser.addoption(

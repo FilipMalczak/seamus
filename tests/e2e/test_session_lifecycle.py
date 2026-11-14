@@ -454,3 +454,99 @@ async def test_thread_acceptance_closes_thread_and_spawns_successor(
     assert len(open_threads) == 1
     assert str(open_threads[0].id) == str(new_thread["id"])
     assert open_threads[0].status is AgentStatus.AWAITING_USER
+
+
+@pytest.mark.asyncio
+async def test_branch_after_questionnaire_submission_isolates_child_artifacts(
+    client: httpx.AsyncClient,
+    make_session: Any,
+    queue_agent_turn: Any,
+    resolve_session: Any,
+    session_dir: Any,
+) -> None:
+    """Branching after a questionnaire submission isolates parent and child artifacts."""
+    from seamus.harness.steerable import SteerableToolCall
+
+    ctx = make_session("q-branch", mode="chat")
+    queue_agent_turn(
+        ctx["session_id"],
+        tool_calls=[
+            SteerableToolCall(
+                name="make_questionnaire",
+                args={
+                    "title": "Stack",
+                    "questions": [{"body": "Backend?", "answers": ["FastAPI", "Flask"]}],
+                    "blocking": True,
+                },
+            )
+        ],
+    )
+    queue_agent_turn(ctx["session_id"], text="Please pick a backend.")
+
+    await client.post(
+        f"/api/v-alpha/agent/{ctx['agent_id']}/session/{ctx['session_id']}/input",
+        json={"message": "Start questionnaire."},
+    )
+
+    parent = resolve_session(ctx["session_id"])
+    runner = get_runner_registry().get_runner(parent)
+    await _drain(runner)
+
+    listed = (
+        await client.get(
+            f"/api/v-alpha/agent/{ctx['agent_id']}/session/{ctx['session_id']}/artifact"
+        )
+    ).json()
+    q_uuid = next(e for e in listed if e["family"] == "questionnaires")["uuid"]
+
+    queue_agent_turn(ctx["session_id"], text="Recorded.")
+    click = await client.post(
+        f"/api/v-alpha/agent/{ctx['agent_id']}/session/{ctx['session_id']}"
+        f"/artifact/questionnaires/{q_uuid}/click",
+        json={"button_id": "submit_btn", "data": {"Backend?": "FastAPI"}},
+    )
+    assert click.status_code == 200
+    await _drain(runner)
+
+    parent_dirs = session_dir(parent)
+    parent_answers = parent_dirs["artifacts"] / "questionnaires" / q_uuid / "answers.md"
+    assert parent_answers.is_file()
+    assert "FastAPI" in parent_answers.read_text(encoding="utf-8")
+
+    # Branch from the user message
+    parent = resolve_session(ctx["session_id"])
+    open_thread = parent.get_open_thread()
+    assert open_thread is not None
+    msg_id = next(
+        (e["message_id"] if isinstance(e, dict) else e.message_id)
+        for e in open_thread.events
+        if (e.get("type") if isinstance(e, dict) else getattr(e, "type", None))
+        == "TEXT_MESSAGE_START"
+        and (e.get("role") if isinstance(e, dict) else getattr(e, "role", None)) == "user"
+    )
+    branched = await client.post(
+        f"/api/v-alpha/agent/{ctx['agent_id']}/session/{ctx['session_id']}/branch",
+        json={"target_id": msg_id, "position": "after"},
+    )
+    assert branched.status_code == 201
+    child = resolve_session(branched.json()["id"])
+    assert child.provenance is not None
+    assert str(child.provenance.parent_session_id) == ctx["session_id"]
+
+    # Child's artifact directory is isolated from parent's
+    child_dirs = session_dir(child)
+    assert child_dirs["artifacts"] != parent_dirs["artifacts"]
+
+
+@pytest.mark.asyncio
+async def test_branch_rejects_unknown_target_id(
+    client: httpx.AsyncClient,
+    make_session: Any,
+) -> None:
+    """Branching with an unknown target_id returns 400 or 404."""
+    ctx = make_session("bad-branch", mode="chat")
+    res = await client.post(
+        f"/api/v-alpha/agent/{ctx['agent_id']}/session/{ctx['session_id']}/branch",
+        json={"target_id": "nonexistent-event-id", "position": "after"},
+    )
+    assert res.status_code in (400, 404)

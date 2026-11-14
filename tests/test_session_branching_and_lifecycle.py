@@ -1,5 +1,6 @@
 """Tests for session branching, provenance tracking, and lifecycle states."""
 
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -889,3 +890,95 @@ def test_branching_preserves_mode_and_phase() -> None:
     child_thread = child.get_open_thread()
     assert child_thread.mode == "plan"
     assert child_thread.phase == "make"
+
+
+@pytest.mark.asyncio
+async def test_kill_session_while_awaiting_click_cancels_pending_future(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """E-009: Killing a session with an active wait_for_click task cancels it and cleans up."""
+    import asyncio
+
+    from seamus.harness.artifacts import ArtifactBuilder
+    from seamus.persistence import GitWorkspaceManager, reset_workspace_manager
+
+    monkeypatch.setenv("SEAMUS_PERSISTENCE_ENABLED", "false")
+    ws_mgr = GitWorkspaceManager()
+    ws_mgr.workspace_root = tmp_path
+    reset_workspace_manager(ws_mgr)
+
+    store = HarnessStore()
+    reset_harness_store(store)
+    registry = RunnerRegistry()
+    reset_runner_registry(registry)
+
+    config = make_complete_config()
+    agent = store.create_agent(config=config, name="kill-click-agent")
+    session = store.create_session(agent_identifier=str(agent.id), name="kill-click-session")
+    runner = registry.get_runner(session, agent=agent)
+
+    artifacts_dir = ws_mgr.get_session_artifacts_dir(agent.id, session.id)
+    art_uuid = ArtifactBuilder.create_artifact(
+        artifacts_dir=artifacts_dir,
+        family="custom",
+        manifest={"name": "Kill Wait", "buttons": [{"id": "btn", "clicks": "*"}]},
+        components=[
+            {"id": "root", "component": "Column", "children": ["btn"]},
+            {"id": "btn", "component": "Button", "child": "lbl"},
+            {"id": "lbl", "component": "Text", "text": "Go"},
+        ],
+    )
+
+    async def _run_wait() -> None:
+        await runner.handle_wait_for_click(art_uuid, fresh=True)
+
+    wait_task: asyncio.Task[None] = asyncio.create_task(_run_wait())
+    runner._active_task = wait_task
+    await asyncio.sleep(0.05)
+    assert (art_uuid, None) in runner._pending_clicks
+
+    app = create_app()
+    client = TestClient(app)
+    res = client.post(f"/api/v-alpha/agent/{agent.id}/session/{session.id}/kill")
+    assert res.status_code == 200
+    assert res.json()["status"] == SessionStatus.KILLED.value
+
+    await asyncio.sleep(0.05)
+    assert wait_task.cancelled() or wait_task.done()
+    assert runner._pending_clicks == {}
+
+
+def test_branch_from_unknown_target_and_isolated_runtime_state() -> None:
+    """I-005, I-008, I-009: Unknown target error; child clears active_plan_id & pending clicks."""
+    store = HarnessStore()
+    reset_harness_store(store)
+    registry = RunnerRegistry()
+    reset_runner_registry(registry)
+
+    config = make_complete_config()
+    agent = store.create_agent(config=config, name="iso-branch-agent")
+    session = store.create_session(agent_identifier=str(agent.id), name="iso-branch-parent")
+    session.active_plan_id = "plan-123"
+    thread = session.get_open_thread()
+    thread.status = AgentStatus.AWAITING_USER
+    thread.append_event(TextMessageStartEvent(message_id="u1", role="user"))
+    thread.append_event(TextMessageContentEvent(message_id="u1", delta="Go"))
+    thread.append_event(TextMessageEndEvent(message_id="u1"))
+
+    child = store.branch_session(
+        agent_identifier=str(agent.id),
+        session_identifier=str(session.id),
+        target_id="u1",
+        position="after",
+    )
+    assert child.active_plan_id is None
+    child_runner = registry.get_runner(child, agent=agent)
+    assert child_runner._pending_clicks == {}
+
+    app = create_app()
+    client = TestClient(app)
+    bad_res = client.post(
+        f"/api/v-alpha/agent/{agent.id}/session/{session.id}/branch",
+        json={"target_id": "nonexistent-msg-id", "position": "after"},
+    )
+    assert bad_res.status_code in (400, 404)

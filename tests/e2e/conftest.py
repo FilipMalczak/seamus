@@ -61,8 +61,16 @@ from tests.e2e.stub_sandbox import StubSandboxBackend, StubSandboxSettings
 
 
 @pytest.fixture(autouse=True)
-def reset_globals() -> Iterator[None]:
-    """Reset every process-wide singleton between tests."""
+def reset_globals(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Reset every process-wide singleton and isolate per-test workspace state."""
+    from seamus.persistence.config import get_persistence_settings
+
+    if os.environ.get("SEAMUS_PERSISTENCE_ENABLED", "false").lower() != "true":
+        ws_dir = tmp_path / "workspace"
+        ws_dir.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv("SEAMUS_WORKSPACE_DIR", str(ws_dir))
+
+    get_persistence_settings.cache_clear()
     reset_config_template_store(None)
     reset_system_settings_store(None)
     reset_harness_store(None)
@@ -76,6 +84,7 @@ def reset_globals() -> Iterator[None]:
     reset_runner_registry()
     reset_steerable_registry()
     reset_workspace_manager(None)
+    get_persistence_settings.cache_clear()
 
 
 @pytest.fixture
