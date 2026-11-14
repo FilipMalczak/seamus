@@ -62,7 +62,8 @@ jobs:
         run: npm run build
 
       - name: Run frontend tests
-        run: npm test
+        working-directory: .
+        run: ./test.sh --ui
 
   test-docker:
     name: Pytest (Ubuntu, Docker)
@@ -83,7 +84,7 @@ jobs:
         run: uv sync --frozen
 
       - name: Run unit and integration tests (docker persistence enabled)
-        run: uv run pytest
+        run: ./test.sh --backend
 
   test-in-memory:
     name: Pytest (Ubuntu, In-Memory)
@@ -106,7 +107,7 @@ jobs:
         run: uv sync --frozen
 
       - name: Run unit and integration tests (in-memory mode)
-        run: uv run pytest
+        run: ./test.sh --backend
 
   test-e2e:
     name: Pytest (End-to-End, Steerable LLM)
@@ -130,5 +131,5 @@ jobs:
       # `steerable` inference provider and an in-process sandbox stub, so it
       # needs neither an API key nor a live container.
       - name: Run end-to-end tests
-        run: uv run pytest tests/e2e --e2e -n auto -v
+        run: ./test.sh --e2e
 
