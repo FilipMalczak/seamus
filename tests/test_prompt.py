@@ -536,6 +536,8 @@ def test_prompt_artifacts_implementation_none() -> None:
     assert "edit_plan" not in make_prompt
     assert "active_plan_context" not in make_prompt
     assert "start_executing" in make_prompt
+    assert "CRITICAL BOUNDARY" in make_prompt
+    assert "MUST NOT perform any implementation work" in make_prompt
 
     # 5b. Make phase prompt with artifacts_implementation=seamus uses Proceed button
     make_prompt_seamus = build_effective_system_prompt(
