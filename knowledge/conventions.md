@@ -55,9 +55,9 @@ Project-specific implementation, tooling, and development conventions not fully 
 - Triggers on `push` and `pull_request` across all branches with `concurrency` cancellation of prior in-flight runs (`cancel-in-progress: true`).
 - `lint-and-typecheck` job runs on `ubuntu-latest` verifying backend formatting (`uv run ruff format --check`), linting (`uv run ruff check`), and type checking (`uv run mypy`) against frozen lockfiles (`uv sync --frozen`).
 - `frontend` job runs on `ubuntu-latest` executing `npm ci` and `npm run build` (`tsc -b && vite build`) in `ui/`.
-- `test-docker` job executes `./test.sh --backend` on `ubuntu-latest` using the ephemeral Gitea container persistence fixture.
-- `test-in-memory` job executes `./test.sh --backend` on `ubuntu-latest` with `SEAMUS_TEST_IN_MEMORY=true` (disabling Docker persistence) to guarantee fast feedback and verify pure in-memory execution isolation.
-- `test-e2e` job executes `./test.sh --e2e` on `ubuntu-latest`. Non-Gitea e2e tests default to in-memory persistence for speed, while `tests/e2e/test_sync_pr_lifecycle.py` opts into the shared ephemeral Gitea container via `gitea_enabled`.
+- `test-docker` job executes `./test.sh --backend --docker` on `ubuntu-latest` using the ephemeral Gitea container persistence fixture.
+- `test-in-memory` job executes `./test.sh --backend --in-memory` on `ubuntu-latest` (disabling Docker persistence) to guarantee fast feedback and verify pure in-memory execution isolation.
+- `test-e2e` job executes `./test.sh --e2e` (defaulting to `--docker`) on `ubuntu-latest`. Non-Gitea e2e tests default to in-memory persistence for speed, while `tests/e2e/test_sync_pr_lifecycle.py` (`@pytest.mark.gitea`) opts into the shared ephemeral Gitea container via `gitea_enabled`. Passing `--e2e --in-memory` deselects `@pytest.mark.gitea` tests (`-m "not gitea"`).
 - The `frontend` job additionally runs `./test.sh --ui` (Node native test runner) after `npm run build`.
 - Cross-platform macOS and Windows runner support is deferred and tracked as technical debt.
 - Package publishing and deployment stages are omitted.

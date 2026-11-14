@@ -8,19 +8,24 @@ RUN_UI=false
 RUN_BACKEND=false
 RUN_E2E=false
 ANY_SELECTED=false
+PERSISTENCE_MODE=""
 
 usage() {
   cat <<EOF
-Usage: $0 [[--ui] [--backend] [--e2e] | --all]
+Usage: $0 [[--ui] [--backend] [--e2e] | --all] [--docker | --in-memory]
 
-Run Seamus test suites. With no flags, defaults to --backend.
+Run Seamus test suites. With no suite flags, defaults to --backend.
+With no persistence flag, defaults to --docker.
 
 Options:
-  --ui        Run frontend React tests (cd ui && npm test)
-  --backend   Run backend unit and integration tests (uv run pytest)
-  --e2e       Run end-to-end tests only (uv run pytest tests/e2e --e2e)
-  --all       Run --backend, --e2e, and --ui
-  -h, --help  Show this help message and exit
+  --ui          Run frontend React tests (cd ui && npm test)
+  --backend     Run backend unit and integration tests (uv run pytest)
+  --e2e         Run end-to-end tests only (uv run pytest tests/e2e --e2e -n auto)
+  --all         Run --backend, --e2e, and --ui
+  --docker      Run Python tests against ephemeral Docker Gitea persistence (default)
+  --in-memory   Run Python tests in-memory with Docker persistence disabled
+                (with --e2e, deselects @pytest.mark.gitea tests)
+  -h, --help    Show this help message and exit
 EOF
 }
 
@@ -48,6 +53,22 @@ while [ "$#" -gt 0 ]; do
       ANY_SELECTED=true
       shift
       ;;
+    --docker)
+      if [ "$PERSISTENCE_MODE" = "in-memory" ]; then
+        echo "Cannot combine --docker and --in-memory" >&2
+        exit 1
+      fi
+      PERSISTENCE_MODE="docker"
+      shift
+      ;;
+    --in-memory)
+      if [ "$PERSISTENCE_MODE" = "docker" ]; then
+        echo "Cannot combine --docker and --in-memory" >&2
+        exit 1
+      fi
+      PERSISTENCE_MODE="in-memory"
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -64,6 +85,12 @@ if [ "$ANY_SELECTED" = false ]; then
   RUN_BACKEND=true
 fi
 
+if [ "$PERSISTENCE_MODE" = "in-memory" ]; then
+  export SEAMUS_TEST_IN_MEMORY="true"
+else
+  export SEAMUS_TEST_IN_MEMORY="false"
+fi
+
 if [ "$RUN_BACKEND" = true ]; then
   echo "==> Running backend tests..."
   uv run pytest
@@ -71,7 +98,11 @@ fi
 
 if [ "$RUN_E2E" = true ]; then
   echo "==> Running end-to-end tests..."
-  uv run pytest tests/e2e --e2e -n auto
+  if [ "$PERSISTENCE_MODE" = "in-memory" ]; then
+    uv run pytest tests/e2e --e2e -n auto -m "not gitea"
+  else
+    uv run pytest tests/e2e --e2e -n auto
+  fi
 fi
 
 if [ "$RUN_UI" = true ]; then

@@ -202,15 +202,19 @@ Seamus automatically snapshots working copies to internal Gitea storage (`projec
 
 ## Code Quality & Verification
 
-Run test suites via `./test.sh` (defaults to `--backend` when no flags are provided) and static checks through `uv` and `npm`:
+Run test suites via `./test.sh` (defaults to `--backend` and `--docker` when omitted) and static checks through `uv` and `npm`:
 
 ```bash
-# Backend unit and integration tests (default)
+# Backend unit and integration tests (default: --backend --docker)
 ./test.sh
-./test.sh --backend
+./test.sh --backend --docker
 
-# End-to-end test suite only (runs in parallel with --e2e)
+# Backend unit and integration tests in-memory (no Docker Gitea)
+./test.sh --backend --in-memory
+
+# End-to-end test suite only (runs in parallel with --e2e; --in-memory deselects @pytest.mark.gitea tests)
 ./test.sh --e2e
+./test.sh --e2e --in-memory
 
 # Frontend React tests
 ./test.sh --ui

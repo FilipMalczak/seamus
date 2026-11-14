@@ -84,13 +84,11 @@ jobs:
         run: uv sync --frozen
 
       - name: Run unit and integration tests (docker persistence enabled)
-        run: ./test.sh --backend
+        run: ./test.sh --backend --docker
 
   test-in-memory:
     name: Pytest (Ubuntu, In-Memory)
     runs-on: ubuntu-latest
-    env:
-      SEAMUS_TEST_IN_MEMORY: "true"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -107,7 +105,7 @@ jobs:
         run: uv sync --frozen
 
       - name: Run unit and integration tests (in-memory mode)
-        run: ./test.sh --backend
+        run: ./test.sh --backend --in-memory
 
   test-e2e:
     name: Pytest (End-to-End, Steerable LLM)
