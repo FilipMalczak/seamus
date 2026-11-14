@@ -511,3 +511,108 @@ def test_sync_session_workspace_auto_pulls_external_changes(
     local_file = session_dir / "data" / "local.txt"
     local_file.write_text("local content", encoding="utf-8")
     assert manager.commit_checkpoint_changes(agent.id, session.id, thread.id, "cp-local") is True
+
+
+def test_find_commit_for_event_and_parent(
+    git_environment: tuple[GitWorkspaceManager, Path, Path],
+    test_config: AgentConfig,
+) -> None:
+    """U-005: find_commit_for_event locates introducing commit and optional parent."""
+    manager, _bare_remote, _workspace_dir = git_environment
+    agent = Agent(name="find-commit-agent", config=test_config)
+    manager.initialize_agent_repo(agent)
+
+    session = Session(agent_id=agent.id, name="find-commit-session", config=test_config)
+    thread = session.create_thread(name="t1")
+    session_dir = manager.create_session_workspace(session, agent)
+
+    (session_dir / "data" / "first.txt").write_text("marker_alpha\n", encoding="utf-8")
+    assert manager.commit_checkpoint_changes(agent.id, session.id, thread.id, "cp-1") is True
+    first_sha = subprocess.check_output(
+        ["git", "-C", str(session_dir), "rev-parse", "HEAD"], text=True
+    ).strip()
+
+    (session_dir / "data" / "second.txt").write_text("marker_beta\n", encoding="utf-8")
+    assert manager.commit_checkpoint_changes(agent.id, session.id, thread.id, "cp-2") is True
+    second_sha = subprocess.check_output(
+        ["git", "-C", str(session_dir), "rev-parse", "HEAD"], text=True
+    ).strip()
+
+    assert manager.find_commit_for_event(agent.id, session.id, "marker_beta") == second_sha
+    assert (
+        manager.find_commit_for_event(agent.id, session.id, "marker_beta", before=True) == first_sha
+    )
+    assert manager.find_commit_for_event(agent.id, session.id, "nonexistent_marker") is None
+
+
+def test_get_session_git_info_and_empty_repo(
+    git_environment: tuple[GitWorkspaceManager, Path, Path],
+    test_config: AgentConfig,
+    tmp_path: Path,
+) -> None:
+    """get_session_git_info returns HEAD metadata for git repos and None for missing .git."""
+    manager, _bare_remote, _workspace_dir = git_environment
+    agent = Agent(name="git-info-agent", config=test_config)
+    manager.initialize_agent_repo(agent)
+    session = Session(agent_id=agent.id, name="git-info-session", config=test_config)
+    thread = session.create_thread(name="t1")
+    session_dir = manager.create_session_workspace(session, agent)
+
+    (session_dir / "data" / "file.txt").write_text("hello", encoding="utf-8")
+    manager.commit_checkpoint_changes(agent.id, session.id, thread.id, "cp-info")
+
+    info = manager.get_session_git_info(agent.id, session.id)
+    assert info["commit_sha"] is not None
+    assert info["commit_message"] is not None
+    assert info["commit_time"] is not None
+
+    # Empty / non-git workspace returns all None
+    from uuid import uuid4
+
+    missing_info = manager.get_session_git_info(agent.id, uuid4())
+    assert missing_info == {"commit_sha": None, "commit_message": None, "commit_time": None}
+
+
+def test_close_sync_pr_when_open_and_when_absent(
+    git_environment: tuple[GitWorkspaceManager, Path, Path],
+    test_config: AgentConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """close_sync_pr returns False when no PR is open and True when an open PR is closed."""
+    manager, _bare_remote, _workspace_dir = git_environment
+    agent = Agent(name="close-pr-agent", config=test_config)
+    session = Session(agent_id=agent.id, name="close-pr-session", config=test_config)
+
+    monkeypatch.setattr(manager, "get_active_sync_pr", lambda _s, _a: None)
+    assert manager.close_sync_pr(session, agent) is False
+
+    closed_calls: list[tuple[str, int]] = []
+    monkeypatch.setattr(manager, "get_active_sync_pr", lambda _s, _a: {"number": 42})
+
+    def _close_pr(repo: str, num: int) -> bool:
+        closed_calls.append((repo, num))
+        return True
+
+    monkeypatch.setattr(manager.client, "close_pull_request", _close_pr)
+    assert manager.close_sync_pr(session, agent) is True
+    assert len(closed_calls) == 1
+    assert closed_calls[0][1] == 42
+
+
+def test_save_and_load_large_thread_checkpoints(
+    git_environment: tuple[GitWorkspaceManager, Path, Path],
+    test_config: AgentConfig,
+) -> None:
+    """save_thread_checkpoints / load_thread_checkpoints round-trips >1 MiB payloads intact."""
+    manager, _bare_remote, _workspace_dir = git_environment
+    agent = Agent(name="large-cp-agent", config=test_config)
+    manager.initialize_agent_repo(agent)
+    session = Session(agent_id=agent.id, name="large-cp-session", config=test_config)
+    thread = session.create_thread(name="t1")
+    manager.create_session_workspace(session, agent)
+
+    big_payload = {"blob": "x" * (1_100_000), "items": list(range(500))}
+    cp_path = manager.save_thread_checkpoints(agent.id, session.id, thread.id, big_payload)
+    assert cp_path.stat().st_size > 1_000_000
+    loaded = manager.load_thread_checkpoints(agent.id, session.id, thread.id)
+    assert loaded == big_payload
