@@ -397,6 +397,29 @@ class TerminalInfoResponse(BaseModel):
     session_id: UUID
     operational_dir: str
     status: str
+    terminal_session_timeout_seconds: int = 300
+
+
+class TerminalCompleteRequest(BaseModel):
+    """Request payload for terminal Tab autocomplete."""
+
+    prefix: str = ""
+    working_directory: str | None = None
+
+
+class TerminalCompleteResponse(BaseModel):
+    """Response payload for terminal Tab autocomplete."""
+
+    token: str = ""
+    common_prefix: str = ""
+    candidates: list[str] = Field(default_factory=list)
+
+
+class InspectorToolToggleRequest(BaseModel):
+    """Request payload to enable or disable a tool for a session."""
+
+    tool_name: str = Field(min_length=1)
+    enabled: bool
 
 
 class SteerableResponseRequest(BaseModel):

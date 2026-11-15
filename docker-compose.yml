@@ -70,7 +70,13 @@ services:
     entrypoint: [ "/bin/sh", "-c" ]
     command:
       - |
-        PGPASSWORD="$${POSTGRES_PASSWORD:-gitea}" psql -h postgres -U "$${POSTGRES_USER:-gitea}" -d "$${POSTGRES_DB:-gitea}" -c '
+        PGPASSWORD="$${POSTGRES_PASSWORD:-gitea}" psql -h postgres -U "$${POSTGRES_USER:-gitea}" -d postgres -v ON_ERROR_STOP=1 <<'EOSQL'
+        SELECT 'CREATE ROLE openbao WITH LOGIN PASSWORD ''openbao'''
+        WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'openbao')\gexec
+        SELECT 'CREATE DATABASE openbao OWNER openbao'
+        WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'openbao')\gexec
+        EOSQL
+        PGPASSWORD="$${OPENBAO_DB_PASSWORD:-openbao}" psql -h postgres -U openbao -d openbao -v ON_ERROR_STOP=1 -c '
         CREATE TABLE IF NOT EXISTS vault_kv_store (
           parent_path TEXT COLLATE "C" NOT NULL,
           path        TEXT COLLATE "C",

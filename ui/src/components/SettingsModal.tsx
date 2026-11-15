@@ -42,6 +42,7 @@ export function SettingsModal({
   onSave,
 }: SettingsModalProps) {
   const [skillDirectories, setSkillDirectories] = useState<string[]>([]);
+  const [terminalTimeoutSeconds, setTerminalTimeoutSeconds] = useState<number>(300);
   const [newDirectory, setNewDirectory] = useState<string>("");
   const [rawJson, setRawJson] = useState<string>("");
   const [activeTab, setActiveTab] = useState<"paths" | "secrets" | "json">("paths");
@@ -84,6 +85,11 @@ export function SettingsModal({
     if (isOpen) {
       const dirs = initialSettings.skill_directories || [];
       setSkillDirectories([...dirs]);
+      setTerminalTimeoutSeconds(
+        typeof initialSettings.terminal_session_timeout_seconds === "number"
+          ? initialSettings.terminal_session_timeout_seconds
+          : 300
+      );
       setRawJson(JSON.stringify(initialSettings, null, 2));
       setNewDirectory("");
       setError(null);
@@ -143,7 +149,16 @@ export function SettingsModal({
       }
     }
     if (tab === "json") {
-      setRawJson(JSON.stringify({ skill_directories: skillDirectories }, null, 2));
+      setRawJson(
+        JSON.stringify(
+          {
+            skill_directories: skillDirectories,
+            terminal_session_timeout_seconds: terminalTimeoutSeconds,
+          },
+          null,
+          2
+        )
+      );
     }
     setError(null);
     setActiveTab(tab);
@@ -181,7 +196,17 @@ export function SettingsModal({
 
     setSaving(true);
     try {
-      await onSave({ skill_directories: finalDirs });
+      let finalTimeout = terminalTimeoutSeconds;
+      if (activeTab === "json") {
+        const parsed = JSON.parse(rawJson);
+        if (typeof parsed.terminal_session_timeout_seconds === "number") {
+          finalTimeout = Math.max(0, Math.floor(parsed.terminal_session_timeout_seconds));
+        }
+      }
+      await onSave({
+        skill_directories: finalDirs,
+        terminal_session_timeout_seconds: finalTimeout,
+      });
       setSuccess(true);
       setTimeout(() => {
         onClose();
@@ -504,6 +529,24 @@ export function SettingsModal({
                     ))
                   )}
                 </div>
+              </div>
+
+              <div className="form-group" style={{ marginTop: "10px" }}>
+                <label className="form-label" htmlFor="terminal-timeout-input">
+                  Terminal Session Inactivity Timeout (seconds, 0 = never expire)
+                </label>
+                <input
+                  id="terminal-timeout-input"
+                  type="number"
+                  min={0}
+                  step={30}
+                  className="form-input"
+                  value={terminalTimeoutSeconds}
+                  onChange={(e) => {
+                    const val = Math.max(0, Number.parseInt(e.target.value || "0", 10) || 0);
+                    setTerminalTimeoutSeconds(val);
+                  }}
+                />
               </div>
             </>
           )}

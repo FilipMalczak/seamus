@@ -1,5 +1,7 @@
 """Routes for system-wide settings."""
 
+import asyncio
+
 from fastapi import APIRouter
 
 from seamus.config.settings import SystemSettings, get_system_settings_store
@@ -19,5 +21,5 @@ async def get_settings() -> SystemSettingsResponse:
 async def update_settings(payload: SystemSettings) -> SystemSettingsResponse:
     """Update and persist the system-wide settings."""
     store = get_system_settings_store()
-    updated = store.set_settings(payload)
+    updated = await asyncio.to_thread(store.set_settings, payload)
     return SystemSettingsResponse(settings=updated)

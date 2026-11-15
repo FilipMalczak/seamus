@@ -1095,10 +1095,13 @@ class SessionAgentRunner:
 
         filtered: list[Any] = []
         is_web_search_enabled = self.session.config.web_search == WebSearchImplementation.DUCKDUCKGO
+        disabled_tools = set(self.session.config.disabled_tools)
         for tool_obj in request_tools:
             t_name = getattr(tool_obj, "name", None) or (
                 tool_obj.get("name") if isinstance(tool_obj, dict) else None
             )
+            if isinstance(t_name, str) and t_name in disabled_tools:
+                continue
             if (
                 isinstance(t_name, str)
                 and not is_web_search_enabled
@@ -1429,6 +1432,69 @@ class SessionAgentRunner:
         finally:
             if not task.done():
                 task.cancel()
+
+    def complete_terminal_input(
+        self,
+        prefix: str,
+        working_directory: str | None = None,
+    ) -> dict[str, Any]:
+        """Return shell completion candidates and common prefix for a terminal input prefix."""
+        import os
+        import shlex
+
+        backend = self.get_sandbox_backend()
+        effective_workdir = (working_directory or "").strip() or backend.settings.workdir
+
+        trailing_space = prefix.endswith(" ")
+        parts = prefix.split()
+        if trailing_space or not parts:
+            token = ""
+            is_first_word = len(parts) == 0
+        else:
+            token = parts[-1]
+            is_first_word = len(parts) == 1
+
+        # If the first word contains '/', complete as a file/executable path
+        # instead of a bare command.
+        if is_first_word and "/" not in token:
+            compgen_flag = "-c"
+        else:
+            compgen_flag = "-f"
+
+        quoted_token = shlex.quote(token)
+        probe_cmd = (
+            f"bash -lc 'for m in $(compgen {compgen_flag} -- {quoted_token}); do "
+            f'[ -d "$m" ] && printf "%s/\\n" "$m" || printf "%s\\n" "$m"; '
+            f"done' | sort -u | head -n 50"
+        )
+
+        from datetime import timedelta
+
+        from opensandbox.models.execd import RunCommandOpts
+
+        opts = RunCommandOpts(
+            working_directory=effective_workdir,
+            timeout=timedelta(seconds=5),
+        )
+
+        def _exec_probe() -> Any:
+            return backend._sandbox.commands.run(probe_cmd, opts=opts)
+
+        execution = backend.run_with_recovery(_exec_probe)
+        stdout_lines: list[str] = []
+        logs = getattr(execution, "logs", None)
+        if logs is not None:
+            for item in getattr(logs, "stdout", []) or []:
+                text = getattr(item, "text", str(item))
+                stdout_lines.extend(text.splitlines())
+
+        candidates = sorted({line.strip() for line in stdout_lines if line.strip()})
+        common_prefix = os.path.commonprefix(candidates) if candidates else token
+        return {
+            "token": token,
+            "common_prefix": common_prefix,
+            "candidates": candidates,
+        }
 
     def build_effective_system_prompt(
         self,

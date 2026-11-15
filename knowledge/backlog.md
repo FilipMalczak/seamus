@@ -172,16 +172,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## Technical debt
 
-### Configurable or Heartbeat-Driven Terminal Session Lifecycle (Replacing Arbitrary 5m Timeout)
-- **Current Problem**: Live sandbox terminal emulator sessions in the Web UI currently rely on a hardcoded 5-minute client-side inactivity timer (`TERMINAL_INACTIVITY_TIMEOUT_MS = 300_000`) since the last executed command to determine when to expire and reset the terminal buffer and working state across tab switches. An arbitrary fixed duration does not account for long-running batch jobs, active user reading pauses, or user-configured session retention preferences.
-- **Improvement**: Replace the client-side 5-minute timeout with a robust server-side heartbeat or configurable session lifecycle mechanism (e.g. `terminal_session_timeout` in `AgentConfig` or system settings, persistent session exec IDs via OpenSandbox session management, or WebSocket/SSE ping heartbeats) with explicit UI notifications when a session is detached, suspended, or reconnected.
-- **Provenance**: `ui/src/components/TerminalView.tsx`, `src/seamus/harness/runner.py`, [0044-interactive-web-terminal.md](../decisions/0044-interactive-web-terminal.md).
-
-### [CRITICAL] Dedicated PostgreSQL User/Database or Instance for OpenBao Storage
-- **Current Problem**: In the MVP OpenBao integration (`openbao/config.hcl` and `docker-compose.yml`), OpenBao shares the `gitea` PostgreSQL user and `gitea` database (`postgres://gitea:gitea@postgres:5432/gitea?sslmode=disable`) for its `vault_kv_store` and `vault_ha_locks` tables. Sharing database credentials and schema namespace between Gitea and the secrets vault violates least-privilege isolation.
-- **Improvement**: Provision at minimum a dedicated PostgreSQL role and database with strict privileges exclusively for OpenBao, or run a dedicated PostgreSQL instance for OpenBao storage.
-- **Provenance**: [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md), `openbao/config.hcl`, `docker-compose.yml`.
-
 ### Thorough Security Review and Hardening of MVP OpenBao Secrets Integration
 - **Current Problem**: The initial OpenBao integration is an MVP design: `openbao-init` initializes a single-share unseal key and root token stored in the shared `openbao-auth` volume (`/var/run/seamus-openbao`), the backend authenticates using this root token, and `/api/v-alpha/vault/token` exposes the login token to the UI for convenience.
 - **Improvement**: Conduct a comprehensive security review and hardening pass on the OpenBao integration: replace root token usage in the backend with scoped AppRole/token policies, evaluate auto-unseal mechanisms or KMS integration instead of plaintext unseal key storage on a Docker volume, restrict token exposure endpoints, enable TLS, and audit secret interpolation boundaries so resolved secrets cannot be exfiltrated via prompt injection or error logs.
@@ -191,11 +181,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Current Problem**: Session branching (`branch_session`) copies thread checkpoint history and Git commits from a specific parent assistant turn. However, non-blocking artifacts (such as `plan`) and session-level directories (such as notes and specs in `/workspace`) are session-scoped and encompass multi-turn, multi-phase exchanges. In addition, when future multi-repository mounts are introduced, multiple Git repositories must remain synchronized across branches, phases, and thread checkpoints. We need to rethink and review how session branching, session-local non-blocking artifacts, and multi-repo Git mounts interact safely without orphaned artifacts, desynchronized working trees, or broken plan lineage.
 - **Improvement**: Formally model artifact provenance and multi-repo checkpoint synchronization in `branch_session`, ensuring child branched sessions cleanly copy or fork active plan artifacts and multi-mount Git states without conflicting with the parent session.
 - **Provenance**: [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), `src/seamus/harness/runner.py`, `src/seamus/persistence/workspace.py`.
-
-### Synchronous Git Subprocess Invocations in Async Server Flows
-- **Current Problem**: `GitWorkspaceManager._run_git` calls `subprocess.run(["git", ...])` synchronously. During HTTP requests (`create_agent`, `commit_agent_config`, `commit_session_config`) and checkpoint serialization (`GitCheckpointSaver`), disk I/O and remote Git pushes to Gitea block the asyncio event loop thread.
-- **Improvement**: Offload Git commands to a thread pool via `asyncio.to_thread` or switch to an asynchronous subprocess runner (`asyncio.create_subprocess_exec`) to avoid blocking the server event loop during Git operations.
-- **Provenance**: [0008-git-persistence.md](../decisions/0008-git-persistence.md), [architecture.md](./architecture.md#component-boundaries).
 
 ### In-Memory Store State Isolation Across Multiple Server Workers
 - **Current Problem**: `HarnessStore` maintains an in-memory dictionary of agents and sessions hydrated from Gitea only at startup. Running multiple server worker processes or replicas leads to desynchronized state, as mutations in one worker process are not reflected in the memory of another.
@@ -229,12 +214,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Current State**: Items 1 and 4 are addressed by [0057-e2e-test-suite.md](../decisions/0057-e2e-test-suite.md): `tests/e2e/test_session_lifecycle.py` covers multi-level lineage chains and mode/phase continuity across branches, and `ui/tests/messageItem.test.mjs` covers `BubbleBranchActions`, `BranchProvenanceSeparator`, `ToolGroupProvenanceIndicator`, and `SyntheticMessageBlock` rendering. Items 2 and 3 remain open — branching during active stream generation and Git/Gitea synchronisation across branched sessions with dirty working directories and external repository mounts are still untested end to end.
 - **Provenance**: [0054-granular-bidirectional-session-branching.md](../decisions/0054-granular-bidirectional-session-branching.md), [0057-e2e-test-suite.md](../decisions/0057-e2e-test-suite.md), `src/seamus/harness/store.py`, `ui/src/components/MessageItem.tsx`, `ui/src/components/ChatArea.tsx`.
 
-### Chat Bubble Timestamps Reflect Client-Side Render Time Rather Than Server/LLM Event Emission Time
-- **Current Problem**: Chat bubble timestamps currently record when the bubble or event is rendered on the client in the web UI (using local timestamp capture upon message arrival or component mount) rather than capturing the actual deterministic timestamp when the user submitted the message or when the LLM/tool event was emitted by the backend runtime. Consequently, reloading the UI, switching sessions, or inspecting historical threads can cause timestamps to display the session hydration/view time rather than the true historical execution time.
-- **Improvement**: Propagate authoritative timestamps directly on backend events (`created_at` / `timestamp` on `TextMessageStartEvent`, `TOOL_CALL_START`, `UserMessage`, etc.) and preserve them across thread persistence and serialization. Update the frontend (`MessageItem.tsx`, `useThreadStream.ts`) to consume the backend emission timestamp for bubble headers and tooltips instead of falling back to client-side render time.
-- **Current State**: Backend emission timestamps (`timestamp` in epoch milliseconds) are now stamped on every event in `Thread.append_event` and exposed over SSE, verified by `tests/e2e/test_telemetry_and_timestamps.py` (all tests passing). Updating the frontend (`MessageItem.tsx`, `useThreadStream.ts`) to consume the backend emission timestamp remains open.
-- **Provenance**: `ui/src/components/MessageItem.tsx`, `ui/src/hooks/useThreadStream.ts`, `src/seamus/harness/store.py`, `src/seamus/domain/entities.py`, [FEATURES.md](../FEATURES.md), `tests/e2e/test_telemetry_and_timestamps.py`.
-
 ### Review and Rethink Error Reporting Architecture and Semantics
 - **Current Problem**: Error reporting across the harness stack is unclear and fragmented. Errors originating from tool execution (e.g. argument validation or duplicate question IDs in `ask`), sandbox execution, runner loops, and SSE event streaming (`RUN_ERROR` vs `TOOL_CALL_RESULT` with `is_error=True`) lack a clear taxonomy, consistent propagation rules, and transparent visibility in both agent reasoning context and frontend user feedback.
 - **Improvement**: Review and redesign error reporting systematically: define distinct error categories (recoverable tool feedback intended for model correction vs fatal harness/system faults), establish consistent propagation through SSE events and thread status, and provide clear, actionable error indicators in the web UI.
@@ -262,11 +241,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Provenance**: `src/seamus/config/models.py`, `ui/src/components/ConfigModal.tsx`.
 
 ## TODO
-
-### Parallelize End-to-End Test Suite Execution
-- **Description**: Investigate and enable parallel execution for `tests/e2e/` (e.g. via `pytest-xdist` with `-n auto` or worker-scoped isolation). Because e2e tests currently share process-global singletons (`HarnessStore`, `RunnerRegistry`, `SteerableRegistry`, `WorkspaceManager`, `SystemSettingsStore`, and `tmp_path` overrides) and run sequentially, the full e2e suite takes nearly an hour. Ensure worker-isolated state/temp directories and test whether `pytest-xdist` or CI matrix sharding cuts runtime safely without flakiness.
-- **Rationale**: E2E tests are gated behind `--e2e` by default due to their long sequential runtime; parallelizing them will make on-demand local runs and CI feedback loops dramatically faster.
-- **Provenance**: [0057-e2e-test-suite.md](../decisions/0057-e2e-test-suite.md), [0058-coverage-baseline-and-tiering.md](../decisions/0058-coverage-baseline-and-tiering.md), `tests/e2e/conftest.py`, `.github/workflows/ci.yml`.
 
 ### End-to-End Coverage of Real Sandbox Container Provisioning
 - **Description**: The e2e suite substitutes an in-process stub for the OpenSandbox container, so real container provisioning, the `/workspace` ↔ `data/` mount, and the read-only `plan/make` mount policy are never exercised against a live container. Add a container-backed e2e job (or an opt-in test tier) that provisions a real sandbox and asserts the mount layout and write rejection.
@@ -352,20 +326,10 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Rationale**: If the host or server container is restarted or killed mid-turn, active runs currently stall without resuming, requiring manual user intervention.
 - **Provenance**: `src/seamus/harness/store.py`, `src/seamus/harness/runner.py`, `src/seamus/server/app.py`.
 
-### Interactive Tool Disabling from Agent Inspector
-- **Description**: Add toggle controls in the Agent Inspector view allowing operators to dynamically enable or disable specific tools for an agent or session. Disabled tools are excluded from the model's bound tool list on subsequent turns.
-- **Rationale**: Empowers operators to run controlled experiments, isolate model behavior, debug tool regressions, or restrict access to risky or prone-to-misuse tools without editing code.
-- **Provenance**: `src/seamus/harness/inspector.py`, `src/seamus/harness/runner.py`, `ui/src/components/AgentInspector.tsx`.
-
 ### Steerable Wait Timeout Editing in the Inspector
 - **Description**: Expose the per-instance steerable `wait_timeout` in the Agent Inspector's "Steerable" section, next to the empty-queue strategy selector and the default-response field. The `PATCH .../strategy` route already accepts `wait_timeout`, and the API client already forwards it; only the Inspector control is missing, so the timeout is currently configuration-only.
 - **Rationale**: The `wait` strategy blocks a model turn until a response is queued. With the timeout fixed at configuration time, a developer who steps away mid-turn cannot extend the wait from the UI, and the turn fails at an arbitrary point of the scenario.
 - **Provenance**: [0056-steerable-model-provider.md](../decisions/0056-steerable-model-provider.md), `src/seamus/server/routes/sessions.py`, `ui/src/api/client.ts`, `ui/src/components/SteerableInspector.tsx`.
-
-### Conversational Anchors & Header Close Action for Dedicated Tab Artifacts
-- **Description**: Add conversational anchor indicators in the chat message stream when dedicated tab artifacts (plans, forms, custom surfaces) are created so users can re-open them from conversational context even after closing the tab. Add a close icon (`X`) to the artifact tab header itself (which disappears when an artifact is blocking execution).
-- **Rationale**: Once non-embedded artifact tabs are closed, there is no persistent anchor in the conversation history linking to them.
-- **Provenance**: `ui/src/components/`, `src/seamus/harness/artifacts.py`, [0034-mature-a2ui-artifacts-model.md](../decisions/0034-mature-a2ui-artifacts-model.md).
 
 ### Type-Specific Renderers in Session Changes Diff View
 - **Description**: Extend the "Rendered" view mode in the Changes tab to support type-specific visual rendering: render A2UI `body.json` as live UI components, `manifest.json` as UI plus state inspection, and `.md` files as formatted markdown.
@@ -386,16 +350,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Description**: Undertake a comprehensive design review of the Web UI: harmonize color schemes, borders, elevations, component proportions, typography, and simplify the monolithic CSS layout in `App.css`.
 - **Rationale**: Features and controls were added incrementally across dozens of spikes and tasks, resulting in visual drift and disjointed component styling.
 - **Provenance**: `ui/src/App.css`, `ui/src/components/`.
-
-### Browser/Desktop Notifications for Pending User Interaction
-- **Description**: Integrate the Web Notification API and title/favicon badges to alert operators when an agent pauses and is actively awaiting user interaction (`wait_for_click`, questionnaires, plan review, or confirmation).
-- **Rationale**: Operators multitasking in other tabs or windows need an immediate cue when the agent is blocked on user feedback.
-- **Provenance**: `ui/src/App.tsx`, `ui/src/hooks/useThreadStream.ts`.
-
-### Tab Key Autocomplete in Interactive Web Terminal
-- **Description**: Intercept and forward `Tab` keypress events in the web terminal emulator (`TerminalView.tsx`) to trigger shell completion rather than shifting browser element focus or inserting whitespace.
-- **Rationale**: Essential for standard terminal ergonomics when inspecting sandboxes.
-- **Provenance**: `ui/src/components/TerminalView.tsx`, [0044-interactive-web-terminal.md](../decisions/0044-interactive-web-terminal.md).
 
 ### OpenRouter Session Telemetry, Generation ID Tracking, and Per-Turn Cost Accounting
 - **Description**: Capture OpenRouter generation IDs from response envelopes, propagate session tracking metadata/headers to group requests on OpenRouter dashboards, and surface cumulative token usage and cost accounting in chat bubble inspection.

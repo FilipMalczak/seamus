@@ -27,6 +27,7 @@ import {
   type ThreadInfo,
 } from "../api/types";
 import { useThreadStream } from "../hooks/useThreadStream";
+import { useInteractionNotifications } from "../hooks/useInteractionNotifications";
 import { computeBubbleSequenceIndices } from "../utils/sequence";
 import {
   MessageItem,
@@ -72,6 +73,7 @@ interface ChatAreaProps {
     }
   ) => void | Promise<void>;
   onNavigateToSession?: (sessionId: string) => void;
+  onOpenArtifactTab?: (kind: string, name: string) => void;
   onNamed?: (event: any) => void;
   sequenceThreshold?: number;
 }
@@ -97,6 +99,7 @@ export function ChatArea({
   onArtifactsSync,
   onBranchMessage,
   onNavigateToSession,
+  onOpenArtifactTab,
 }: ChatAreaProps) {
   const [inputText, setInputText] = useState<string>("");
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -147,6 +150,12 @@ export function ChatArea({
   useEffect(() => {
     onArtifactsSync?.(artifacts, handleSubmitArtifact, submittingArtifactId);
   }, [artifacts, handleSubmitArtifact, submittingArtifactId, onArtifactsSync]);
+
+  useInteractionNotifications({
+    status,
+    hasOpenBlockingArtifact,
+    sessionName,
+  });
 
   const isSessionTerminal = sessionStatus !== "ACTIVE";
   const isOpen = (thread?.is_open ?? false) && !isSessionTerminal;
@@ -606,6 +615,8 @@ export function ChatArea({
                   submittingArtifactId={submittingArtifactId}
                   provenanceList={augmentedProvenanceList}
                   onNavigateToSession={onNavigateToSession}
+                  sessionArtifacts={artifacts}
+                  onOpenArtifactTab={onOpenArtifactTab}
                 />
               </React.Fragment>
             );

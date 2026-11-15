@@ -1,4 +1,5 @@
-import { Bot, Settings, Sliders, Zap } from "lucide-react";
+import { useState } from "react";
+import { Bell, Bot, Settings, Sliders, Zap } from "lucide-react";
 import type { AgentConfig } from "../api/types";
 
 interface HeaderProps {
@@ -14,6 +15,15 @@ export function Header({
 }: HeaderProps) {
   const modelName = configTemplate?.model_name || "openai/gpt-oss-120b";
   const baseUrl = configTemplate?.inference.base_url || "OpenRouter";
+  const [notifPermission, setNotifPermission] = useState<string>(() =>
+    typeof Notification !== "undefined" ? Notification.permission : "unsupported"
+  );
+
+  const handleEnableNotifications = async () => {
+    if (typeof Notification === "undefined") return;
+    const res = await Notification.requestPermission();
+    setNotifPermission(res);
+  };
 
   return (
     <header className="app-header">
@@ -38,6 +48,17 @@ export function Header({
       </div>
 
       <div className="header-right" style={{ display: "flex", gap: "8px" }}>
+        {notifPermission === "default" && (
+          <button
+            type="button"
+            className="btn-header-action"
+            onClick={() => void handleEnableNotifications()}
+            title="Enable desktop notifications when an agent needs input"
+          >
+            <Bell className="size-4" />
+            <span>Notify</span>
+          </button>
+        )}
         <button
           type="button"
           className="btn-header-action"

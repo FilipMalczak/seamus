@@ -122,12 +122,7 @@ async def test_events_carry_authoritative_emission_timestamps(
     queue_agent_turn: Any,
     resolve_session: Any,
 ) -> None:
-    """INV-056: AG-UI events carry the backend emission timestamp.
-
-    Currently unimplemented — the backend emits events without a
-    ``timestamp`` value, so the UI falls back to client-side render time.
-    Tracked as technical debt in ``knowledge/backlog.md``.
-    """
+    """INV-056: AG-UI events carry the backend emission timestamp."""
     ctx = make_session("event-timestamps", mode="chat")
     queue_agent_turn(ctx["session_id"], text="timestamped answer")
 
@@ -155,11 +150,7 @@ async def test_streamed_events_expose_timestamps_to_clients(
     queue_agent_turn: Any,
     resolve_session: Any,
 ) -> None:
-    """The SSE replay exposes the emission timestamp of each event.
-
-    Currently unimplemented — see the technical-debt entry on client-side
-    render-time timestamps in ``knowledge/backlog.md``.
-    """
+    """The SSE replay exposes the emission timestamp of each event."""
     ctx = make_session("stream-timestamps", mode="chat")
     queue_agent_turn(ctx["session_id"], text="streamed answer")
 

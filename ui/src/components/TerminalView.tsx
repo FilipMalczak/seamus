@@ -8,7 +8,7 @@ import {
   Terminal as TerminalIcon,
   XCircle,
 } from "lucide-react";
-import { getTerminalInfo, streamTerminalCommand } from "../api/client";
+import { completeTerminalInput, getTerminalInfo, streamTerminalCommand } from "../api/client";
 import type { TerminalStreamEvent } from "../api/types";
 
 export const TERMINAL_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
@@ -58,6 +58,9 @@ export function TerminalView({ agentId, sessionId, sessionName, isActive = true 
   const [commandHistoryList, setCommandHistoryList] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
   const [, setLastCommandTime] = useState<number>(Date.now());
+  const [sessionTimeoutMs, setSessionTimeoutMs] = useState<number>(TERMINAL_INACTIVITY_TIMEOUT_MS);
+  const [sessionResetNotice, setSessionResetNotice] = useState<string | null>(null);
+  const [completionCandidates, setCompletionCandidates] = useState<string[]>([]);
 
   const terminalBodyRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -78,8 +81,8 @@ export function TerminalView({ agentId, sessionId, sessionName, isActive = true 
 
       if (cached) {
         const elapsed = now - cached.lastCommandTimestamp;
-        if (elapsed <= TERMINAL_INACTIVITY_TIMEOUT_MS) {
-          // Live session active (< 5m since last command): restore state
+        if (sessionTimeoutMs === 0 || elapsed <= sessionTimeoutMs) {
+          // Live session active: restore state
           setHistory(cached.history);
           setCwd(cached.cwd);
           setCommandHistoryList(cached.commandHistoryList);
@@ -87,8 +90,9 @@ export function TerminalView({ agentId, sessionId, sessionName, isActive = true 
           setLastCommandTime(cached.lastCommandTimestamp);
           return;
         }
-        // Inactivity exceeded 5m: invalidate expired session and create a new live session
+        // Inactivity exceeded configured timeout: invalidate expired session
         sessionTerminalCache.delete(targetSessionId);
+        setSessionResetNotice("Terminal session buffer reset after inactivity timeout.");
       }
 
       // New live session
@@ -97,6 +101,7 @@ export function TerminalView({ agentId, sessionId, sessionName, isActive = true 
       setCommandHistoryList([]);
       setIsExecuting(false);
       setLastCommandTime(now);
+      setCompletionCandidates([]);
 
       if (agentId) {
         getTerminalInfo(agentId, targetSessionId)
@@ -104,16 +109,19 @@ export function TerminalView({ agentId, sessionId, sessionName, isActive = true 
             if (info.operational_dir) {
               setCwd(info.operational_dir);
             }
+            if (typeof info.terminal_session_timeout_seconds === "number") {
+              setSessionTimeoutMs(info.terminal_session_timeout_seconds * 1000);
+            }
           })
           .catch(() => {
             // Fall back to /workspace
           });
       }
     },
-    [agentId]
+    [agentId, sessionTimeoutMs]
   );
 
-  // On session change or tab activation: check 5-minute validity and restore/create
+  // On session change or tab activation: check validity and restore/create
   useEffect(() => {
     if (!sessionId) {
       setHistory([]);
@@ -125,26 +133,27 @@ export function TerminalView({ agentId, sessionId, sessionName, isActive = true 
     }
   }, [sessionId, isActive, syncSessionFromCache, focusInput]);
 
-  // Periodic expiration checker: if 5 minutes elapse without commands, expire live session
+  // Periodic expiration checker: if configured timeout elapses without commands, expire live session
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId || sessionTimeoutMs === 0) return;
     const interval = setInterval(() => {
       const cached = sessionTerminalCache.get(sessionId);
       if (cached && cached.history.length > 0) {
         const elapsed = Date.now() - cached.lastCommandTimestamp;
-        if (elapsed > TERMINAL_INACTIVITY_TIMEOUT_MS) {
+        if (elapsed > sessionTimeoutMs) {
           // Expire and create a new clean session
           sessionTerminalCache.delete(sessionId);
           setHistory([]);
           setCommandHistoryList([]);
           setIsExecuting(false);
           setLastCommandTime(Date.now());
+          setSessionResetNotice("Terminal session buffer reset after inactivity timeout.");
         }
       }
     }, 10000);
 
     return () => clearInterval(interval);
-  }, [sessionId]);
+  }, [sessionId, sessionTimeoutMs]);
 
   // Scroll to bottom on output updates and keep focus
   useEffect(() => {
@@ -376,9 +385,42 @@ export function TerminalView({ agentId, sessionId, sessionName, isActive = true 
     [agentId, sessionId, cwd, history, isExecuting, commandHistoryList, focusInput]
   );
 
+  const handleTabComplete = async () => {
+    if (!agentId || !sessionId || isExecuting) return;
+    try {
+      const res = await completeTerminalInput(agentId, sessionId, inputCommand, cwd);
+      const candidates = res.candidates || [];
+      if (candidates.length === 0) {
+        setCompletionCandidates([]);
+        return;
+      }
+      const replacement =
+        candidates.length === 1 && !candidates[0].endsWith("/")
+          ? `${candidates[0]} `
+          : res.common_prefix || candidates[0];
+
+      if (inputCommand.endsWith(" ") || inputCommand === "") {
+        setInputCommand(`${inputCommand}${replacement}`);
+      } else {
+        const tokenStart = inputCommand.lastIndexOf(" ") + 1;
+        setInputCommand(`${inputCommand.slice(0, tokenStart)}${replacement}`);
+      }
+
+      setCompletionCandidates(candidates.length > 1 ? candidates : []);
+    } catch {
+      // Ignore transient completion errors
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Tab") {
+      e.preventDefault();
+      void handleTabComplete();
+      return;
+    }
     if (e.key === "Enter") {
       e.preventDefault();
+      setCompletionCandidates([]);
       executeCommand(inputCommand);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
@@ -569,6 +611,18 @@ export function TerminalView({ agentId, sessionId, sessionName, isActive = true 
         ))}
 
         {/* Current Active Command Input Line - NEVER DISABLED */}
+        {sessionResetNotice && (
+          <div className="terminal-reset-notice">
+            <span>{sessionResetNotice}</span>
+            <button
+              type="button"
+              className="terminal-reset-dismiss"
+              onClick={() => setSessionResetNotice(null)}
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
         <div className="terminal-input-row" onClick={(e) => e.stopPropagation()}>
           <span className="terminal-prompt-user">sandbox</span>
           <span className="terminal-prompt-colon">:</span>
@@ -579,7 +633,12 @@ export function TerminalView({ agentId, sessionId, sessionName, isActive = true 
             type="text"
             className="terminal-input-field"
             value={inputCommand}
-            onChange={(e) => setInputCommand(e.target.value)}
+            onChange={(e) => {
+              setInputCommand(e.target.value);
+              if (completionCandidates.length > 0) {
+                setCompletionCandidates([]);
+              }
+            }}
             onKeyDown={handleKeyDown}
             disabled={false}
             readOnly={false}
@@ -608,6 +667,15 @@ export function TerminalView({ agentId, sessionId, sessionName, isActive = true 
             </button>
           )}
         </div>
+        {completionCandidates.length > 1 && (
+          <div className="terminal-completion-candidates" aria-label="Autocomplete candidates">
+            {completionCandidates.map((cand) => (
+              <span key={cand} className="terminal-completion-item">
+                {cand}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 """Routes for session lifecycle and user input dispatch."""
 
+import asyncio
 import logging
 from typing import Any
 
@@ -19,6 +20,7 @@ from seamus.harness.store import SlugConflictError, get_harness_store
 from seamus.persistence.workspace import get_workspace_manager
 from seamus.server.schemas import (
     BranchSessionRequest,
+    InspectorToolToggleRequest,
     MountedRepoBranchInfo,
     MountedRepoCommitInfo,
     MountedRepoDiffInfo,
@@ -30,6 +32,8 @@ from seamus.server.schemas import (
     SessionUpdateRequest,
     SteerableResponseRequest,
     SteerableStrategyRequest,
+    TerminalCompleteRequest,
+    TerminalCompleteResponse,
     TerminalInfoResponse,
     TerminalStreamRequest,
     ThreadResponse,
@@ -78,7 +82,8 @@ async def create_session(
     """Create a new session under an agent with an initial open thread."""
     store = get_harness_store()
     try:
-        session = store.create_session(
+        session = await asyncio.to_thread(
+            store.create_session,
             agent_identifier=agent_identifier,
             config=payload.config,
             name=payload.name,
@@ -158,7 +163,8 @@ async def update_session(
     """Update session name and configuration with full updated object."""
     store = get_harness_store()
     try:
-        session = store.update_session(
+        session = await asyncio.to_thread(
+            store.update_session,
             agent_identifier=agent_identifier,
             session_identifier=session_identifier,
             config=payload.config,
@@ -327,6 +333,45 @@ async def inspect_session_agent(
         ) from exc
 
 
+@router.patch(
+    "/{session_identifier}/inspector/tools",
+    response_model=AgentInspectReport,
+)
+async def toggle_session_inspector_tool(
+    agent_identifier: str,
+    session_identifier: str,
+    payload: InspectorToolToggleRequest,
+    thread_id: str | None = Query(None, description="Optional thread identifier to inspect"),
+) -> AgentInspectReport:
+    """Enable or disable a specific tool on the session configuration."""
+    store = get_harness_store()
+    try:
+        agent = store.resolve_agent(agent_identifier)
+        session = resolve_session(agent, session_identifier)
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    disabled = list(session.config.disabled_tools)
+    if payload.enabled:
+        disabled = [name for name in disabled if name != payload.tool_name]
+    elif payload.tool_name not in disabled:
+        disabled.append(payload.tool_name)
+
+    updated_config = session.config.model_copy(update={"disabled_tools": disabled}, deep=True)
+    await asyncio.to_thread(
+        store.update_session,
+        agent_identifier=agent_identifier,
+        session_identifier=session_identifier,
+        config=updated_config,
+        name=None,
+    )
+    return build_agent_inspect_report(
+        agent_identifier=agent_identifier,
+        session_identifier=session_identifier,
+        thread_identifier=thread_id,
+    )
+
+
 def _resolve_steerable_instance(session_identifier: str, instance_id: str) -> Any:
     """Return the steerable instance or raise a 404 HTTP error."""
     registry = get_steerable_registry()
@@ -467,7 +512,7 @@ async def get_session_diff(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
     ws_mgr = get_workspace_manager()
-    active_pr, diff_text = ws_mgr.get_sync_pr_diff(session, agent)
+    active_pr, diff_text = await asyncio.to_thread(ws_mgr.get_sync_pr_diff, session, agent)
 
     mounted_repos: list[MountedRepoDiffInfo] = []
     if session.config.repositories:
@@ -480,7 +525,8 @@ async def get_session_diff(
         mount_paths = calculate_mount_paths(session.config.repositories)
         for repo_cfg in session.config.repositories:
             mount_name = mount_paths.get(repo_cfg.id, "repo")
-            changes = ext_mgr.get_working_copy_changes(
+            changes = await asyncio.to_thread(
+                ext_mgr.get_working_copy_changes,
                 session.agent_id,
                 session.id,
                 repo_cfg,
@@ -608,10 +654,42 @@ async def get_terminal_info(
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     backend = runner.get_sandbox_backend()
+    from seamus.config.settings import get_system_settings_store
+
+    sys_settings = get_system_settings_store().get_settings()
 
     return TerminalInfoResponse(
         agent_id=session.agent_id,
         session_id=session.id,
         operational_dir=backend.settings.workdir,
         status=session.status,
+        terminal_session_timeout_seconds=sys_settings.terminal_session_timeout_seconds,
     )
+
+
+@router.post("/{session_identifier}/terminal/complete", response_model=TerminalCompleteResponse)
+async def complete_terminal_input(
+    agent_identifier: str,
+    session_identifier: str,
+    payload: TerminalCompleteRequest,
+) -> TerminalCompleteResponse:
+    """Return shell completion candidates for an interactive terminal input prefix."""
+    store = get_harness_store()
+    try:
+        agent = store.resolve_agent(agent_identifier)
+        session = resolve_session(agent, session_identifier)
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    registry = get_runner_registry()
+    try:
+        runner = registry.get_runner(session, agent=agent)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    result = await asyncio.to_thread(
+        runner.complete_terminal_input,
+        prefix=payload.prefix,
+        working_directory=payload.working_directory,
+    )
+    return TerminalCompleteResponse(**result)

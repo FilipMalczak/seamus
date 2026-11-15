@@ -182,6 +182,10 @@ class StubSandboxBackend:
     def close(self) -> None:
         """No-op close hook mirroring the real backend."""
 
+    def run_with_recovery(self, fn: Any) -> Any:
+        """Execute *fn* directly, mirroring the recovery wrapper on the real backend."""
+        return fn()
+
     def reconfigure_mounts(
         self,
         *,

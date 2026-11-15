@@ -1,5 +1,6 @@
 """LangGraph checkpointer that serializes checkpoints to disk and commits to Git."""
 
+import asyncio
 import base64
 import logging
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
@@ -368,6 +369,12 @@ class GitCheckpointSaver(MemorySaver):
                 manifest_dict,
             )
 
+    def _persist_checkpoint_sync(self, res: RunnableConfig, checkpoint: Checkpoint) -> None:
+        """Persist external repository snapshots, checkpoint JSON, and Git commit."""
+        self._checkpoint_external_repositories(res, checkpoint)
+        self._save_checkpoint_to_disk(res, checkpoint)
+        self._trigger_git_commit(res, checkpoint)
+
     def put(
         self,
         config: RunnableConfig,
@@ -380,9 +387,7 @@ class GitCheckpointSaver(MemorySaver):
             if self.inner is not None
             else super().put(config, checkpoint, metadata, new_versions)
         )
-        self._checkpoint_external_repositories(res, checkpoint)
-        self._save_checkpoint_to_disk(res, checkpoint)
-        self._trigger_git_commit(res, checkpoint)
+        self._persist_checkpoint_sync(res, checkpoint)
         return res
 
     async def aput(
@@ -394,11 +399,11 @@ class GitCheckpointSaver(MemorySaver):
     ) -> RunnableConfig:
         if self.inner is not None:
             res = await self.inner.aput(config, checkpoint, metadata, new_versions)
-            self._checkpoint_external_repositories(res, checkpoint)
-            self._save_checkpoint_to_disk(res, checkpoint)
-            self._trigger_git_commit(res, checkpoint)
-            return res
-        return await super().aput(config, checkpoint, metadata, new_versions)
+        else:
+            # MemorySaver.aput delegates to self.put(), which would run Git I/O synchronously.
+            res = super().put(config, checkpoint, metadata, new_versions)
+        await asyncio.to_thread(self._persist_checkpoint_sync, res, checkpoint)
+        return res
 
     def get_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         if self.inner is not None:

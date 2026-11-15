@@ -44,6 +44,7 @@ class SystemSettings(BaseModel):
     """System-wide configuration settings not scoped to any agent or session."""
 
     skill_directories: list[str] = Field(default_factory=lambda: list(DEFAULT_SKILL_DIRECTORIES))
+    terminal_session_timeout_seconds: int = Field(default=300, ge=0)
 
 
 class SystemSettingsStore:

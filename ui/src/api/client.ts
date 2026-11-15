@@ -15,6 +15,7 @@ import type {
   SystemInfoResponse,
   SystemSettings,
   SystemSettingsResponse,
+  TerminalCompleteResponse,
   TerminalInfoResponse,
   TerminalStreamEvent,
   TerminalStreamRequest,
@@ -661,6 +662,48 @@ export async function getTerminalInfo(
     `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/terminal/info`
   );
   return handleResponse<TerminalInfoResponse>(res);
+}
+
+export async function completeTerminalInput(
+  agentId: string,
+  sessionId: string,
+  prefix: string,
+  workingDirectory?: string
+): Promise<TerminalCompleteResponse> {
+  const res = await fetch(
+    `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/terminal/complete`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prefix,
+        working_directory: workingDirectory,
+      }),
+    }
+  );
+  return handleResponse<TerminalCompleteResponse>(res);
+}
+
+export async function toggleInspectorTool(
+  agentId: string,
+  sessionId: string,
+  toolName: string,
+  enabled: boolean,
+  threadId?: string | null
+): Promise<AgentInspectReport> {
+  const query = threadId ? `?thread_id=${encodeURIComponent(threadId)}` : "";
+  const res = await fetch(
+    `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/inspector/tools${query}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tool_name: toolName,
+        enabled,
+      }),
+    }
+  );
+  return handleResponse<AgentInspectReport>(res);
 }
 
 export function streamTerminalCommand(

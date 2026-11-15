@@ -117,6 +117,7 @@ class ToolInspectInfo(BaseModel):
     backend: str = "opensandbox"
     category: str = "Sandbox"
     labels: list[ToolLabelInfo] = Field(default_factory=list)
+    enabled: bool = True
 
     @model_validator(mode="before")
     @classmethod
@@ -1152,6 +1153,10 @@ def build_agent_inspect_report(
 
     if session.config.web_search == WebSearchImplementation.NONE:
         tools = [t for t in tools if t.name not in WEB_SEARCH_TOOL_NAMES]
+
+    disabled_tools = set(session.config.disabled_tools)
+    for t in tools:
+        t.enabled = t.name not in disabled_tools
 
     # Message History
     messages, checkpoint_step = extract_thread_messages(agent.id, session.id, thread)
