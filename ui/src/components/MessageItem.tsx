@@ -668,7 +668,7 @@ export function MessageItem({
                     tcName
                   )
                     ? sessionArtifacts.find((art) => {
-                        if (art.manifest?.exposition !== "tabbed" || art.is_closed) return false;
+                        if (art.manifest?.exposition !== "tabbed") return false;
                         if (tcResult && (tcResult.includes(art.name) || (art.uuid && tcResult.includes(art.uuid)))) {
                           return true;
                         }
@@ -686,6 +686,8 @@ export function MessageItem({
                   matchedTabbedArtifact?.manifest?.title ||
                   matchedTabbedArtifact?.name ||
                   "Artifact";
+                const anchorVerb = matchedTabbedArtifact?.is_closed ? "View" : "Open";
+                const anchorSuffix = matchedTabbedArtifact?.is_closed ? " (Read-only)" : "";
                 return (
                   <React.Fragment key={part.id}>
                     <div className="bubble-row assistant-bubble-row">
@@ -714,8 +716,9 @@ export function MessageItem({
                         >
                           <FileText className="size-3.5" />
                           <span>
-                            Open {matchedTabbedArtifact.kind === "plans" ? "Plan" : "Artifact"}:{" "}
+                            {anchorVerb} {matchedTabbedArtifact.kind === "plans" ? "Plan" : "Artifact"}:{" "}
                             {anchorTitle}
+                            {anchorSuffix}
                           </span>
                         </button>
                       </div>

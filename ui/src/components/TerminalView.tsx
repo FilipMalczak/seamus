@@ -61,6 +61,7 @@ export function TerminalView({ agentId, sessionId, sessionName, isActive = true 
   const [sessionTimeoutMs, setSessionTimeoutMs] = useState<number>(TERMINAL_INACTIVITY_TIMEOUT_MS);
   const [sessionResetNotice, setSessionResetNotice] = useState<string | null>(null);
   const [completionCandidates, setCompletionCandidates] = useState<string[]>([]);
+  const [isCompleting, setIsCompleting] = useState<boolean>(false);
 
   const terminalBodyRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -386,7 +387,8 @@ export function TerminalView({ agentId, sessionId, sessionName, isActive = true 
   );
 
   const handleTabComplete = async () => {
-    if (!agentId || !sessionId || isExecuting) return;
+    if (!agentId || !sessionId || isExecuting || isCompleting) return;
+    setIsCompleting(true);
     try {
       const res = await completeTerminalInput(agentId, sessionId, inputCommand, cwd);
       const candidates = res.candidates || [];
@@ -409,6 +411,8 @@ export function TerminalView({ agentId, sessionId, sessionName, isActive = true 
       setCompletionCandidates(candidates.length > 1 ? candidates : []);
     } catch {
       // Ignore transient completion errors
+    } finally {
+      setIsCompleting(false);
     }
   };
 
@@ -652,7 +656,14 @@ export function TerminalView({ agentId, sessionId, sessionName, isActive = true 
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="off"
+            aria-busy={isCompleting}
           />
+          {isCompleting && (
+            <span className="terminal-completing-indicator" aria-live="polite">
+              <Loader2 className="size-3.5 animate-spin text-sky-400" />
+              <span>completing...</span>
+            </span>
+          )}
           {isExecuting ? (
             <Loader2 className="size-4 animate-spin text-muted" />
           ) : (

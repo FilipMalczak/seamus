@@ -6303,3 +6303,21 @@ a.changes-pr-badge:hover {
   font-size: 0.78rem;
   color: #cbd5e1;
 }
+
+.tool-enable-checkbox {
+  width: 14px;
+  height: 14px;
+  accent-color: #38bdf8;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.terminal-completing-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.75rem;
+  color: #7dd3fc;
+  margin-right: 6px;
+  white-space: nowrap;
+}

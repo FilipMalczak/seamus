@@ -104,3 +104,53 @@ test("useInteractionNotifications updates document.title when hidden and awaitin
     }
   }
 });
+
+test("MessageItem keeps conversational anchor visible for closed tabbed artifact", async () => {
+  let opened = null;
+  const msg = {
+    id: "assistant-2",
+    role: "assistant",
+    text: "",
+    timestamp: "2026-01-15T10:20:30.000Z",
+    parts: [
+      {
+        type: "tool_call",
+        id: "tc-2",
+        toolCall: {
+          id: "call-2",
+          name: "make_plan",
+          args: {},
+          result: '{"plan_id": "plan-2"}',
+          status: "completed",
+        },
+      },
+    ],
+  };
+
+  const sessionArtifacts = [
+    {
+      kind: "plans",
+      name: "plan-2",
+      title: "Closed Plan",
+      is_closed: true,
+      manifest: { exposition: "tabbed", blocking: false, title: "Closed Plan" },
+    },
+  ];
+
+  const view = await renderComponent(
+    React.createElement(MessageItem, {
+      message: msg,
+      sessionArtifacts,
+      onOpenArtifactTab: (kind, name) => {
+        opened = { kind, name };
+      },
+    })
+  );
+
+  const chip = view.container.querySelector(".artifact-anchor-chip");
+  assert.ok(chip, "expected anchor chip for closed artifact");
+  assert.match(chip.textContent || "", /View Plan: Closed Plan \(Read-only\)/);
+
+  await click(chip);
+  assert.deepEqual(opened, { kind: "plans", name: "plan-2" });
+});

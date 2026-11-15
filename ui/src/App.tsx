@@ -53,6 +53,7 @@ export function App() {
   const [sessionArtifacts, setSessionArtifacts] = useState<ArtifactInfo[]>([]);
   const [submittingArtifactId, setSubmittingArtifactId] = useState<string | null>(null);
   const [dismissedArtifactTabs, setDismissedArtifactTabs] = useState<Set<string>>(() => new Set());
+  const [reopenedClosedTabs, setReopenedClosedTabs] = useState<Set<string>>(() => new Set());
   const submitArtifactRef = useRef<
     ((artifact: ArtifactInfo, data: Record<string, unknown>) => Promise<void>) | null
   >(null);
@@ -73,12 +74,15 @@ export function App() {
   const openTabbedArtifacts = useMemo(
     () =>
       sessionArtifacts.filter((a) => {
-        if (a.manifest?.exposition !== "tabbed" || a.is_closed) return false;
+        if (a.manifest?.exposition !== "tabbed") return false;
         const tabKey = `artifact:${a.kind}:${a.name}`;
+        if (a.is_closed) {
+          return reopenedClosedTabs.has(tabKey);
+        }
         if (a.manifest?.blocking) return true;
         return !dismissedArtifactTabs.has(tabKey);
       }),
-    [sessionArtifacts, dismissedArtifactTabs]
+    [sessionArtifacts, dismissedArtifactTabs, reopenedClosedTabs]
   );
 
   const handleCloseArtifactTab = useCallback(
@@ -86,6 +90,12 @@ export function App() {
       setDismissedArtifactTabs((prev) => {
         const next = new Set(prev);
         next.add(tabKey);
+        return next;
+      });
+      setReopenedClosedTabs((prev) => {
+        if (!prev.has(tabKey)) return prev;
+        const next = new Set(prev);
+        next.delete(tabKey);
         return next;
       });
       if (activeMainTab === tabKey) {
@@ -101,6 +111,12 @@ export function App() {
       if (!prev.has(tabKey)) return prev;
       const next = new Set(prev);
       next.delete(tabKey);
+      return next;
+    });
+    setReopenedClosedTabs((prev) => {
+      if (prev.has(tabKey)) return prev;
+      const next = new Set(prev);
+      next.add(tabKey);
       return next;
     });
     setActiveMainTab(tabKey);
@@ -480,6 +496,7 @@ export function App() {
                   <span>{tabTitle}</span>
                   <span className="main-tab-badge">
                     {art.kind === "plans" ? "Plan" : "Form"}
+                    {art.is_closed ? " (Read-only)" : ""}
                   </span>
                   {!art.manifest?.blocking && (
                     <span
@@ -648,6 +665,7 @@ export function App() {
                   <div className="artifact-tab-container">
                     <ArtifactRenderer
                       artifact={art}
+                      readOnly={Boolean(art.is_closed)}
                       isSubmitting={submittingArtifactId === art.name}
                       onSubmit={async (data) => {
                         if (submitArtifactRef.current) {

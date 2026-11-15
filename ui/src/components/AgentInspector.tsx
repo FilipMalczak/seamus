@@ -555,6 +555,15 @@ export function AgentInspector({
                   >
                     <div className="tool-card-header">
                       <div className="tool-card-title-group">
+                        <input
+                          type="checkbox"
+                          className="tool-enable-checkbox"
+                          checked={isEnabled}
+                          disabled={isToggling}
+                          onChange={() => void handleToggleTool(tool.name, !isEnabled)}
+                          aria-label={`Enable ${tool.name}`}
+                          title={isEnabled ? "Disable tool for next turn" : "Enable tool for next turn"}
+                        />
                         {tool.backend === "web" ? (
                           <Globe className="size-4 text-emerald-400" />
                         ) : (
@@ -604,30 +613,18 @@ export function AgentInspector({
                         )}
                       </div>
 
-                      <div className="tool-card-actions">
-                        <button
-                          type="button"
-                          className={`btn-tool-enable-toggle ${isEnabled ? "enabled" : "disabled"}`}
-                          disabled={isToggling}
-                          onClick={() => void handleToggleTool(tool.name, !isEnabled)}
-                          aria-pressed={isEnabled}
-                          title={isEnabled ? "Disable tool for next turn" : "Enable tool for next turn"}
-                        >
-                          {isToggling ? "Saving..." : isEnabled ? "Enabled" : "Disabled"}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-tool-toggle"
-                          onClick={() => toggleToolExpand(tool.name)}
-                        >
-                          <span>{isExpanded ? "Hide Schema" : "View Schema"}</span>
-                          {isExpanded ? (
-                            <ChevronDown className="size-3.5" />
-                          ) : (
-                            <ChevronRight className="size-3.5" />
-                          )}
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        className="btn-tool-toggle"
+                        onClick={() => toggleToolExpand(tool.name)}
+                      >
+                        <span>{isExpanded ? "Hide Schema" : "View Schema"}</span>
+                        {isExpanded ? (
+                          <ChevronDown className="size-3.5" />
+                        ) : (
+                          <ChevronRight className="size-3.5" />
+                        )}
+                      </button>
                     </div>
 
                     <p className="tool-description">{tool.description}</p>
