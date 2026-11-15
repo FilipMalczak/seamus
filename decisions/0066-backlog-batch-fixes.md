@@ -16,14 +16,14 @@ A batch of nine small-to-medium backlog items across persistence, infrastructure
 3. **Interactive Tool Disabling from Agent Inspector**
    - `AgentConfig.disabled_tools: list[str]` stores disabled tool names on the session configuration.
    - `SessionAgentRunner` filters out `disabled_tools` dynamically per turn when binding tools, so toggling a tool via `PATCH /api/v-alpha/agent/{agent}/session/{session}/inspector/tools` takes effect on the next turn without rebuilding the graph.
-   - `ToolInspectInfo.enabled` reflects the toggle state in `AgentInspector.tsx`.
+   - `ToolInspectInfo.enabled` reflects the toggle state via a checkbox placed to the left of the tool icon in `AgentInspector.tsx`.
 
 4. **Configurable Terminal Session Timeout & Tab Autocomplete**
    - `SystemSettings.terminal_session_timeout_seconds` (default `300`, `0` = never expire) replaces the hardcoded 5-minute client timeout, exposed via `GET .../terminal/info` and editable in `SettingsModal.tsx`, with an inline UI reset notice in `TerminalView.tsx`.
-   - `POST /api/v-alpha/agent/{agent}/session/{session}/terminal/complete` runs a fast `compgen` probe inside the sandbox at the active `cwd` and returns `{ token, common_prefix, candidates }` when `Tab` is pressed in `TerminalView.tsx`.
+   - `POST /api/v-alpha/agent/{agent}/session/{session}/terminal/complete` runs a fast `compgen` probe inside the sandbox at the active `cwd` and returns `{ token, common_prefix, candidates }` when `Tab` is pressed in `TerminalView.tsx` (displaying an inline `completing...` indicator while the request is in flight).
 
 5. **Artifact Tab Close, Conversational Anchors, Timestamps & Notifications**
-   - Non-blocking tabbed artifacts in `App.tsx` support local header close (`X`) without mutating server `is_closed`, and `MessageItem.tsx` renders clickable conversational anchor chips for tabbed artifacts created by tool calls.
+   - Non-blocking tabbed artifacts in `App.tsx` support local header close (`X`) without mutating server `is_closed`. `MessageItem.tsx` renders clickable conversational anchor chips for tabbed artifacts created by tool calls; anchors remain visible even after closing, and reopening a closed tabbed artifact opens its tab in explicit read-only mode (`(Read-only)`).
    - `useThreadStream.ts` uses `getEventTimestamp(event)` for `threadTransition` messages as well as streamed/replayed parts.
    - `useInteractionNotifications.ts` updates `document.title` and fires Web Notifications when a hidden tab awaits user input or errors.
    - Parallel e2e execution (`pytest-xdist` `-n auto` in `test.sh`) was verified as already active and passing.
