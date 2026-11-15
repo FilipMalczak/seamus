@@ -26,7 +26,7 @@ import {
   Wrench,
   Zap,
 } from "lucide-react";
-import { getAgentInspection } from "../api/client";
+import { getAgentInspection, toggleInspectorTool } from "../api/client";
 import type {
   AgentInspectReport,
   AgentStatus,
@@ -71,6 +71,7 @@ export function AgentInspector({
   const [copiedPrompt, setCopiedPrompt] = useState<boolean>(false);
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
   const [expandedSkills, setExpandedSkills] = useState<Record<string, boolean>>({});
+  const [togglingTools, setTogglingTools] = useState<Record<string, boolean>>({});
   const [selectedToolCategory, setSelectedToolCategory] = useState<string>("All");
 
   const toolCategories = useMemo(() => {
@@ -137,6 +138,20 @@ export function AgentInspector({
       ...prev,
       [skillKey]: !prev[skillKey],
     }));
+  };
+
+  const handleToggleTool = async (toolName: string, nextEnabled: boolean) => {
+    if (!agentId || !sessionId) return;
+    setTogglingTools((prev) => ({ ...prev, [toolName]: true }));
+    setError(null);
+    try {
+      const updated = await toggleInspectorTool(agentId, sessionId, toolName, nextEnabled, threadId);
+      setReport(updated);
+    } catch (err: any) {
+      setError(err?.message || `Failed to update tool ${toolName}`);
+    } finally {
+      setTogglingTools((prev) => ({ ...prev, [toolName]: false }));
+    }
   };
 
   const handleCopyPrompt = async (text: string) => {
@@ -530,11 +545,25 @@ export function AgentInspector({
             <div className="tools-grid">
               {filteredTools.map((tool: ToolInspectInfo) => {
                 const isExpanded = !!expandedTools[tool.name];
+                const isEnabled = tool.enabled !== false;
+                const isToggling = !!togglingTools[tool.name];
                 const paramKeys = Object.keys(tool.parameters?.properties || {});
                 return (
-                  <div key={tool.name} className="tool-inspect-card">
+                  <div
+                    key={tool.name}
+                    className={`tool-inspect-card ${isEnabled ? "" : "tool-card-disabled"}`}
+                  >
                     <div className="tool-card-header">
                       <div className="tool-card-title-group">
+                        <input
+                          type="checkbox"
+                          className="tool-enable-checkbox"
+                          checked={isEnabled}
+                          disabled={isToggling}
+                          onChange={() => void handleToggleTool(tool.name, !isEnabled)}
+                          aria-label={`Enable ${tool.name}`}
+                          title={isEnabled ? "Disable tool for next turn" : "Enable tool for next turn"}
+                        />
                         {tool.backend === "web" ? (
                           <Globe className="size-4 text-emerald-400" />
                         ) : (

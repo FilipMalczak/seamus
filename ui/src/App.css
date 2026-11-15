@@ -6198,3 +6198,126 @@ a.changes-pr-badge:hover {
   display: flex;
   justify-content: flex-end;
 }
+
+/* Batch 0066 UI additions */
+.tool-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tool-card-disabled {
+  opacity: 0.6;
+}
+
+.btn-tool-enable-toggle {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  background: rgba(15, 23, 42, 0.7);
+  color: var(--text-primary);
+}
+
+.btn-tool-enable-toggle.enabled {
+  border-color: rgba(16, 185, 129, 0.45);
+  color: #34d399;
+}
+
+.btn-tool-enable-toggle.disabled {
+  border-color: rgba(244, 63, 94, 0.45);
+  color: #fb7185;
+}
+
+.main-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  padding: 2px;
+  border-radius: 4px;
+  opacity: 0.7;
+}
+
+.main-tab-close:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.artifact-anchor-row {
+  margin: 4px 0 8px 0;
+}
+
+.artifact-anchor-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  background: rgba(56, 189, 248, 0.08);
+  color: #7dd3fc;
+  cursor: pointer;
+}
+
+.artifact-anchor-chip:hover {
+  background: rgba(56, 189, 248, 0.16);
+}
+
+.terminal-reset-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.08);
+  color: #fcd34d;
+  font-size: 0.78rem;
+}
+
+.terminal-reset-dismiss {
+  background: transparent;
+  border: none;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.terminal-completion-candidates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 10px;
+  margin-top: 4px;
+  border-radius: 4px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid var(--border-color);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  color: #cbd5e1;
+}
+
+.tool-enable-checkbox {
+  width: 14px;
+  height: 14px;
+  accent-color: #38bdf8;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.terminal-completing-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.75rem;
+  color: #7dd3fc;
+  margin-right: 6px;
+  white-space: nowrap;
+}

@@ -4,6 +4,7 @@ import {
   Brain,
   ChevronDown,
   ChevronRight,
+  FileText,
   GitFork,
   User,
   Zap,
@@ -390,6 +391,8 @@ export function MessageItem({
   submittingArtifactId,
   provenanceList,
   onNavigateToSession,
+  sessionArtifacts,
+  onOpenArtifactTab,
 }: {
   message: ChatMessage;
   sequenceIndex?: number;
@@ -402,6 +405,8 @@ export function MessageItem({
   submittingArtifactId?: string | null;
   provenanceList?: SessionBranchProvenance[];
   onNavigateToSession?: (sessionId: string) => void;
+  sessionArtifacts?: ArtifactInfo[];
+  onOpenArtifactTab?: (kind: string, name: string) => void;
 }) {
   const isSynthetic = Boolean(
     message.text?.startsWith(SYNTHETIC_MESSAGE_INDICATOR)
@@ -651,6 +656,38 @@ export function MessageItem({
                   part.toolCall.id,
                   `call-${part.toolCall.id}`,
                 ]);
+                const tcName = part.toolCall.name;
+                const tcResult =
+                  typeof part.toolCall.result === "string"
+                    ? part.toolCall.result
+                    : JSON.stringify(part.toolCall.result || "");
+                const matchedTabbedArtifact =
+                  onOpenArtifactTab &&
+                  sessionArtifacts &&
+                  ["make_plan", "update_plan", "edit_plan", "make_form", "make_artifact"].includes(
+                    tcName
+                  )
+                    ? sessionArtifacts.find((art) => {
+                        if (art.manifest?.exposition !== "tabbed") return false;
+                        if (tcResult && (tcResult.includes(art.name) || (art.uuid && tcResult.includes(art.uuid)))) {
+                          return true;
+                        }
+                        if (
+                          ["make_plan", "update_plan", "edit_plan"].includes(tcName) &&
+                          art.kind === "plans"
+                        ) {
+                          return true;
+                        }
+                        return false;
+                      })
+                    : undefined;
+                const anchorTitle =
+                  matchedTabbedArtifact?.title ||
+                  matchedTabbedArtifact?.manifest?.title ||
+                  matchedTabbedArtifact?.name ||
+                  "Artifact";
+                const anchorVerb = matchedTabbedArtifact?.is_closed ? "View" : "Open";
+                const anchorSuffix = matchedTabbedArtifact?.is_closed ? " (Read-only)" : "";
                 return (
                   <React.Fragment key={part.id}>
                     <div className="bubble-row assistant-bubble-row">
@@ -665,6 +702,27 @@ export function MessageItem({
                         direction="right"
                       />
                     </div>
+                    {matchedTabbedArtifact && onOpenArtifactTab && (
+                      <div className="artifact-anchor-row">
+                        <button
+                          type="button"
+                          className="artifact-anchor-chip"
+                          onClick={() =>
+                            onOpenArtifactTab(
+                              matchedTabbedArtifact.kind,
+                              matchedTabbedArtifact.name
+                            )
+                          }
+                        >
+                          <FileText className="size-3.5" />
+                          <span>
+                            {anchorVerb} {matchedTabbedArtifact.kind === "plans" ? "Plan" : "Artifact"}:{" "}
+                            {anchorTitle}
+                            {anchorSuffix}
+                          </span>
+                        </button>
+                      </div>
+                    )}
                     {renderSeparators(tcProvs)}
                   </React.Fragment>
                 );

@@ -1,5 +1,5 @@
 storage "postgresql" {
-  connection_url = "postgres://gitea:gitea@postgres:5432/gitea?sslmode=disable"
+  connection_url = "postgres://openbao:openbao@postgres:5432/openbao?sslmode=disable"
   table          = "vault_kv_store"
   ha_table       = "vault_ha_locks"
 }

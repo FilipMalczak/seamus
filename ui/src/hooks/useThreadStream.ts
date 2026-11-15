@@ -408,7 +408,7 @@ export function useThreadStream(
                     id: `transition-${toThreadId}`,
                     role: "system",
                     text: "",
-                    timestamp: new Date().toISOString(),
+                    timestamp: getEventTimestamp(event),
                     threadTransition: {
                       threadId: toThreadId,
                       threadName: event.thread_name || event.name || null,

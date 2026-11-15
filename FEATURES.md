@@ -199,6 +199,7 @@ Move beyond text chat. Seamus implements the open **A2UI (Adaptive Agent User In
 - **Embedded Questionnaires (`make_questionnaire`)**: Rendered directly in the chat stream with `blocking=true`. The agent calls `wait_for_click`, pausing execution until the user selects chips, radio options, or fills in text inputs. Answers and context are summarized automatically into `answers.md`.
 - **Tabbed Forms (`make_form`)**: Non-blocking forms rendered in dedicated workspace tabs for complex configuration input while the agent continues background tasks.
 - **Interactive Implementation Plans (`make_plan`)**: Markdown-rendered plan artifacts with section-level inline commenting, approval indicators, and the interactive **Proceed** action.
+- **Conversational Anchors & Tab Close Lifecycle**: Tabbed artifacts (Plans and Forms) surface clickable conversational anchor chips directly beneath the originating tool call in chat, support local tab dismissal via header `×` buttons, and remain accessible from their anchor chips in explicit read-only mode when closed.
 - **Auto-Repair & Normalization**: The harness includes automatic component tree normalization (`normalize_a2ui_components`), button declaration auto-synthesis, pre-render surface validation, and structural warning checks to ensure invalid LLM UI JSON never breaks the frontend.
 - **Strict UAX #31 Compliance & Reference Remapping**: Component IDs strictly adhere to Unicode Standard Annex #31 (`c_id.isidentifier()`). Hyphenated identifiers and illegal characters are automatically sanitized into snake_case (`submit_btn`, `review_btn`, `proceed_btn`) with all child, trigger, content, and action context references remapped dynamically.
 - **Negative Constraint on Redundant Options**: Harness prompts and bundled skills strictly instruct agents never to author explicit "Other" or "Custom" choices when `write_in=True` is enabled on questionnaires, as the A2UI renderer automatically supplies the necessary freeform text input.
@@ -241,7 +242,7 @@ A desktop-grade React 19 single-page application built with Vite and TypeScript:
 - **URL State Synchronization**: Active agent, session, thread, and workspace tab are synchronized with browser URL query parameters (`?agent=...&session=...&thread=...&tab=...`), enabling browser back/forward history navigation and shareable deep links.
 - **Real-Time SSE Streaming**: Live AG-UI event streaming with token-by-token text generation, expandable reasoning blocks, and lifecycle state badges.
 - **Changes Diff Viewer**: Dedicated `[Changes]` tab with hierarchical directory tree navigation, flat list view, git status badges (`[A]` Added, `[M]` Modified, `[D]` Deleted, `[R]` Renamed), diff stats (`+N / -M`), syntax-highlighted unified diffs, Gitea deep links (PR, branch, compare, commits, checkpoints), and mounted external repository tracking (showing uncommitted/staged/untracked breakdowns, commits, merges, branch changes, and local branches since initial mount).
-- **Interactive Web Terminal & Shell Emulator**: Dedicated `[Terminal]` tab connected directly to the active session's OpenSandbox container. Features real-time Server-Sent Events (SSE) streaming output, command history navigation (`↑`/`↓`), quick action shortcuts, process interruption (Cancel / `Ctrl+C`), and dynamic working directory tracking across commands.
+- **Interactive Web Terminal & Shell Emulator**: Dedicated `[Terminal]` tab connected directly to the active session's OpenSandbox container. Features real-time Server-Sent Events (SSE) streaming output, command history navigation (`↑`/`↓`), `Tab` shell autocomplete (with inline completion progress indicator and multi-candidate cycling), quick action shortcuts, process interruption (Cancel / `Ctrl+C`), dynamic working directory tracking across commands, and configurable idle session timeouts (`SystemSettings.terminal_session_timeout_seconds`) with reset notices.
 - **Granular Bidirectional Chat Branching & Tool Grouping**: Every chat bubble, reasoning block, tool execution, user message, and synthetic event features contextual "Branch Before" and "Branch After" action buttons oriented toward the center of the viewport (left of user bubbles, right of assistant/system bubbles):
   - *Vertical Layout & Header Pinning*: Branch buttons are arranged vertically at constant fixed size (matching the ~32px height of a collapsed bubble). When a bubble is expanded or multi-line, "Branch Before" sticks to the top of the bubble and "Branch After" sticks to the lower border of the bottom.
   - *Tool Grouping & Visual Brace*: When a single model inference results in multiple tool calls, they are grouped with a visual brace on the left. Individual calls size to fit their content, with "Branch Before" placed directly to the right of the first tool call and "Branch After" placed directly to the right of the last tool call. Branching before restarts all tool executions in the group; branching after keeps all tool results. Single-call inferences omit the brace to minimize visual clutter.
@@ -255,7 +256,8 @@ A desktop-grade React 19 single-page application built with Vite and TypeScript:
     - **Bot Message**: Retains the assistant text; if the turn finished without subsequent tools, transitions cleanly to `AWAITING_USER`, otherwise continues processing.
     - **Bot Thinking**: Retains reasoning tokens and continues inference (`AWAITING_LLM`).
     - **Tool Call / Group**: Preserves all existing tool execution results from the parent session and continues processing (`AWAITING_LLM`).
-- **Chat Bubble Timestamps & Autonomous Sequence Indexing**: Per-bubble localized timestamps with seconds precision (`HH:MM:SS`) and ISO tooltips on hover. When an agent produces a contiguous streak exceeding 5 bubbles (`BUBBLE_SEQUENCE_THRESHOLD`), each bubble in the sequence displays a high-contrast 1-based index badge (`#1`, `#2`, ..., `#N`) at its top-left corner, providing instant visibility into autonomous multi-step execution duration and step-by-step progress.
+- **Chat Bubble Timestamps & Autonomous Sequence Indexing**: Per-bubble localized timestamps sourced from backend/LLM event emission times (`ts` / `created_at`) with seconds precision (`HH:MM:SS`) and ISO tooltips on hover. When an agent produces a contiguous streak exceeding 5 bubbles (`BUBBLE_SEQUENCE_THRESHOLD`), each bubble in the sequence displays a high-contrast 1-based index badge (`#1`, `#2`, ..., `#N`) at its top-left corner, providing instant visibility into autonomous multi-step execution duration and step-by-step progress.
+- **Browser/Desktop Notifications**: Optional Web Notifications toggle (`Notify`) in the header alongside tab-title indicators (`●` / `!`) that alert the user when a background or hidden session pauses awaiting user input, blocking artifact interaction, or hits an error.
 - **Unmasked Symbolic Secret Expressions**: Configuration and settings modal input fields automatically unmask from password to readable text when containing symbolic `${secret(...)}` expressions, keeping secret paths clearly verifiable while preserving password masking for raw strings.
 - **Right-Aligned System and Daemon Events**: Background system notifications, phase shifts, and daemon events are styled and right-aligned to clearly distinguish harness logs from user inputs and assistant dialogue.
 - **Interactive Markdown Renderer**: GitHub Flavored Markdown (GFM) with one-click code block copying, responsive tables, and sanitized external links.
@@ -266,7 +268,7 @@ A desktop-grade React 19 single-page application built with Vite and TypeScript:
 Inspect exactly what the language model sees and executes via the UI `[Inspector]` tab:
 
 - **Decomposed Composite Prompt Layers**: View the exact LM-XML system prompt generated for the active turn, split cleanly into Scaffolding, Dynamic Runtime Context (paths, IDs, dates), and Custom Instructions, with one-click copy.
-- **Registered Tool Schemas & Semantic Label Badges**: Interactive accordion displaying formatted JSON Schema parameter definitions for every tool exposed to the agent, augmented by semantic colored badges (`opensandbox`, `harness`, `planning`, `web`, `skills`) loaded from `tool_labeling.json` with interactive category filtering.
+- **Registered Tool Schemas, Semantic Label Badges & Interactive Disabling**: Interactive accordion displaying formatted JSON Schema parameter definitions for every tool exposed to the agent, augmented by semantic colored badges (`opensandbox`, `harness`, `planning`, `web`, `skills`) loaded from `tool_labeling.json` with interactive category filtering and a per-tool enable/disable checkbox in each card header persisted to `AgentConfig.disabled_tools`.
 - **Active Todos Checklist**: Real-time inspection of active task planning items managed by DeepAgents `TodoListMiddleware`.
 - **Runtime Inference Parameters**: Model identifier, base URL, sampling parameters, and masked credential references.
 
@@ -484,6 +486,7 @@ class AgentConfig(BaseModel):
     repositories: list[ExternalRepositoryConfig] = Field(default_factory=list)
     rules_patterns: list[str] = Field(default_factory=lambda: ["AGENTS.md", ".seamus/rules/**"])
     sandbox_image: str | None = None
+    disabled_tools: list[str] = Field(default_factory=list)
     daemons: DaemonsConfig = Field(default_factory=DaemonsConfig)
 ```
 
@@ -508,6 +511,7 @@ class AgentConfig(BaseModel):
 - `skills_implementation`: Skills discovery and disclosure implementation (`seamus` [default], `deepagents`, or `none`).
 - `web_search`: Web search and page extraction implementation (`duckduckgo` [default] or `none`). Powered by DuckDuckGo with zero API keys or external credentials required.
 - `thread_message_overlap`: Number of prior thread messages retained when branching or switching modes (default: `5`).
+- `disabled_tools`: List of tool names disabled for the session via the Agent Inspector (filtered out on subsequent inference turns).
 
 ---
 
@@ -518,9 +522,11 @@ System-wide settings defined in `seamus.config.settings`, persisted to the `syst
 ```python
 class SystemSettings(BaseModel):
     skill_directories: list[str] = Field(default_factory=lambda: ["~/.seamus/skills", "~/.skills"])
+    terminal_session_timeout_seconds: int = Field(default=300, ge=0)
 ```
 
 - `skill_directories`: Host directories containing system-wide Anthropic skills, mounted read-only into OpenSandbox containers at `/skills/system/{idx}`. Supports `~` and environment expansion.
+- `terminal_session_timeout_seconds`: Idle timeout in seconds for the interactive web terminal session (`0` disables automatic expiration; default `300`).
 
 ---
 
@@ -533,7 +539,7 @@ The production stack orchestrated by `docker-compose.yml`:
 | `postgres` | `postgres:16-alpine` | `5432` (internal) | PostgreSQL database storage backing Gitea and OpenBao tables. |
 | `gitea` | `gitea/gitea:latest` | `3001:3000` | Git repository server, commit log, audit history, and Sync PR engine. |
 | `gitea-init` | `gitea/gitea:latest` | None | One-shot initialization script ensuring default `seamus` admin user exists. |
-| `openbao-db-init` | `postgres:16-alpine` | None | Provisions PostgreSQL tables (`vault_kv_store`, `vault_ha_locks`) for OpenBao. |
+| `openbao-db-init` | `postgres:16-alpine` | None | Provisions dedicated `openbao` PostgreSQL role/database and vault tables (`vault_kv_store`, `vault_ha_locks`). |
 | `openbao` | `openbao/openbao:latest` | `8200:8200` | OpenBao KV v2 secrets vault daemon. |
 | `openbao-init` | `openbao/openbao:latest` | None | Initializes OpenBao, configures KV v2 mount at `secret/`, and outputs root token. |
 | `opensandbox` | `./opensandbox` (Dockerfile) | `8080` (internal) | Docker-in-Docker sandboxing engine managing isolated execution containers. |
@@ -621,9 +627,11 @@ The backend exposes a clean, typed REST API under prefix `/api/v-alpha/`:
 - `DELETE /api/v-alpha/agents/{agent_id}/sessions/{session_id}`: Terminates session and cleans up containers.
 - `GET /api/v-alpha/agents/{agent_id}/sessions/{session_id}/diff`: Returns live unified git diff of `data/` deliverables.
 - `GET /api/v-alpha/agents/{agent_id}/sessions/{session_id}/inspect`: Surfaces complete Agent Inspector runtime manifest.
+- `PATCH /api/v-alpha/agents/{agent_id}/sessions/{session_id}/inspector/tools`: Enables or disables a specific tool for the session.
 - `GET /api/v-alpha/agents/{agent_id}/sessions/{session_id}/stream`: Session-level SSE feed streaming unified multi-thread events.
 - `POST /api/v-alpha/agents/{agent_id}/sessions/{session_id}/terminal/stream`: Streams shell command execution inside the session's sandbox container via SSE.
-- `GET /api/v-alpha/agents/{agent_id}/sessions/{session_id}/terminal/info`: Returns active sandbox terminal status and operational directory.
+- `GET /api/v-alpha/agents/{agent_id}/sessions/{session_id}/terminal/info`: Returns active sandbox terminal status, operational directory, and configured idle timeout.
+- `POST /api/v-alpha/agents/{agent_id}/sessions/{session_id}/terminal/complete`: Returns shell autocomplete candidates (`token`, `common_prefix`, `candidates`) for the active sandbox working directory.
 - `POST /api/v-alpha/agents/{agent_id}/sessions/{session_id}/branch`: Branches a new child session from an arbitrary historical item (`target_id`, `position: "before" | "after"`, optional `item_type`), with full backward-compatibility for legacy turn branching (`message_id`, `retry_inference`).
 
 #### Steerable Models

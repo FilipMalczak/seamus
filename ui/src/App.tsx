@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Eye, FileText, GitPullRequest, MessageSquare, Terminal as TerminalIcon } from "lucide-react";
+import { Eye, FileText, GitPullRequest, MessageSquare, Terminal as TerminalIcon, X } from "lucide-react";
 import {
   getConfigTemplate,
   getSystemInfo,
@@ -52,6 +52,8 @@ export function App() {
   );
   const [sessionArtifacts, setSessionArtifacts] = useState<ArtifactInfo[]>([]);
   const [submittingArtifactId, setSubmittingArtifactId] = useState<string | null>(null);
+  const [dismissedArtifactTabs, setDismissedArtifactTabs] = useState<Set<string>>(() => new Set());
+  const [reopenedClosedTabs, setReopenedClosedTabs] = useState<Set<string>>(() => new Set());
   const submitArtifactRef = useRef<
     ((artifact: ArtifactInfo, data: Record<string, unknown>) => Promise<void>) | null
   >(null);
@@ -71,11 +73,54 @@ export function App() {
 
   const openTabbedArtifacts = useMemo(
     () =>
-      sessionArtifacts.filter(
-        (a) => a.manifest?.exposition === "tabbed" && !a.is_closed
-      ),
-    [sessionArtifacts]
+      sessionArtifacts.filter((a) => {
+        if (a.manifest?.exposition !== "tabbed") return false;
+        const tabKey = `artifact:${a.kind}:${a.name}`;
+        if (a.is_closed) {
+          return reopenedClosedTabs.has(tabKey);
+        }
+        if (a.manifest?.blocking) return true;
+        return !dismissedArtifactTabs.has(tabKey);
+      }),
+    [sessionArtifacts, dismissedArtifactTabs, reopenedClosedTabs]
   );
+
+  const handleCloseArtifactTab = useCallback(
+    (tabKey: string) => {
+      setDismissedArtifactTabs((prev) => {
+        const next = new Set(prev);
+        next.add(tabKey);
+        return next;
+      });
+      setReopenedClosedTabs((prev) => {
+        if (!prev.has(tabKey)) return prev;
+        const next = new Set(prev);
+        next.delete(tabKey);
+        return next;
+      });
+      if (activeMainTab === tabKey) {
+        setActiveMainTab("chat");
+      }
+    },
+    [activeMainTab]
+  );
+
+  const handleOpenArtifactTab = useCallback((kind: string, name: string) => {
+    const tabKey = `artifact:${kind}:${name}`;
+    setDismissedArtifactTabs((prev) => {
+      if (!prev.has(tabKey)) return prev;
+      const next = new Set(prev);
+      next.delete(tabKey);
+      return next;
+    });
+    setReopenedClosedTabs((prev) => {
+      if (prev.has(tabKey)) return prev;
+      const next = new Set(prev);
+      next.add(tabKey);
+      return next;
+    });
+    setActiveMainTab(tabKey);
+  }, []);
 
   useEffect(() => {
     if (activeMainTab.startsWith("artifact:")) {
@@ -451,7 +496,30 @@ export function App() {
                   <span>{tabTitle}</span>
                   <span className="main-tab-badge">
                     {art.kind === "plans" ? "Plan" : "Form"}
+                    {art.is_closed ? " (Read-only)" : ""}
                   </span>
+                  {!art.manifest?.blocking && (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className="main-tab-close"
+                      title="Close artifact tab"
+                      aria-label={`Close ${tabTitle} tab`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCloseArtifactTab(tabKey);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleCloseArtifactTab(tabKey);
+                        }
+                      }}
+                    >
+                      <X className="size-3" />
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -479,6 +547,7 @@ export function App() {
                 isSessionView={selectedThreadId === null}
                 onSelectThread={selectThread}
                 onStatusChange={setActiveStatus}
+                onOpenArtifactTab={handleOpenArtifactTab}
                 onKillSession={async () => {
                   if (selectedAgentId && selectedSessionId) {
                     await killSession(selectedAgentId, selectedSessionId);
@@ -596,6 +665,7 @@ export function App() {
                   <div className="artifact-tab-container">
                     <ArtifactRenderer
                       artifact={art}
+                      readOnly={Boolean(art.is_closed)}
                       isSubmitting={submittingArtifactId === art.name}
                       onSubmit={async (data) => {
                         if (submitArtifactRef.current) {

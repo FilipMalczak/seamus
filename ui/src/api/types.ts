@@ -64,6 +64,7 @@ export type ConfigTemplateResponse = {
 
 export type SystemSettings = {
   skill_directories: string[];
+  terminal_session_timeout_seconds?: number;
 };
 
 export type SystemSettingsResponse = {
@@ -349,6 +350,7 @@ export interface ToolInspectInfo {
   backend: string;
   category?: string;
   labels?: ToolLabelInfo[];
+  enabled?: boolean;
 }
 
 export interface SubAgentInspectInfo {
@@ -498,6 +500,13 @@ export interface TerminalInfoResponse {
   session_id: string;
   operational_dir: string;
   status: string;
+  terminal_session_timeout_seconds?: number;
+}
+
+export interface TerminalCompleteResponse {
+  token: string;
+  common_prefix: string;
+  candidates: string[];
 }
 
 

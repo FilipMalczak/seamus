@@ -58,7 +58,7 @@ and `node --test` under `ui/tests/`) and verified against the test bodies.
 | `tests/e2e/test_session_lifecycle.py` | 9 | 9 | 0 | Kill teardown & 409/400 guards, branching before/after & lineage, mode switch, accept |
 | `tests/e2e/test_steerable_conversation.py` | 7 | 7 | 0 | Default session/thread, reasoning & tool events, SSE replay, queue isolation, determinism |
 | `tests/e2e/test_sync_pr_lifecycle.py` | 4 | 4 | 0 | Sync PR open, `data/`-scoped diff filtering, thread acceptance merge & PR renewal (Gitea) |
-| `tests/e2e/test_telemetry_and_timestamps.py` | 4 | 2 | 2 | Hierarchical agent/session/thread spans, `/health` exclusion; emission timestamps pinned `xfail` |
+| `tests/e2e/test_telemetry_and_timestamps.py` | 4 | 4 | 0 | Hierarchical agent/session/thread spans, `/health` exclusion, authoritative emission timestamps |
 | `tests/e2e/test_terminal_stream.py` | 6 | 6 | 0 | Terminal info, 404, SSE stdout/exit streaming, non-zero exit codes, `cd` cwd continuity |
 | `tests/e2e/test_threads.py` | 12 | 12 | 0 | Single open thread reuse/close, slug conflicts, status, rename, 307 redirect, SSE replay |
 | `tests/e2e/test_vault.py` | 8 | 8 | 0 | OpenBao token endpoint, secret write/read/update/list via HTTP without echoing values |
@@ -252,7 +252,7 @@ Every requirement and invariant in [`requirements.md`](./requirements.md) and
 
 ## Known Unimplemented / Broken Behaviours Pinned by `xfail`
 
-All 8 non-strict `xfail` tests (`strict=False`) document specified behaviour that is currently
+All 6 non-strict `xfail` tests (`strict=False`) document specified behaviour that is currently
 unimplemented or broken in production code and are cross-linked in [`backlog.md`](./backlog.md):
 
 | Test ID | Tier | Gap pinned | Backlog entry |
@@ -261,8 +261,6 @@ unimplemented or broken in production code and are cross-linked in [`backlog.md`
 | `tests/e2e/test_error_diagnostics.py::test_a_failing_turn_persists_the_error_type_and_traceback` | E2E | `ag_ui_langgraph` converts provider exceptions into message-only `RunErrorEvent` before outer runner enrichment | [Review and Rethink Error Reporting Architecture and Semantics](./backlog.md#review-and-rethink-error-reporting-architecture-and-semantics) |
 | `tests/e2e/test_error_diagnostics.py::test_the_streamed_run_error_exposes_the_error_type` | E2E | Streamed `RUN_ERROR` omits `error_type` for the same reason | [Review and Rethink Error Reporting Architecture and Semantics](./backlog.md#review-and-rethink-error-reporting-architecture-and-semantics) |
 | `tests/e2e/test_inspector_and_steerable.py::test_inspect_report_reflects_conversation_history` | E2E | Checkpoint decoder returns no messages (`messages.json` never written), leaving `history.message_count == 0` | [Inspector Conversation History Reconstruction from Checkpoints](./backlog.md#inspector-conversation-history-reconstruction-from-checkpoints) |
-| `tests/e2e/test_telemetry_and_timestamps.py::test_events_carry_authoritative_emission_timestamps` | E2E | Backend AG-UI events do not yet stamp an authoritative emission timestamp | [Chat Bubble Timestamps Reflect Client-Side Render Time...](./backlog.md#chat-bubble-timestamps-reflect-client-side-render-time-rather-than-serverllm-event-emission-time) |
-| `tests/e2e/test_telemetry_and_timestamps.py::test_streamed_events_expose_timestamps_to_clients` | E2E | Replayed SSE events lack authoritative emission timestamps for the same reason | [Chat Bubble Timestamps Reflect Client-Side Render Time...](./backlog.md#chat-bubble-timestamps-reflect-client-side-render-time-rather-than-serverllm-event-emission-time) |
 | `tests/test_personas.py::test_agent_config_exposes_a_configurable_persona` | Unit | `AgentConfig` has no `persona` field yet (`REQ-024`) | [Pluggable Agent Personas](./backlog.md#pluggable-agent-personas-coder-office-worker-designer-etc) |
 | `tests/test_personas.py::test_configured_persona_reaches_the_effective_system_prompt` | Unit | System prompt identity is hardcoded to the default Coder archetype (`REQ-024`) | [Pluggable Agent Personas](./backlog.md#pluggable-agent-personas-coder-office-worker-designer-etc) |
 

@@ -1,5 +1,7 @@
 """Routes for thread lifecycle, redirection, event streaming, and status inspection."""
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import RedirectResponse, StreamingResponse
 
@@ -174,7 +176,8 @@ async def accept_thread(
     """Accept the active thread, merge its Sync PR, and spawn a new thread with a new Sync PR."""
     store = get_harness_store()
     try:
-        new_thread = store.accept_thread(
+        new_thread = await asyncio.to_thread(
+            store.accept_thread,
             agent_identifier=agent_identifier,
             session_identifier=session_identifier,
             thread_identifier=thread_identifier,

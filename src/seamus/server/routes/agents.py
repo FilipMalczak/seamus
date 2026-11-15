@@ -1,5 +1,7 @@
 """Routes for agent lifecycle operations."""
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException, status
 
 from seamus.config.template import get_config_template_store
@@ -77,7 +79,7 @@ async def create_agent(payload: AgentCreateRequest) -> AgentSummaryResponse:
 
     store = get_harness_store()
     try:
-        agent = store.create_agent(config=agent_config, name=payload.name)
+        agent = await asyncio.to_thread(store.create_agent, config=agent_config, name=payload.name)
     except SlugConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ValueError as exc:
@@ -112,7 +114,8 @@ async def update_agent(
     """Update agent name and configuration with full updated object."""
     store = get_harness_store()
     try:
-        agent = store.update_agent(
+        agent = await asyncio.to_thread(
+            store.update_agent,
             identifier=agent_identifier,
             config=payload.config,
             name=payload.name,

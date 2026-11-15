@@ -1,5 +1,7 @@
 """Routes for the service-wide configuration template."""
 
+import asyncio
+
 from fastapi import APIRouter
 
 from seamus.config.models import AgentConfig
@@ -24,7 +26,7 @@ async def get_config_template() -> ConfigTemplateResponse:
 async def update_config_template(payload: AgentConfig) -> ConfigTemplateResponse:
     """Set or replace the singleton configuration template with a full updated object."""
     store = get_config_template_store()
-    updated = store.set_template(payload)
+    updated = await asyncio.to_thread(store.set_template, payload)
     return ConfigTemplateResponse(
         config=updated,
         is_complete=updated.is_complete(),
