@@ -128,3 +128,23 @@ async def update_agent(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     return _to_agent_detail(agent)
+
+
+@router.post("/agent/{agent_identifier}/archive", status_code=status.HTTP_204_NO_CONTENT)
+async def archive_agent(agent_identifier: str) -> None:
+    """Archive an agent and its sessions by prefixing its Gitea organization with archived-."""
+    store = get_harness_store()
+    try:
+        await asyncio.to_thread(store.archive_agent, agent_identifier=agent_identifier)
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.delete("/agent/{agent_identifier}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_agent(agent_identifier: str) -> None:
+    """Permanently delete an agent, its repositories, and its Gitea organization."""
+    store = get_harness_store()
+    try:
+        await asyncio.to_thread(store.delete_agent, agent_identifier=agent_identifier)
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

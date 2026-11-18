@@ -2,6 +2,7 @@
 
 import json
 import logging
+import shutil
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -188,6 +189,70 @@ class HarnessStore:
 
             return agent
 
+    def archive_agent(self, agent_identifier: str) -> None:
+        """Archive agent: rename Gitea org to archived-agent-{hex} and purge local files."""
+        agent = self.resolve_agent(agent_identifier)
+
+        from seamus.harness.runner import get_runner_registry
+
+        registry = get_runner_registry()
+        for session in list(agent.sessions.values()):
+            runner = registry._runners.get(str(session.id))
+            if runner is not None:
+                runner.kill()
+
+        ws_mgr = get_workspace_manager()
+        org_name = ws_mgr.get_agent_org_name(agent.id)
+        archived_org_name = f"archived-{org_name}"
+        client = ws_mgr.client
+        if ws_mgr.settings.enabled and client.is_healthy():
+            try:
+                client.rename_org(org_name, archived_org_name)
+            except Exception:
+                logger.exception("Failed to rename Gitea org %s to %s", org_name, archived_org_name)
+
+        agent_dir = ws_mgr.workspace_root / str(agent.id)
+        if agent_dir.exists():
+            shutil.rmtree(agent_dir, ignore_errors=True)
+
+        self._agents.pop(agent.id, None)
+
+    def delete_agent(self, agent_identifier: str) -> None:
+        """Hard-delete agent: remove all org repos, delete Gitea org, and purge local files."""
+        agent = self.resolve_agent(agent_identifier)
+
+        from seamus.harness.runner import get_runner_registry
+
+        registry = get_runner_registry()
+        for session in list(agent.sessions.values()):
+            runner = registry._runners.get(str(session.id))
+            if runner is not None:
+                runner.kill()
+
+        ws_mgr = get_workspace_manager()
+        org_name = ws_mgr.get_agent_org_name(agent.id)
+        client = ws_mgr.client
+        if ws_mgr.settings.enabled and client.is_healthy():
+            try:
+                repos = client.list_org_repos(org_name)
+                for r in repos:
+                    r_name = r.get("name", "")
+                    if r_name:
+                        client.delete_repo(r_name, owner=org_name)
+            except Exception:
+                logger.exception("Failed to delete repositories for org %s", org_name)
+
+            try:
+                client.delete_org(org_name)
+            except Exception:
+                logger.exception("Failed to delete Gitea org %s", org_name)
+
+        agent_dir = ws_mgr.workspace_root / str(agent.id)
+        if agent_dir.exists():
+            shutil.rmtree(agent_dir, ignore_errors=True)
+
+        self._agents.pop(agent.id, None)
+
     def create_session(
         self,
         agent_identifier: str,
@@ -286,6 +351,137 @@ class HarnessStore:
             logger.exception("Failed to update workspace on killing session %s", session.id)
 
         return session
+
+    def archive_session(
+        self,
+        agent_identifier: str,
+        session_identifier: str,
+    ) -> None:
+        """Archive session: checkpoint state, archive repo & forks in Gitea, clean local clone."""
+        agent = self.resolve_agent(agent_identifier)
+        session = resolve_session(agent, session_identifier)
+
+        from seamus.harness.runner import get_runner_registry
+
+        registry = get_runner_registry()
+        runner = registry._runners.get(str(session.id))
+        if runner is not None:
+            runner.kill()
+
+        ws_mgr = get_workspace_manager()
+        open_thread = next(
+            (t for t in session.threads.values() if t.is_open),
+            next(iter(session.threads.values()), None),
+        )
+        thread_id = open_thread.id if open_thread else None
+
+        # Guarantee full checkpoint before archiving
+        if thread_id is not None:
+            try:
+                ws_mgr.commit_checkpoint_changes(agent.id, session.id, thread_id)
+            except Exception:
+                logger.exception("Failed to commit checkpoint changes for session %s", session.id)
+
+        try:
+            ws_mgr.commit_session_config(session)
+            ws_mgr.close_sync_pr(session, agent)
+        except Exception:
+            logger.exception("Failed to checkpoint session %s before archiving", session.id)
+
+        try:
+            ext_mgr = get_external_repo_manager()
+            mount_paths = calculate_mount_paths(session.config.repositories)
+            for repo_cfg in session.config.repositories:
+                mount_name = mount_paths.get(repo_cfg.id, "repo")
+                ext_mgr.checkpoint_working_copy(
+                    agent_id=agent.id,
+                    session_id=session.id,
+                    repo_config=repo_cfg,
+                    mount_name=mount_name,
+                    checkpoint_id="archive",
+                )
+        except Exception:
+            logger.exception(
+                "Failed to snapshot external repositories before archiving session %s", session.id
+            )
+
+        # Gitea repository archiving
+        org_name = ws_mgr.get_agent_org_name(agent.id)
+        session_repo = ws_mgr.get_session_repo_name(session.id)
+        session_hash = session.id.hex[:8]
+        client = ws_mgr.client
+        if ws_mgr.settings.enabled and client.is_healthy():
+            try:
+                client.archive_repo(session_repo, owner=org_name)
+            except Exception:
+                logger.exception("Failed to archive Gitea repo %s/%s", org_name, session_repo)
+
+            try:
+                repos = client.list_org_repos(org_name)
+                for r in repos:
+                    r_name = r.get("name", "")
+                    if r_name.startswith("project-") and r_name.endswith(f"-{session_hash}"):
+                        client.archive_repo(r_name, owner=org_name)
+            except Exception:
+                logger.exception(
+                    "Failed to archive external mount forks for session %s", session.id
+                )
+
+        # Clean local workspace clone
+        ws_path = ws_mgr.get_session_workspace_path(agent.id, session.id)
+        if ws_path.exists():
+            shutil.rmtree(ws_path, ignore_errors=True)
+
+        agent.sessions.pop(session.id, None)
+
+    def delete_session(
+        self,
+        agent_identifier: str,
+        session_identifier: str,
+    ) -> None:
+        """Hard delete session: remove repo and mount forks from Gitea and purge local clone."""
+        agent = self.resolve_agent(agent_identifier)
+        session = resolve_session(agent, session_identifier)
+
+        from seamus.harness.runner import get_runner_registry
+
+        registry = get_runner_registry()
+        runner = registry._runners.get(str(session.id))
+        if runner is not None:
+            runner.kill()
+
+        ws_mgr = get_workspace_manager()
+        try:
+            ws_mgr.close_sync_pr(session, agent)
+        except Exception:
+            pass
+
+        org_name = ws_mgr.get_agent_org_name(agent.id)
+        session_repo = ws_mgr.get_session_repo_name(session.id)
+        session_hash = session.id.hex[:8]
+        client = ws_mgr.client
+        if ws_mgr.settings.enabled and client.is_healthy():
+            # Delete external mount forks first
+            try:
+                repos = client.list_org_repos(org_name)
+                for r in repos:
+                    r_name = r.get("name", "")
+                    if r_name.startswith("project-") and r_name.endswith(f"-{session_hash}"):
+                        client.delete_repo(r_name, owner=org_name)
+            except Exception:
+                logger.exception("Failed to delete mount forks for session %s", session.id)
+
+            try:
+                client.delete_repo(session_repo, owner=org_name)
+            except Exception:
+                logger.exception("Failed to delete Gitea repo %s/%s", org_name, session_repo)
+
+        # Clean local workspace clone
+        ws_path = ws_mgr.get_session_workspace_path(agent.id, session.id)
+        if ws_path.exists():
+            shutil.rmtree(ws_path, ignore_errors=True)
+
+        agent.sessions.pop(session.id, None)
 
     @staticmethod
     def _find_branch_slice_point(
@@ -1459,6 +1655,8 @@ class HarnessStore:
 
                 org_repos = client.list_org_repos(org_name)
                 for repo in org_repos:
+                    if repo.get("archived") is True:
+                        continue
                     repo_name = repo.get("name", "")
                     if not repo_name.startswith("session-"):
                         continue

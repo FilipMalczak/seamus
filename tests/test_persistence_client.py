@@ -339,3 +339,52 @@ def test_client_get_authenticated_clone_url_with_owner(test_settings: Persistenc
     client = GiteaClient(test_settings)
     url = client.get_authenticated_clone_url("project-1", owner="agent-xyz")
     assert url == "http://testuser:testpassword@test-gitea:3000/agent-xyz/project-1.git"
+
+
+def test_client_rename_org_success(test_settings: PersistenceSettings) -> None:
+    client = GiteaClient(test_settings)
+    mock_post = MagicMock()
+    mock_post.status_code = 204
+
+    with patch("httpx.Client.post", return_value=mock_post) as mock_call:
+        res = client.rename_org("agent-1234", "archived-agent-1234")
+        assert res is True
+        mock_call.assert_called_once()
+        assert mock_call.call_args.args[0] == "http://test-gitea:3000/api/v1/orgs/agent-1234/rename"
+        assert mock_call.call_args.kwargs["json"] == {"new_name": "archived-agent-1234"}
+
+
+def test_client_rename_org_failure(test_settings: PersistenceSettings) -> None:
+    client = GiteaClient(test_settings)
+    mock_post = MagicMock()
+    mock_post.status_code = 422
+    mock_post.text = "Name already taken"
+
+    with patch("httpx.Client.post", return_value=mock_post):
+        with pytest.raises(GiteaAPIError, match="Failed to rename organization"):
+            client.rename_org("agent-1234", "archived-agent-1234")
+
+
+def test_client_archive_repo_success(test_settings: PersistenceSettings) -> None:
+    client = GiteaClient(test_settings)
+    mock_patch = MagicMock()
+    mock_patch.status_code = 200
+
+    with patch("httpx.Client.patch", return_value=mock_patch) as mock_call:
+        res = client.archive_repo("session-1234", owner="agent-1234")
+        assert res is True
+        mock_call.assert_called_once()
+        assert (
+            mock_call.call_args.args[0]
+            == "http://test-gitea:3000/api/v1/repos/agent-1234/session-1234"
+        )
+        assert mock_call.call_args.kwargs["json"] == {"archived": True}
+
+
+def test_client_archive_repo_not_found(test_settings: PersistenceSettings) -> None:
+    client = GiteaClient(test_settings)
+    mock_patch = MagicMock()
+    mock_patch.status_code = 404
+
+    with patch("httpx.Client.patch", return_value=mock_patch):
+        assert client.archive_repo("session-missing", owner="agent-1234") is False

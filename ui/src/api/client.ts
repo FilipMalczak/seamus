@@ -122,6 +122,26 @@ export async function updateAgent(
   return handleResponse<AgentDetail>(res);
 }
 
+export async function archiveAgent(idOrSlug: string): Promise<void> {
+  const res = await fetch(`${BASE_URL}/agent/${encodeURIComponent(idOrSlug)}/archive`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Failed to archive agent (${res.status}): ${errorText}`);
+  }
+}
+
+export async function deleteAgent(idOrSlug: string): Promise<void> {
+  const res = await fetch(`${BASE_URL}/agent/${encodeURIComponent(idOrSlug)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Failed to delete agent (${res.status}): ${errorText}`);
+  }
+}
+
 export async function createSession(
   agentId: string,
   payload: { name?: string | null; config?: AgentConfig | null }
@@ -165,6 +185,32 @@ export async function killSession(agentId: string, sessionId: string): Promise<S
     }
   );
   return handleResponse<SessionDetail>(res);
+}
+
+export async function archiveSession(agentId: string, sessionId: string): Promise<void> {
+  const res = await fetch(
+    `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/archive`,
+    {
+      method: "POST",
+    }
+  );
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Failed to archive session (${res.status}): ${errorText}`);
+  }
+}
+
+export async function deleteSession(agentId: string, sessionId: string): Promise<void> {
+  const res = await fetch(
+    `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}`,
+    {
+      method: "DELETE",
+    }
+  );
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Failed to delete session (${res.status}): ${errorText}`);
+  }
 }
 
 export async function switchSessionMode(

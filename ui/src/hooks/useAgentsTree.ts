@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   acceptThread,
+  archiveAgent,
+  archiveSession,
   branchSession,
   type BranchSessionOptions,
   createAgent,
   createSession,
   createThread,
+  deleteAgent,
+  deleteSession,
   getAgent,
   getSession,
   killSession,
@@ -114,22 +118,37 @@ export function useAgentsTree() {
 
       setAgents(fullList);
 
-      // Hydrate selection from URL query params (or fallback to first entity) if nothing selected yet
-      if (fullList.length > 0 && !selectedAgentId) {
+      if (fullList.length === 0) {
+        setSelectedAgentId(null);
+        setSelectedSessionId(null);
+        setSelectedThreadId(null);
+      } else if (!selectedAgentId || !fullList.some((a) => a.id === selectedAgentId)) {
         const resolved = resolveSelectionFromUrl(
           fullList,
           typeof window !== "undefined" ? window.location.search : ""
         );
-        if (resolved.agentId) setSelectedAgentId(resolved.agentId);
-        if (resolved.sessionId) setSelectedSessionId(resolved.sessionId);
-        if (resolved.threadId) setSelectedThreadId(resolved.threadId);
+        setSelectedAgentId(resolved.agentId);
+        setSelectedSessionId(resolved.sessionId);
+        setSelectedThreadId(resolved.threadId);
+      } else {
+        const currentAgent = fullList.find((a) => a.id === selectedAgentId);
+        const sessions = Object.values(currentAgent?.sessionsMap || {});
+        if (sessions.length === 0) {
+          setSelectedSessionId(null);
+          setSelectedThreadId(null);
+        } else if (selectedSessionId && !sessions.some((s) => s.id === selectedSessionId)) {
+          setSelectedSessionId(sessions[0].id);
+          const openThread =
+            sessions[0].threads?.find((t) => t.is_open) || sessions[0].threads?.[0];
+          setSelectedThreadId(openThread ? openThread.id : null);
+        }
       }
     } catch (err: any) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  }, [selectedAgentId]);
+  }, [selectedAgentId, selectedSessionId]);
 
   useEffect(() => {
     refreshTree();
@@ -308,6 +327,48 @@ export function useAgentsTree() {
     [refreshTree]
   );
 
+  const handleArchiveAgent = useCallback(
+    async (agentId: string) => {
+      await archiveAgent(agentId);
+      await refreshTree();
+      setSelectedAgentId((prev) => (prev === agentId ? null : prev));
+      setSelectedSessionId(null);
+      setSelectedThreadId(null);
+    },
+    [refreshTree]
+  );
+
+  const handleDeleteAgent = useCallback(
+    async (agentId: string) => {
+      await deleteAgent(agentId);
+      await refreshTree();
+      setSelectedAgentId((prev) => (prev === agentId ? null : prev));
+      setSelectedSessionId(null);
+      setSelectedThreadId(null);
+    },
+    [refreshTree]
+  );
+
+  const handleArchiveSession = useCallback(
+    async (agentId: string, sessionId: string) => {
+      await archiveSession(agentId, sessionId);
+      await refreshTree();
+      setSelectedSessionId((prev) => (prev === sessionId ? null : prev));
+      setSelectedThreadId(null);
+    },
+    [refreshTree]
+  );
+
+  const handleDeleteSession = useCallback(
+    async (agentId: string, sessionId: string) => {
+      await deleteSession(agentId, sessionId);
+      await refreshTree();
+      setSelectedSessionId((prev) => (prev === sessionId ? null : prev));
+      setSelectedThreadId(null);
+    },
+    [refreshTree]
+  );
+
   const handleSwitchSessionMode = useCallback(
     async (agentId: string, sessionId: string, mode: "chat" | "plan") => {
       const updatedSession = await switchSessionMode(agentId, sessionId, mode);
@@ -383,6 +444,10 @@ export function useAgentsTree() {
     createSession: handleCreateSession,
     createThread: handleCreateThread,
     killSession: handleKillSession,
+    archiveAgent: handleArchiveAgent,
+    deleteAgent: handleDeleteAgent,
+    archiveSession: handleArchiveSession,
+    deleteSession: handleDeleteSession,
     switchSessionMode: handleSwitchSessionMode,
     branchSession: handleBranchSession,
     acceptThread: handleAcceptThread,

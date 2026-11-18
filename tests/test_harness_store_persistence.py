@@ -1,6 +1,7 @@
 """Unit tests for HarnessStore persistence synchronization and Gitea hydration."""
 
 import json
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -158,3 +159,208 @@ def test_harness_store_hydrate_ignores_prefixed_and_invalid_orgs() -> None:
 
     assert len(store._agents) == 0
     mock_client.list_org_repos.assert_not_called()
+
+
+def test_harness_store_hydrate_ignores_archived_repos(test_config: AgentConfig) -> None:
+    store = HarnessStore()
+    agent_id = uuid4()
+    active_session_id = uuid4()
+    archived_session_id = uuid4()
+
+    mock_client = MagicMock()
+    mock_client.is_healthy.return_value = True
+    mock_client.list_orgs.return_value = [{"name": f"agent-{agent_id.hex}"}]
+    mock_client.list_org_repos.return_value = [
+        {"name": "agent"},
+        {"name": f"session-{active_session_id}", "archived": False},
+        {"name": f"session-{archived_session_id}", "archived": True},
+    ]
+
+    main_config = {
+        "id": str(agent_id),
+        "name": "agent-1",
+        "created_at": "2026-10-31T10:00:00Z",
+        "config": test_config.model_dump(),
+    }
+    session_config = {
+        "id": str(active_session_id),
+        "agent_id": str(agent_id),
+        "name": "active-session",
+        "created_at": "2026-10-31T10:05:00Z",
+        "status": "AWAITING_USER",
+        "config": test_config.model_dump(),
+        "threads": [],
+    }
+
+    def mock_get_file(repo: str, branch: str, path: str, owner: str | None = None) -> str | None:
+        if repo == "agent":
+            return json.dumps(main_config)
+        if repo == f"session-{active_session_id}":
+            return json.dumps(session_config)
+        return None
+
+    mock_client.get_file_content.side_effect = mock_get_file
+
+    mock_ws = MagicMock()
+    mock_ws.settings.enabled = True
+    mock_ws.client = mock_client
+
+    with patch("seamus.harness.store.get_workspace_manager", return_value=mock_ws):
+        store.hydrate_from_gitea()
+
+    assert agent_id in store._agents
+    agent = store._agents[agent_id]
+    assert active_session_id in agent.sessions
+    assert archived_session_id not in agent.sessions
+
+
+def test_harness_store_archive_session(test_config: AgentConfig, tmp_path: Path) -> None:
+    store = HarnessStore()
+    mock_ws = MagicMock()
+    mock_ws.settings.enabled = True
+    mock_ws.workspace_root = tmp_path
+    mock_client = MagicMock()
+    mock_client.is_healthy.return_value = True
+    mock_ws.client = mock_client
+
+    with patch("seamus.harness.store.get_workspace_manager", return_value=mock_ws):
+        agent = store.create_agent(config=test_config, name="agent-arch")
+        session = store.create_session(str(agent.id), config=test_config, name="session-arch")
+
+        session_hash = session.id.hex[:8]
+        org_name = f"agent-{agent.id.hex}"
+        mock_ws.get_agent_org_name.return_value = org_name
+        mock_ws.get_session_repo_name.return_value = f"session-{session.id}"
+
+        # Mock mount forks in the org
+        fork_name = f"project-myrepo-12345678-{session_hash}"
+        other_fork = "project-other-87654321-ffffffff"
+        mock_client.list_org_repos.return_value = [
+            {"name": "agent"},
+            {"name": f"session-{session.id}"},
+            {"name": fork_name},
+            {"name": other_fork},
+        ]
+
+        # Fake local session workspace directory
+        sess_ws = tmp_path / str(agent.id) / str(session.id)
+        sess_ws.mkdir(parents=True, exist_ok=True)
+        (sess_ws / "dummy.txt").write_text("hello")
+        mock_ws.get_session_workspace_path.return_value = sess_ws
+
+        store.archive_session(str(agent.id), str(session.id))
+
+        # Checkpoints committed
+        assert mock_ws.commit_checkpoint_changes.called
+        assert mock_ws.commit_session_config.called
+        assert mock_ws.close_sync_pr.called
+
+        # Repos archived in Gitea
+        mock_client.archive_repo.assert_any_call(f"session-{session.id}", owner=org_name)
+        mock_client.archive_repo.assert_any_call(fork_name, owner=org_name)
+        # Other session's fork should not be archived
+        for call in mock_client.archive_repo.call_args_list:
+            assert call.args[0] != other_fork
+
+        # Local directory cleaned up
+        assert not sess_ws.exists()
+
+        # Session removed from in-memory agent
+        assert session.id not in agent.sessions
+
+
+def test_harness_store_delete_session(test_config: AgentConfig, tmp_path: Path) -> None:
+    store = HarnessStore()
+    mock_ws = MagicMock()
+    mock_ws.settings.enabled = True
+    mock_ws.workspace_root = tmp_path
+    mock_client = MagicMock()
+    mock_client.is_healthy.return_value = True
+    mock_ws.client = mock_client
+
+    with patch("seamus.harness.store.get_workspace_manager", return_value=mock_ws):
+        agent = store.create_agent(config=test_config, name="agent-del")
+        session = store.create_session(str(agent.id), config=test_config, name="session-del")
+
+        session_hash = session.id.hex[:8]
+        org_name = f"agent-{agent.id.hex}"
+        mock_ws.get_agent_org_name.return_value = org_name
+        mock_ws.get_session_repo_name.return_value = f"session-{session.id}"
+
+        fork_name = f"project-myrepo-12345678-{session_hash}"
+        mock_client.list_org_repos.return_value = [
+            {"name": f"session-{session.id}"},
+            {"name": fork_name},
+        ]
+
+        sess_ws = tmp_path / str(agent.id) / str(session.id)
+        sess_ws.mkdir(parents=True, exist_ok=True)
+        mock_ws.get_session_workspace_path.return_value = sess_ws
+
+        store.delete_session(str(agent.id), str(session.id))
+
+        mock_client.delete_repo.assert_any_call(fork_name, owner=org_name)
+        mock_client.delete_repo.assert_any_call(f"session-{session.id}", owner=org_name)
+        assert not sess_ws.exists()
+        assert session.id not in agent.sessions
+
+
+def test_harness_store_archive_agent(test_config: AgentConfig, tmp_path: Path) -> None:
+    store = HarnessStore()
+    mock_ws = MagicMock()
+    mock_ws.settings.enabled = True
+    mock_ws.workspace_root = tmp_path
+    mock_client = MagicMock()
+    mock_client.is_healthy.return_value = True
+    mock_ws.client = mock_client
+
+    with patch("seamus.harness.store.get_workspace_manager", return_value=mock_ws):
+        agent = store.create_agent(config=test_config, name="agent-arch-all")
+        org_name = f"agent-{agent.id.hex}"
+        mock_ws.get_agent_org_name.return_value = org_name
+
+        agent_ws = tmp_path / str(agent.id)
+        agent_ws.mkdir(parents=True, exist_ok=True)
+
+        store.archive_agent(str(agent.id))
+
+        mock_client.rename_org.assert_called_once_with(org_name, f"archived-{org_name}")
+        assert not agent_ws.exists()
+        assert agent.id not in store._agents
+
+
+def test_harness_store_delete_agent(test_config: AgentConfig, tmp_path: Path) -> None:
+    store = HarnessStore()
+    mock_ws = MagicMock()
+    mock_ws.settings.enabled = True
+    mock_ws.workspace_root = tmp_path
+    mock_client = MagicMock()
+    mock_client.is_healthy.return_value = True
+    mock_ws.client = mock_client
+
+    with patch("seamus.harness.store.get_workspace_manager", return_value=mock_ws):
+        agent = store.create_agent(config=test_config, name="agent-del-all")
+        org_name = f"agent-{agent.id.hex}"
+        mock_ws.get_agent_org_name.return_value = org_name
+
+        mock_client.list_org_repos.return_value = [
+            {"name": "agent"},
+            {"name": "session-1"},
+            {"name": "project-repo-1234"},
+        ]
+
+        agent_ws = tmp_path / str(agent.id)
+        agent_ws.mkdir(parents=True, exist_ok=True)
+
+        store.delete_agent(str(agent.id))
+
+        # Repos deleted first
+        mock_client.delete_repo.assert_any_call("agent", owner=org_name)
+        mock_client.delete_repo.assert_any_call("session-1", owner=org_name)
+        mock_client.delete_repo.assert_any_call("project-repo-1234", owner=org_name)
+
+        # Then org deleted
+        mock_client.delete_org.assert_called_once_with(org_name)
+
+        assert not agent_ws.exists()
+        assert agent.id not in store._agents

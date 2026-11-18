@@ -61,11 +61,17 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Revisit Trigger**: When an agent or user explicitly requests fetching the latest upstream commits into an active session working copy mid-session.
 - **Provenance**: [0068-organization-and-session-gitea-layers.md](../decisions/0068-organization-and-session-gitea-layers.md), `src/seamus/persistence/external_repo.py`.
 
-### Hard Delete (Org Deletion) and Soft Delete / Archive (Org Prefixing)
-- **Description**: When deleting or archiving an agent: (1) hard delete permanently deletes the entire Gitea organization (`agent-{agent_id.hex}`) and all repos within it (`agent`, `session-*`, and session mount forks), and (2) soft delete / archive renames the organization with a prefix (e.g. `archived-agent-{hex}`), taking advantage of hydration filtering that only reads orgs matching `agent-*`.
-- **Why Deferred**: Agent lifecycle management currently leaves existing repos intact; deletion and archival workflows require dedicated API endpoints, confirmation prompts, and cleanup hooks.
-- **Revisit Trigger**: When implementing agent deletion and archival in the store, API, and UI.
-- **Provenance**: [0068-organization-and-session-gitea-layers.md](../decisions/0068-organization-and-session-gitea-layers.md), `src/seamus/harness/store.py`, `src/seamus/persistence/client.py`.
+### Unarchiving Features for Agents and Sessions
+- **Description**: Support reversing archived agents and sessions (unarchiving in Gitea by renaming `archived-agent-...` back to `agent-...` or clearing `archived: false` on session repositories and mount forks, and re-hydrating into active store).
+- **Why Deferred**: Archival currently focuses on cleanly hiding finished or dead projects and freeing resources without destroying history; unarchiving requires a dedicated archive-browser UI and restore workflow.
+- **Revisit Trigger**: When users require browsing, inspecting, or restoring historical archived projects from the UI.
+- **Provenance**: [0069-archive-and-delete-lifecycle.md](../decisions/0069-archive-and-delete-lifecycle.md), `src/seamus/harness/store.py`, `src/seamus/persistence/client.py`.
+
+### Granular Deletion and Archival Permissions
+- **Description**: Provide fine-grained control over archive and delete capabilities in system settings (e.g. allowing session deletion while forbidding agent deletion, or adding an explicit toggle for archiving).
+- **Why Deferred**: The global `enable_delete` boolean in `SystemSettings` sufficiently prevents accidental hard deletion across all entities for single-operator workflows.
+- **Revisit Trigger**: When multi-user roles, operator guardrails, or more granular repository governance policies are needed.
+- **Provenance**: [0069-archive-and-delete-lifecycle.md](../decisions/0069-archive-and-delete-lifecycle.md), `src/seamus/config/settings.py`.
 
 ### Agent Work and Time Tracking Across Repositories
 - **Description**: Provide work and time tracking where the agent (or harness telemetry) tracks and reports how much active working/execution time was spent in specific repositories. Leverage Gitea's native time-tracking APIs (`/repos/{owner}/{repo}/issues/{index}/times`) and PR/issue integration to associate agent labor and turn iterations with repository deliverables and milestones.

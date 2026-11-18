@@ -215,10 +215,23 @@ class GiteaClient:
             raise GiteaAPIError(msg)
 
     def delete_org(self, org_name: str) -> bool:
-        """Delete an organization (used primarily in test cleanup)."""
+        """Delete an organization (used in agent hard delete and test cleanup)."""
         with httpx.Client(timeout=10.0, auth=self.auth) as client:
             res = client.delete(f"{self.base_url}/api/v1/orgs/{org_name}")
-            return res.status_code in (200, 204)
+            return res.status_code in (200, 204, 404)
+
+    def rename_org(self, org_name: str, new_name: str) -> bool:
+        """Rename an organization (e.g. prefixing with archived-)."""
+        payload = {"new_name": new_name}
+        with httpx.Client(timeout=10.0, auth=self.auth) as client:
+            res = client.post(f"{self.base_url}/api/v1/orgs/{org_name}/rename", json=payload)
+            if res.status_code in (200, 204):
+                return True
+            msg = (
+                f"Failed to rename organization '{org_name}' to '{new_name}': "
+                f"status={res.status_code} body={res.text}"
+            )
+            raise GiteaAPIError(msg)
 
     def migrate_repo_as_mirror(
         self,
@@ -370,11 +383,30 @@ class GiteaClient:
             raise GiteaAPIError(msg)
 
     def delete_repo(self, repo_name: str, owner: str | None = None) -> bool:
-        """Delete a repository (used primarily in test cleanup)."""
+        """Delete a repository (used primarily in test cleanup and hard delete)."""
         repo_owner = owner or self.settings.gitea_admin_user
         with httpx.Client(timeout=10.0, auth=self.auth) as client:
             res = client.delete(f"{self.base_url}/api/v1/repos/{repo_owner}/{repo_name}")
-            return res.status_code in (200, 204)
+            return res.status_code in (200, 204, 404)
+
+    def archive_repo(self, repo_name: str, owner: str | None = None) -> bool:
+        """Mark a repository as archived via Gitea Danger Zone settings."""
+        repo_owner = owner or self.settings.gitea_admin_user
+        payload = {"archived": True}
+        with httpx.Client(timeout=10.0, auth=self.auth) as client:
+            res = client.patch(
+                f"{self.base_url}/api/v1/repos/{repo_owner}/{repo_name}",
+                json=payload,
+            )
+            if res.status_code == 200:
+                return True
+            if res.status_code == 404:
+                return False
+            msg = (
+                f"Failed to archive repository '{repo_owner}/{repo_name}': "
+                f"status={res.status_code} body={res.text}"
+            )
+            raise GiteaAPIError(msg)
 
     def create_pull_request(
         self,

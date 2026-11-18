@@ -2,6 +2,7 @@ import { useState, type KeyboardEvent } from "react";
 import {
   AlertCircle,
   AlertTriangle,
+  Archive,
   Ban,
   Bot,
   Check,
@@ -17,6 +18,7 @@ import {
   Plus,
   Settings,
   Sparkles,
+  Trash2,
   Wrench,
 } from "lucide-react";
 import type { AgentConfig, AgentStatus, SystemInfoResponse } from "../api/types";
@@ -41,6 +43,11 @@ interface SidebarProps {
   onUpdateAgentConfig?: (agentId: string, config: AgentConfig) => Promise<void>;
   onUpdateSessionConfig?: (agentId: string, sessionId: string, config: AgentConfig) => Promise<void>;
   onEditConfig: (title: string, config: AgentConfig, onSave: (cfg: AgentConfig) => Promise<void>) => void;
+  enableDelete?: boolean;
+  onArchiveAgent?: (agentId: string) => Promise<void>;
+  onDeleteAgent?: (agentId: string) => Promise<void>;
+  onArchiveSession?: (agentId: string, sessionId: string) => Promise<void>;
+  onDeleteSession?: (agentId: string, sessionId: string) => Promise<void>;
 }
 
 export function Sidebar({
@@ -62,6 +69,11 @@ export function Sidebar({
   onUpdateAgentConfig,
   onUpdateSessionConfig,
   onEditConfig,
+  enableDelete,
+  onArchiveAgent,
+  onDeleteAgent,
+  onArchiveSession,
+  onDeleteSession,
 }: SidebarProps) {
   const [expandedAgents, setExpandedAgents] = useState<Record<string, boolean>>({});
   const [expandedSessions, setExpandedSessions] = useState<Record<string, boolean>>({});
@@ -69,6 +81,92 @@ export function Sidebar({
   // Inline editing state
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState<string>("");
+
+  // Confirmation dialog state
+  interface ConfirmDialogState {
+    title: string;
+    message: string;
+    warning?: string;
+    confirmLabel: string;
+    isDestructive?: boolean;
+    onConfirm: () => Promise<void>;
+  }
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
+  const [isActionPending, setIsActionPending] = useState(false);
+
+  const promptArchiveAgent = (agent: FullAgentNode) => {
+    const agentDisplay = agent.name && agent.name.trim() !== "" ? agent.name : agent.id;
+    const hasRunningSession = Object.values(agent.sessionsMap || {}).some((s) =>
+      s.threads?.some((t) => t.is_open && t.status !== "AWAITING_USER")
+    );
+    setConfirmDialog({
+      title: "Archive Agent",
+      message: `Archive agent "${agentDisplay}"? Its Gitea organization will be renamed to "archived-agent-..." and hidden from the navigation tree.`,
+      warning: hasRunningSession
+        ? "One or more sessions are currently running and will be terminated before archiving."
+        : undefined,
+      confirmLabel: "Archive",
+      onConfirm: async () => {
+        if (onArchiveAgent) await onArchiveAgent(agent.id);
+      },
+    });
+  };
+
+  const promptDeleteAgent = (agent: FullAgentNode) => {
+    const agentDisplay = agent.name && agent.name.trim() !== "" ? agent.name : agent.id;
+    const hasRunningSession = Object.values(agent.sessionsMap || {}).some((s) =>
+      s.threads?.some((t) => t.is_open && t.status !== "AWAITING_USER")
+    );
+    setConfirmDialog({
+      title: "Delete Agent",
+      message: `Permanently delete agent "${agentDisplay}"? All repositories in its Gitea organization and local files will be permanently deleted. This cannot be undone.`,
+      warning: hasRunningSession
+        ? "One or more sessions are currently running and will be terminated."
+        : undefined,
+      confirmLabel: "Delete Permanently",
+      isDestructive: true,
+      onConfirm: async () => {
+        if (onDeleteAgent) await onDeleteAgent(agent.id);
+      },
+    });
+  };
+
+  const promptArchiveSession = (agentId: string, session: any) => {
+    const sessionDisplay =
+      session.name && session.name.trim() !== "" ? session.name : session.id;
+    const openThread = session.threads?.find((t: any) => t.is_open);
+    const isRunning = openThread && openThread.status !== "AWAITING_USER";
+    setConfirmDialog({
+      title: "Archive Session",
+      message: `Archive session "${sessionDisplay}"? Its repository and external mount forks will be archived in Gitea and hidden from the navigation tree.`,
+      warning: isRunning
+        ? "This session is currently running. Proceeding will terminate the active execution before archiving."
+        : undefined,
+      confirmLabel: "Archive",
+      onConfirm: async () => {
+        if (onArchiveSession) await onArchiveSession(agentId, session.id);
+      },
+    });
+  };
+
+  const promptDeleteSession = (agentId: string, session: any) => {
+    const sessionDisplay =
+      session.name && session.name.trim() !== "" ? session.name : session.id;
+    const openThread = session.threads?.find((t: any) => t.is_open);
+    const isRunning = openThread && openThread.status !== "AWAITING_USER";
+    setConfirmDialog({
+      title: "Delete Session",
+      message: `Permanently delete session "${sessionDisplay}"? Its repository and external mount forks will be permanently deleted. This cannot be undone.`,
+      warning: isRunning
+        ? "This session is currently running. Proceeding will terminate the active execution."
+        : undefined,
+      confirmLabel: "Delete Permanently",
+      isDestructive: true,
+      onConfirm: async () => {
+        if (onDeleteSession) await onDeleteSession(agentId, session.id);
+      },
+    });
+  };
 
   const toggleAgent = (agentId: string) => {
     setExpandedAgents((prev) => ({
@@ -299,6 +397,30 @@ export function Sidebar({
                       className="icon-action-btn"
                       onClick={(e) => {
                         e.stopPropagation();
+                        promptArchiveAgent(agent);
+                      }}
+                      title="Archive Agent"
+                    >
+                      <Archive className="size-3" />
+                    </button>
+                    {enableDelete && (
+                      <button
+                        type="button"
+                        className="icon-action-btn text-rose-400 hover:text-rose-300"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          promptDeleteAgent(agent);
+                        }}
+                        title="Delete Agent"
+                      >
+                        <Trash2 className="size-3" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="icon-action-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
                         handleCreateSession(agent.id);
                       }}
                       title="New Session"
@@ -448,6 +570,30 @@ export function Sidebar({
                                     <Pencil className="size-3" />
                                   )}
                                 </button>
+                                <button
+                                  type="button"
+                                  className="icon-action-btn"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    promptArchiveSession(agent.id, session);
+                                  }}
+                                  title="Archive Session"
+                                >
+                                  <Archive className="size-3" />
+                                </button>
+                                {enableDelete && (
+                                  <button
+                                    type="button"
+                                    className="icon-action-btn text-rose-400 hover:text-rose-300"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      promptDeleteSession(agent.id, session);
+                                    }}
+                                    title="Delete Session"
+                                  >
+                                    <Trash2 className="size-3" />
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   className="icon-action-btn"
@@ -729,6 +875,91 @@ export function Sidebar({
                 )}
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {confirmDialog && (
+        <div
+          className="modal-backdrop"
+          style={{ zIndex: 9999 }}
+          onClick={() => !isActionPending && setConfirmDialog(null)}
+        >
+          <div
+            className="modal-panel"
+            style={{ maxWidth: "440px", padding: "16px 20px" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header" style={{ marginBottom: "12px", borderBottom: "none" }}>
+              <div className="modal-title flex items-center gap-2">
+                <AlertTriangle
+                  className={`size-5 ${confirmDialog.isDestructive ? "text-rose-400" : "text-amber-400"}`}
+                />
+                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 600 }}>
+                  {confirmDialog.title}
+                </h3>
+              </div>
+            </div>
+            <div className="modal-body" style={{ padding: 0, marginBottom: "16px" }}>
+              <p style={{ margin: 0, fontSize: "13px", color: "var(--text-secondary, #aaa)", lineHeight: 1.5 }}>
+                {confirmDialog.message}
+              </p>
+              {confirmDialog.warning && (
+                <div
+                  style={{
+                    marginTop: "12px",
+                    padding: "8px 12px",
+                    borderRadius: "6px",
+                    background: "rgba(245, 158, 11, 0.1)",
+                    border: "1px solid rgba(245, 158, 11, 0.25)",
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "8px",
+                    color: "#fbbf24",
+                    fontSize: "12px",
+                    lineHeight: 1.4,
+                  }}
+                >
+                  <AlertCircle className="size-4 shrink-0 mt-0.5" />
+                  <span>{confirmDialog.warning}</span>
+                </div>
+              )}
+            </div>
+            <div className="modal-footer" style={{ borderTop: "none", padding: 0, display: "flex", justifyContent: "flex-end", gap: "8px" }}>
+              <button
+                type="button"
+                className="btn-secondary btn-sm"
+                disabled={isActionPending}
+                onClick={() => setConfirmDialog(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={`btn-sm ${confirmDialog.isDestructive ? "btn-danger" : "btn-primary"}`}
+                style={
+                  confirmDialog.isDestructive
+                    ? { background: "#dc2626", color: "#fff", borderColor: "#b91c1c" }
+                    : undefined
+                }
+                disabled={isActionPending}
+                onClick={async () => {
+                  setIsActionPending(true);
+                  try {
+                    await confirmDialog.onConfirm();
+                    setConfirmDialog(null);
+                  } finally {
+                    setIsActionPending(false);
+                  }
+                }}
+              >
+                {isActionPending ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  confirmDialog.confirmLabel
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

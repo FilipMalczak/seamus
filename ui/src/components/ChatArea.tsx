@@ -391,8 +391,12 @@ export function ChatArea({
       <main className="chat-main chat-empty-main">
         <div className="empty-state">
           <Bot className="size-12 text-sky-400" />
-          <h2>Select a Session or Thread</h2>
-          <p>Choose an agent, session, and thread from the sidebar tree to start chatting.</p>
+          <h2>{agentId ? "No Active Session Selected" : "Select an Agent or Session"}</h2>
+          <p>
+            {agentId
+              ? "This agent currently has no active sessions. Use the '+ Add session' button in the sidebar to start."
+              : "Choose an agent, session, and thread from the sidebar tree to start chatting."}
+          </p>
         </div>
       </main>
     );

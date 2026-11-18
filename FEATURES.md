@@ -526,10 +526,12 @@ System-wide settings defined in `seamus.config.settings`, persisted to the `syst
 class SystemSettings(BaseModel):
     skill_directories: list[str] = Field(default_factory=lambda: ["~/.seamus/skills", "~/.skills"])
     terminal_session_timeout_seconds: int = Field(default=300, ge=0)
+    enable_delete: bool = Field(default=False)
 ```
 
 - `skill_directories`: Host directories containing system-wide Anthropic skills, mounted read-only into OpenSandbox containers at `/skills/system/{idx}`. Supports `~` and environment expansion.
 - `terminal_session_timeout_seconds`: Idle timeout in seconds for the interactive web terminal session (`0` disables automatic expiration; default `300`).
+- `enable_delete`: Global safety toggle governing hard delete capabilities across agents and sessions. When `false` (default), only Archiving is exposed in the UI navigation tree. When `true`, permanent Delete buttons become available.
 
 ---
 
@@ -617,17 +619,20 @@ The backend exposes a clean, typed REST API under prefix `/api/v-alpha/`:
 
 - `GET /api/v-alpha/agents`: Lists all agents discovered in Gitea.
 - `POST /api/v-alpha/agents`: Creates a new agent with optional custom configuration and initial slug.
-- `GET /api/v-alpha/agents/{agent_id}`: Retrieves specific agent details and configuration.
-- `PATCH /api/v-alpha/agents/{agent_id}`: Updates agent configuration or display slug.
-- `DELETE /api/v-alpha/agents/{agent_id}`: Deletes agent, removing all sessions and Gitea repositories.
+- `GET /api/v-alpha/agent/{agent_id}`: Retrieves specific agent details and configuration.
+- `POST /api/v-alpha/agent/{agent_id}`: Updates agent configuration or display slug.
+- `POST /api/v-alpha/agent/{agent_id}/archive`: Archives the agent by prefixing its Gitea organization with `archived-agent-` and removing local files.
+- `DELETE /api/v-alpha/agent/{agent_id}`: Permanently deletes the agent, draining all repositories in its Gitea organization before deleting the organization itself.
 
 #### Sessions
 
-- `GET /api/v-alpha/agents/{agent_id}/sessions`: Lists all sessions belonging to an agent.
-- `POST /api/v-alpha/agents/{agent_id}/sessions`: Spawns a new session with an isolated Git branch.
-- `GET /api/v-alpha/agents/{agent_id}/sessions/{session_id}`: Retrieves session details, status, and config.
-- `PATCH /api/v-alpha/agents/{agent_id}/sessions/{session_id}`: Updates session config, status, or slug.
-- `DELETE /api/v-alpha/agents/{agent_id}/sessions/{session_id}`: Terminates session and cleans up containers.
+- `GET /api/v-alpha/agent/{agent_id}/session`: Lists all sessions belonging to an agent.
+- `POST /api/v-alpha/agent/{agent_id}/session`: Spawns a new session with an isolated Git branch and repository.
+- `GET /api/v-alpha/agent/{agent_id}/session/{session_id}`: Retrieves session details, status, and config.
+- `POST /api/v-alpha/agent/{agent_id}/session/{session_id}`: Updates session config or slug.
+- `POST /api/v-alpha/agent/{agent_id}/session/{session_id}/kill`: Manually terminates a session, preventing future turns and closing Sync PR.
+- `POST /api/v-alpha/agent/{agent_id}/session/{session_id}/archive`: Checkpoints uncommitted changes, marks session repo and mount forks as archived in Gitea, and cleans up local clone.
+- `DELETE /api/v-alpha/agent/{agent_id}/session/{session_id}`: Hard-deletes session repo and external mount forks from Gitea and purges local clone.
 - `GET /api/v-alpha/agents/{agent_id}/sessions/{session_id}/diff`: Returns live unified git diff of `data/` deliverables.
 - `GET /api/v-alpha/agents/{agent_id}/sessions/{session_id}/inspect`: Surfaces complete Agent Inspector runtime manifest.
 - `PATCH /api/v-alpha/agents/{agent_id}/sessions/{session_id}/inspector/tools`: Enables or disables a specific tool for the session.
