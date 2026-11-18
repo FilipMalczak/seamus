@@ -17,6 +17,13 @@ from pydantic import TypeAdapter
 from seamus.domain.entities import Agent, Session
 from seamus.persistence.client import GiteaClient
 from seamus.persistence.config import PersistenceSettings, get_persistence_settings
+from seamus.persistence.git_lock import (
+    clean_stale_locks,
+    extract_lock_paths_from_stderr,
+    get_repo_lock,
+    is_git_process_running_in_repo,
+    sweep_workspace_stale_locks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -106,32 +113,89 @@ class GitWorkspaceManager:
         self.workspace_root = self.settings.workspace_dir
         self.workspace_root.mkdir(parents=True, exist_ok=True)
         try:
+            sweep_workspace_stale_locks(self.workspace_root)
+        except Exception:
+            logger.debug("Failed to sweep stale locks during workspace initialization")
+        try:
             from seamus.harness.sandbox import sync_bundled_skills
 
             sync_bundled_skills(self.workspace_root / "bundled_skills")
         except Exception:
             logger.debug("Failed to sync bundled skills during workspace initialization")
 
-    def _run_git(self, cwd: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
-        """Execute a git command within the specified working directory."""
-        cmd = ["git", *args]
-        try:
-            return subprocess.run(
-                cmd,
-                cwd=cwd,
-                check=True,
-                text=True,
-                capture_output=True,
+    def clean_stale_locks(self, repo_dir: Path, force: bool = False) -> list[Path]:
+        """Find and remove stale git lock files in the specified repository."""
+        return clean_stale_locks(repo_dir, force=force)
+
+    def _run_git(
+        self,
+        cwd: Path,
+        args: list[str],
+        max_retries: int = 2,
+    ) -> subprocess.CompletedProcess[str]:
+        """Execute a git command within the specified working directory with stale lock recovery."""
+        repo_lock = get_repo_lock(cwd)
+        with repo_lock:
+            cmd = ["git", *args]
+            for attempt in range(max_retries + 1):
+                try:
+                    return subprocess.run(
+                        cmd,
+                        cwd=cwd,
+                        check=True,
+                        text=True,
+                        capture_output=True,
+                    )
+                except subprocess.CalledProcessError as exc:
+                    stderr = exc.stderr or ""
+                    lower_stderr = stderr.lower()
+                    is_lock_error = (
+                        (
+                            "unable to create" in lower_stderr
+                            and ".lock': file exists" in lower_stderr
+                        )
+                        or ("another git process seems to be running" in lower_stderr)
+                        or ("index.lock': file exists" in lower_stderr)
+                    )
+
+                    if is_lock_error and attempt < max_retries:
+                        # Extract any specific lock path mentioned in error message
+                        extracted = extract_lock_paths_from_stderr(stderr)
+                        for p in extracted:
+                            try:
+                                p.unlink(missing_ok=True)
+                                logger.warning(
+                                    "Removed stale lock file mentioned in git error: %s", p
+                                )
+                            except OSError:
+                                pass
+
+                        # Clean any other stale locks in cwd
+                        removed = clean_stale_locks(cwd, force=False)
+                        if not removed and not is_git_process_running_in_repo(cwd):
+                            removed = clean_stale_locks(cwd, force=True)
+
+                        logger.warning(
+                            "Recovered from git lock error in %s; retrying (attempt %d/%d): %s",
+                            cwd,
+                            attempt + 1,
+                            max_retries,
+                            " ".join(cmd),
+                        )
+                        time.sleep(0.05)
+                        continue
+
+                    msg = (
+                        f"Git command failed: '{' '.join(cmd)}' in {cwd}\n"
+                        f"Exit code: {exc.returncode}\n"
+                        f"Stdout: {exc.stdout}\n"
+                        f"Stderr: {exc.stderr}"
+                    )
+                    logger.error(msg)
+                    raise GitWorkspaceError(msg) from exc
+            raise GitWorkspaceError(
+                f"Git command unexpectedly terminated without result: {' '.join(cmd)}"
             )
-        except subprocess.CalledProcessError as exc:
-            msg = (
-                f"Git command failed: '{' '.join(cmd)}' in {cwd}\n"
-                f"Exit code: {exc.returncode}\n"
-                f"Stdout: {exc.stdout}\n"
-                f"Stderr: {exc.stderr}"
-            )
-            logger.error(msg)
-            raise GitWorkspaceError(msg) from exc
 
     def _configure_git_identity(self, repo_dir: Path) -> None:
         """Configure local repository author name and email."""
@@ -253,6 +317,8 @@ class GitWorkspaceManager:
         agent_dir = self.get_agent_workspace_path(agent.id)
         if not (agent_dir / ".git").exists():
             self.initialize_agent_repo(agent)
+        else:
+            clean_stale_locks(agent_dir)
 
         config_dir = agent_dir / "agent" / "config"
         config_dir.mkdir(parents=True, exist_ok=True)
@@ -386,6 +452,7 @@ class GitWorkspaceManager:
         settings_file.write_text(json.dumps(settings_dict, indent=2), encoding="utf-8")
 
         if self.settings.enabled and (system_dir / ".git").exists():
+            clean_stale_locks(system_dir)
             status = self._run_git(system_dir, ["status", "--porcelain", "settings.json"])
             if status.stdout.strip():
                 self._run_git(system_dir, ["add", "settings.json"])
@@ -422,6 +489,7 @@ class GitWorkspaceManager:
         template_file.write_text(json.dumps(template_dict, indent=2), encoding="utf-8")
 
         if self.settings.enabled and (system_dir / ".git").exists():
+            clean_stale_locks(system_dir)
             status = self._run_git(system_dir, ["status", "--porcelain", "config-template.json"])
             if status.stdout.strip():
                 self._run_git(system_dir, ["add", "config-template.json"])
@@ -437,6 +505,8 @@ class GitWorkspaceManager:
         """Create or checkout session working tree on dedicated branch."""
         if not self.settings.enabled:
             session_dir = self.get_session_workspace_path(session.agent_id, session.id)
+            if (session_dir / ".git").exists():
+                clean_stale_locks(session_dir)
             (session_dir / "data").mkdir(parents=True, exist_ok=True)
             (session_dir / "data" / "skills").mkdir(parents=True, exist_ok=True)
             (session_dir / "data" / ".skills").mkdir(parents=True, exist_ok=True)
@@ -452,6 +522,8 @@ class GitWorkspaceManager:
         agent_dir = self.get_agent_workspace_path(agent.id)
         if not (agent_dir / ".git").exists():
             self.initialize_agent_repo(agent)
+        else:
+            clean_stale_locks(agent_dir)
 
         repo_name = self.get_agent_repo_name(session.agent_id)
         clone_url = self.client.get_authenticated_clone_url(repo_name)
@@ -471,6 +543,7 @@ class GitWorkspaceManager:
                 start_point = branch_from if branch_from else "origin/main"
                 self._run_git(session_dir, ["checkout", "-b", branch_name, start_point])
         else:
+            clean_stale_locks(session_dir)
             self._configure_git_identity(session_dir)
             self.sync_session_workspace(session)
 
@@ -511,6 +584,7 @@ class GitWorkspaceManager:
         if not (session_dir / ".git").exists():
             return False
 
+        clean_stale_locks(session_dir)
         branch_name = f"session/{session.id}"
         try:
             self._run_git(session_dir, ["pull", "--rebase", "--autostash", "origin", branch_name])
@@ -608,6 +682,8 @@ class GitWorkspaceManager:
         session_dir = self.get_session_workspace_path(session.agent_id, session.id)
         if not (session_dir / ".git").exists():
             return
+
+        clean_stale_locks(session_dir)
 
         self.write_session_config_file(
             session, config_dict=config_dict, secret_versions=secret_versions
@@ -1099,6 +1175,8 @@ class GitWorkspaceManager:
         session_dir = self.get_session_workspace_path(agent_id, session_id)
         if not (session_dir / ".git").exists():
             return False
+
+        clean_stale_locks(session_dir)
 
         paths_to_check = [
             p

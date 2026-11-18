@@ -18,6 +18,15 @@ def create_app(dist_dir: Path | None = None) -> FastAPI:
     """Create, configure, and return the FastAPI application instance."""
     setup_telemetry()
 
+    try:
+        from seamus.persistence.git_lock import sweep_workspace_stale_locks
+        from seamus.persistence.workspace import get_workspace_manager
+
+        ws_mgr = get_workspace_manager()
+        sweep_workspace_stale_locks(ws_mgr.workspace_root)
+    except Exception:
+        pass
+
     app = FastAPI(
         title="Seamus Agent Harness Server",
         description=(
