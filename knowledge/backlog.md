@@ -73,6 +73,13 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Revisit Trigger**: When multi-user roles, operator guardrails, or more granular repository governance policies are needed.
 - **Provenance**: [0069-archive-and-delete-lifecycle.md](../decisions/0069-archive-and-delete-lifecycle.md), `src/seamus/config/settings.py`.
 
+### Backend Enforcement of `enable_delete` Setting on DELETE Endpoints
+- **Description**: If the system settings flag `enable_delete` is `false`, calling any HTTP `DELETE` endpoint (`DELETE /api/v-alpha/agent/{id}` or `DELETE /api/v-alpha/agent/{id}/session/{id}`) should be rejected with an HTTP 400 Bad Request error rather than executing the deletion. Currently, `enable_delete` gates UI button visibility in the navigation tree, but the backend endpoints remain reachable directly via API.
+- **Why Deferred**: In a single-operator environment, the client-side UI gate and confirmation dialogs prevent accidental deletion. Direct unauthorized curl/API requests represent a low probability outside malicious or rogue clients.
+- **Revisit Trigger**: When hardening security boundaries for multi-user or exposed environments.
+- **Priority**: Medium priority (high impact if triggered accidentally via API, low chance of happening outside of malicious users).
+- **Provenance**: [0069-archive-and-delete-lifecycle.md](../decisions/0069-archive-and-delete-lifecycle.md), `src/seamus/server/routes/agents.py`, `src/seamus/server/routes/sessions.py`.
+
 ### Agent Work and Time Tracking Across Repositories
 - **Description**: Provide work and time tracking where the agent (or harness telemetry) tracks and reports how much active working/execution time was spent in specific repositories. Leverage Gitea's native time-tracking APIs (`/repos/{owner}/{repo}/issues/{index}/times`) and PR/issue integration to associate agent labor and turn iterations with repository deliverables and milestones.
 - **Why Deferred**: Core harness execution and repository persistence prioritize accurate deliverable snapshotting and sandboxing. Time metrics and Gitea time tracking integration represent an auxiliary project management and accounting layer.
@@ -167,12 +174,6 @@ Persistent record of work intentionally left outstanding across the project, mai
 - **Why Deferred**: Core Git workflow, Sync PR lifecycle, and auto-pull mechanics were established first.
 - **Revisit Trigger**: When multi-user authorization and branch governance are implemented.
 - **Provenance**: [0008-git-persistence.md](../decisions/0008-git-persistence.md), [0026-in-sandbox-skill-mount-paths.md](../decisions/0026-in-sandbox-skill-mount-paths.md), [INV-036](./invariants.md#inv-036-purposeful-workspace-synchronization--auto-pull).
-
-### Resource Archiving and Soft Deletion in API
-- **Description**: The REST API prohibits `DELETE` operations across all resources to ensure non-destructive safety (`INV-007`). Archiving or soft deletion (hiding inactive agents, sessions, or threads from the active navigation views) was postponed.
-- **Why Deferred**: Prioritized zero accidental data loss and predictable append-only state for early iterations.
-- **Revisit Trigger**: When navigation views become cluttered by inactive entities and users need to hide or archive old sessions without deleting underlying Git histories.
-- **Provenance**: [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md#resource-deletion-policy), [INV-007](./invariants.md#inv-007-no-resource-deletion-invariant), [REQ-007](./requirements.md#req-007-safe-non-destructive-api-surface).
 
 ### Alternative Git-Base Iconography for Sidebar Branch Navigation
 - **Description**: The navigation sidebar footer uses composite buttons with an entity base icon (`Bot` or `MessageSquare`) badged with a mini `GitBranch` icon (Option A). An alternative layout with a Git base icon badged with an entity icon (Option B) was evaluated and postponed.

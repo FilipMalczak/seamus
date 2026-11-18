@@ -190,16 +190,12 @@ class HarnessStore:
             return agent
 
     def archive_agent(self, agent_identifier: str) -> None:
-        """Archive agent: rename Gitea org to archived-agent-{hex} and purge local files."""
+        """Archive agent: archive all sessions, rename Gitea org, and purge local files."""
         agent = self.resolve_agent(agent_identifier)
 
-        from seamus.harness.runner import get_runner_registry
-
-        registry = get_runner_registry()
         for session in list(agent.sessions.values()):
-            runner = registry._runners.get(str(session.id))
-            if runner is not None:
-                runner.kill()
+            if not getattr(session, "archived", False):
+                self.archive_session(str(agent.id), str(session.id))
 
         ws_mgr = get_workspace_manager()
         org_name = ws_mgr.get_agent_org_name(agent.id)

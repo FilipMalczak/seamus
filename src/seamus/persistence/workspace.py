@@ -596,6 +596,7 @@ class GitWorkspaceManager:
 
             if branch_from:
                 self._run_git(session_dir, ["checkout", "-B", branch_name, branch_from])
+                self._run_git(session_dir, ["push", "--force", "-u", "origin", branch_name])
             else:
                 try:
                     self._run_git(session_dir, ["checkout", branch_name])

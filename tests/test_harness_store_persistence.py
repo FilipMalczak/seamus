@@ -318,12 +318,21 @@ def test_harness_store_archive_agent(test_config: AgentConfig, tmp_path: Path) -
         agent = store.create_agent(config=test_config, name="agent-arch-all")
         org_name = f"agent-{agent.id.hex}"
         mock_ws.get_agent_org_name.return_value = org_name
+        initial_session = next(iter(agent.sessions.values()))
+        session_repo = f"session-{initial_session.id}"
+        mock_ws.get_session_repo_name.return_value = session_repo
+        mock_client.list_org_repos.return_value = [{"name": session_repo}]
+        mock_ws.get_session_workspace_path.return_value = (
+            tmp_path / str(agent.id) / str(initial_session.id)
+        )
 
         agent_ws = tmp_path / str(agent.id)
         agent_ws.mkdir(parents=True, exist_ok=True)
 
         store.archive_agent(str(agent.id))
 
+        # Asserts sessions are archived prior to org rename
+        mock_client.archive_repo.assert_called_with(session_repo, owner=org_name)
         mock_client.rename_org.assert_called_once_with(org_name, f"archived-{org_name}")
         assert not agent_ws.exists()
         assert agent.id not in store._agents
