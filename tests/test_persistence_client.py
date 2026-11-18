@@ -243,3 +243,99 @@ def test_client_get_pull_request_diff_404(test_settings: PersistenceSettings) ->
     with patch("httpx.Client.get", return_value=mock_get):
         diff = client.get_pull_request_diff("agent-123", 1)
         assert diff == ""
+
+
+def test_client_get_or_create_org(test_settings: PersistenceSettings) -> None:
+    client = GiteaClient(test_settings)
+    mock_get = MagicMock()
+    mock_get.status_code = 404
+    mock_post = MagicMock()
+    mock_post.status_code = 201
+    mock_post.json.return_value = {"id": 1, "name": "mirrors"}
+
+    with patch("httpx.Client.get", return_value=mock_get):
+        with patch("httpx.Client.post", return_value=mock_post) as mock_post_call:
+            res = client.get_or_create_org("mirrors")
+            assert res["name"] == "mirrors"
+            assert mock_post_call.call_args is not None
+            assert mock_post_call.call_args.kwargs["json"]["username"] == "mirrors"
+
+
+def test_client_list_orgs(test_settings: PersistenceSettings) -> None:
+    client = GiteaClient(test_settings)
+    mock_get = MagicMock()
+    mock_get.status_code = 200
+    mock_get.json.return_value = [{"name": "mirrors"}, {"name": "agent-123"}]
+
+    with patch("httpx.Client.get", return_value=mock_get):
+        orgs = client.list_orgs()
+        assert len(orgs) == 2
+        assert orgs[0]["name"] == "mirrors"
+
+
+def test_client_list_org_repos(test_settings: PersistenceSettings) -> None:
+    client = GiteaClient(test_settings)
+    mock_get = MagicMock()
+    mock_get.status_code = 200
+    mock_get.json.return_value = [{"name": "agent"}, {"name": "session-1"}]
+
+    with patch("httpx.Client.get", return_value=mock_get):
+        repos = client.list_org_repos("agent-123")
+        assert len(repos) == 2
+        assert repos[0]["name"] == "agent"
+
+
+def test_client_delete_org(test_settings: PersistenceSettings) -> None:
+    client = GiteaClient(test_settings)
+    mock_delete = MagicMock()
+    mock_delete.status_code = 204
+
+    with patch("httpx.Client.delete", return_value=mock_delete):
+        assert client.delete_org("agent-123") is True
+
+
+def test_client_migrate_repo_as_mirror(test_settings: PersistenceSettings) -> None:
+    client = GiteaClient(test_settings)
+    mock_post = MagicMock()
+    mock_post.status_code = 201
+    mock_post.json.return_value = {"id": 10, "name": "project-seamus-12345678"}
+
+    with patch("httpx.Client.post", return_value=mock_post) as mock_post_call:
+        res = client.migrate_repo_as_mirror(
+            clone_addr="https://github.com/test/repo.git",
+            repo_name="project-seamus-12345678",
+            repo_owner="mirrors",
+            mirror_interval="10m",
+            auth_token="token123",
+        )
+        assert res["name"] == "project-seamus-12345678"
+        payload = mock_post_call.call_args.kwargs["json"]
+        assert payload["mirror"] is True
+        assert payload["mirror_interval"] == "10m"
+        assert payload["repo_owner"] == "mirrors"
+        assert payload["auth_token"] == "token123"
+
+
+def test_client_fork_repo(test_settings: PersistenceSettings) -> None:
+    client = GiteaClient(test_settings)
+    mock_post = MagicMock()
+    mock_post.status_code = 202
+    mock_post.json.return_value = {"id": 11, "name": "project-seamus-12345678-87654321"}
+
+    with patch("httpx.Client.post", return_value=mock_post) as mock_post_call:
+        res = client.fork_repo(
+            source_owner="mirrors",
+            source_repo="project-seamus-12345678",
+            target_org="agent-abc",
+            fork_name="project-seamus-12345678-87654321",
+        )
+        assert res["name"] == "project-seamus-12345678-87654321"
+        payload = mock_post_call.call_args.kwargs["json"]
+        assert payload["organization"] == "agent-abc"
+        assert payload["name"] == "project-seamus-12345678-87654321"
+
+
+def test_client_get_authenticated_clone_url_with_owner(test_settings: PersistenceSettings) -> None:
+    client = GiteaClient(test_settings)
+    url = client.get_authenticated_clone_url("project-1", owner="agent-xyz")
+    assert url == "http://testuser:testpassword@test-gitea:3000/agent-xyz/project-1.git"

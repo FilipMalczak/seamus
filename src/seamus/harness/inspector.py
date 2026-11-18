@@ -970,19 +970,20 @@ def build_agent_inspect_report(
 
     # Git Provenance
     git_meta = ws_mgr.get_session_git_info(agent.id, session.id)
+    session_repo_name = ws_mgr.get_session_repo_name(session.id)
     gitea_url: str | None = None
     if persist_settings.enabled and persist_settings.gitea_external_url:
         gitea_url = (
             f"{persist_settings.gitea_external_url.rstrip('/')}/"
-            f"{persist_settings.gitea_admin_user}/agent-{agent.id}/src/branch/session/{session.id}"
+            f"agent-{agent.id.hex}/{session_repo_name}/src/branch/main"
         )
 
     git_info = GitInspectInfo(
-        branch=f"session/{session.id}",
+        branch="main",
         commit_sha=git_meta.get("commit_sha"),
         commit_message=git_meta.get("commit_message"),
         commit_time=git_meta.get("commit_time"),
-        repo_name=ws_mgr.get_agent_repo_name(agent.id),
+        repo_name=session_repo_name,
         gitea_url=gitea_url,
     )
 
@@ -1199,14 +1200,15 @@ def build_agent_inspect_report(
     mounted_repositories: list[MountedRepoInspectInfo] = []
     if session.config.repositories:
         ws_mgr = get_workspace_manager()
+        ext_mgr = get_external_repo_manager()
         mount_paths = calculate_mount_paths(session.config.repositories)
+        agent_org = f"agent-{agent.id.hex}"
         for repo in session.config.repositories:
             mount_name = mount_paths.get(repo.id, "repo")
             p_id = derive_project_id(repo.url)
-            g_name = f"project-{p_id}"
+            g_name = ext_mgr.get_session_fork_repo_name(repo.url, session.id)
             g_url = (
-                f"{ws_mgr.settings.gitea_url.rstrip('/')}/"
-                f"{ws_mgr.settings.gitea_admin_user}/{g_name}"
+                f"{ws_mgr.settings.gitea_url.rstrip('/')}/{agent_org}/{g_name}"
                 if ws_mgr.settings.enabled
                 else None
             )

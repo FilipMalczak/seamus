@@ -173,10 +173,11 @@ export function Sidebar({
         )?.id
       : null);
 
-  const giteaOwner = systemInfo?.gitea?.owner || "seamus";
+  const activeAgentHex = activeAgentId ? activeAgentId.replace(/-/g, "") : "";
+
   const agentBranchUrl =
     systemInfo?.gitea?.enabled && systemInfo.gitea.url && activeAgentId
-      ? `${systemInfo.gitea.url}/${giteaOwner}/agent-${activeAgentId}/src/branch/main`
+      ? `${systemInfo.gitea.url}/agent-${activeAgentHex}/agent/src/branch/main`
       : null;
 
   const sessionBranchUrl =
@@ -184,7 +185,7 @@ export function Sidebar({
     systemInfo.gitea.url &&
     activeAgentId &&
     selectedSessionId
-      ? `${systemInfo.gitea.url}/${giteaOwner}/agent-${activeAgentId}/src/branch/session/${selectedSessionId}`
+      ? `${systemInfo.gitea.url}/agent-${activeAgentHex}/session-${selectedSessionId}/src/branch/main`
       : null;
 
   return (

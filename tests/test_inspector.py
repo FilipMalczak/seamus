@@ -132,8 +132,8 @@ def test_build_agent_inspect_report(tmp_path: pytest.MonkeyPatch) -> None:
     assert any(t.name == "read_file" for t in report.tools)
 
     # Verify git branch
-    assert report.git.branch == f"session/{session.id}"
-    assert report.git.repo_name == f"agent-{agent.id}"
+    assert report.git.branch == "main"
+    assert report.git.repo_name == f"session-{session.id}"
 
 
 def test_inspect_endpoint_http(client: TestClient) -> None:
@@ -165,7 +165,8 @@ def test_inspect_endpoint_http(client: TestClient) -> None:
     assert "git" in data
     assert "history" in data
     assert "workspace" in data
-    assert data["git"]["branch"] == f"session/{session_id}"
+    assert data["git"]["branch"] == "main"
+    assert data["git"]["repo_name"] == f"session-{session_id}"
 
 
 def test_inspect_endpoint_not_found(client: TestClient) -> None:

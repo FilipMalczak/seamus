@@ -116,8 +116,8 @@ Seamus is an open, self-hosted, deep agent execution harness and developer works
 
 Seamus organizes work into a clean three-tiered entity hierarchy:
 
-- **Agent**: An autonomous software identity configured with a baseline **Persona** (such as `Coder`), inference configuration, custom system prompts, and tools. Each agent owns a dedicated Git repository (`agent-{agent_id}`) on Gitea.
-- **Session (Conversation)**: An isolated operational task and conversational context. A session clones its parent agent's configuration and creates an isolated Git branch (`session/{session_id}`). Sessions support full lifecycle states (`ACTIVE`, `KILLED`, `FAILED`) and **Granular Bidirectional Session Branching**, allowing you to fork a new child session from any historical point (user message, system event, bot message, bot reasoning, or tool call) either *before* or *after* the item with commit-level provenance.
+- **Agent**: An autonomous software identity configured with a baseline **Persona** (such as `Coder`), inference configuration, custom system prompts, and tools. Each agent owns a dedicated Gitea organization (`agent-{agent_id.hex}`) isolating its baseline repository (`agent`) and session repositories.
+- **Session (Conversation)**: An isolated operational task and conversational context. A session creates an isolated Git repository (`session-{session_id}`) within the agent organization, forked from the baseline `agent` repository (or from a parent session repository during session branching), executing on `main`. Sessions support full lifecycle states (`ACTIVE`, `KILLED`, `FAILED`) and **Granular Bidirectional Session Branching**, allowing you to fork a new child session from any historical point (user message, system event, bot message, bot reasoning, or tool call) either *before* or *after* the item with commit-level provenance.
 - **Thread**: A sequential execution segment within a session representing a discrete operational mode or plan phase. Only the most recent thread in a session is open; earlier threads are sealed. Mode switches automatically close the active thread and spawn a fresh thread, reusing empty threads to eliminate clutter.
 - **Dual Identifier Resolution**: Every Agent, Session, and Thread can be addressed by its canonical UUID or by an ergonomic, human-readable, URL-safe slug (e.g. `agent/frontend-bot/session/auth-refactor/thread/discuss-requirements`).
 
@@ -138,12 +138,15 @@ Never trust an LLM to run arbitrary commands on your host workstation. Seamus de
 
 Seamus eliminates complex relational databases for harness state. Gitea is the single source of truth:
 
-- **Automated Checkpoint Commits**: Whenever the LangGraph checkpointer saves state, Seamus commits all new, modified, or deleted files under `data/` and `agent/state/` with commit prefix `checkpoint:`. Turn completions commit with prefix `state:`.
-- **Stateless Harness Hydration**: On server startup, Seamus queries Gitea's API and reconstructs all in-memory agents, sessions, and threads directly from Git branches. No SQL database migrations or lost state.
-- **Gitea Sync Pull Requests**: Upon session creation, an automated Sync PR is opened from `session/{session_id}` targeting `main`. The PR status and live deliverable diff are tracked in real-time.
-- **Atomic Thread Acceptance**: Clicking "Accept" in the top bar merges the session's deliverables into `main`, closes the active thread, spawns a fresh thread, and opens a renewed Sync PR.
+- **Dedicated Agent Organizations**: Each agent owns a dedicated Gitea organization (`agent-{agent_id.hex}`) hosting a baseline repository (`agent`) and session repositories (`session-{session_id}`) executing on `main`.
+- **Stateless Harness Hydration**: On server startup, Seamus queries Gitea's API and reconstructs all in-memory agents, sessions, and threads directly from organizations matching `agent-*` (ignoring prefixed/archived entities). No SQL database migrations or lost state.
+- **Cross-Fork Sync Pull Requests**: Upon session creation, an automated cross-fork Sync PR is opened from `session-{session_id}:main` targeting `agent:main` within the agent organization. The PR status and live deliverable diff are tracked in real-time.
+- **Atomic Thread Acceptance**: Clicking "Accept" in the top bar merges the session's deliverables into `agent:main`, closes the active thread, spawns a fresh thread, and opens a renewed cross-fork Sync PR.
 - **Deliverable Isolation**: Git commits strictly distinguish between agent state metadata (`agent/config/`, `agent/state/`) and actual code deliverables (`data/`). Sync PR merges exclusively target `data/`.
-- **Dual-Index External Repository Checkpointing**: Mounted external repositories are snapshotted automatically into internal Gitea repositories (`project-{project_id}`) under `refs/seamus/checkpoints/...` before each agent repository commit. Using Git's alternate index mechanism (`GIT_INDEX_FILE`), Seamus captures full working-tree snapshots without altering the agent's staged `.git/index`, `HEAD`, or branch history. Session branching restores exact historical states (`semantic_head`, `staged_tree`, and `snapshot_tree`).
+- **Multi-Tier External Repository Mirroring & Session Forking**: External repositories follow a robust multi-tier topology:
+  - System-wide read-only downstream pull mirrors in the `mirrors` organization (`mirrors/project-{project_name}-{url_hash_8}`) synced every 10 minutes.
+  - Dedicated writable session-specific forks in the agent's organization (`agent-{hex}/project-{project_name}-{url_hash_8}-{session_hash_8}`) cloned into OpenSandbox at `/projects/{mount_name}`.
+  - Snapshots are pushed directly to the session-specific fork in Gitea under `refs/seamus/checkpoints/...` before each agent repository commit using Git's alternate index mechanism (`GIT_INDEX_FILE`), without altering the agent's staged `.git/index`, `HEAD`, or upstream mirror. Session branching restores exact historical states (`semantic_head`, `staged_tree`, and `snapshot_tree`).
 
 ### 4. Operational Modes & Structured Plan Lifecycle
 
@@ -279,7 +282,7 @@ Full distributed tracing and production observability:
 - **Pydantic Logfire Tracing**: Integrated tracing capturing end-to-end latency, model generation metrics, tool call executions, and HTTP API requests.
 - **OpenTelemetry Standard**: Native LangChain and LangGraph OTEL instrumentation (`LANGSMITH_OTEL_ENABLED=true`, `LANGSMITH_OTEL_ONLY=true`).
 - **Privacy & Credential Scrubbing**: Custom sanitizers automatically redact API tokens, secrets, and authorization headers while preserving domain structure (e.g. whitelisting `session`).
-- **One-Click External Links**: Navigation tree footer features pinned deep links to your Logfire project dashboard, Gitea server home, agent repository, and active session branch.
+- **One-Click External Links**: Navigation tree footer features pinned deep links to your Logfire project dashboard, Gitea server home, agent baseline repository (`agent`), and active session repository (`session-{session_id}`).
 
 ### 11. 1-Click Zero-Friction Stack Launch
 

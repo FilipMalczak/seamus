@@ -787,6 +787,9 @@ class SessionAgentRunner:
         ext_mgr = get_external_repo_manager()
         if self.session.config.repositories:
             mount_paths = calculate_mount_paths(self.session.config.repositories)
+            parent_sid = (
+                self.session.provenance.parent_session_id if self.session.provenance else None
+            )
             for repo_cfg in self.session.config.repositories:
                 mount_name = mount_paths.get(repo_cfg.id, "repo")
                 try:
@@ -795,6 +798,7 @@ class SessionAgentRunner:
                         session_id=self.session.id,
                         repo_config=repo_cfg,
                         mount_name=mount_name,
+                        parent_session_id=parent_sid,
                     )
                 except Exception:
                     logger.exception(

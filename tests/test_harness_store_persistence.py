@@ -56,7 +56,16 @@ def test_harness_store_hydrate_from_gitea(test_config: AgentConfig) -> None:
 
     mock_client = MagicMock()
     mock_client.is_healthy.return_value = True
-    mock_client.list_user_repos.return_value = [{"name": f"agent-{agent_id}"}]
+    mock_client.list_orgs.return_value = [
+        {"name": f"agent-{agent_id.hex}"},
+        {"name": f"archived-agent-{uuid4().hex}"},
+        {"name": "mirrors"},
+    ]
+    mock_client.list_org_repos.return_value = [
+        {"name": "agent"},
+        {"name": f"session-{session_id}"},
+        {"name": "project-myrepo-12345678-abcdef12"},
+    ]
 
     main_config = {
         "id": str(agent_id),
@@ -92,10 +101,11 @@ def test_harness_store_hydrate_from_gitea(test_config: AgentConfig) -> None:
         {"type": "TEXT_MESSAGE_END", "messageId": "msg-1"},
     ]
 
-    def mock_get_file(repo: str, branch: str, path: str) -> str | None:
-        if branch == "main" and path in ("agent/config/config.json", "config/config.json"):
+    def mock_get_file(repo: str, branch: str, path: str, owner: str | None = None) -> str | None:
+        config_paths = ("agent/config/config.json", "config/config.json")
+        if repo == "agent" and branch == "main" and path in config_paths:
             return json.dumps(main_config)
-        if branch == f"session/{session_id}":
+        if repo == f"session-{session_id}" and branch == "main":
             if path in ("agent/config/config.json", "config/config.json"):
                 return json.dumps(session_config)
             if path == f"agent/state/threads/{thread_id}/events.json":
@@ -103,7 +113,6 @@ def test_harness_store_hydrate_from_gitea(test_config: AgentConfig) -> None:
         return None
 
     mock_client.get_file_content.side_effect = mock_get_file
-    mock_client.list_branches.return_value = ["main", f"session/{session_id}"]
 
     mock_ws = MagicMock()
     mock_ws.settings.enabled = True
@@ -127,3 +136,25 @@ def test_harness_store_hydrate_from_gitea(test_config: AgentConfig) -> None:
         assert thread.name == "hydrated-thread"
         assert thread.is_open is True
         assert len(thread.events) == 3
+
+
+def test_harness_store_hydrate_ignores_prefixed_and_invalid_orgs() -> None:
+    store = HarnessStore()
+    mock_client = MagicMock()
+    mock_client.is_healthy.return_value = True
+    mock_client.list_orgs.return_value = [
+        {"name": "archived-agent-12345678-1234-1234-1234-123456789abc"},
+        {"name": "deleted-agent-12345678-1234-1234-1234-123456789abc"},
+        {"name": "mirrors"},
+        {"name": "agent-not-a-uuid"},
+        {"name": "some-other-org"},
+    ]
+    mock_ws = MagicMock()
+    mock_ws.settings.enabled = True
+    mock_ws.client = mock_client
+
+    with patch("seamus.harness.store.get_workspace_manager", return_value=mock_ws):
+        store.hydrate_from_gitea()
+
+    assert len(store._agents) == 0
+    mock_client.list_org_repos.assert_not_called()

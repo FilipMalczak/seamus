@@ -566,13 +566,14 @@ async def get_session_diff(
     session_branch_url: str | None = None
     compare_url: str | None = None
     persist_settings = ws_mgr.settings
+    org_name = ws_mgr.get_agent_org_name(agent.id)
+    session_repo_name = ws_mgr.get_session_repo_name(session.id)
+    base_repo_name = ws_mgr.get_agent_repo_name(agent.id)
     if persist_settings.enabled and persist_settings.gitea_external_url:
-        agent_gitea_base = (
-            f"{persist_settings.gitea_external_url.rstrip('/')}/"
-            f"{persist_settings.gitea_admin_user}/agent-{agent.id}"
-        )
-        session_branch_url = f"{agent_gitea_base}/src/branch/session/{session.id}"
-        compare_url = f"{agent_gitea_base}/compare/main...session/{session.id}"
+        gitea_base = persist_settings.gitea_external_url.rstrip("/")
+        session_branch_url = f"{gitea_base}/{org_name}/{session_repo_name}/src/branch/main"
+        target_head = f"{org_name}/{session_repo_name}:main"
+        compare_url = f"{gitea_base}/{org_name}/{base_repo_name}/compare/main...{target_head}"
 
     if active_pr is not None:
         raw_number = active_pr.get("number")
@@ -583,10 +584,8 @@ async def get_session_diff(
             and persist_settings.enabled
             and persist_settings.gitea_external_url
         ):
-            pr_url = (
-                f"{persist_settings.gitea_external_url.rstrip('/')}/"
-                f"{persist_settings.gitea_admin_user}/agent-{agent.id}/pulls/{pr_number}"
-            )
+            gitea_base = persist_settings.gitea_external_url.rstrip("/")
+            pr_url = f"{gitea_base}/{org_name}/{base_repo_name}/pulls/{pr_number}"
 
     return SessionDiffResponse(
         agent_id=session.agent_id,
