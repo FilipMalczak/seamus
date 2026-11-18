@@ -230,6 +230,10 @@ export function App() {
     createAgent,
     createSession,
     killSession,
+    archiveAgent,
+    deleteAgent,
+    archiveSession,
+    deleteSession,
     switchSessionMode,
     branchSession,
     acceptThread,
@@ -422,6 +426,11 @@ export function App() {
           onUpdateAgentConfig={updateAgentConfig}
           onUpdateSessionConfig={updateSessionConfig}
           onEditConfig={handleEditEntityConfig}
+          enableDelete={Boolean(systemSettings?.enable_delete)}
+          onArchiveAgent={archiveAgent}
+          onDeleteAgent={deleteAgent}
+          onArchiveSession={archiveSession}
+          onDeleteSession={deleteSession}
         />
 
         <div

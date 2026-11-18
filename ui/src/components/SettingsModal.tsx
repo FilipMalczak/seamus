@@ -43,6 +43,7 @@ export function SettingsModal({
 }: SettingsModalProps) {
   const [skillDirectories, setSkillDirectories] = useState<string[]>([]);
   const [terminalTimeoutSeconds, setTerminalTimeoutSeconds] = useState<number>(300);
+  const [enableDelete, setEnableDelete] = useState<boolean>(false);
   const [newDirectory, setNewDirectory] = useState<string>("");
   const [rawJson, setRawJson] = useState<string>("");
   const [activeTab, setActiveTab] = useState<"paths" | "secrets" | "json">("paths");
@@ -90,6 +91,7 @@ export function SettingsModal({
           ? initialSettings.terminal_session_timeout_seconds
           : 300
       );
+      setEnableDelete(Boolean(initialSettings.enable_delete));
       setRawJson(JSON.stringify(initialSettings, null, 2));
       setNewDirectory("");
       setError(null);
@@ -154,6 +156,7 @@ export function SettingsModal({
           {
             skill_directories: skillDirectories,
             terminal_session_timeout_seconds: terminalTimeoutSeconds,
+            enable_delete: enableDelete,
           },
           null,
           2
@@ -197,15 +200,20 @@ export function SettingsModal({
     setSaving(true);
     try {
       let finalTimeout = terminalTimeoutSeconds;
+      let finalEnableDelete = enableDelete;
       if (activeTab === "json") {
         const parsed = JSON.parse(rawJson);
         if (typeof parsed.terminal_session_timeout_seconds === "number") {
           finalTimeout = Math.max(0, Math.floor(parsed.terminal_session_timeout_seconds));
         }
+        if (typeof parsed.enable_delete === "boolean") {
+          finalEnableDelete = parsed.enable_delete;
+        }
       }
       await onSave({
         skill_directories: finalDirs,
         terminal_session_timeout_seconds: finalTimeout,
+        enable_delete: finalEnableDelete,
       });
       setSuccess(true);
       setTimeout(() => {
@@ -547,6 +555,22 @@ export function SettingsModal({
                     setTerminalTimeoutSeconds(val);
                   }}
                 />
+              </div>
+
+              <div className="form-group" style={{ marginTop: "16px" }}>
+                <label className="form-label" style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                  <input
+                    id="enable-delete-checkbox"
+                    type="checkbox"
+                    checked={enableDelete}
+                    onChange={(e) => setEnableDelete(e.target.checked)}
+                    style={{ cursor: "pointer" }}
+                  />
+                  <span>Enable Delete Features (Dangerous)</span>
+                </label>
+                <p style={{ fontSize: "12px", color: "var(--text-muted, #888)", marginTop: "4px", marginInline: 0 }}>
+                  When enabled, hard delete icons appear next to agents and sessions in the navigation tree. Deletion permanently removes Gitea repositories and local copies.
+                </p>
               </div>
             </>
           )}

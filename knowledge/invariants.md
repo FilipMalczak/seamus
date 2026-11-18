@@ -34,10 +34,10 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-005](./requirements.md#req-005-hierarchical-rest-api-with-dual-identifier-resolution), [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md).
 - **Enforcement**: Slug validation in domain entities and scope check in the repository store.
 
-### INV-007: No Resource Deletion Invariant
-- **Statement**: The API surface must contain zero HTTP DELETE routes. Resources created in the harness cannot be removed via API calls.
-- **Justification**: [REQ-007](./requirements.md#req-007-safe-non-destructive-api-surface), [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md).
-- **Enforcement**: Server router definitions and automated route inspection in API test suite.
+### INV-007: Scoped Resource Deletion Invariant
+- **Statement**: HTTP DELETE operations are strictly prohibited across the entire API surface, with the sole exception of explicit Agent (`DELETE /api/v-alpha/agent/{agent_identifier}`) and Session (`DELETE /api/v-alpha/agent/{agent_identifier}/session/{session_identifier}`) lifecycle hard deletion. Threads, messages, checkpoints, artifacts, secrets, and steerable queues cannot be deleted via HTTP DELETE.
+- **Justification**: [REQ-007](./requirements.md#req-007-safe-non-destructive-api-surface), [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md), [0069-archive-and-delete-lifecycle.md](../decisions/0069-archive-and-delete-lifecycle.md).
+- **Enforcement**: Server router definitions and route method verification in `tests/test_server.py::test_no_delete_invariant_on_routes`.
 
 ### INV-008: UI Client-Side Busy Guard
 - **Statement**: The web UI must disable message submission and display active status when a thread's status is not `AWAITING_USER` or when a thread is marked closed (`is_open = False`), preventing unnecessary 409 Conflict round-trips.

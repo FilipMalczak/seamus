@@ -203,6 +203,40 @@ async def kill_session(
     return _to_session_detail(session)
 
 
+@router.post("/{session_identifier}/archive", status_code=status.HTTP_204_NO_CONTENT)
+async def archive_session(
+    agent_identifier: str,
+    session_identifier: str,
+) -> None:
+    """Archive a session: checkpoint state, archive Gitea repo & forks, and clear local clone."""
+    store = get_harness_store()
+    try:
+        await asyncio.to_thread(
+            store.archive_session,
+            agent_identifier=agent_identifier,
+            session_identifier=session_identifier,
+        )
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.delete("/{session_identifier}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_session(
+    agent_identifier: str,
+    session_identifier: str,
+) -> None:
+    """Hard delete a session: remove session repo & mount forks from Gitea and purge local clone."""
+    store = get_harness_store()
+    try:
+        await asyncio.to_thread(
+            store.delete_session,
+            agent_identifier=agent_identifier,
+            session_identifier=session_identifier,
+        )
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
 @router.post("/{session_identifier}/mode", response_model=SessionDetailResponse)
 async def switch_session_mode(
     agent_identifier: str,

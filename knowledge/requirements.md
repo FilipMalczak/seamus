@@ -41,10 +41,10 @@ Requirements, rationale, provenance, and stable IDs.
 - **Linked Invariants**: [INV-005](./invariants.md#inv-005-single-open-thread-invariant), [INV-012](./invariants.md#inv-012-user-message-event-recording--replay-invariant).
 
 ### REQ-007: Safe Non-Destructive API Surface
-- **Description**: The API must not support HTTP DELETE methods on any resource. Resource updates must use HTTP POST with the full replacement object to support explicit clearing of values.
-- **Rationale**: Eliminates catastrophic accidental data deletion at the API boundary and disambiguates partial updates from field deletions.
-- **Provenance**: [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md).
-- **Linked Invariants**: [INV-007](./invariants.md#inv-007-no-resource-deletion-invariant).
+- **Description**: The API restricts HTTP DELETE methods strictly to top-level Agent and Session hard deletion when explicitly enabled by system settings. Threads, messages, checkpoints, artifacts, and queues prohibit DELETE. Resource updates must use HTTP POST with the full replacement object to support explicit clearing of values.
+- **Rationale**: Eliminates catastrophic accidental data deletion at the API boundary while providing controlled, intentional project lifecycle cleanup.
+- **Provenance**: [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md), [0069-archive-and-delete-lifecycle.md](../decisions/0069-archive-and-delete-lifecycle.md).
+- **Linked Invariants**: [INV-007](./invariants.md#inv-007-scoped-resource-deletion-invariant).
 
 ### REQ-008: Web UI with Navigation Tree, Real-Time Streaming & JSON Config Editor
 - **Description**: The harness must provide a web user interface featuring:

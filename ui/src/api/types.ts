@@ -65,6 +65,7 @@ export type ConfigTemplateResponse = {
 export type SystemSettings = {
   skill_directories: string[];
   terminal_session_timeout_seconds?: number;
+  enable_delete?: boolean;
 };
 
 export type SystemSettingsResponse = {

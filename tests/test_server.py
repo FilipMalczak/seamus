@@ -107,13 +107,18 @@ def test_ui_root_serving(tmp_path: Path) -> None:
 
 
 def test_no_delete_invariant_on_routes() -> None:
-    """Enforce INV-007: No DELETE routes exist anywhere in the application."""
+    """Enforce INV-007: DELETE routes are restricted strictly to Agent and Session lifecycle."""
     app = create_app()
     # The OpenAPI schema is the authoritative route table: it includes routes
     # mounted through nested routers, which a scan of `app.routes` alone misses.
     paths = app.openapi().get("paths", {})
+    allowed_delete_paths = {
+        "/api/v-alpha/agent/{agent_identifier}",
+        "/api/v-alpha/agent/{agent_identifier}/session/{session_identifier}",
+    }
     for path, operations in paths.items():
-        assert "delete" not in operations, f"Forbidden DELETE method found on route: {path}"
+        if "delete" in operations:
+            assert path in allowed_delete_paths, f"Forbidden DELETE method found on route: {path}"
 
 
 def test_config_template_endpoints(client: TestClient) -> None:
@@ -710,3 +715,48 @@ def test_session_and_template_artifacts_implementation_config(client: TestClient
     )
     assert good_res.status_code == 200
     assert good_res.json()["config"]["artifacts_implementation"] == "seamus"
+
+
+def test_archive_and_delete_session_routes(client: TestClient) -> None:
+    agent = client.post("/api/v-alpha/agents", json={"name": "test-agent-for-routes"}).json()
+    session = client.post(
+        f"/api/v-alpha/agent/{agent['id']}/session", json={"name": "test-sess-for-routes"}
+    ).json()
+
+    # Archive session -> 204
+    arch_res = client.post(f"/api/v-alpha/agent/{agent['id']}/session/{session['id']}/archive")
+    assert arch_res.status_code == 204
+
+    # Subsequent get session -> 404
+    get_res = client.get(f"/api/v-alpha/agent/{agent['id']}/session/{session['id']}")
+    assert get_res.status_code == 404
+
+    # Create another session to test delete
+    session2 = client.post(
+        f"/api/v-alpha/agent/{agent['id']}/session", json={"name": "test-sess2-for-routes"}
+    ).json()
+    del_res = client.delete(f"/api/v-alpha/agent/{agent['id']}/session/{session2['id']}")
+    assert del_res.status_code == 204
+
+    get_res2 = client.get(f"/api/v-alpha/agent/{agent['id']}/session/{session2['id']}")
+    assert get_res2.status_code == 404
+
+
+def test_archive_and_delete_agent_routes(client: TestClient) -> None:
+    agent = client.post("/api/v-alpha/agents", json={"name": "test-agent-for-agent-routes"}).json()
+
+    # Archive agent -> 204
+    arch_res = client.post(f"/api/v-alpha/agent/{agent['id']}/archive")
+    assert arch_res.status_code == 204
+
+    # Subsequent get agent -> 404
+    get_res = client.get(f"/api/v-alpha/agent/{agent['id']}")
+    assert get_res.status_code == 404
+
+    # Create another agent to test delete
+    agent2 = client.post("/api/v-alpha/agents", json={"name": "test-agent2-for-del"}).json()
+    del_res = client.delete(f"/api/v-alpha/agent/{agent2['id']}")
+    assert del_res.status_code == 204
+
+    get_res2 = client.get(f"/api/v-alpha/agent/{agent2['id']}")
+    assert get_res2.status_code == 404

@@ -45,6 +45,10 @@ class SystemSettings(BaseModel):
 
     skill_directories: list[str] = Field(default_factory=lambda: list(DEFAULT_SKILL_DIRECTORIES))
     terminal_session_timeout_seconds: int = Field(default=300, ge=0)
+    enable_delete: bool = Field(
+        default=False,
+        description="Enable permanent deletion of agents and sessions in the UI",
+    )
 
 
 class SystemSettingsStore:
