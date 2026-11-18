@@ -13,7 +13,12 @@ from seamus.persistence.external_repo import (
     calculate_mount_paths,
     canonicalize_git_url,
     derive_project_id,
+    derive_project_name,
+    derive_project_url_hash,
     derive_repository_mount_name,
+    derive_session_hash,
+    get_mirror_repo_name,
+    get_session_fork_repo_name,
 )
 
 
@@ -180,7 +185,7 @@ def test_dual_index_checkpoint_and_restoration(tmp_path: Path) -> None:
     assert record.staged_tree
     assert record.semantic_head
     assert record.semantic_branch == "main"
-    assert record.gitea_repo_name == f"project-{derive_project_id(repo_cfg.url)}"
+    assert record.gitea_repo_name == get_session_fork_repo_name(repo_cfg.url, session_id)
 
     # 5. VERIFY AGENT INDEX UNTOUCHED INVARIANT:
     # git status after checkpoint MUST BE 100% IDENTICAL to before checkpoint!
@@ -368,7 +373,7 @@ def test_get_working_copy_changes_tracks_merges_staged_and_gitea_links(tmp_path:
     changes = manager.get_working_copy_changes(agent_id, session_id, repo_cfg, "merge-repo")
     assert changes is not None
     assert changes["gitea_repo_url"] is not None
-    assert "http://localhost:3001/seamus/project-" in changes["gitea_repo_url"]
+    assert f"http://localhost:3001/agent-{agent_id.hex}/project-" in changes["gitea_repo_url"]
     assert f"/src/branch/seamus/semantic/{session_id}/merge-repo" in (
         changes["gitea_semantic_branch_url"] or ""
     )
@@ -388,3 +393,97 @@ def test_get_working_copy_changes_tracks_merges_staged_and_gitea_links(tmp_path:
     assert uncommitted_by_path["staged.txt"]["status"] == "added"
     assert uncommitted_by_path["feat.txt"]["unstaged"] is True
     assert uncommitted_by_path["feat.txt"]["status"] == "modified"
+
+
+def test_naming_and_8char_hashes() -> None:
+    url = "https://github.com/FilipMalczak/seamus.git"
+    project_name = derive_project_name(url)
+    assert project_name == "seamus"
+
+    url_hash = derive_project_url_hash(url)
+    assert len(url_hash) == 8
+    assert url_hash.isalnum()
+
+    session_id = uuid4()
+    session_hash = derive_session_hash(session_id)
+    assert len(session_hash) == 8
+    assert session_hash == session_id.hex[:8]
+
+    mirror_name = get_mirror_repo_name(url)
+    assert mirror_name == f"project-seamus-{url_hash}"
+
+    session_fork_name = get_session_fork_repo_name(url, session_id)
+    assert session_fork_name == f"project-seamus-{url_hash}-{session_hash}"
+
+
+def test_ensure_mirror_and_session_fork_in_gitea(tmp_path: Path) -> None:
+    from unittest.mock import MagicMock
+
+    ws_root = tmp_path / "workspaces"
+    settings = PersistenceSettings(
+        workspace_dir=ws_root,
+        enabled=True,
+        gitea_external_url="http://localhost:3001",
+    )
+    mock_client = MagicMock()
+    mock_client.get_repo.return_value = None
+    mock_client.migrate_repo_as_mirror.return_value = {"name": "project-myrepo-12345678"}
+    mock_client.fork_repo.return_value = {"name": "project-myrepo-12345678-abcdef12"}
+
+    manager = ExternalRepositoryManager(
+        workspace_root=ws_root, settings=settings, client=mock_client
+    )
+
+    url = "https://github.com/example/myrepo.git"
+    repo_cfg = ExternalRepositoryConfig(id="1", url=url, branch="main")
+    agent_id = uuid4()
+    session_id = uuid4()
+
+    # 1. Ensure mirror creates mirrors org and migrates repo as mirror
+    mirror_name = manager.ensure_mirror_in_gitea(repo_cfg)
+    assert mirror_name == get_mirror_repo_name(url)
+    assert any(
+        c.kwargs.get("org_name") == "mirrors" for c in mock_client.get_or_create_org.call_args_list
+    )
+    mock_client.migrate_repo_as_mirror.assert_called_once()
+    migrate_call = mock_client.migrate_repo_as_mirror.call_args
+    assert migrate_call.kwargs["repo_owner"] == "mirrors"
+    assert migrate_call.kwargs["repo_name"] == mirror_name
+
+    # 2. Ensure session fork forks mirror into agent org
+    fork_name = manager.ensure_session_fork_in_gitea(
+        agent_id=agent_id,
+        session_id=session_id,
+        repo_config=repo_cfg,
+    )
+    assert fork_name == get_session_fork_repo_name(url, session_id)
+    assert any(
+        c.kwargs.get("org_name") == f"agent-{agent_id.hex}"
+        for c in mock_client.get_or_create_org.call_args_list
+    )
+    mock_client.fork_repo.assert_called_once_with(
+        source_owner="mirrors",
+        source_repo=mirror_name,
+        target_org=f"agent-{agent_id.hex}",
+        fork_name=fork_name,
+    )
+
+    # 3. Branching session forks from parent session fork
+    parent_session_id = uuid4()
+    parent_fork_name = get_session_fork_repo_name(url, parent_session_id)
+    mock_client.reset_mock()
+    mock_client.get_repo.side_effect = lambda repo_name, owner=None: (
+        {"name": repo_name} if repo_name == parent_fork_name else None
+    )
+    branched_fork_name = manager.ensure_session_fork_in_gitea(
+        agent_id=agent_id,
+        session_id=session_id,
+        repo_config=repo_cfg,
+        parent_session_id=parent_session_id,
+    )
+    mock_client.fork_repo.assert_called_once_with(
+        source_owner=f"agent-{agent_id.hex}",
+        source_repo=parent_fork_name,
+        target_org=f"agent-{agent_id.hex}",
+        fork_name=branched_fork_name,
+    )

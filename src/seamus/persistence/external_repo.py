@@ -58,11 +58,23 @@ def canonicalize_git_url(url: str) -> str:
     return cleaned
 
 
+MIRRORS_ORG_NAME: str = "mirrors"
+
+
+def derive_project_url_hash(url: str) -> str:
+    """Derive a deterministic 8-character hash from a Git URL."""
+    norm = canonicalize_git_url(url)
+    return hashlib.sha256(norm.encode("utf-8")).hexdigest()[:8]
+
+
+def derive_session_hash(session_id: UUID) -> str:
+    """Derive an 8-character identifier from a session UUID."""
+    return session_id.hex[:8]
+
+
 def derive_project_id(canonical_url: str) -> str:
-    """Derive a deterministic 12-character project identifier from a canonical Git URL."""
-    norm = canonicalize_git_url(canonical_url)
-    digest = hashlib.sha256(norm.encode("utf-8")).hexdigest()[:12]
-    return f"proj-{digest}"
+    """Derive a deterministic 8-character project identifier from a canonical Git URL."""
+    return f"proj-{derive_project_url_hash(canonical_url)}"
 
 
 def derive_repository_mount_name(url: str) -> str:
@@ -79,6 +91,11 @@ def derive_repository_mount_name(url: str) -> str:
     if not sanitized or sanitized in (".", ".."):
         return "repo"
     return sanitized
+
+
+def derive_project_name(url: str) -> str:
+    """Derive the project name component from a Git repository URL."""
+    return derive_repository_mount_name(url)
 
 
 def calculate_mount_paths(
@@ -105,6 +122,21 @@ def calculate_mount_paths(
             mapping[repo.id] = f"{base}_{idx}"
 
     return mapping
+
+
+def get_mirror_repo_name(url: str) -> str:
+    """Return standardized Gitea repository name for an upstream mirror in mirrors org."""
+    project_name = derive_project_name(url)
+    url_hash = derive_project_url_hash(url)
+    return f"project-{project_name}-{url_hash}"
+
+
+def get_session_fork_repo_name(url: str, session_id: UUID) -> str:
+    """Return standardized Gitea repository name for a session fork in agent org."""
+    project_name = derive_project_name(url)
+    url_hash = derive_project_url_hash(url)
+    session_hash = derive_session_hash(session_id)
+    return f"project-{project_name}-{url_hash}-{session_hash}"
 
 
 class ExternalRepositoryManager:
@@ -254,8 +286,18 @@ class ExternalRepositoryManager:
         self._run_git(repo_dir, ["config", "user.email", "agent@seamus.local"])
         self._run_git(repo_dir, ["config", "safe.directory", "*"])
 
+    @staticmethod
+    def get_mirror_repo_name(url: str) -> str:
+        """Return standardized Gitea repository name for an upstream mirror in mirrors org."""
+        return get_mirror_repo_name(url)
+
+    @staticmethod
+    def get_session_fork_repo_name(url: str, session_id: UUID) -> str:
+        """Return standardized Gitea repository name for a session fork in agent org."""
+        return get_session_fork_repo_name(url, session_id)
+
     def get_project_repo_name(self, project_id: str) -> str:
-        """Return the Gitea repository name for an external project."""
+        """Return the Gitea repository name for an external project (backward compatibility)."""
         return f"project-{project_id}"
 
     def get_session_projects_dir(self, agent_id: UUID, session_id: UUID) -> Path:
@@ -275,38 +317,123 @@ class ExternalRepositoryManager:
         """Return local filesystem path of a session's mounted repository working copy."""
         return self.get_session_projects_dir(agent_id, session_id) / mount_name
 
+    def ensure_mirror_in_gitea(
+        self,
+        repo_config: ExternalRepositoryConfig,
+    ) -> str:
+        """Ensure mirrors organization exists and mirror repository is migrated from upstream."""
+        mirror_name = self.get_mirror_repo_name(repo_config.url)
+        if not self.settings.enabled:
+            return mirror_name
+
+        # 1. Ensure mirrors organization exists
+        self.client.get_or_create_org(
+            org_name=MIRRORS_ORG_NAME,
+            full_name="External Mirrors",
+            description="Central organization holding read-only upstream Git mirrors for Seamus",
+        )
+
+        # 2. Check if mirror repository already exists in mirrors org
+        mirror_repo = self.client.get_repo(mirror_name, owner=MIRRORS_ORG_NAME)
+        if mirror_repo:
+            return mirror_name
+
+        # 3. Migrate remote repository as a read-only pull mirror with frequent sync
+        token = self._resolve_credentials_sync(repo_config.credentials)
+        auth_token = None
+        auth_username = None
+        auth_password = None
+        if token:
+            if ":" in token:
+                auth_username, auth_password = token.split(":", 1)
+            else:
+                auth_token = token
+
+        logger.info(
+            "Provisioning Gitea pull mirror %s in org %s from %s",
+            mirror_name,
+            MIRRORS_ORG_NAME,
+            repo_config.url,
+        )
+        try:
+            self.client.migrate_repo_as_mirror(
+                clone_addr=repo_config.url,
+                repo_name=mirror_name,
+                repo_owner=MIRRORS_ORG_NAME,
+                mirror_interval="10m",
+                auth_token=auth_token,
+                auth_username=auth_username,
+                auth_password=auth_password,
+                private=True,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to migrate pull mirror %s; verifying repo existence", mirror_name
+            )
+            if not self.client.get_repo(mirror_name, owner=MIRRORS_ORG_NAME):
+                raise
+
+        return mirror_name
+
+    def ensure_session_fork_in_gitea(
+        self,
+        agent_id: UUID,
+        session_id: UUID,
+        repo_config: ExternalRepositoryConfig,
+        parent_session_id: UUID | None = None,
+    ) -> str:
+        """Ensure session fork exists in agent organization, forked from parent or mirror."""
+        mirror_name = self.ensure_mirror_in_gitea(repo_config)
+        agent_org = f"agent-{agent_id.hex}"
+        fork_name = self.get_session_fork_repo_name(repo_config.url, session_id)
+
+        if not self.settings.enabled:
+            return fork_name
+
+        # Ensure agent organization exists
+        self.client.get_or_create_org(
+            org_name=agent_org,
+            full_name=f"Agent {agent_id}",
+            description=f"Seamus organization for agent {agent_id}",
+        )
+
+        existing_fork = self.client.get_repo(fork_name, owner=agent_org)
+        if existing_fork:
+            return fork_name
+
+        # Determine fork source: parent session fork if available, else central mirror
+        source_owner = MIRRORS_ORG_NAME
+        source_repo = mirror_name
+        if parent_session_id:
+            parent_fork_name = self.get_session_fork_repo_name(repo_config.url, parent_session_id)
+            if self.client.get_repo(parent_fork_name, owner=agent_org):
+                source_owner = agent_org
+                source_repo = parent_fork_name
+
+        logger.info(
+            "Forking external repo %s/%s into %s/%s for session %s",
+            source_owner,
+            source_repo,
+            agent_org,
+            fork_name,
+            session_id,
+        )
+        self.client.fork_repo(
+            source_owner=source_owner,
+            source_repo=source_repo,
+            target_org=agent_org,
+            fork_name=fork_name,
+        )
+        return fork_name
+
     def ensure_project_repo_in_gitea(
         self,
         repo_config: ExternalRepositoryConfig,
     ) -> str:
-        """Ensure Gitea mirror repository exists and is populated from upstream."""
+        """Ensure Gitea mirror repository exists and return project id."""
+        self.ensure_mirror_in_gitea(repo_config)
         canonical_url = canonicalize_git_url(repo_config.url)
-        project_id = derive_project_id(canonical_url)
-        repo_name = self.get_project_repo_name(project_id)
-
-        if not self.settings.enabled:
-            return project_id
-
-        # 1. Check or create repo in Gitea
-        self.client.get_or_create_repo(
-            repo_name=repo_name,
-            private=True,
-        )
-
-        # 2. Check if the configured branch already exists in Gitea
-        existing_branches = self.client.list_branches(repo_name)
-        if repo_config.branch in existing_branches or "main" in existing_branches:
-            return project_id
-
-        # 3. Seed repository from upstream into Gitea
-        logger.info(
-            "Mirroring upstream external repository %s (branch %s) into Gitea repo %s",
-            repo_config.url,
-            repo_config.branch,
-            repo_name,
-        )
-        self._mirror_upstream_to_gitea(repo_config, repo_name)
-        return project_id
+        return derive_project_id(canonical_url)
 
     def _resolve_credentials_sync(self, credentials_ref: str | None) -> str | None:
         """Resolve OpenBao credential reference synchronously without leaking secrets."""
@@ -356,7 +483,9 @@ class ExternalRepositoryManager:
             )
             self._configure_git_identity(temp_dir)
 
-            gitea_url = self.client.get_authenticated_clone_url(gitea_repo_name)
+            gitea_url = self.client.get_authenticated_clone_url(
+                gitea_repo_name, owner=MIRRORS_ORG_NAME
+            )
             self._run_git(temp_dir, ["remote", "add", "gitea", gitea_url])
             self._run_git(temp_dir, ["push", "--all", "gitea"])
             self._run_git(temp_dir, ["push", "--tags", "gitea"])
@@ -375,9 +504,12 @@ class ExternalRepositoryManager:
         repo_config: ExternalRepositoryConfig,
         mount_name: str,
         start_commit: str | None = None,
+        parent_session_id: UUID | None = None,
     ) -> Path:
         """Create or checkout a session working copy for a mounted repository."""
-        project_id = self.ensure_project_repo_in_gitea(repo_config)
+        fork_name = self.ensure_session_fork_in_gitea(
+            agent_id, session_id, repo_config, parent_session_id=parent_session_id
+        )
         working_copy = self.get_working_copy_path(agent_id, session_id, mount_name)
 
         if not self.settings.enabled:
@@ -392,14 +524,37 @@ class ExternalRepositoryManager:
                 self._record_initial_base_commit(agent_id, session_id, repo_config, working_copy)
             return working_copy
 
-        repo_name = self.get_project_repo_name(project_id)
-        clone_url = self.client.get_authenticated_clone_url(repo_name)
+        agent_org = f"agent-{agent_id.hex}"
+        clone_url = self.client.get_authenticated_clone_url(fork_name, owner=agent_org)
         target_branch = repo_config.branch
 
         if not (working_copy / ".git").exists():
             working_copy.parent.mkdir(parents=True, exist_ok=True)
             self._run_git(working_copy.parent, ["clone", clone_url, working_copy.name])
             self._configure_git_identity(working_copy)
+
+            # Check if remote repository was empty (e.g. from 409 multi-fork fallback)
+            has_commits = (
+                self._run_git(
+                    working_copy, ["rev-parse", "--verify", "HEAD"], check=False
+                ).returncode
+                == 0
+            )
+            if not has_commits:
+                source_owner = MIRRORS_ORG_NAME
+                source_repo = self.get_mirror_repo_name(repo_config.url)
+                if parent_session_id:
+                    parent_fork = self.get_session_fork_repo_name(
+                        repo_config.url, parent_session_id
+                    )
+                    if self.client.get_repo(parent_fork, owner=agent_org):
+                        source_owner = agent_org
+                        source_repo = parent_fork
+                source_url = self.client.get_authenticated_clone_url(
+                    source_repo, owner=source_owner
+                )
+                self._run_git(working_copy, ["pull", source_url, target_branch or "main"])
+                self._run_git(working_copy, ["push", "-u", "origin", target_branch or "main"])
 
             if start_commit:
                 self._run_git(working_copy, ["checkout", "-B", target_branch, start_commit])
@@ -421,6 +576,7 @@ class ExternalRepositoryManager:
             self._record_initial_base_commit(agent_id, session_id, repo_config, working_copy)
         else:
             self.clean_stale_locks(working_copy)
+            self._configure_git_identity(working_copy)
             self._configure_git_identity(working_copy)
 
         return working_copy
@@ -506,14 +662,13 @@ class ExternalRepositoryManager:
             agent_id, session_id, repo_config, working_copy, head_commit
         )
 
-        canonical_url = canonicalize_git_url(repo_config.url)
-        project_id = derive_project_id(canonical_url)
-        repo_name = self.get_project_repo_name(project_id)
+        repo_name = self.get_session_fork_repo_name(repo_config.url, session_id)
+        agent_org = f"agent-{agent_id.hex}"
         gitea_base: str | None = None
         if self.settings.enabled and self.settings.gitea_external_url:
             gitea_base = (
                 f"{self.settings.gitea_external_url.rstrip('/')}/"
-                f"{self.settings.gitea_admin_user}/{repo_name}"
+                f"{agent_org}/{repo_name}"
             )
 
         commits: list[dict[str, Any]] = []
@@ -724,12 +879,13 @@ class ExternalRepositoryManager:
         checkpoint_sha = cp_commit_res.stdout.strip()
 
         # 6. Push checkpoint commit and session branch to durable Gitea storage
-        repo_name = self.get_project_repo_name(project_id)
+        repo_name = self.get_session_fork_repo_name(repo_config.url, session_id)
+        agent_org = f"agent-{agent_id.hex}"
         gitea_url: str | None = None
         if self.settings.enabled:
             gitea_url = (
                 f"{self.settings.gitea_url.rstrip('/')}/"
-                f"{self.settings.gitea_admin_user}/{repo_name}"
+                f"{agent_org}/{repo_name}"
             )
             ref_spec = (
                 f"{checkpoint_sha}:refs/seamus/sessions/{session_id}/"

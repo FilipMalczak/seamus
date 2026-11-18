@@ -131,6 +131,7 @@ class GitWorkspaceManager:
         self,
         cwd: Path,
         args: list[str],
+        check: bool = True,
         max_retries: int = 2,
     ) -> subprocess.CompletedProcess[str]:
         """Execute a git command within the specified working directory with stale lock recovery."""
@@ -139,13 +140,14 @@ class GitWorkspaceManager:
             cmd = ["git", *args]
             for attempt in range(max_retries + 1):
                 try:
-                    return subprocess.run(
+                    res = subprocess.run(
                         cmd,
                         cwd=cwd,
-                        check=True,
+                        check=check,
                         text=True,
                         capture_output=True,
                     )
+                    return res
                 except subprocess.CalledProcessError as exc:
                     stderr = exc.stderr or ""
                     lower_stderr = stderr.lower()
@@ -202,9 +204,17 @@ class GitWorkspaceManager:
         self._run_git(repo_dir, ["config", "user.name", "Seamus Agent"])
         self._run_git(repo_dir, ["config", "user.email", "agent@seamus.local"])
 
-    def get_agent_repo_name(self, agent_id: UUID) -> str:
-        """Return standardized repository name for an agent."""
-        return f"agent-{agent_id}"
+    def get_agent_org_name(self, agent_id: UUID) -> str:
+        """Return standardized Gitea organization name for an agent."""
+        return f"agent-{agent_id.hex}"
+
+    def get_session_repo_name(self, session_id: UUID) -> str:
+        """Return standardized repository name for a session."""
+        return f"session-{session_id}"
+
+    def get_agent_repo_name(self, agent_id: UUID | None = None) -> str:
+        """Return standardized repository name for an agent baseline repository."""
+        return "agent"
 
     def get_system_repo_name(self) -> str:
         """Return standardized repository name for system settings and templates."""
@@ -251,14 +261,22 @@ class GitWorkspaceManager:
             agent_dir.mkdir(parents=True, exist_ok=True)
             return agent_dir
 
+        org_name = self.get_agent_org_name(agent.id)
+        self.client.get_or_create_org(
+            org_name=org_name,
+            full_name=agent.name or f"Agent {agent.id}",
+            description=f"Seamus organization for agent {agent.name or agent.id}",
+        )
+
         repo_name = self.get_agent_repo_name(agent.id)
         self.client.get_or_create_repo(
             repo_name=repo_name,
             description=f"Seamus repository for agent {agent.name or agent.id}",
+            owner=org_name,
         )
 
         agent_dir = self.get_agent_workspace_path(agent.id)
-        clone_url = self.client.get_authenticated_clone_url(repo_name)
+        clone_url = self.client.get_authenticated_clone_url(repo_name, owner=org_name)
 
         if not (agent_dir / ".git").exists():
             agent_dir.mkdir(parents=True, exist_ok=True)
@@ -502,7 +520,7 @@ class GitWorkspaceManager:
         agent: Agent,
         branch_from: str | None = None,
     ) -> Path:
-        """Create or checkout session working tree on dedicated branch."""
+        """Create or checkout session working tree in dedicated session repo."""
         if not self.settings.enabled:
             session_dir = self.get_session_workspace_path(session.agent_id, session.id)
             if (session_dir / ".git").exists():
@@ -525,23 +543,67 @@ class GitWorkspaceManager:
         else:
             clean_stale_locks(agent_dir)
 
-        repo_name = self.get_agent_repo_name(session.agent_id)
-        clone_url = self.client.get_authenticated_clone_url(repo_name)
+        org_name = self.get_agent_org_name(session.agent_id)
+        session_repo_name = self.get_session_repo_name(session.id)
+        agent_repo_name = self.get_agent_repo_name(agent.id)
+
+        parent_session_id = None
+        if session.provenance and session.provenance.parent_session_id:
+            parent_session_id = session.provenance.parent_session_id
+
+        # Check if session repo exists in Gitea org
+        session_repo = self.client.get_repo(session_repo_name, owner=org_name)
+        if not session_repo:
+            # Fork from parent session if branched, otherwise from agent baseline repo
+            if parent_session_id:
+                parent_repo_name = self.get_session_repo_name(parent_session_id)
+                if self.client.get_repo(parent_repo_name, owner=org_name):
+                    source_repo = parent_repo_name
+                else:
+                    source_repo = agent_repo_name
+            else:
+                source_repo = agent_repo_name
+
+            self.client.fork_repo(
+                source_owner=org_name,
+                source_repo=source_repo,
+                target_org=org_name,
+                fork_name=session_repo_name,
+            )
+
+        clone_url = self.client.get_authenticated_clone_url(session_repo_name, owner=org_name)
         session_dir = self.get_session_workspace_path(session.agent_id, session.id)
-        branch_name = f"session/{session.id}"
+        branch_name = "main"
 
         if not (session_dir / ".git").exists():
             session_dir.parent.mkdir(parents=True, exist_ok=True)
+            # If the remote repository was created empty (e.g. 409 multi-fork fallback),
+            # seed it first
+            source_dir = (
+                self.get_session_workspace_path(session.agent_id, parent_session_id)
+                if parent_session_id
+                and (
+                    self.get_session_workspace_path(
+                        session.agent_id, parent_session_id
+                    )
+                    / ".git"
+                ).exists()
+                else self.get_agent_workspace_path(session.agent_id)
+            )
+            if (source_dir / ".git").exists():
+                with contextlib.suppress(GitWorkspaceError):
+                    self._run_git(source_dir, ["push", clone_url, "main:main"])
+
             self._run_git(session_dir.parent, ["clone", clone_url, session_dir.name])
             self._configure_git_identity(session_dir)
 
-            # Check if remote branch exists
-            remote_branches = self.client.list_branches(repo_name)
-            if branch_name in remote_branches:
-                self._run_git(session_dir, ["checkout", branch_name])
+            if branch_from:
+                self._run_git(session_dir, ["checkout", "-B", branch_name, branch_from])
             else:
-                start_point = branch_from if branch_from else "origin/main"
-                self._run_git(session_dir, ["checkout", "-b", branch_name, start_point])
+                try:
+                    self._run_git(session_dir, ["checkout", branch_name])
+                except Exception:
+                    pass
         else:
             clean_stale_locks(session_dir)
             self._configure_git_identity(session_dir)
@@ -565,12 +627,20 @@ class GitWorkspaceManager:
             if status.stdout.strip():
                 self._run_git(session_dir, ["add", "artifacts"])
                 self._run_git(session_dir, ["commit", "-m", "artifacts: initialize defaults"])
-                self._run_git(session_dir, ["push", "origin", branch_name])
+                active_branch = (
+                    self._run_git(
+                        session_dir, ["rev-parse", "--abbrev-ref", "HEAD"], check=False
+                    ).stdout.strip()
+                    or branch_name
+                )
+                if not active_branch or active_branch == "HEAD":
+                    active_branch = branch_name
+                self._run_git(session_dir, ["push", "origin", active_branch])
 
         return session_dir
 
     def sync_session_workspace(self, session: Session) -> bool:
-        """Synchronize the local session working tree with its remote Gitea branch.
+        """Synchronize the local session working tree with its remote Gitea repository.
 
         Rationale: The agent workspace is not a freely accessible content base.
         External modifications in Gitea (e.g. administrator intervention or manual skill
@@ -585,10 +655,17 @@ class GitWorkspaceManager:
             return False
 
         clean_stale_locks(session_dir)
-        branch_name = f"session/{session.id}"
         try:
-            self._run_git(session_dir, ["pull", "--rebase", "--autostash", "origin", branch_name])
-            logger.info("Synchronized local session workspace with remote %s", branch_name)
+            active_branch = (
+                self._run_git(
+                    session_dir, ["rev-parse", "--abbrev-ref", "HEAD"], check=False
+                ).stdout.strip()
+                or "main"
+            )
+            self._run_git(
+                session_dir, ["pull", "--rebase", "--autostash", "origin", active_branch]
+            )
+            logger.info("Synchronized local session workspace with remote %s", active_branch)
             return True
         except Exception as exc:
             logger.warning("Failed to auto-pull session workspace %s: %s", session.id, exc)
@@ -691,26 +768,35 @@ class GitWorkspaceManager:
 
         status = self._run_git(session_dir, ["status", "--porcelain", "agent/config/"])
         if status.stdout.strip():
-            branch_name = f"session/{session.id}"
+            active_branch = (
+                self._run_git(
+                    session_dir, ["rev-parse", "--abbrev-ref", "HEAD"], check=False
+                ).stdout.strip()
+                or "main"
+            )
+            if not active_branch or active_branch == "HEAD":
+                active_branch = "main"
             self._run_git(session_dir, ["add", "-A", "agent/config/"])
             self._run_git(
                 session_dir,
                 ["commit", "-m", f"config: update session config [session={session.id}]"],
             )
-            self._run_git(session_dir, ["push", "-u", "origin", branch_name])
+            self._run_git(session_dir, ["push", "-u", "origin", active_branch])
 
     def get_active_sync_pr(self, session: Session, agent: Agent) -> dict[str, Any] | None:
-        """Find the active open Sync PR from session branch to main."""
+        """Find the active open cross-fork Sync PR from session repo to agent repo."""
         if not self.settings.enabled:
             return None
 
-        repo_name = self.get_agent_repo_name(session.agent_id)
-        head_branch = f"session/{session.id}"
+        org_name = self.get_agent_org_name(session.agent_id)
+        base_repo = self.get_agent_repo_name(session.agent_id)
+        session_repo = self.get_session_repo_name(session.id)
         try:
-            open_prs = self.client.list_pull_requests(repo_name, state="open")
+            open_prs = self.client.list_pull_requests(base_repo, state="open", owner=org_name)
             for pr in open_prs:
-                head_ref = pr.get("head", {}).get("ref")
-                if head_ref == head_branch:
+                head_repo = pr.get("head", {}).get("repo", {}).get("name")
+                head_label = pr.get("head", {}).get("label", "")
+                if head_repo == session_repo or session_repo in head_label:
                     return pr
             return None
         except Exception:
@@ -726,21 +812,26 @@ class GitWorkspaceManager:
         if active_pr is None:
             return None, ""
 
-        repo_name = self.get_agent_repo_name(session.agent_id)
+        org_name = self.get_agent_org_name(session.agent_id)
+        base_repo = self.get_agent_repo_name(session.agent_id)
         pr_number = active_pr.get("number")
         if not pr_number:
             return active_pr, ""
 
         try:
-            diff_text = self.client.get_pull_request_diff(repo_name, int(pr_number))
+            diff_text = self.client.get_pull_request_diff(
+                base_repo, int(pr_number), owner=org_name
+            )
             filtered_diff = filter_sync_pr_diff(diff_text)
             return active_pr, filtered_diff
         except Exception:
-            logger.exception("Failed to query diff for Sync PR #%s in %s", pr_number, repo_name)
+            logger.exception(
+                "Failed to query diff for Sync PR #%s in %s/%s", pr_number, org_name, base_repo
+            )
             return active_pr, ""
 
     def open_sync_pr(self, session: Session, agent: Agent) -> dict[str, Any] | None:
-        """Open an automated Sync PR from session branch to main if not already present."""
+        """Open an automated cross-fork Sync PR from session repo to agent repo."""
         if not self.settings.enabled:
             return None
 
@@ -748,18 +839,21 @@ class GitWorkspaceManager:
         if active_pr is not None:
             return active_pr
 
-        repo_name = self.get_agent_repo_name(session.agent_id)
-        head_branch = f"session/{session.id}"
-        base_branch = "main"
+        org_name = self.get_agent_org_name(session.agent_id)
+        base_repo = self.get_agent_repo_name(session.agent_id)
+        session_repo = self.get_session_repo_name(session.id)
+        head = f"{org_name}/{session_repo}:main"
+        base = "main"
         title = f"Sync PR: session/{session.name or session.id}"
         body = f"Automated Sync PR for session `{session.id}` (agent `{agent.name or agent.id}`)."
         try:
             pr = self.client.create_pull_request(
-                repo_name=repo_name,
+                repo_name=base_repo,
                 title=title,
-                head=head_branch,
-                base=base_branch,
+                head=head,
+                base=base,
                 body=body,
+                owner=org_name,
             )
             logger.info("Opened Sync PR #%s for session %s", pr.get("number"), session.id)
             return pr
@@ -778,14 +872,16 @@ class GitWorkspaceManager:
             return False
 
         pr_number = active_pr["number"]
-        repo_name = self.get_agent_repo_name(session.agent_id)
+        org_name = self.get_agent_org_name(session.agent_id)
+        base_repo = self.get_agent_repo_name(session.agent_id)
 
         # 1. Attempt approval review (log and continue if self-approval rejected)
         try:
             self.client.approve_pull_request(
-                repo_name=repo_name,
+                repo_name=base_repo,
                 index=pr_number,
                 body="Accepted by user",
+                owner=org_name,
             )
         except Exception:
             logger.warning("Approval review failed on PR #%d (proceeding with merge)", pr_number)
@@ -794,30 +890,29 @@ class GitWorkspaceManager:
         for _ in range(10):
             time.sleep(0.3)
             try:
-                pr_data = self.client.get_pull_request(repo_name, pr_number)
+                pr_data = self.client.get_pull_request(base_repo, pr_number, owner=org_name)
                 if pr_data.get("mergeable") is True:
                     break
             except Exception:
                 break
 
-        # 3. Execute data-scoped merge into main
+        # 3. Execute data-scoped merge into main on agent repo
         merge_sha: str | None = None
         try:
             agent_dir = self.get_agent_workspace_path(agent.id)
             if not (agent_dir / ".git").exists():
                 self.initialize_agent_repo(agent)
 
-            session_branch = f"session/{session.id}"
-            remote_branches = self.client.list_branches(repo_name)
-            if session_branch in remote_branches:
+            session_dir = self.get_session_workspace_path(session.agent_id, session.id)
+            if (session_dir / ".git").exists():
                 self._run_git(agent_dir, ["checkout", "main"])
                 self._run_git(agent_dir, ["pull", "origin", "main"])
-                self._run_git(agent_dir, ["fetch", "origin"])
+                self._run_git(agent_dir, ["fetch", str(session_dir.resolve()), "main"])
 
                 try:
                     self._run_git(
                         agent_dir,
-                        ["merge", "--no-commit", "--no-ff", f"origin/{session_branch}"],
+                        ["merge", "--no-commit", "--no-ff", "FETCH_HEAD"],
                     )
                 except GitWorkspaceError:
                     # Discard conflicts arising in harness-internal state/config directories
@@ -836,10 +931,15 @@ class GitWorkspaceManager:
                 if (agent_dir / "data").exists():
                     self._run_git(agent_dir, ["add", "-A", "data/"])
 
-                commit_msg = f"sync: session/{session.name or session.id} (data/ deliverables)"
-                self._run_git(agent_dir, ["commit", "-m", commit_msg])
-                self._run_git(agent_dir, ["push", "origin", "main"])
-                merge_sha = self._run_git(agent_dir, ["rev-parse", "HEAD"]).stdout.strip()
+                status = self._run_git(agent_dir, ["status", "--porcelain"])
+                if status.stdout.strip():
+                    commit_msg = f"sync: session/{session.name or session.id} (data/ deliverables)"
+                    self._run_git(agent_dir, ["commit", "-m", commit_msg])
+                    self._run_git(agent_dir, ["push", "origin", "main"])
+                    merge_sha = self._run_git(agent_dir, ["rev-parse", "HEAD"]).stdout.strip()
+                else:
+                    with contextlib.suppress(GitWorkspaceError):
+                        self._run_git(agent_dir, ["merge", "--abort"])
         except Exception:
             logger.exception(
                 "Failed to perform data-scoped git merge on main for session %s", session.id
@@ -849,22 +949,24 @@ class GitWorkspaceManager:
         try:
             if merge_sha:
                 return self.client.merge_pull_request(
-                    repo_name=repo_name,
+                    repo_name=base_repo,
                     index=pr_number,
                     do="manually-merged",
                     delete_branch=False,
                     merge_commit_id=merge_sha,
+                    owner=org_name,
                 )
             return self.client.merge_pull_request(
-                repo_name=repo_name,
+                repo_name=base_repo,
                 index=pr_number,
                 do="merge",
                 delete_branch=False,
+                owner=org_name,
             )
         except Exception:
             # Check if PR was already marked merged by Gitea auto-detection
             try:
-                pr_info = self.client.get_pull_request(repo_name, pr_number)
+                pr_info = self.client.get_pull_request(base_repo, pr_number, owner=org_name)
                 if pr_info.get("merged") is True:
                     return True
             except Exception:
@@ -885,9 +987,10 @@ class GitWorkspaceManager:
         if not pr_number:
             return False
 
-        repo_name = self.get_agent_repo_name(session.agent_id)
+        org_name = self.get_agent_org_name(session.agent_id)
+        base_repo = self.get_agent_repo_name(session.agent_id)
         try:
-            res = self.client.close_pull_request(repo_name, int(pr_number))
+            res = self.client.close_pull_request(base_repo, int(pr_number), owner=org_name)
             logger.info("Closed Sync PR #%d for session %s", pr_number, session.id)
             return res
         except Exception:
@@ -1190,7 +1293,12 @@ class GitWorkspaceManager:
         if not status.stdout.strip():
             return False
 
-        branch_name = f"session/{session_id}"
+        branch_name = (
+            self._run_git(
+                session_dir, ["rev-parse", "--abbrev-ref", "HEAD"], check=False
+            ).stdout.strip()
+            or "main"
+        )
         cp_ident = checkpoint_id or "none"
         commit_msg = f"checkpoint: [session={session_id} thread={thread_id} checkpoint={cp_ident}]"
 
@@ -1249,7 +1357,12 @@ class GitWorkspaceManager:
         if not status.stdout.strip():
             return False
 
-        branch_name = f"session/{session_id}"
+        branch_name = (
+            self._run_git(
+                session_dir, ["rev-parse", "--abbrev-ref", "HEAD"], check=False
+            ).stdout.strip()
+            or "main"
+        )
         commit_msg = f"state: update thread events [session={session_id} thread={thread_id}]"
 
         self._run_git(session_dir, ["add", "-A", "--", "agent/state"])

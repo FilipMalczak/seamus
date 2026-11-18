@@ -43,6 +43,30 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## Deferred
 
+### Agent Slug Sync to Gitea Organization Full Name
+- **Description**: When a slug or custom name is assigned to an agent (by user edit or automated daemon), update the Gitea organization's full name (`full_name`) to match that slug, while retaining the immutable `agent-{agent_id.hex}` org username.
+- **Why Deferred**: Core persistence functions using the immutable `agent-{agent_id.hex}` identifier. Org display name synchronization is a cosmetic metadata enhancement on the Gitea UI.
+- **Revisit Trigger**: When agent slug editing or automated daemon slug assignment is hooked up to external companion link naming and Gitea profile visibility.
+- **Provenance**: [0068-organization-and-session-gitea-layers.md](../decisions/0068-organization-and-session-gitea-layers.md), `src/seamus/persistence/workspace.py`.
+
+### Teams and Branch Protection within Agent Organizations
+- **Description**: Create dedicated teams (e.g., `owners`, `agents`, `reviewers`) and configure branch/PR protection rules within each agent's Gitea organization (`agent-{agent_id.hex}`). This closely connects with dedicated Gitea user accounts per agent/persona.
+- **Why Deferred**: Seamus operates with a single configured Gitea service user. Multi-user RBAC and branch protection require dedicated Gitea credential management.
+- **Revisit Trigger**: When multi-agent collaboration, fine-grained access control, or strict branch protection policies on `agent` and `session-*` repos are implemented.
+- **Provenance**: [0068-organization-and-session-gitea-layers.md](../decisions/0068-organization-and-session-gitea-layers.md).
+
+### Project Sync for Mounted External Repositories
+- **Description**: Add a project sync workflow for external mounted repositories that: (1) triggers a manual pull mirror sync from upstream to `mirrors/project-{name}-{hash}`, (2) pulls new commits from mirror to the session-specific fork (`agent-{hex}/project-{name}-{hash}-{session_hash}`), and (3) pulls from the fork into the sandbox working copy `/projects/{mount_name}`.
+- **Why Deferred**: Background automatic pull mirror syncs (`mirror_interval: "10m"`) keep mirrors up to date without manual intervention. On-demand sync requires triggering Gitea mirror sync API (`/repos/{owner}/{repo}/mirror-sync`) followed by Git fetch/merge between mirror and fork.
+- **Revisit Trigger**: When an agent or user explicitly requests fetching the latest upstream commits into an active session working copy mid-session.
+- **Provenance**: [0068-organization-and-session-gitea-layers.md](../decisions/0068-organization-and-session-gitea-layers.md), `src/seamus/persistence/external_repo.py`.
+
+### Hard Delete (Org Deletion) and Soft Delete / Archive (Org Prefixing)
+- **Description**: When deleting or archiving an agent: (1) hard delete permanently deletes the entire Gitea organization (`agent-{agent_id.hex}`) and all repos within it (`agent`, `session-*`, and session mount forks), and (2) soft delete / archive renames the organization with a prefix (e.g. `archived-agent-{hex}`), taking advantage of hydration filtering that only reads orgs matching `agent-*`.
+- **Why Deferred**: Agent lifecycle management currently leaves existing repos intact; deletion and archival workflows require dedicated API endpoints, confirmation prompts, and cleanup hooks.
+- **Revisit Trigger**: When implementing agent deletion and archival in the store, API, and UI.
+- **Provenance**: [0068-organization-and-session-gitea-layers.md](../decisions/0068-organization-and-session-gitea-layers.md), `src/seamus/harness/store.py`, `src/seamus/persistence/client.py`.
+
 ### Optional Persistence of Steerable Model Queues
 - **Description**: Optionally persist steerable model response queues (for example under `<session_workspace>/data/steerable/<instance_id>.json`, committed alongside session state) so that a scripted session survives a backend restart and its queue becomes visible in the Changes diff view. The queue is currently held in memory in the process-wide steerable registry only, so a restart discards it and the session must be re-armed. The Inspector's queue export/import covers the manual case (download a queue as JSON, upload it into another session), but not automatic, session-scoped persistence.
 - **Why Deferred**: The queue is a live steering surface for the current process. Persisting it would require resolving the same multi-worker consistency caveats the in-memory store already carries (see the technical-debt entry on in-memory store state isolation), and Git-backed persistence would commit what is essentially scratch state into the session history.

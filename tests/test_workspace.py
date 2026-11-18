@@ -3,6 +3,7 @@
 import json
 import subprocess
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -40,10 +41,37 @@ def git_environment(tmp_path: Path) -> tuple[GitWorkspaceManager, Path, Path]:
         enabled=True,
     )
 
+    remotes_dir = tmp_path / "remotes"
+    remotes_dir.mkdir(parents=True, exist_ok=True)
+
+    def _clone_url(repo_name: str, owner: str | None = None) -> str:
+        repo_dir = remotes_dir / f"{owner or 'default'}_{repo_name}.git"
+        if not repo_dir.exists():
+            subprocess.run(["git", "init", "--bare", "-b", "main", str(repo_dir)], check=True)
+        return str(repo_dir)
+
+    def _fork_repo(
+        source_owner: str,
+        source_repo: str,
+        target_org: str,
+        fork_name: str | None = None,
+    ) -> dict[str, Any]:
+        new_name = fork_name or source_repo
+        src = remotes_dir / f"{source_owner}_{source_repo}.git"
+        dst = remotes_dir / f"{target_org}_{new_name}.git"
+        if src.exists() and not dst.exists():
+            subprocess.run(["git", "clone", "--bare", str(src), str(dst)], check=True)
+        elif not dst.exists():
+            subprocess.run(["git", "init", "--bare", "-b", "main", str(dst)], check=True)
+        return {"name": new_name}
+
     mock_client = MagicMock()
     mock_client.get_or_create_repo.return_value = {"name": "test-repo"}
-    mock_client.get_authenticated_clone_url.return_value = str(bare_remote)
+    mock_client.get_authenticated_clone_url.side_effect = _clone_url
     mock_client.list_branches.return_value = ["main"]
+    mock_client.get_repo.return_value = None
+    mock_client.get_or_create_org.return_value = {"name": "test-org"}
+    mock_client.fork_repo.side_effect = _fork_repo
 
     manager = GitWorkspaceManager(settings=settings, client=mock_client)
     return manager, bare_remote, workspace_dir
@@ -107,7 +135,7 @@ def test_session_workspace_and_checkpoint_commits(
         text=True,
         capture_output=True,
     ).stdout.strip()
-    assert current_branch == f"session/{session.id}"
+    assert current_branch == "main"
 
     # Verify initial clean status
     committed = manager.commit_checkpoint_changes(agent.id, session.id, thread.id, "cp-0")
@@ -228,7 +256,12 @@ def test_sync_pr_workspace_operations(
     session = Session(agent_id=agent.id, name="test-session", config=test_config)
 
     # Mock client PR methods
-    mock_pr = {"id": 1, "number": 10, "head": {"ref": f"session/{session.id}"}, "mergeable": True}
+    mock_pr = {
+        "id": 1,
+        "number": 10,
+        "head": {"repo": {"name": f"session-{session.id}"}, "ref": "main"},
+        "mergeable": True,
+    }
     manager.client.list_pull_requests = MagicMock(return_value=[])  # type: ignore[method-assign]
     manager.client.create_pull_request = MagicMock(return_value=mock_pr)  # type: ignore[method-assign]
     manager.client.approve_pull_request = MagicMock(return_value={"state": "APPROVED"})  # type: ignore[method-assign]
@@ -241,7 +274,7 @@ def test_sync_pr_workspace_operations(
     assert opened["number"] == 10
     manager.client.create_pull_request.assert_called_once()
     create_call = manager.client.create_pull_request.call_args
-    assert create_call.kwargs["head"] == f"session/{session.id}"
+    assert create_call.kwargs["head"] == f"agent-{agent.id.hex}/session-{session.id}:main"
     assert create_call.kwargs["base"] == "main"
 
     # 2. Get active Sync PR
@@ -285,12 +318,14 @@ def test_sync_pr_workspace_operations(
         repo_name=manager.get_agent_repo_name(session.agent_id),
         index=10,
         body="Accepted by user",
+        owner=f"agent-{agent.id.hex}",
     )
     manager.client.merge_pull_request.assert_called_once_with(
         repo_name=manager.get_agent_repo_name(session.agent_id),
         index=10,
         do="merge",
         delete_branch=False,
+        owner=f"agent-{agent.id.hex}",
     )
 
 
@@ -323,7 +358,7 @@ def test_sync_pr_data_scoped_merge_lifecycle(
     mock_pr = {
         "id": 1,
         "number": 42,
-        "head": {"ref": f"session/{session.id}"},
+        "head": {"repo": {"name": f"session-{session.id}"}, "ref": "main"},
         "mergeable": True,
         "merged": False,
     }
@@ -387,8 +422,18 @@ def test_sync_pr_multi_session_merge_no_conflict(
     manager.commit_checkpoint_changes(agent.id, session2.id, thread2.id, checkpoint_id="cp-2")
 
     # Mock PRs
-    pr1 = {"id": 1, "number": 1, "head": {"ref": f"session/{session1.id}"}, "mergeable": True}
-    pr2 = {"id": 2, "number": 2, "head": {"ref": f"session/{session2.id}"}, "mergeable": True}
+    pr1 = {
+        "id": 1,
+        "number": 1,
+        "head": {"repo": {"name": f"session-{session1.id}"}, "ref": "main"},
+        "mergeable": True,
+    }
+    pr2 = {
+        "id": 2,
+        "number": 2,
+        "head": {"repo": {"name": f"session-{session2.id}"}, "ref": "main"},
+        "mergeable": True,
+    }
 
     manager.client.approve_pull_request = MagicMock(return_value={"state": "APPROVED"})  # type: ignore[method-assign]
     manager.client.merge_pull_request = MagicMock(return_value=True)  # type: ignore[method-assign]
@@ -474,17 +519,19 @@ def test_sync_session_workspace_auto_pulls_external_changes(
     thread = session.create_thread(name="sync-thread")
 
     session_dir = manager.create_session_workspace(session, agent)
-    branch_name = f"session/{session.id}"
 
-    # Commit initial state to establish the branch remotely
+    # Commit initial state to establish the repo remotely
     test_file = session_dir / "data" / "initial.txt"
     test_file.write_text("initial content", encoding="utf-8")
     assert manager.commit_checkpoint_changes(agent.id, session.id, thread.id, "cp-init") is True
 
     # Simulate an external commit pushed directly to Gitea/remote
     external_clone = tmp_path / "external_clone"
-    subprocess.run(["git", "clone", str(bare_remote), str(external_clone)], check=True)
-    subprocess.run(["git", "-C", str(external_clone), "checkout", branch_name], check=True)
+    session_clone_url = manager.client.get_authenticated_clone_url(
+        repo_name=manager.get_session_repo_name(session.id),
+        owner=manager.get_agent_org_name(agent.id),
+    )
+    subprocess.run(["git", "clone", session_clone_url, str(external_clone)], check=True)
     ext_skill_dir = external_clone / "data" / ".skills" / "custom"
     ext_skill_dir.mkdir(parents=True)
     (ext_skill_dir / "SKILL.md").write_text("---\nname: custom\n---\n", encoding="utf-8")
@@ -505,7 +552,7 @@ def test_sync_session_workspace_auto_pulls_external_changes(
         check=True,
     )
     subprocess.run(
-        ["git", "-C", str(external_clone), "push", "origin", branch_name],
+        ["git", "-C", str(external_clone), "push", "origin", "main"],
         check=True,
     )
 
@@ -600,7 +647,7 @@ def test_close_sync_pr_when_open_and_when_absent(
     closed_calls: list[tuple[str, int]] = []
     monkeypatch.setattr(manager, "get_active_sync_pr", lambda _s, _a: {"number": 42})
 
-    def _close_pr(repo: str, num: int) -> bool:
+    def _close_pr(repo: str, num: int, owner: str | None = None) -> bool:
         closed_calls.append((repo, num))
         return True
 

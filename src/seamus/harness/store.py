@@ -1077,7 +1077,11 @@ class HarnessStore:
                                 )
                             else:
                                 ext_mgr.provision_session_working_copy(
-                                    agent.id, new_session.id, repo_cfg, mount_name
+                                    agent.id,
+                                    new_session.id,
+                                    repo_cfg,
+                                    mount_name,
+                                    parent_session_id=parent_session.id,
                                 )
                 except Exception:
                     logger.exception(
@@ -1405,26 +1409,30 @@ class HarnessStore:
         return session
 
     def hydrate_from_gitea(self) -> None:
-        """Discover existing agent repositories from Gitea and reconstruct domain entities."""
+        """Discover existing agent organizations from Gitea and reconstruct domain entities."""
         ws_mgr = get_workspace_manager()
         client = ws_mgr.client
         if not ws_mgr.settings.enabled or not client.is_healthy():
             return
 
         try:
-            repos = client.list_user_repos()
-            for repo in repos:
-                repo_name = repo.get("name", "")
-                if not repo_name.startswith("agent-"):
+            orgs = client.list_orgs()
+            for org in orgs:
+                org_name = org.get("name") or org.get("username") or ""
+                # Filter for agent-<uuid> and strictly exclude prefixed orgs
+                # (e.g. archived-agent-...)
+                if not org_name.startswith("agent-"):
                     continue
-                agent_id_str = repo_name[len("agent-") :]
+                agent_id_str = org_name[len("agent-") :]
                 agent_id = parse_uuid(agent_id_str)
                 if agent_id is None or agent_id in self._agents:
                     continue
 
                 main_raw = client.get_file_content(
-                    repo_name, "main", "agent/config/config.json"
-                ) or client.get_file_content(repo_name, "main", "config/config.json")
+                    "agent", "main", "agent/config/config.json", owner=org_name
+                ) or client.get_file_content(
+                    "agent", "main", "config/config.json", owner=org_name
+                )
                 if not main_raw:
                     continue
                 try:
@@ -1448,21 +1456,26 @@ class HarnessStore:
                         created_at=agent_created_at,
                     )
                 except Exception:
-                    logger.exception("Failed to reconstruct agent from repo %s", repo_name)
+                    logger.exception(
+                        "Failed to reconstruct agent from org %s agent repo", org_name
+                    )
                     continue
 
-                branches = client.list_branches(repo_name)
-                for branch in branches:
-                    if not branch.startswith("session/"):
+                org_repos = client.list_org_repos(org_name)
+                for repo in org_repos:
+                    repo_name = repo.get("name", "")
+                    if not repo_name.startswith("session-"):
                         continue
-                    session_id_str = branch[len("session/") :]
+                    session_id_str = repo_name[len("session-") :]
                     session_id = parse_uuid(session_id_str)
                     if session_id is None:
                         continue
 
                     session_raw = client.get_file_content(
-                        repo_name, branch, "agent/config/config.json"
-                    ) or client.get_file_content(repo_name, branch, "config/config.json")
+                        repo_name, "main", "agent/config/config.json", owner=org_name
+                    ) or client.get_file_content(
+                        repo_name, "main", "config/config.json", owner=org_name
+                    )
                     if not session_raw:
                         continue
                     try:
@@ -1559,8 +1572,9 @@ class HarnessStore:
                                 # Hydrate thread events from Gitea or local workspace
                                 events_raw = client.get_file_content(
                                     repo_name,
-                                    branch,
+                                    "main",
                                     f"agent/state/threads/{thread.id}/events.json",
+                                    owner=org_name,
                                 )
                                 if events_raw:
                                     try:
@@ -1571,13 +1585,12 @@ class HarnessStore:
                                             ]
                                     except Exception:
                                         logger.exception(
-                                            "Failed to parse events for thread %s in branch %s",
+                                            "Failed to parse events for thread %s in repo %s",
                                             thread.id,
-                                            branch,
+                                            repo_name,
                                         )
                                 else:
                                     try:
-                                        ws_mgr = get_workspace_manager()
                                         local_events = ws_mgr.load_thread_events(
                                             agent.id, session.id, thread.id
                                         )
@@ -1591,7 +1604,7 @@ class HarnessStore:
                         session.get_open_thread()
                         agent.sessions[session.id] = session
                     except Exception:
-                        logger.exception("Failed to reconstruct session from branch %s", branch)
+                        logger.exception("Failed to reconstruct session from repo %s", repo_name)
                         continue
 
                 if not agent.sessions:
@@ -1599,9 +1612,10 @@ class HarnessStore:
 
                 self._agents[agent.id] = agent
                 logger.info(
-                    "Hydrated agent %s with %d sessions from Gitea",
+                    "Hydrated agent %s with %d sessions from Gitea org %s",
                     agent.id,
                     len(agent.sessions),
+                    org_name,
                 )
         except Exception:
             logger.exception("Failed during Gitea store hydration")

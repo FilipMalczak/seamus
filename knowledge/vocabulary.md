@@ -88,19 +88,22 @@ OpenTelemetry-compatible observability constructs powered by Pydantic Logfire:
 - **Scrubbing**: Automatic redaction of sensitive credentials and tokens; configured in Seamus to whitelist domain `session` attributes while redacting secrets.
 
 ### External System Links & Navigation Footer
-Pinned shortcut interface located at the bottom of the navigation tree left panel. Houses quick-launch icons linking to external companion platforms: Logfire telemetry dashboard, Gitea Home, and contextual composite buttons for the selected Agent Git branch (`main`) and Session Git branch (`session/{session_id}`). Display is conditionally controlled based on integration availability and active selection.
+Pinned shortcut interface located at the bottom of the navigation tree left panel. Houses quick-launch icons linking to external companion platforms: Logfire telemetry dashboard, Gitea Home, and contextual composite buttons for the selected Agent Git repository (`agent-{hex}/agent/src/branch/main`) and Session Git repository (`agent-{hex}/session-{session_id}/src/branch/main`). Display is conditionally controlled based on integration availability and active selection.
 
-### Agent Repository
-A dedicated Git repository in Gitea (`agent-{agent_id}`) tracking all versioned state for an Agent. Its `main` branch stores the base configuration (`agent/config/config.json`), a state placeholder (`agent/state/.gitkeep`), and an empty workspace baseline (`data/.gitkeep`).
+### Agent Organization
+A dedicated Gitea organization (`agent-{agent_id.hex}`) isolating all versioned repositories and persistent resources belonging to an Agent.
 
-### Session Branch
-An isolated Git branch (`session/{session_id}`) created from `main` holding the session-specific configuration in `agent/config/config.json`, thread conversation and checkpoint state in `agent/state/threads/{thread_id}/`, and agent-generated workspace files in `data/`.
+### Agent Baseline Repository
+A dedicated Git repository in Gitea named `agent` inside the agent's organization (`agent-{agent_id.hex}/agent`) tracking baseline state for the Agent. Its `main` branch stores the base configuration (`agent/config/config.json`), a state placeholder (`agent/state/.gitkeep`), and an empty workspace baseline (`data/.gitkeep`).
+
+### Session Repository
+An isolated Git repository (`session-{session_id}`) created within the agent's Gitea organization (`agent-{agent_id.hex}/session-{session_id}`), forked from the baseline `agent` repository (or from a parent session repository for branched sessions). Works on `main` branch, holding session configuration, thread conversation and checkpoint state in `agent/state/threads/{thread_id}/`, and agent workspace files in `data/`.
 
 ### Checkpoint Commit
 An automated Git commit generated whenever a LangGraph checkpointer saves state, committing all new, modified, or deleted files under `data/` and `agent/state/` with the commit message prefix `checkpoint:`. Turn-completion event updates commit with the prefix `state:`.
 
 ### Store Hydration
-The startup process wherein `HarnessStore` discovers repositories and branches on Gitea to reconstruct in-memory domain entities (`Agent`, `Session`, `Thread`) without needing a direct SQL database in the harness backend.
+The startup process wherein `HarnessStore` discovers organizations (`agent-*`) and repositories (`agent`, `session-*`) on Gitea to reconstruct in-memory domain entities (`Agent`, `Session`, `Thread`) without needing a direct SQL database in the harness backend. Prefixed organizations (such as archived agents) are filtered out during discovery.
 
 ### Execution Sandbox (`OpenSandbox`)
 An isolated container environment managed by a locally hosted `opensandbox-server` and bridged to DeepAgent via `langchain-sandbox-opensandbox` (`SeamusOpenSandboxBackend`). All agent file operations and shell commands execute inside the sandbox container.
@@ -109,7 +112,7 @@ An isolated container environment managed by a locally hosted `opensandbox-serve
 The mount path inside an agent's execution sandbox container where the session's Git-tracked `data/` directory is mounted. Files inside `/workspace` are version-controlled and persisted across checkpoints; all paths outside `/workspace` in the sandbox container are transient.
 
 ### Agent Inspector
-An introspection subsystem (accessible via the `GET .../inspect` endpoint and the UI `[Inspector]` tab) surfacing the full runtime manifest of an agent as of its latest inference run: decomposed system prompt layers, registered tool parameter schemas, execution backend bindings, inference configuration with credential masking, Gitea branch/commit provenance, and message trajectory.
+An introspection subsystem (accessible via the `GET .../inspect` endpoint and the UI `[Inspector]` tab) surfacing the full runtime manifest of an agent as of its latest inference run: decomposed system prompt layers, registered tool parameter schemas, execution backend bindings, inference configuration with credential masking, Gitea repository/commit provenance, and message trajectory.
 
 ### Composite System Prompt
 The effective prompt received by the language model assembled dynamically per-inference in structured LM-XML from base scaffolding (`build_scaffold_prompt`), dynamic runtime context (timestamps, workspace path, session/agent identifiers), and user-configured custom instructions.
@@ -118,10 +121,10 @@ The effective prompt received by the language model assembled dynamically per-in
 Language Model XML; an opinionated, predictable serialization format mapping Python data structures and Pydantic models to human- and model-readable XML tags without attributes (except list item indexing), ensuring deterministic structural parsing by language models.
 
 ### Sync PR
-An automated Gitea pull request opened from a session branch (`session/{session_id}`) targeting the repository's base branch (`main`). Created upon session workspace initialization and renewed after each thread acceptance.
+An automated Gitea cross-fork pull request opened from a session repository (`session-{session_id}:main`) targeting the baseline repository (`agent:main`) within the agent's organization. Created upon session workspace initialization and renewed after each thread acceptance.
 
 ### Thread Acceptance
-The explicit human-in-the-loop lifecycle transition triggered by the top bar "Accept" action. Closes the active thread, merges the session's active Sync PR into `main`, spawns a fresh thread on the same session branch, and opens a new Sync PR to `main`.
+The explicit human-in-the-loop lifecycle transition triggered by the top bar "Accept" action. Closes the active thread, merges the session's active cross-fork Sync PR into `agent:main`, spawns a fresh thread on the same session repository, and opens a new Sync PR to `agent:main`.
 
 ### Tool Call Lifecycle States
 The deterministic execution phases of an invoked agent tool: `Pending` (arguments preparing / streaming), `WIP` (tool executing within backend sandbox), `Done` (execution finished successfully with output result), and `Failed` (tool execution errored).
@@ -163,16 +166,22 @@ A symbolic string interpolation expression (`${secret('/path')}` or `${secret(pa
 The canonical, version-pinned form of a secret reference (`${secret(path='/path', field='value', version=N)}`) written exclusively to on-disk `agent/config/config.json` during checkpoint commits to record the exact OpenBao secret version active prior to that checkpoint while keeping live in-memory session configs unversioned. See [0041-openbao-secrets-vault-integration.md](../decisions/0041-openbao-secrets-vault-integration.md).
 
 ### External Repository
-A user-configured remote Git repository mounted into an agent session's OpenSandbox environment under `/projects/{mount_name}`. Unlike the agent repository (`agent-{agent_id}`), external repositories represent third-party or existing codebases where the agent can run normal Git commands (`git status`, `git commit`, `git diff`) without polluting or coupling the project's semantic history to Seamus harness internals.
+A user-configured remote Git repository mounted into an agent session's OpenSandbox environment under `/projects/{mount_name}`. Managed through a multi-tier Gitea topology: a system-wide read-only downstream mirror in the `mirrors` organization, and a writable session-specific fork in the agent's organization (`agent-{agent_id.hex}`). Agents run normal Git commands (`git status`, `git commit`, `git diff`) in their sandbox copy without polluting upstream mirrors or coupling semantic history to Seamus internals.
+
+### Mirrors Organization
+A dedicated, system-wide Gitea organization named `mirrors` hosting read-only downstream pull mirrors of all external Git repositories configured across Seamus agents.
+
+### External Repository Mirror
+A read-only downstream pull mirror in Gitea under `mirrors/project-{project_name}-{url_hash_8}` (e.g. `mirrors/project-seamus-a1b2c3d4`) that syncs frequently from upstream (`mirror_interval="10m"`).
+
+### External Repository Session Fork
+A dedicated writable Git repository created in the agent's organization under `agent-{agent_id.hex}/project-{project_name}-{url_hash_8}-{session_hash_8}` forked from the downstream mirror (or from the parent session's mount fork for branched sessions). Cloned directly into the execution sandbox at `/projects/{mount_name}`. Dual-index checkpoint commits push snapshots (`refs/seamus/checkpoints/...`) directly to this session-specific fork.
 
 ### Dual-Index Checkpoint
-An automated filesystem snapshot mechanism that stages the working tree into an isolated, out-of-tree Git index (`.seamus_indexes/{attachment_id}.idx`) via `GIT_INDEX_FILE` and creates snapshot commits pushed to Gitea (`refs/seamus/checkpoints/...`). Dual-index checkpointing ensures that Seamus snapshots capture all modified and untracked files (respecting `.gitignore`) without altering the agent's active `.git/index`, `HEAD`, or working tree.
-
-### Project Repository (Internal)
-A dedicated, internal Gitea repository (`project-{project_id}`) mirrored from a remote Git URL, holding the project's upstream branches, session working branches (`session/{session_id}`), and durable Seamus checkpoint references.
+An automated filesystem snapshot mechanism that stages the working tree into an isolated, out-of-tree Git index (`.seamus_indexes/{attachment_id}.idx`) via `GIT_INDEX_FILE` and creates snapshot commits pushed to the session fork on Gitea (`refs/seamus/checkpoints/...`). Dual-index checkpointing ensures that Seamus snapshots capture all modified and untracked files (respecting `.gitignore`) without altering the agent's active `.git/index`, `HEAD`, or working tree.
 
 ### Project Attachment ID
-A unique identifier (`uuid4().hex`) distinguishing a specific repository attachment in a session's configuration (`ExternalRepositoryConfig.id`) from the underlying project identity (`project_id = sha256(canonical_url)[:12]`), allowing independent mount configurations and collision-free index storage.
+A unique identifier (`uuid4().hex`) distinguishing a specific repository attachment in a session's configuration (`ExternalRepositoryConfig.id`) from the underlying project identity (`project_id = f"{project_name}-{url_hash_8}"`), allowing independent mount configurations and collision-free index storage.
 
 ### Local Model Provider (Ollama)
 An inference backend running entirely locally (either via the Docker Compose `ollama` service or on the host machine) that does not require external cloud API keys and enables private, offline execution of open-weights models (`InferenceFormat.OLLAMA`).

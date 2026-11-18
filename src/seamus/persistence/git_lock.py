@@ -201,4 +201,3 @@ def sweep_workspace_stale_locks(root_dir: Path) -> int:
         logger.info("Swept and removed %d stale git lock files across %s", total_removed, root_dir)
 
     return total_removed
-
