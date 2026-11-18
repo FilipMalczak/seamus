@@ -1430,9 +1430,7 @@ class HarnessStore:
 
                 main_raw = client.get_file_content(
                     "agent", "main", "agent/config/config.json", owner=org_name
-                ) or client.get_file_content(
-                    "agent", "main", "config/config.json", owner=org_name
-                )
+                ) or client.get_file_content("agent", "main", "config/config.json", owner=org_name)
                 if not main_raw:
                     continue
                 try:
@@ -1456,9 +1454,7 @@ class HarnessStore:
                         created_at=agent_created_at,
                     )
                 except Exception:
-                    logger.exception(
-                        "Failed to reconstruct agent from org %s agent repo", org_name
-                    )
+                    logger.exception("Failed to reconstruct agent from org %s agent repo", org_name)
                     continue
 
                 org_repos = client.list_org_repos(org_name)

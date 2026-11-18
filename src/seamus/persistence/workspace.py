@@ -583,10 +583,7 @@ class GitWorkspaceManager:
                 self.get_session_workspace_path(session.agent_id, parent_session_id)
                 if parent_session_id
                 and (
-                    self.get_session_workspace_path(
-                        session.agent_id, parent_session_id
-                    )
-                    / ".git"
+                    self.get_session_workspace_path(session.agent_id, parent_session_id) / ".git"
                 ).exists()
                 else self.get_agent_workspace_path(session.agent_id)
             )
@@ -662,9 +659,7 @@ class GitWorkspaceManager:
                 ).stdout.strip()
                 or "main"
             )
-            self._run_git(
-                session_dir, ["pull", "--rebase", "--autostash", "origin", active_branch]
-            )
+            self._run_git(session_dir, ["pull", "--rebase", "--autostash", "origin", active_branch])
             logger.info("Synchronized local session workspace with remote %s", active_branch)
             return True
         except Exception as exc:
@@ -819,9 +814,7 @@ class GitWorkspaceManager:
             return active_pr, ""
 
         try:
-            diff_text = self.client.get_pull_request_diff(
-                base_repo, int(pr_number), owner=org_name
-            )
+            diff_text = self.client.get_pull_request_diff(base_repo, int(pr_number), owner=org_name)
             filtered_diff = filter_sync_pr_diff(diff_text)
             return active_pr, filtered_diff
         except Exception:

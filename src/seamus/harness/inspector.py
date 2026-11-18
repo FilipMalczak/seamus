@@ -1208,8 +1208,7 @@ def build_agent_inspect_report(
             p_id = derive_project_id(repo.url)
             g_name = ext_mgr.get_session_fork_repo_name(repo.url, session.id)
             g_url = (
-                f"{ws_mgr.settings.gitea_url.rstrip('/')}/"
-                f"{agent_org}/{g_name}"
+                f"{ws_mgr.settings.gitea_url.rstrip('/')}/{agent_org}/{g_name}"
                 if ws_mgr.settings.enabled
                 else None
             )

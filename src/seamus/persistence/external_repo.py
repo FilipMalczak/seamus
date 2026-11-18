@@ -666,10 +666,7 @@ class ExternalRepositoryManager:
         agent_org = f"agent-{agent_id.hex}"
         gitea_base: str | None = None
         if self.settings.enabled and self.settings.gitea_external_url:
-            gitea_base = (
-                f"{self.settings.gitea_external_url.rstrip('/')}/"
-                f"{agent_org}/{repo_name}"
-            )
+            gitea_base = f"{self.settings.gitea_external_url.rstrip('/')}/{agent_org}/{repo_name}"
 
         commits: list[dict[str, Any]] = []
         if base_commit != head_commit:
@@ -883,10 +880,7 @@ class ExternalRepositoryManager:
         agent_org = f"agent-{agent_id.hex}"
         gitea_url: str | None = None
         if self.settings.enabled:
-            gitea_url = (
-                f"{self.settings.gitea_url.rstrip('/')}/"
-                f"{agent_org}/{repo_name}"
-            )
+            gitea_url = f"{self.settings.gitea_url.rstrip('/')}/{agent_org}/{repo_name}"
             ref_spec = (
                 f"{checkpoint_sha}:refs/seamus/sessions/{session_id}/"
                 f"attachments/{repo_config.id}/checkpoints/{checkpoint_id}"

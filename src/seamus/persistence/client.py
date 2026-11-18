@@ -181,8 +181,7 @@ class GiteaClient:
             if res.status_code == 404:
                 return None
             msg = (
-                f"Failed to get organization '{org_name}': "
-                f"status={res.status_code} body={res.text}"
+                f"Failed to get organization '{org_name}': status={res.status_code} body={res.text}"
             )
             raise GiteaAPIError(msg)
 
