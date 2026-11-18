@@ -1,4 +1,4 @@
-# 0049. Native LM-XML Hierarchical Planning Toolset
+# 0049. Native LMXML Hierarchical Planning Toolset
 
 Date: 2026-11-09
 
@@ -11,7 +11,7 @@ Accepted
 Task planning and progress tracking in Seamus were previously integrated via DeepAgents' built-in `TodoListMiddleware` ([0025-todo-list-middleware.md](./0025-todo-list-middleware.md)).
 
 However, `TodoListMiddleware` suffered from significant architectural limitations:
-1. **System Prompt Clutter**: Injected raw, flat markdown guidance (`## write_todos`) outside of Seamus's structured LM-XML dynamic system prompt architecture ([0018-dynamic-system-prompt-architecture.md](./0018-dynamic-system-prompt-architecture.md)).
+1. **System Prompt Clutter**: Injected raw, flat markdown guidance (`## write_todos`) outside of Seamus's structured LMXML dynamic system prompt architecture ([0018-dynamic-system-prompt-architecture.md](./0018-dynamic-system-prompt-architecture.md)).
 2. **Monolithic Tool Interface**: Provided only a single `write_todos` tool, requiring the agent to rewrite and re-transmit the entire task array on every modification, leading to high token expenditure and state corruption risk.
 3. **Flat Task Representation**: Did not support task decomposition, parent-child hierarchies, or subtask organization.
 4. **Lack of Lifecycle Invariants**: Could not model skipped/abandoned tasks or maintain consistency between parent objectives and subtask progress.
@@ -25,10 +25,10 @@ Following the successful native rewrite of the skills system ([0048-native-lmxml
    - Retain `deepagents` and `none` for backward compatibility.
    - Decouple planning execution cleanly between DeepAgents middleware and Seamus native tools.
 
-2. **LM-XML Dynamic Prompt Embedding**:
+2. **LMXML Dynamic Prompt Embedding**:
    - Model the active plan in `SystemPromptDocument` (`src/seamus/harness/prompt.py`) via the `<plan>` element.
    - When todos exist on the active thread, serialize them into an indented, 1-based hierarchical tree.
-   - When no todos exist (`plan is None`), cleanly omit the `<plan>` element from the serialized LM-XML prompt via `exclude_none=True`.
+   - When no todos exist (`plan is None`), cleanly omit the `<plan>` element from the serialized LMXML prompt via `exclude_none=True`.
 
 3. **Hierarchical Tree Representation & Stable IDs**:
    - Assign each task an immutable 4-hex identifier (`uuid4().hex[-4:]`) upon creation. All tool calls target stable IDs, never paths.
@@ -54,7 +54,7 @@ Following the successful native rewrite of the skills system ([0048-native-lmxml
 ## Consequences
 
 ### Positive
-- Strict alignment with Seamus's structured LM-XML dynamic system prompt architecture.
+- Strict alignment with Seamus's structured LMXML dynamic system prompt architecture.
 - Replaces bulky whole-array rewriting with surgical atomic tool calls.
 - Full hierarchical task decomposition with 1-based paths and stable short IDs.
 - Deterministic auto-state rules eliminate contradictory task states (such as closed parents with running children).

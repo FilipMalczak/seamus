@@ -12,7 +12,7 @@ We now want to formalize **Operational Modes** as first-class domain and runtime
 
 Each mode and phase governs:
 1. **Name and Short Description**: For UI presentation (`<mode>` or `<mode>/<phase>` thread labels) and future routing/dispatch.
-2. **System Prompt Composition**: Structured LM-XML sections (`<operational_mode>`, `<plan_document_specification>`, `<active_plan_context>`) injected into `SystemPromptDocument` and serialized via `lmxml` without raw string concatenation.
+2. **System Prompt Composition**: Structured LMXML sections (`<operational_mode>`, `<plan_document_specification>`, `<active_plan_context>`) injected into `SystemPromptDocument` and serialized via `lmxml` without raw string concatenation.
 3. **Dynamic Tool Availability**: Exposing only the tools appropriate to the active mode, phase, and session plan state, with `read_artifact_submission` exposed if and only if at least one artifact-producing tool (`ask`, `form`, `make_plan`, `update_plan`, `edit_plan`) is available.
 4. **Filesystem Mount Policies**: Read-write vs. read-only access to the operational workspace (`/workspace`) and persistent session notes directory (`/workspace/notes`).
 5. **Thread-per-Phase Boundaries**: Every mode switch and phase transition closes the current thread and spawns a new thread with a clean checkpoint history, using `/workspace/notes` and `/artifacts` for cross-phase state handoff.
@@ -48,7 +48,7 @@ Each mode and phase governs:
 - **Non-Blocking to Blocking Promotion**: Calling `read_artifact_submission(artifact_id)` on an open non-blocking artifact promotes its instance `manifest.json` to `cadence="blocking"` and halts the turn so the UI blocks further chat input until the user submits the artifact.
 - **Accepting Sync PR in `plan/execute`**: Accepting a thread in `HarnessStore.accept_thread` first closes any active session plan (`PlanBuilder.close_plan`, emitting `ARTIFACT_CLOSED`), merges the Sync PR (`data/` only) into `main`, and opens the next thread (resetting `plan` mode back to `plan/discuss`).
 
-### 4. LM-XML System Prompt Composition (`seamus.harness.prompt`)
+### 4. LMXML System Prompt Composition (`seamus.harness.prompt`)
 - Inspired by structured mode/phase prompt separation in Antigravity, Claude Code, and Cursor (`coder` persona), `SystemPromptDocument` injects typed Pydantic models:
   - `OperationalModeSection` (`<operational_mode>`) with mode/phase descriptions, mount summary, and phase workflow rules.
   - `PlanDocumentSpec` (`<plan_document_specification>`) in `plan/make`, instructing the agent to structure plans with `# <Title>`, `## Goal & Context`, `## Architectural Decisions & Trade-offs`, `## Proposed Changes`, and `## Verification Plan`.

@@ -52,7 +52,7 @@ Seamus is an open, self-hosted, deep agent execution harness and developer works
 | **Flat, unformatted text chat** incapable of collecting structured answers or presenting interactive forms. | **Adaptive UI (A2UI v1.0).** Agents render interactive questionnaires that block until answered, tabbed configuration forms, and dedicated Plan tabs with inline section comments and Proceed gates. |
 | **Leaked API keys and plaintext secrets** committed to git repositories, logged in traces, or saved in disk files. | **Integrated OpenBao Secrets Vault (KV v2).** Symbolic `${secret('/path')}` references, strictly in-memory resolution, zero disk secrets, and version-pinned snapshotting in checkpoint commits. |
 | **Static, rigid agent configurations** that cannot be extended with modular capabilities. | **Anthropic Skills Standard (`SKILL.md`).** Drop in modular skills with a multi-tiered priority engine spanning bundled, session, background, and system directories. |
-| **Opaque reasoning and invisible prompts** making it impossible to debug hallucinations or bad tool calls. | **DeepAgent Inspector.** Deconstructs composite LM-XML system prompts into layered cards, exposes registered JSON tool schemas, tracks active todos, and surfaces live diffs. |
+| **Opaque reasoning and invisible prompts** making it impossible to debug hallucinations or bad tool calls. | **DeepAgent Inspector.** Deconstructs composite LMXML system prompts into layered cards, exposes registered JSON tool schemas, tracks active todos, and surfaces live diffs. |
 
 ### Architectural Highlights
 
@@ -70,7 +70,7 @@ Seamus is an open, self-hosted, deep agent execution harness and developer works
 |   • SessionAgentRunner (DeepAgent Runtime + ReasoningChatOpenAI)                   |
 |   • OpenBao Secrets Vault Client & Symbolic Expression Interpolator                |
 |   • AG-UI Event Broadcaster (Pub-Sub & History Replay)                            |
-|   • DynamicSystemPromptMiddleware (Structured LM-XML Scaffold)                     |
+|   • DynamicSystemPromptMiddleware (Structured LMXML Scaffold)                     |
 +------------------------------------------------------------------------------------+
                    │                                             │
                    ▼                                             ▼
@@ -105,7 +105,7 @@ Seamus is an open, self-hosted, deep agent execution harness and developer works
 | **Interactive UI Artifacts** | Text only | Basic diff views | **A2UI v1.0 (Questionnaires, Forms, Plans)** |
 | **Secrets Management** | Plaintext `.env` files | Proprietary Cloud Vault | **OpenBao KV v2 + Symbolic References** |
 | **Skill Extensibility** | Custom python functions | Proprietary extensions | **Anthropic Skills Standard (`SKILL.md`)** |
-| **Inspection & Debugging** | Print statements / loggers | Minimal | **DeepAgent Inspector + LM-XML Prompts** |
+| **Inspection & Debugging** | Print statements / loggers | Minimal | **DeepAgent Inspector + LMXML Prompts** |
 | **One-Click Local Launch** | Multi-step manual setup | N/A (Desktop app) | **Automated `./run.sh` Stack Orchestration** |
 
 ---
@@ -207,11 +207,11 @@ Move beyond text chat. Seamus implements the open **A2UI (Adaptive Agent User In
 - **Strict UAX #31 Compliance & Reference Remapping**: Component IDs strictly adhere to Unicode Standard Annex #31 (`c_id.isidentifier()`). Hyphenated identifiers and illegal characters are automatically sanitized into snake_case (`submit_btn`, `review_btn`, `proceed_btn`) with all child, trigger, content, and action context references remapped dynamically.
 - **Negative Constraint on Redundant Options**: Harness prompts and bundled skills strictly instruct agents never to author explicit "Other" or "Custom" choices when `write_in=True` is enabled on questionnaires, as the A2UI renderer automatically supplies the necessary freeform text input.
 
-### 6. Native LM-XML Skills System & Precedence Engine
+### 6. Native LMXML Skills System & Precedence Engine
 
 Extend your agents using the open [Anthropic Agent Skills standard](https://docs.langchain.com/oss/python/deepagents/skills). Skills are self-contained directories with a `SKILL.md` file featuring YAML frontmatter:
 
-- **Native LM-XML Progressive Disclosure**: Available skills are rendered directly into the dynamic LM-XML system prompt (`<skills><available_skills>...</available_skills></skills>`), allowing the agent to discover capabilities without polluting the context window.
+- **Native LMXML Progressive Disclosure**: Available skills are rendered directly into the dynamic LMXML system prompt (`<skills><available_skills>...</available_skills></skills>`), allowing the agent to discover capabilities without polluting the context window.
 - **Explicit Context Lifecycle (`load_skill` & `unload_skill`)**: The agent explicitly loads full skill instructions into its dynamic prompt using `load_skill(name=...)` when needed, and unloads them with `unload_skill(name=...)` once the workflow is completed to conserve context tokens.
 - **Cross-Phase Skill Retention**: Essential active skills (e.g. `artifacts`) can be designated for retention across thread boundaries and Plan Mode phase transitions (`discuss` -> `make` -> `execute`) via `retained_skills`, maintaining capability continuity while shedding exploratory skills.
 - **Dynamic Tool Gating**: Tools declared in a skill's `allowed_tools` metadata are gated until the skill is loaded via `load_skill`.
@@ -270,7 +270,7 @@ A desktop-grade React 19 single-page application built with Vite and TypeScript:
 
 Inspect exactly what the language model sees and executes via the UI `[Inspector]` tab:
 
-- **Decomposed Composite Prompt Layers**: View the exact LM-XML system prompt generated for the active turn, split cleanly into Scaffolding, Dynamic Runtime Context (paths, IDs, dates), and Custom Instructions, with one-click copy.
+- **Decomposed Composite Prompt Layers**: View the exact LMXML system prompt generated for the active turn, split cleanly into Scaffolding, Dynamic Runtime Context (paths, IDs, dates), and Custom Instructions, with one-click copy.
 - **Registered Tool Schemas, Semantic Label Badges & Interactive Disabling**: Interactive accordion displaying formatted JSON Schema parameter definitions for every tool exposed to the agent, augmented by semantic colored badges (`opensandbox`, `harness`, `planning`, `web`, `skills`) loaded from `tool_labeling.json` with interactive category filtering and a per-tool enable/disable checkbox in each card header persisted to `AgentConfig.disabled_tools`.
 - **Active Todos Checklist**: Real-time inspection of active task planning items managed by DeepAgents `TodoListMiddleware`.
 - **Runtime Inference Parameters**: Model identifier, base URL, sampling parameters, and masked credential references.
@@ -509,7 +509,7 @@ class AgentConfig(BaseModel):
 - `daemons.naming.model`: Dedicated model identifier for naming daemons (default: `openai/gpt-oss-20b`), keeping naming costs and latency minimal.
 - `model_name`: Provider model identifier (e.g. `anthropic/claude-3.5-sonnet`, `openai/gpt-4o`, `openai/gpt-oss-120b`, `llama3.2:3b`, `qwen3.8:latest`, `gemma4:e4b`). When targeting Ollama, Seamus actively verifies daemon health and loads the requested model into memory prior to execution.
 - `mode`: Initial operational mode for sessions (`chat` or `plan`).
-- `system_prompt`: Optional custom prompt instructions appended to the dynamic LM-XML scaffold.
+- `system_prompt`: Optional custom prompt instructions appended to the dynamic LMXML scaffold.
 - `todo_implementation`: Task list planning middleware (`seamus` [default], `deepagents`, or `none`).
 - `skills_implementation`: Skills discovery and disclosure implementation (`seamus` [default], `deepagents`, or `none`).
 - `web_search`: Web search and page extraction implementation (`duckduckgo` [default] or `none`). Powered by DuckDuckGo with zero API keys or external credentials required.

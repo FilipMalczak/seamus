@@ -1,4 +1,4 @@
-# 0018. Dynamic System Prompt Architecture with LM-XML
+# 0018. Dynamic System Prompt Architecture with LMXML
 
 Date: 2026-11-01
 
@@ -17,14 +17,14 @@ To function effectively as a high-discipline, autonomous software engineering ag
 
 ## Decision
 
-1. **Adopt LM-XML Serialization**:
+1. **Adopt LMXML Serialization**:
    - Integrate [`lmxml`](https://github.com/filipmalczak/lmxml) as a core runtime dependency.
    - Define structured Pydantic models for system prompt documents (`OperatingEnvironment`, `DynamicContext`, `SystemPromptDocument`) and serialize them via `lmxml.dumps()`.
    - Ensure clean tag emission without empty/None noise by filtering `None` attributes prior to serialization.
 
 2. **Per-Inference Dynamic Prompt Middleware**:
    - Introduce `DynamicSystemPromptMiddleware` subclassing `AgentMiddleware` from `langchain.agents.middleware`.
-   - Wrap both synchronous (`wrap_model_call`) and asynchronous (`awrap_model_call`) model invocations, overriding `request.system_message` with a freshly generated LM-XML prompt string from `SessionAgentRunner.build_effective_system_prompt()`.
+   - Wrap both synchronous (`wrap_model_call`) and asynchronous (`awrap_model_call`) model invocations, overriding `request.system_message` with a freshly generated LMXML prompt string from `SessionAgentRunner.build_effective_system_prompt()`.
    - Maintain the static base scaffold as `system_prompt` on `create_deep_agent` to ensure proper fallback and inspection compatibility.
 
 3. **Core Coding Agent Persona & Discipline**:
@@ -34,7 +34,7 @@ To function effectively as a high-discipline, autonomous software engineering ag
    - Format user-configured custom instructions within a dedicated `<custom_instructions>` XML tag when present.
 
 4. **Inspector Integration**:
-   - Update `seamus.harness.inspector` to decompose system prompts into the structured LM-XML scaffold, user-defined custom prompt, and the full dynamic composite prompt.
+   - Update `seamus.harness.inspector` to decompose system prompts into the structured LMXML scaffold, user-defined custom prompt, and the full dynamic composite prompt.
 
 ## Consequences
 

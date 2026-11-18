@@ -1,11 +1,11 @@
-"""End-to-end tests for the LM-XML system prompt composition.
+"""End-to-end tests for the LMXML system prompt composition.
 
 The prompt the model actually sees is assembled at runtime from the session
 configuration, the discovered workspace context and the discovered skills.
 These tests observe it through the *public* inspection endpoint, so they
 assert on the same artefact the Web UI shows:
 
-* REQ-023 / INV-027 — the effective prompt is LM-XML: the identity, the
+* REQ-023 / INV-027 — the effective prompt is LMXML: the identity, the
   operating environment, the dynamic context and the custom instructions each
   live in their own section;
 * REQ-042 / INV-052 — a context file discovered in the workspace is injected
@@ -40,7 +40,7 @@ async def test_composite_prompt_is_lm_xml(
     client: httpx.AsyncClient,
     make_session: Any,
 ) -> None:
-    """REQ-023 / INV-027: the effective prompt is an LM-XML document."""
+    """REQ-023 / INV-027: the effective prompt is an LMXML document."""
     ctx = make_session("prompt-lmxml", mode="chat")
 
     # Instantiating the runner registers the session; the inspector then

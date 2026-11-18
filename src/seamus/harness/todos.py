@@ -1,4 +1,4 @@
-"""Native LM-XML task planning toolset, tree restructuring, and auto-state machine."""
+"""Native LMXML task planning toolset, tree restructuring, and auto-state machine."""
 
 import logging
 from collections.abc import Callable

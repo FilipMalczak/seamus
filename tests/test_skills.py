@@ -1,4 +1,4 @@
-"""Tests for the native LM-XML skills system and load/unload skill tools."""
+"""Tests for the native LMXML skills system and load/unload skill tools."""
 
 from pathlib import Path
 from uuid import uuid4
@@ -231,7 +231,7 @@ def test_seamus_skills_middleware_load_and_unload() -> None:
 
 
 def test_lmxml_skills_prompt_serialization_no_attributes() -> None:
-    """Verify LM-XML serialization renders pure child tags without XML attributes."""
+    """Verify LMXML serialization renders pure child tags without XML attributes."""
     avail = [AvailableSkillPromptItem(name="artifacts", description="Artifacts guide")]
     active = [ActiveSkillPromptItem(name="artifacts", instructions="# Instructions")]
     skills_doc = SkillsPromptDocument(

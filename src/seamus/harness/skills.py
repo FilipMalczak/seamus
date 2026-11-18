@@ -1,7 +1,7 @@
 """First-party native skills system for Seamus.
 
 Provides resilient frontmatter parsing, implementation-agnostic discovery and
-precedence resolution (INV-035), dynamic LM-XML prompt integration, and explicit
+precedence resolution (INV-035), dynamic LMXML prompt integration, and explicit
 load_skill / unload_skill agent tools.
 """
 

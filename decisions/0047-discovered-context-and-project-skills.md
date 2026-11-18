@@ -22,7 +22,7 @@ Additionally:
    - Update `ui/src/api/types.ts` and `ConfigModal.tsx` to expose an editable list of rules pattern rows (matching the mounted repositories UX) across ConfigTemplate, Agent, and Session configuration modals.
    - Enforce the **Configuration Model Symmetry Invariant (INV-051)**: `AgentConfig` schemas and UI editing interfaces must share identical shapes across all three scopes (`ConfigTemplate`, `AgentConfig`, `SessionConfig`), with templates permitted to be partially complete (e.g. omitting API keys or base URLs).
 
-2. **Dynamic Context Discovery and LM-XML Injection (INV-052, REQ-042)**:
+2. **Dynamic Context Discovery and LMXML Injection (INV-052, REQ-042)**:
    - Define `DiscoveredContextItem(BaseModel)` with `path: str` and `content: str`.
    - Add `discovered_context: list[DiscoveredContextItem] | None = None` to `SystemPromptDocument`.
    - Implement `discover_context_files(workspace_data_dir, repositories, projects_dir, rules_patterns, max_file_size_bytes=1_000_000)`:
@@ -34,7 +34,7 @@ Additionally:
        - Skip binary/unreadable files and files exceeding 1 MB.
        - Strip leading and trailing whitespace/newlines from content to prevent prompt pollution.
        - Construct in-sandbox paths (`/workspace/...`, `/projects/{mount_name}/...`).
-   - In `SystemPromptDocument`, when `discovered_context` is empty or `None`, it is excluded via `model_dump(exclude_none=True)` and omitted from serialized LM-XML. When populated, it serializes cleanly under `<discovered_context>` as a list of item objects.
+   - In `SystemPromptDocument`, when `discovered_context` is empty or `None`, it is excluded via `model_dump(exclude_none=True)` and omitted from serialized LMXML. When populated, it serializes cleanly under `<discovered_context>` as a list of item objects.
    - Inject discovered context dynamically per model turn in `SessionAgentRunner._provide_prompt_for_request()` and `build_effective_system_prompt()`, and render it in the Agent Inspector's System Prompt tab.
 
 3. **Mounted Project Skill Discovery and Precedence Alignment (INV-035)**:

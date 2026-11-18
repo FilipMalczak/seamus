@@ -452,7 +452,7 @@ export function ConfigModal({
                       })
                     }
                   >
-                    <option value="seamus">seamus (Native LM-XML)</option>
+                    <option value="seamus">seamus (Native LMXML)</option>
                     <option value="deepagents">deepagents (TodoListMiddleware)</option>
                     <option value="none">none (Disabled)</option>
                   </select>
@@ -469,7 +469,7 @@ export function ConfigModal({
                       })
                     }
                   >
-                    <option value="seamus">seamus (Native LM-XML with load/unload)</option>
+                    <option value="seamus">seamus (Native LMXML with load/unload)</option>
                     <option value="deepagents">deepagents (SkillsMiddleware)</option>
                     <option value="none">none (Disabled)</option>
                   </select>

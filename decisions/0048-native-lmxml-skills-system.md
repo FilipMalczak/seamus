@@ -1,4 +1,4 @@
-# 0048. Native LM-XML Skills System with Explicit Load/Unload Tools
+# 0048. Native LMXML Skills System with Explicit Load/Unload Tools
 
 Date: 2026-11-09
 
@@ -11,7 +11,7 @@ Accepted
 Anthropic agent skills (`SKILL.md`) were previously integrated via LangChain DeepAgents' built-in `SkillsMiddleware` ([0024-anthropic-skills-and-system-settings.md](./0024-anthropic-skills-and-system-settings.md), [0026-in-sandbox-skill-mount-paths.md](./0026-in-sandbox-skill-mount-paths.md), [0027-skills-config-project-rules-and-inspector.md](./0027-skills-config-project-rules-and-inspector.md), [0047-discovered-context-and-project-skills.md](./0047-discovered-context-and-project-skills.md)).
 
 However, `SkillsMiddleware` suffered from fundamental architectural limitations:
-1. **Rigid System Prompt Appending**: Injected flat markdown strings into the system message rather than conforming to Seamus's structured LM-XML system prompt architecture ([0018-dynamic-system-prompt-architecture.md](./0018-dynamic-system-prompt-architecture.md)).
+1. **Rigid System Prompt Appending**: Injected flat markdown strings into the system message rather than conforming to Seamus's structured LMXML system prompt architecture ([0018-dynamic-system-prompt-architecture.md](./0018-dynamic-system-prompt-architecture.md)).
 2. **Implicit Disclosure via Tool Call Snooping**: Relied on intercepting `read_file` tool calls on `SKILL.md` paths to disclose tool dependencies, permanently dumping verbose markdown instructions into the chat message history where they permanently bloated the context window.
 3. **Fragile Frontmatter Parsing**: PyYAML parsing silently dropped valid skills with unquoted inline structures (such as colons or braces in descriptions, e.g. `bevy-assets`).
 4. **Lack of Lifecycle Control**: Agents had no mechanism to unload skills once a specialized task concluded, preventing context window token reclamation.
@@ -27,9 +27,9 @@ However, `SkillsMiddleware` suffered from fundamental architectural limitations:
 2. **Resilient Frontmatter Parser**:
    - Provide `parse_skill_markdown()` handling unquoted colons, JSON-like braces, multiline folded/literal descriptions, and tool dependency lists (`allowed_tools: [...]` or `- tool`) without YAML parser crashes.
 
-3. **LM-XML Dynamic Prompt Serialization**:
+3. **LMXML Dynamic Prompt Serialization**:
    - Model available and active skills using pure element tag trees in `src/seamus/harness/prompt.py` (`SystemPromptDocument`, `SkillsPromptDocument`, `AvailableSkillPromptItem`, `ActiveSkillPromptItem`).
-   - In accordance with LM-XML capabilities, all properties serialize as pure child elements without XML attributes:
+   - In accordance with LMXML capabilities, all properties serialize as pure child elements without XML attributes:
      `<skills><available_skills><list><item index="0"><name>...</name><description>...</description></item></list></available_skills><active_skills><list><item index="0"><name>...</name><instructions>...</instructions></item></list></active_skills><guidelines>...</guidelines></skills>`.
    - When no skills are loaded, `<active_skills>` is omitted cleanly. When no skills exist across sources, `<skills>` is omitted entirely.
 
@@ -51,7 +51,7 @@ However, `SkillsMiddleware` suffered from fundamental architectural limitations:
 ## Consequences
 
 ### Positive
-- Strict alignment with Seamus's structured LM-XML system prompt architecture.
+- Strict alignment with Seamus's structured LMXML system prompt architecture.
 - Agents explicitly manage their own context window budgeting using `load_skill` and `unload_skill`.
 - Resilient YAML frontmatter parsing eliminates dropped real-world skills.
 - Tool dependencies declared via `allowed_tools` are gated until skill activation.

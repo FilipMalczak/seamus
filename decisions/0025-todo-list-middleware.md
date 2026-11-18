@@ -13,7 +13,7 @@ Task planning and progress tracking are essential for autonomous agent workflows
 However, in Seamus:
 1. DeepAgents no longer includes `TodoListMiddleware` or `write_todos` in its default tool suite; only specific model profiles (such as OpenAI Codex) inject it via `extra_middleware`.
 2. Seamus's runner stack (`SessionAgentRunner._build_deep_agent`) omitted `TodoListMiddleware` entirely.
-3. Seamus generates structured dynamic LM-XML prompts via `DynamicSystemPromptMiddleware`. If `DynamicSystemPromptMiddleware` executes after other system-prompt-altering middleware without appending or preserving prior content, it replaces `request.system_message` with its generated prompt, wiping out downstream or upstream prompt blocks.
+3. Seamus generates structured dynamic LMXML prompts via `DynamicSystemPromptMiddleware`. If `DynamicSystemPromptMiddleware` executes after other system-prompt-altering middleware without appending or preserving prior content, it replaces `request.system_message` with its generated prompt, wiping out downstream or upstream prompt blocks.
 4. The Agent Inspector backend and frontend did not list `write_todos` offline or expose active session todos from checkpoint state.
 
 ## Decision
@@ -33,7 +33,7 @@ However, in Seamus:
    - Upon updating session configuration via `POST /agent/{id}/session/{id}`, immediately reload the cached runner's compiled graph so the very next inference turn aligns with the updated configuration without needing a process restart.
 
 4. **Middleware Ordering and System Prompt Composition**:
-   - When enabled, `DynamicSystemPromptMiddleware` is placed first in the user middleware list so that it dynamically establishes Seamus's base LM-XML system prompt (`build_effective_system_prompt(...)`) per inference turn.
+   - When enabled, `DynamicSystemPromptMiddleware` is placed first in the user middleware list so that it dynamically establishes Seamus's base LMXML system prompt (`build_effective_system_prompt(...)`) per inference turn.
    - `TodoListMiddleware` is placed subsequent to `DynamicSystemPromptMiddleware`. When `TodoListMiddleware.awrap_model_call` executes, it appends its `WRITE_TODOS_SYSTEM_PROMPT` block directly onto the dynamic system prompt established by `DynamicSystemPromptMiddleware`.
    - The provider receives both the structured Seamus XML prompt and the `## write_todos` guidance block in a clean, multi-part system message.
 
@@ -46,7 +46,7 @@ However, in Seamus:
 
 - Sessions can selectively enable DeepAgents `TodoListMiddleware` or disable task list tooling entirely (`none`), preparing Seamus for custom planning toolsets.
 - System prompt and available tools immediately align with `todo_implementation` upon saving session configuration.
-- System prompt sent to providers reliably includes both Seamus LM-XML context and `write_todos` operational guidance when enabled.
+- System prompt sent to providers reliably includes both Seamus LMXML context and `write_todos` operational guidance when enabled.
 - Users gain explicit, real-time visibility into the agent's internal task plan in the inspector UI.
 - `PlanningState` (`todos` list) is saved transparently in `GitCheckpointSaver` during regular turn commits.
 

@@ -1,4 +1,4 @@
-"""Unit tests for native LM-XML task planning toolset and tree restructuring."""
+"""Unit tests for native LMXML task planning toolset and tree restructuring."""
 
 from datetime import UTC, datetime
 from unittest.mock import MagicMock

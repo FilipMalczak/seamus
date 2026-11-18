@@ -1505,7 +1505,7 @@ class SessionAgentRunner:
         include_dynamic_context: bool = True,
         thread: Thread | None = None,
     ) -> str:
-        """Dynamically assemble the effective LM-XML system prompt for the session."""
+        """Dynamically assemble the effective LMXML system prompt for the session."""
         sandbox_settings = get_sandbox_settings()
         raw_prompt = (
             self._resolved_system_prompt

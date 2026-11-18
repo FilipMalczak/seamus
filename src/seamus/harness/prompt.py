@@ -107,21 +107,21 @@ class DiscoveredContextItem(BaseModel):
 
 
 class AvailableSkillPromptItem(BaseModel):
-    """Metadata for an available skill rendered in LM-XML."""
+    """Metadata for an available skill rendered in LMXML."""
 
     name: str
     description: str
 
 
 class ActiveSkillPromptItem(BaseModel):
-    """Active skill body rendered in LM-XML without XML attributes."""
+    """Active skill body rendered in LMXML without XML attributes."""
 
     name: str
     instructions: str
 
 
 def build_default_skills_guidelines() -> list[str]:
-    """Default progressive disclosure guidelines for native skills in LM-XML."""
+    """Default progressive disclosure guidelines for native skills in LMXML."""
     return [
         "Skills provide specialized workflows and domain expertise.",
         "Check available skills to see if one matches your current task.",
@@ -137,7 +137,7 @@ def build_default_skills_guidelines() -> list[str]:
 
 
 class SkillsPromptDocument(BaseModel):
-    """Structured skills catalog and loaded instructions rendered in LM-XML."""
+    """Structured skills catalog and loaded instructions rendered in LMXML."""
 
     available_skills: list[AvailableSkillPromptItem]
     active_skills: list[ActiveSkillPromptItem] | None = None
@@ -1111,7 +1111,7 @@ def build_effective_system_prompt(
     artifacts_implementation: ArtifactsImplementation = ArtifactsImplementation.SEAMUS,
     persona: str = "coder",
 ) -> str:
-    """Assemble and serialize the complete effective LM-XML system prompt."""
+    """Assemble and serialize the complete effective LMXML system prompt."""
     dynamic_ctx = (
         build_dynamic_context(
             workdir=workdir,
