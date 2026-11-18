@@ -321,6 +321,12 @@ Properties and rules that must always hold across the repository.
 - **Enforcement**: `tests/e2e/conftest.py`, `tests/e2e/stub_sandbox.py`, `tests/e2e/`, `ui/tests/helpers/loadModule.mjs`, `ui/tests/messageItem.test.mjs`, `ui/tests/sequenceSource.test.mjs`, and the `test-e2e` job plus the `npm test` step in `.github/workflows/ci.yml`.
 - **Coverage Map**: [test_coverage.md](./test_coverage.md) maps every invariant to the tests that confirm it, and records the undertested surface.
 
+### INV-064: Resilient Stale Git Lock Recovery and Workspace Concurrency Serialization
+- **Statement**: Mutating Git operations across all agent, session, system, and external repositories must be serialized per repository path (`threading.RLock`) within the backend process to prevent intra-process race collisions. Advisory Git lock files (`.git/*.lock` including `index.lock`, `HEAD.lock`, `refs/**/*.lock`, and `.seamus_indexes/*.lock`) left behind by host/container termination or abrupt process abortion must never permanently break workspace operations or SSE session streaming. At application and workspace manager initialization, all stale lock files across the workspace root must be swept and removed. During runtime execution (`_run_git`), any Git command encountering a lock file collision must verify whether an active Git process is running in that repository, purge stale lock files if inactive, and retry the command automatically before raising an error.
+- **Rationale**: Git advisory locks are created with `O_CREAT | O_EXCL` and are never automatically unlinked by Git after a crash. Without self-healing lock recovery and startup sweeping, a machine reboot leaves existing session repositories permanently locked, causing subsequent requests to fail with HTTP 400/500 and bricking the session.
+- **Justification**: [0067-stale-git-lock-recovery.md](../decisions/0067-stale-git-lock-recovery.md), [INV-017](#inv-017-git-tracked-agent-workspace--config-boundary), [INV-043](#inv-043-external-git-repository-sandbox-isolation-dual-index-persistence-and-credential-safety).
+- **Enforcement**: `seamus.persistence.git_lock` (`clean_stale_locks`, `is_git_process_running_in_repo`, `sweep_workspace_stale_locks`, `get_repo_lock`), `GitWorkspaceManager._run_git`, `ExternalRepositoryManager._run_git`, `create_app()`, and unit/integration tests in `tests/test_git_lock_recovery.py`.
+
 
 ## Cross-References
 - [backlog.md](./backlog.md)
@@ -375,4 +381,5 @@ Properties and rules that must always hold across the repository.
 - [0055-artifacts-implementation-toggle.md](../decisions/0055-artifacts-implementation-toggle.md)
 - [0056-steerable-model-provider.md](../decisions/0056-steerable-model-provider.md)
 - [0057-e2e-test-suite.md](../decisions/0057-e2e-test-suite.md)
+- [0067-stale-git-lock-recovery.md](../decisions/0067-stale-git-lock-recovery.md)
 - [persistence.md](./persistence.md)

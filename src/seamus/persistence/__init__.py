@@ -15,6 +15,11 @@ from seamus.persistence.external_repo import (
     get_external_repo_manager,
     reset_external_repo_manager,
 )
+from seamus.persistence.git_lock import (
+    clean_stale_locks,
+    get_repo_lock,
+    sweep_workspace_stale_locks,
+)
 from seamus.persistence.workspace import (
     GitWorkspaceManager,
     get_workspace_manager,
@@ -30,13 +35,16 @@ __all__ = [
     "PersistenceSettings",
     "calculate_mount_paths",
     "canonicalize_git_url",
+    "clean_stale_locks",
     "derive_project_id",
     "derive_repository_mount_name",
     "extract_readable_messages",
     "get_external_repo_manager",
     "get_persistence_settings",
+    "get_repo_lock",
     "get_workspace_manager",
     "parse_stored_event",
     "reset_external_repo_manager",
     "reset_workspace_manager",
+    "sweep_workspace_stale_locks",
 ]

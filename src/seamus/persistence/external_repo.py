@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import tarfile
+import time
 from collections import Counter, defaultdict
 from collections.abc import Sequence
 from io import BytesIO
@@ -120,6 +121,12 @@ class ExternalRepositoryManager:
         self.settings = settings or PersistenceSettings()
         self._client = client
         self._vault_client = vault_client
+        try:
+            from seamus.persistence.git_lock import sweep_workspace_stale_locks
+
+            sweep_workspace_stale_locks(self.workspace_root)
+        except Exception:
+            logger.debug("Failed to sweep stale locks during external repo manager initialization")
 
     @property
     def client(self) -> GiteaClient:
@@ -137,26 +144,110 @@ class ExternalRepositoryManager:
             self._vault_client = get_default_vault_client()
         return self._vault_client
 
+    def clean_stale_locks(self, repo_dir: Path, force: bool = False) -> list[Path]:
+        """Find and remove stale git lock files in the specified repository."""
+        from seamus.persistence.git_lock import clean_stale_locks
+
+        return clean_stale_locks(repo_dir, force=force)
+
     def _run_git(
         self,
         cwd: Path,
         args: list[str],
         env: dict[str, str] | None = None,
         check: bool = True,
+        max_retries: int = 2,
     ) -> subprocess.CompletedProcess[str]:
-        full_env = os.environ.copy()
-        if env:
-            full_env.update(env)
-        # Prevent prompt hangs
-        full_env["GIT_TERMINAL_PROMPT"] = "0"
-        return subprocess.run(
-            ["git", *args],
-            cwd=cwd,
-            env=full_env,
-            check=check,
-            capture_output=True,
-            text=True,
+        from seamus.persistence.git_lock import (
+            clean_stale_locks,
+            extract_lock_paths_from_stderr,
+            get_repo_lock,
+            is_git_process_running_in_repo,
         )
+
+        repo_lock = get_repo_lock(cwd)
+        with repo_lock:
+            full_env = os.environ.copy()
+            if env:
+                full_env.update(env)
+            # Prevent prompt hangs
+            full_env["GIT_TERMINAL_PROMPT"] = "0"
+            cmd = ["git", *args]
+
+            for attempt in range(max_retries + 1):
+                try:
+                    res = subprocess.run(
+                        cmd,
+                        cwd=cwd,
+                        env=full_env,
+                        check=check,
+                        capture_output=True,
+                        text=True,
+                    )
+                    if not check and res.returncode == 128:
+                        stderr = res.stderr or ""
+                        lower_stderr = stderr.lower()
+                        is_lock_error = (
+                            (
+                                "unable to create" in lower_stderr
+                                and ".lock': file exists" in lower_stderr
+                            )
+                            or ("another git process seems to be running" in lower_stderr)
+                            or ("index.lock': file exists" in lower_stderr)
+                        )
+                        if is_lock_error and attempt < max_retries:
+                            extracted = extract_lock_paths_from_stderr(stderr)
+                            for p in extracted:
+                                try:
+                                    p.unlink(missing_ok=True)
+                                except OSError:
+                                    pass
+                            clean_stale_locks(cwd, force=True)
+                            logger.warning(
+                                "Recovered from git lock error (check=False) in %s; "
+                                "retrying (attempt %d/%d): %s",
+                                cwd,
+                                attempt + 1,
+                                max_retries,
+                                " ".join(cmd),
+                            )
+                            time.sleep(0.05)
+                            continue
+                    return res
+                except subprocess.CalledProcessError as exc:
+                    stderr = exc.stderr or ""
+                    lower_stderr = stderr.lower()
+                    is_lock_error = (
+                        (
+                            "unable to create" in lower_stderr
+                            and ".lock': file exists" in lower_stderr
+                        )
+                        or ("another git process seems to be running" in lower_stderr)
+                        or ("index.lock': file exists" in lower_stderr)
+                    )
+                    if is_lock_error and attempt < max_retries:
+                        extracted = extract_lock_paths_from_stderr(stderr)
+                        for p in extracted:
+                            try:
+                                p.unlink(missing_ok=True)
+                            except OSError:
+                                pass
+                        removed = clean_stale_locks(cwd, force=False)
+                        if not removed and not is_git_process_running_in_repo(cwd):
+                            clean_stale_locks(cwd, force=True)
+                        logger.warning(
+                            "Recovered from git lock error in %s; retrying (attempt %d/%d): %s",
+                            cwd,
+                            attempt + 1,
+                            max_retries,
+                            " ".join(cmd),
+                        )
+                        time.sleep(0.05)
+                        continue
+                    raise
+            raise RuntimeError(
+                f"Git command unexpectedly terminated without result: {' '.join(cmd)}"
+            )
 
     def _configure_git_identity(self, repo_dir: Path) -> None:
         self._run_git(repo_dir, ["config", "user.name", "Seamus Agent"])
@@ -329,6 +420,7 @@ class ExternalRepositoryManager:
                         )
             self._record_initial_base_commit(agent_id, session_id, repo_config, working_copy)
         else:
+            self.clean_stale_locks(working_copy)
             self._configure_git_identity(working_copy)
 
         return working_copy
@@ -576,6 +668,8 @@ class ExternalRepositoryManager:
         working_copy = self.get_working_copy_path(agent_id, session_id, mount_name)
         if not (working_copy / ".git").exists():
             raise FileNotFoundError(f"Repository working copy not found at {working_copy}")
+
+        self.clean_stale_locks(working_copy)
 
         canonical_url = canonicalize_git_url(repo_config.url)
         project_id = derive_project_id(canonical_url)
