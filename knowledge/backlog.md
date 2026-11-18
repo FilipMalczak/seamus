@@ -4,6 +4,11 @@ Persistent record of work intentionally left outstanding across the project, mai
 
 ## Core harness features
 
+### Updates to knowledge docs
+
+Some knowledge docs got misaligned over multiple iterations of agentic development.
+Notably, some vocabulary entries are imprecise, modes/personas\[/threads] is slightly incorrect in the future examples, etc.
+The issues are not catastrophic yet, but they might escalate soon. We should get ahead of this train - decision log and knowledge docs are integral part of the product (ANY user should be able to modify Seamus to own needs, either by hand or via an agent; that's one of core principles that we are yet to finalize writing).
 
 ### Operational Execution Modes and Thread Transition Triggers (act, analyse, routing)
 - **Description**: Following the initial implementation of `chat` and `plan` modes in [0030-operational-modes-and-plan-mode.md](../decisions/0030-operational-modes-and-plan-mode.md), expand the operational mode set to include:
@@ -420,4 +425,8 @@ Persistent record of work intentionally left outstanding across the project, mai
 ## Not formalized
 
 - deep-seamus variant of skills and todos: An intentional hybrid architecture combining DeepAgents execution and middleware mechanics with Seamus LMXML structured prompt composition (rather than raw markdown appending or vanilla prompt injection), intentionally kept outstanding.
-- instructional documentation
+- instructional documentation (as in "to achieve this do this")
+- text field (the one for user message) is annoyingly small
+- still some bullshit about branching indicator moving with new bubbles
+- instruct the agent to prepare walkthrough artifact after implementation
+- track errors (including failed tools) across sessions and agents, together with used model and other environmental factors; use to prepare hints for future usage, gauge model/task quality, etc
