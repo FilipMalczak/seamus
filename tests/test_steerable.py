@@ -16,13 +16,17 @@ from seamus.config.models import (
 )
 from seamus.config.template import ConfigTemplateStore, reset_config_template_store
 from seamus.harness.steerable import (
+    STEERABLE_ERROR_PRESETS,
     SteerableChatModel,
+    SteerableError,
     SteerableInstance,
     SteerableQueueEmptyError,
     SteerableResponse,
+    SteerableSimulatedError,
     SteerableToolCall,
     agent_instance_id,
     build_steerable_model,
+    create_steerable_exception,
     daemon_instance_id,
     get_steerable_registry,
     reset_steerable_registry,
@@ -439,3 +443,154 @@ def test_inspect_report_lists_steerable_instances(client: TestClient) -> None:
     daemon_entry = entries[daemon_instance_id(session_id)]
     assert daemon_entry["role"] == "daemon"
     assert daemon_entry["pending_count"] == 0
+
+
+def test_steerable_error_presets_and_for_error_factory() -> None:
+    """Presets create configured SteerableResponse items with correct metadata."""
+    assert "timeout" in STEERABLE_ERROR_PRESETS
+    assert "out_of_cash" in STEERABLE_ERROR_PRESETS
+
+    # Test create_steerable_exception helper directly
+    exc = create_steerable_exception("TestDynamicError", "test message", 503)
+    assert type(exc).__name__ == "TestDynamicError"
+    assert str(exc) == "test message"
+    assert getattr(exc, "status_code", None) == 503
+
+    timeout_resp = SteerableResponse.for_error("timeout")
+    assert timeout_resp.error is not None
+    assert timeout_resp.error.error_type == "APITimeoutError"
+    assert timeout_resp.error.status_code == 408
+    assert "timed out" in timeout_resp.error.message
+
+    quota_resp = SteerableResponse.for_error("out_of_cash")
+    assert quota_resp.error is not None
+    assert quota_resp.error.error_type == "RateLimitError"
+    assert quota_resp.error.status_code == 429
+    assert "quota" in quota_resp.error.message
+
+    # Custom SteerableError
+    custom_err = SteerableError(
+        error_type="CustomProviderError",
+        message="Something went wrong",
+        status_code=502,
+    )
+    custom_resp = SteerableResponse.for_error(custom_err, reasoning="Thinking first")
+    assert custom_resp.error is not None
+    assert custom_resp.error.error_type == "CustomProviderError"
+    assert custom_resp.error.status_code == 502
+    assert custom_resp.reasoning == "Thinking first"
+
+    with pytest.raises(ValueError, match="Unknown steerable error preset"):
+        SteerableResponse.for_error("non_existent_preset")
+
+
+def test_steerable_model_invoke_raises_error() -> None:
+    """Invoking a model with an error response raises the simulated exception."""
+    instance = _instance("error:invoke")
+    instance.push(SteerableResponse.for_error("timeout"))
+
+    model = SteerableChatModel(instance_id=instance.instance_id)
+    with pytest.raises(Exception) as exc_info:
+        model.invoke([HumanMessage(content="hello")])
+
+    exc = exc_info.value
+    assert isinstance(exc, SteerableSimulatedError)
+    assert type(exc).__name__ == "APITimeoutError"
+    assert "Request timed out" in str(exc)
+    assert getattr(exc, "status_code", None) == 408
+
+
+def test_steerable_model_stream_raises_error() -> None:
+    """Streaming from a model with an error response raises the simulated exception."""
+    instance = _instance("error:stream")
+    instance.push(SteerableResponse.for_error("out_of_cash"))
+
+    model = SteerableChatModel(instance_id=instance.instance_id)
+    with pytest.raises(Exception) as exc_info:
+        list(model.stream([HumanMessage(content="run")]))
+
+    exc = exc_info.value
+    assert type(exc).__name__ == "RateLimitError"
+    assert "exceeded your current quota" in str(exc)
+    assert getattr(exc, "status_code", None) == 429
+
+
+def test_steerable_model_stream_emits_reasoning_before_error() -> None:
+    """When reasoning is specified on an error response, chunks are emitted before raising."""
+    instance = _instance("error:stream:reasoning")
+    instance.push(
+        SteerableResponse.for_error(
+            "timeout",
+            reasoning="Checking user permissions...",
+        )
+    )
+
+    model = SteerableChatModel(instance_id=instance.instance_id)
+    emitted_chunks = []
+    with pytest.raises(Exception) as exc_info:
+        for chunk in model.stream([HumanMessage(content="run")]):
+            emitted_chunks.append(chunk)
+
+    assert len(emitted_chunks) > 0
+    assert emitted_chunks[0].additional_kwargs.get("reasoning_content") == (
+        "Checking user permissions..."
+    )
+    assert type(exc_info.value).__name__ == "APITimeoutError"
+
+
+@pytest.mark.asyncio
+async def test_steerable_model_ainvoke_and_astream_errors() -> None:
+    """Async invoke and async stream raise simulated errors correctly."""
+    instance = _instance("error:async")
+    instance.push(SteerableResponse.for_error("auth_failure"))
+    instance.push(SteerableResponse.for_error("server_error", reasoning="Processing request..."))
+
+    model = SteerableChatModel(instance_id=instance.instance_id)
+
+    # 1. ainvoke
+    with pytest.raises(Exception) as exc_1:
+        await model.ainvoke([HumanMessage(content="hello")])
+    assert type(exc_1.value).__name__ == "AuthenticationError"
+    assert getattr(exc_1.value, "status_code", None) == 401
+
+    # 2. astream
+    chunks = []
+    with pytest.raises(Exception) as exc_2:
+        async for chunk in model.astream([HumanMessage(content="retry")]):
+            chunks.append(chunk)
+    assert len(chunks) == 1
+    assert chunks[0].additional_kwargs.get("reasoning_content") == "Processing request..."
+    assert type(exc_2.value).__name__ == "InternalServerError"
+    assert getattr(exc_2.value, "status_code", None) == 500
+
+
+def test_steerable_api_roundtrip_with_error(client: TestClient) -> None:
+    """Scripted error responses round-trip through the Inspector API."""
+    agent_id, session_id = _create_session(client)
+    instance_id = agent_instance_id(session_id)
+    get_steerable_registry().get_or_create(instance_id, "agent")
+    base = f"/api/v-alpha/agent/{agent_id}/session/{session_id}/steerable"
+
+    post_res = client.post(
+        f"{base}/{instance_id}/responses",
+        json={
+            "responses": [
+                {
+                    "text": None,
+                    "reasoning": "About to fail",
+                    "tool_calls": [],
+                    "error": {
+                        "error_type": "APITimeoutError",
+                        "message": "Timed out",
+                        "status_code": 408,
+                    },
+                }
+            ]
+        },
+    )
+    assert post_res.status_code == 200
+    data = post_res.json()
+    assert data["pending_count"] == 1
+    assert data["responses"][0]["error"]["error_type"] == "APITimeoutError"
+    assert data["responses"][0]["error"]["status_code"] == 408
+    assert data["responses"][0]["reasoning"] == "About to fail"

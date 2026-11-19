@@ -6,6 +6,7 @@ import {
   parseToolCallDraft,
   planSteerableUpload,
   serializeSteerableQueue,
+  STEERABLE_ERROR_PRESETS,
   steerableQueueFilename,
   STEERABLE_UPLOAD_MODE_LABELS,
   STEERABLE_UPLOAD_MODES,
@@ -198,4 +199,72 @@ test("planSteerableUpload - an empty upload is still a valid plan", () => {
   assert.equal(planSteerableUpload("replace", []).kind, "replace");
   assert.equal(planSteerableUpload("extend", []).kind, "append");
   assert.deepEqual(planSteerableUpload("extend", []).responses, []);
+});
+
+test("STEERABLE_ERROR_PRESETS - includes common failure scenarios", () => {
+  const ids = STEERABLE_ERROR_PRESETS.map((p) => p.id);
+  assert.ok(ids.includes("network_timeout"));
+  assert.ok(ids.includes("out_of_cash"));
+  assert.ok(ids.includes("rate_limit"));
+  assert.ok(ids.includes("auth_failure"));
+  assert.ok(ids.includes("server_error"));
+
+  const timeoutPreset = STEERABLE_ERROR_PRESETS.find((p) => p.id === "network_timeout");
+  assert.equal(timeoutPreset.error.error_type, "APITimeoutError");
+  assert.equal(timeoutPreset.error.status_code, 408);
+
+  const quotaPreset = STEERABLE_ERROR_PRESETS.find((p) => p.id === "out_of_cash");
+  assert.equal(quotaPreset.error.error_type, "RateLimitError");
+  assert.equal(quotaPreset.error.status_code, 429);
+});
+
+test("serializeSteerableQueue - serializes error responses and round trips", () => {
+  const responses = [
+    {
+      text: null,
+      reasoning: "Attempting to call provider",
+      tool_calls: [],
+      error: {
+        error_type: "APITimeoutError",
+        message: "Request timed out",
+        status_code: 408,
+      },
+    },
+  ];
+  const json = serializeSteerableQueue(
+    "session:s1:agent",
+    responses,
+    "wait",
+    "2026-01-01T00:00:00.000Z"
+  );
+  const parseResult = parseSteerableQueueFile(json);
+  assert.equal(parseResult.ok, true);
+  assert.equal(parseResult.responses.length, 1);
+  assert.equal(parseResult.responses[0].reasoning, "Attempting to call provider");
+  assert.deepEqual(parseResult.responses[0].error, {
+    error_type: "APITimeoutError",
+    message: "Request timed out",
+    status_code: 408,
+  });
+});
+
+test("parseSteerableQueueFile - rejects non-object error field", () => {
+  const json = JSON.stringify([{ text: null, error: "bad error" }]);
+  const result = parseSteerableQueueFile(json);
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'Response #1 has a non-object "error" field.');
+});
+
+test("parseSteerableQueueFile - rejects non-string error_type field", () => {
+  const json = JSON.stringify([{ text: null, error: { error_type: 123 } }]);
+  const result = parseSteerableQueueFile(json);
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'Response #1 has a non-string "error_type" field.');
+});
+
+test("parseSteerableQueueFile - rejects non-numeric status_code field", () => {
+  const json = JSON.stringify([{ text: null, error: { status_code: "500" } }]);
+  const result = parseSteerableQueueFile(json);
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'Response #1 has a non-numeric "status_code" field.');
 });

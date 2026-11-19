@@ -26,7 +26,7 @@ from seamus.harness.inspector import (
     ToolInspectInfo,
     WorkspaceInspectInfo,
 )
-from seamus.harness.steerable import SteerableResponse
+from seamus.harness.steerable import SteerableError, SteerableResponse
 
 __all__ = [
     "AgentCreateRequest",
@@ -47,6 +47,7 @@ __all__ = [
     "SessionSummaryResponse",
     "SessionUpdateRequest",
     "SkillInspectInfo",
+    "SteerableError",
     "SteerableInspectInfo",
     "SteerableResponse",
     "SteerableResponseRequest",

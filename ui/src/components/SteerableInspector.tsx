@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
+  AlertTriangle,
   Brain,
   Download,
   ListOrdered,
@@ -27,6 +28,7 @@ import {
   parseSteerableQueueFile,
   planSteerableUpload,
   serializeSteerableQueue,
+  STEERABLE_ERROR_PRESETS,
   steerableQueueFilename,
   STEERABLE_UPLOAD_MODE_LABELS,
   STEERABLE_UPLOAD_MODES,
@@ -50,15 +52,23 @@ const STRATEGY_LABELS: Record<SteerableEmptyQueueStrategy, string> = {
 const STRATEGY_ORDER: SteerableEmptyQueueStrategy[] = ["wait", "error", "repeat"];
 
 interface DraftState {
+  mode: "response" | "error";
   text: string;
   reasoning: string;
   toolCalls: ToolCallDraft[];
+  errorType: string;
+  errorMessage: string;
+  statusCode: string;
 }
 
 const EMPTY_DRAFT: DraftState = {
+  mode: "response",
   text: "",
   reasoning: "",
   toolCalls: [],
+  errorType: "APITimeoutError",
+  errorMessage: "Request timed out while waiting for response.",
+  statusCode: "408",
 };
 
 let draftCounter = 0;
@@ -116,18 +126,32 @@ function SteerableInstanceCard({
   );
 
   const canSubmit =
-    !toolDrafts.invalid &&
-    (draft.text.trim().length > 0 ||
-      draft.reasoning.trim().length > 0 ||
-      toolDrafts.calls.length > 0);
+    draft.mode === "error"
+      ? draft.errorType.trim().length > 0 && draft.errorMessage.trim().length > 0
+      : !toolDrafts.invalid &&
+        (draft.text.trim().length > 0 ||
+          draft.reasoning.trim().length > 0 ||
+          toolDrafts.calls.length > 0);
 
   const handleAppend = () => {
     if (!canSubmit) return;
-    const response: SteerableResponse = {
-      text: draft.text.trim() || null,
-      reasoning: draft.reasoning.trim() || null,
-      tool_calls: toolDrafts.calls,
-    };
+    const response: SteerableResponse =
+      draft.mode === "error"
+        ? {
+            text: draft.text.trim() || null,
+            reasoning: draft.reasoning.trim() || null,
+            tool_calls: [],
+            error: {
+              error_type: draft.errorType.trim() || "RuntimeError",
+              message: draft.errorMessage.trim() || "Simulated steerable error",
+              status_code: draft.statusCode.trim() ? parseInt(draft.statusCode.trim(), 10) : null,
+            },
+          }
+        : {
+            text: draft.text.trim() || null,
+            reasoning: draft.reasoning.trim() || null,
+            tool_calls: toolDrafts.calls,
+          };
     onRun(
       instance.instance_id,
       () =>
@@ -136,6 +160,17 @@ function SteerableInstanceCard({
       // queued response does not repeat the tool calls just submitted. Only
       // after the append succeeded, so a failed request keeps the draft.
       () => setDraft(EMPTY_DRAFT)
+    );
+  };
+
+  const handleAppendPresetError = (presetId: string) => {
+    const preset = STEERABLE_ERROR_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+    const response: SteerableResponse = {
+      error: preset.error,
+    };
+    onRun(instance.instance_id, () =>
+      appendSteerableResponses(agentId, sessionId, instance.instance_id, [response])
     );
   };
 
@@ -355,6 +390,25 @@ function SteerableInstanceCard({
         </div>
       )}
 
+      <div className="steerable-fixtures-section">
+        <span className="text-xs text-neutral-400 font-medium">Simulate Error Fixtures:</span>
+        <div className="steerable-fixtures-row">
+          {STEERABLE_ERROR_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              className="steerable-fixture-btn"
+              disabled={busy}
+              onClick={() => handleAppendPresetError(preset.id)}
+              title={preset.description}
+            >
+              <AlertTriangle className="size-3 text-rose-400" />
+              <span>{preset.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {responses.length === 0 ? (
         <div className="steerable-empty-queue">
           Queue is empty. The next model turn will use the{" "}
@@ -363,13 +417,35 @@ function SteerableInstanceCard({
       ) : (
         <ol className="steerable-queue-list">
           {responses.map((response, index) => (
-            <li key={index} className="steerable-queue-item">
+            <li
+              key={index}
+              className={`steerable-queue-item${response.error ? " is-error" : ""}`}
+            >
               <div className="steerable-queue-index">#{index + 1}</div>
               <div className="steerable-queue-body">
+                {response.error && (
+                  <div className="steerable-queue-error">
+                    <AlertCircle className="size-3.5 text-rose-400" />
+                    <span className="font-semibold text-rose-400">
+                      {response.error.error_type}
+                    </span>
+                    {response.error.status_code && (
+                      <span className="steerable-error-status-badge">
+                        HTTP {response.error.status_code}
+                      </span>
+                    )}
+                    <span className="text-neutral-300">: {response.error.message}</span>
+                  </div>
+                )}
                 {response.reasoning && (
                   <div className="steerable-queue-reasoning">
                     <Brain className="size-3.5" />
                     <span>{response.reasoning}</span>
+                    {response.error && (
+                      <span className="text-xs text-neutral-400 font-normal">
+                        (emitted before error)
+                      </span>
+                    )}
                   </div>
                 )}
                 {response.text && <div className="steerable-queue-text">{response.text}</div>}
@@ -396,100 +472,199 @@ function SteerableInstanceCard({
       )}
 
       <div className="steerable-composer">
-        <div className="steerable-composer-row">
-          <label className="steerable-composer-label">
-            <MessageSquare className="size-3.5" />
-            <span>Assistant Text</span>
-          </label>
-          <textarea
-            className="steerable-composer-textarea"
-            value={draft.text}
-            disabled={busy}
-            placeholder="Text the model should reply with..."
-            onChange={(e) => setDraft((prev) => ({ ...prev, text: e.target.value }))}
-          />
+        <div className="steerable-composer-mode-tabs" role="tablist">
+          <button
+            type="button"
+            className={`steerable-composer-mode-tab${
+              draft.mode === "response" ? " is-active" : ""
+            }`}
+            onClick={() => setDraft((prev) => ({ ...prev, mode: "response" }))}
+          >
+            Assistant Response
+          </button>
+          <button
+            type="button"
+            className={`steerable-composer-mode-tab${
+              draft.mode === "error" ? " is-active" : ""
+            }`}
+            onClick={() => setDraft((prev) => ({ ...prev, mode: "error" }))}
+          >
+            Simulated Error
+          </button>
         </div>
 
-        <div className="steerable-composer-row">
-          <label className="steerable-composer-label">
-            <Brain className="size-3.5" />
-            <span>Reasoning</span>
-          </label>
-          <textarea
-            className="steerable-composer-textarea"
-            value={draft.reasoning}
-            disabled={busy}
-            placeholder="Reasoning the model should emit before replying..."
-            onChange={(e) => setDraft((prev) => ({ ...prev, reasoning: e.target.value }))}
-          />
-        </div>
-
-        <div className="steerable-composer-row">
-          <label className="steerable-composer-label">
-            <Wrench className="size-3.5" />
-            <span>Tool Calls</span>
-          </label>
-          {draft.toolCalls.length === 0 ? (
-            <span className="text-xs text-neutral-500">
-              No tool calls in this response.
-            </span>
-          ) : (
-            <div className="steerable-tool-call-list">
-              {draft.toolCalls.map((call, callIdx) => (
-                <div key={call.id} className="steerable-tool-call-fields">
-                  <span className="steerable-tool-call-index">#{callIdx + 1}</span>
-                  <input
-                    className="steerable-tool-input"
-                    value={call.name}
-                    disabled={busy}
-                    placeholder="tool name"
-                    list={toolListId}
-                    onChange={(e) =>
-                      handleUpdateToolCall(call.id, { name: e.target.value })
-                    }
-                  />
-                  <datalist id={toolListId}>
-                    {(instance.known_tools ?? []).map((toolName) => (
-                      <option key={toolName} value={toolName} />
-                    ))}
-                  </datalist>
-                  <input
-                    className="steerable-tool-args-input"
-                    value={call.args}
-                    disabled={busy}
-                    placeholder='{"key": "value"}'
-                    onChange={(e) =>
-                      handleUpdateToolCall(call.id, { args: e.target.value })
-                    }
-                  />
-                  <button
-                    type="button"
-                    className="btn-tool-toggle"
-                    disabled={busy}
-                    onClick={() => handleRemoveToolCall(call.id)}
-                    title="Remove this tool call"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </button>
-                </div>
-              ))}
+        {draft.mode === "error" ? (
+          <>
+            <div className="steerable-composer-row">
+              <label className="steerable-composer-label">
+                <AlertTriangle className="size-3.5 text-rose-400" />
+                <span>Error Configuration</span>
+              </label>
+              <div className="steerable-error-fields-grid">
+                <input
+                  className="steerable-tool-input"
+                  value={draft.errorType}
+                  disabled={busy}
+                  placeholder="Error class name (e.g. APITimeoutError)"
+                  list={`steerable-error-types-${instance.instance_id}`}
+                  onChange={(e) =>
+                    setDraft((prev) => ({ ...prev, errorType: e.target.value }))
+                  }
+                />
+                <datalist id={`steerable-error-types-${instance.instance_id}`}>
+                  <option value="APITimeoutError" />
+                  <option value="RateLimitError" />
+                  <option value="AuthenticationError" />
+                  <option value="InternalServerError" />
+                  <option value="RuntimeError" />
+                  <option value="TimeoutError" />
+                  <option value="ConnectionRefusedError" />
+                </datalist>
+                <input
+                  className="steerable-tool-input"
+                  style={{ flex: "0 0 7rem" }}
+                  value={draft.statusCode}
+                  disabled={busy}
+                  placeholder="HTTP status (e.g. 408)"
+                  onChange={(e) =>
+                    setDraft((prev) => ({ ...prev, statusCode: e.target.value }))
+                  }
+                />
+              </div>
             </div>
-          )}
-          <div className="steerable-composer-actions">
-            <button
-              type="button"
-              className="btn-secondary btn-sm"
-              disabled={busy}
-              onClick={handleAddToolCall}
-            >
-              <Plus className="size-3.5" />
-              <span>Add tool call</span>
-            </button>
-          </div>
-          {toolDrafts.error && (
-            <span className="steerable-composer-error">{toolDrafts.error}</span>
-          )}
-        </div>
+
+            <div className="steerable-composer-row">
+              <label className="steerable-composer-label">
+                <AlertCircle className="size-3.5 text-rose-400" />
+                <span>Error Message</span>
+              </label>
+              <textarea
+                className="steerable-composer-textarea"
+                value={draft.errorMessage}
+                disabled={busy}
+                placeholder="Error message to emit..."
+                onChange={(e) =>
+                  setDraft((prev) => ({ ...prev, errorMessage: e.target.value }))
+                }
+              />
+            </div>
+
+            <div className="steerable-composer-row">
+              <label className="steerable-composer-label">
+                <Brain className="size-3.5" />
+                <span>Optional Reasoning (emitted before failure)</span>
+              </label>
+              <textarea
+                className="steerable-composer-textarea"
+                value={draft.reasoning}
+                disabled={busy}
+                placeholder="Optional reasoning content emitted before the exception is raised..."
+                onChange={(e) =>
+                  setDraft((prev) => ({ ...prev, reasoning: e.target.value }))
+                }
+              />
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="steerable-composer-row">
+              <label className="steerable-composer-label">
+                <MessageSquare className="size-3.5" />
+                <span>Assistant Text</span>
+              </label>
+              <textarea
+                className="steerable-composer-textarea"
+                value={draft.text}
+                disabled={busy}
+                placeholder="Text the model should reply with..."
+                onChange={(e) => setDraft((prev) => ({ ...prev, text: e.target.value }))}
+              />
+            </div>
+
+            <div className="steerable-composer-row">
+              <label className="steerable-composer-label">
+                <Brain className="size-3.5" />
+                <span>Reasoning</span>
+              </label>
+              <textarea
+                className="steerable-composer-textarea"
+                value={draft.reasoning}
+                disabled={busy}
+                placeholder="Reasoning the model should emit before replying..."
+                onChange={(e) =>
+                  setDraft((prev) => ({ ...prev, reasoning: e.target.value }))
+                }
+              />
+            </div>
+
+            <div className="steerable-composer-row">
+              <label className="steerable-composer-label">
+                <Wrench className="size-3.5" />
+                <span>Tool Calls</span>
+              </label>
+              {draft.toolCalls.length === 0 ? (
+                <span className="text-xs text-neutral-500">
+                  No tool calls in this response.
+                </span>
+              ) : (
+                <div className="steerable-tool-call-list">
+                  {draft.toolCalls.map((call, callIdx) => (
+                    <div key={call.id} className="steerable-tool-call-fields">
+                      <span className="steerable-tool-call-index">#{callIdx + 1}</span>
+                      <input
+                        className="steerable-tool-input"
+                        value={call.name}
+                        disabled={busy}
+                        placeholder="tool name"
+                        list={toolListId}
+                        onChange={(e) =>
+                          handleUpdateToolCall(call.id, { name: e.target.value })
+                        }
+                      />
+                      <datalist id={toolListId}>
+                        {(instance.known_tools ?? []).map((toolName) => (
+                          <option key={toolName} value={toolName} />
+                        ))}
+                      </datalist>
+                      <input
+                        className="steerable-tool-args-input"
+                        value={call.args}
+                        disabled={busy}
+                        placeholder='{"key": "value"}'
+                        onChange={(e) =>
+                          handleUpdateToolCall(call.id, { args: e.target.value })
+                        }
+                      />
+                      <button
+                        type="button"
+                        className="btn-tool-toggle"
+                        disabled={busy}
+                        onClick={() => handleRemoveToolCall(call.id)}
+                        title="Remove this tool call"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="steerable-composer-actions">
+                <button
+                  type="button"
+                  className="btn-secondary btn-sm"
+                  disabled={busy}
+                  onClick={handleAddToolCall}
+                >
+                  <Plus className="size-3.5" />
+                  <span>Add tool call</span>
+                </button>
+              </div>
+              {toolDrafts.error && (
+                <span className="steerable-composer-error">{toolDrafts.error}</span>
+              )}
+            </div>
+          </>
+        )}
 
         <div className="steerable-composer-actions">
           <button
@@ -498,8 +673,14 @@ function SteerableInstanceCard({
             disabled={busy || !canSubmit}
             onClick={handleAppend}
           >
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
-            <span>Queue Response</span>
+            {busy ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : draft.mode === "error" ? (
+              <AlertTriangle className="size-3.5" />
+            ) : (
+              <Plus className="size-3.5" />
+            )}
+            <span>{draft.mode === "error" ? "Queue Error" : "Queue Response"}</span>
           </button>
         </div>
       </div>

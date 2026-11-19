@@ -282,3 +282,135 @@ async def test_autocontinue_multi_turn_bubbles_and_second_failure(
 
     # VI. Verify daemon response 'no' halted recovery (no session 3 created)
     assert len(agent.sessions) == 2
+
+
+@pytest.mark.asyncio
+async def test_autocontinue_with_simulated_network_timeout_fixture(
+    client: httpx.AsyncClient,
+    steerable_store: Any,
+    resolve_session: Any,
+) -> None:
+    """When a steerable model emits an APITimeoutError fixture, autocontinue retries."""
+    ctx = _make_autocontinue_session(steerable_store, "autocontinue-timeout-agent")
+    session = resolve_session(ctx["session_id"])
+    agent = ctx["agent"]
+
+    reg = get_steerable_registry()
+    inst_agent = reg.get_or_create(agent_instance_id(session.id), role="agent")
+    inst_agent.push(SteerableResponse.for_error("timeout"))
+
+    daemon_id = daemon_instance_id(session.id, daemon="autocontinue")
+    inst_daemon = reg.get_or_create(daemon_id, role="daemon")
+    inst_daemon.push(SteerableResponse(text="yes"))
+
+    await client.post(
+        f"/api/v-alpha/agent/{ctx['agent_id']}/session/{ctx['session_id']}/input",
+        json={"message": "Query external API with timeout."},
+    )
+
+    runner = get_runner_registry().get_runner(session)
+    await _drain(runner)
+
+    # 1. Daemon receives the APITimeoutError payload
+    assert inst_daemon.last_invocation is not None
+    prompt = inst_daemon.last_invocation[0].content
+    assert isinstance(prompt, str)
+    assert "Error Type: APITimeoutError" in prompt
+    assert "Request timed out while waiting for response." in prompt
+
+    # 2. Root session failed
+    assert session.status.value == "FAILED"
+
+    # 3. Child session created via branching
+    assert len(agent.sessions) == 2
+    child = [s for s in agent.sessions.values() if s.id != session.id][0]
+    assert child.provenance is not None
+    assert child.provenance.parent_session_id == session.id
+
+
+@pytest.mark.asyncio
+async def test_autocontinue_with_simulated_out_of_cash_quota_fixture(
+    client: httpx.AsyncClient,
+    steerable_store: Any,
+    resolve_session: Any,
+) -> None:
+    """When a steerable model emits an out-of-cash fixture, autocontinue halts without retry."""
+    ctx = _make_autocontinue_session(steerable_store, "autocontinue-quota-agent")
+    session = resolve_session(ctx["session_id"])
+    agent = ctx["agent"]
+
+    reg = get_steerable_registry()
+    inst_agent = reg.get_or_create(agent_instance_id(session.id), role="agent")
+    inst_agent.push(SteerableResponse.for_error("out_of_cash"))
+
+    daemon_id = daemon_instance_id(session.id, daemon="autocontinue")
+    inst_daemon = reg.get_or_create(daemon_id, role="daemon")
+    inst_daemon.push(SteerableResponse(text="no"))
+
+    await client.post(
+        f"/api/v-alpha/agent/{ctx['agent_id']}/session/{ctx['session_id']}/input",
+        json={"message": "Generate complex response."},
+    )
+
+    runner = get_runner_registry().get_runner(session)
+    await _drain(runner)
+
+    # 1. Daemon receives RateLimitError with quota message
+    assert inst_daemon.last_invocation is not None
+    prompt = inst_daemon.last_invocation[0].content
+    assert isinstance(prompt, str)
+    assert "Error Type: RateLimitError" in prompt
+    assert "You exceeded your current quota" in prompt
+
+    # 2. Root session failed
+    assert session.status.value == "FAILED"
+
+    # 3. No child session created because daemon halted retry
+    assert len(agent.sessions) == 1
+
+
+@pytest.mark.asyncio
+async def test_autocontinue_with_reasoning_before_timeout_branches_after_reasoning(
+    client: httpx.AsyncClient,
+    steerable_store: Any,
+    resolve_session: Any,
+) -> None:
+    """Mid-stream reasoning is preserved before the error and used as branch point."""
+    ctx = _make_autocontinue_session(steerable_store, "autocontinue-midstream-agent")
+    session = resolve_session(ctx["session_id"])
+    agent = ctx["agent"]
+
+    reg = get_steerable_registry()
+    inst_agent = reg.get_or_create(agent_instance_id(session.id), role="agent")
+    inst_agent.push(
+        SteerableResponse.for_error(
+            "timeout",
+            reasoning="Planning database migration steps carefully...",
+        )
+    )
+
+    daemon_id = daemon_instance_id(session.id, daemon="autocontinue")
+    inst_daemon = reg.get_or_create(daemon_id, role="daemon")
+    inst_daemon.push(SteerableResponse(text="yes"))
+
+    await client.post(
+        f"/api/v-alpha/agent/{ctx['agent_id']}/session/{ctx['session_id']}/input",
+        json={"message": "Perform database migration."},
+    )
+
+    runner = get_runner_registry().get_runner(session)
+    await _drain(runner)
+
+    # 1. Verify reasoning bubble exists in root thread events
+    thread = session.get_open_thread()
+    assert thread is not None
+    events = thread.events
+    assert any("REASONING" in str(getattr(e, "type", "") or "") for e in events)
+
+    # 2. Verify child session was branched after the reasoning bubble
+    assert len(agent.sessions) == 2
+    child = [s for s in agent.sessions.values() if s.id != session.id][0]
+    assert child.provenance is not None
+    assert child.provenance.parent_session_id == session.id
+    assert child.provenance.item_type == "bot_thinking"
+    assert child.provenance.branch_position == "after"
