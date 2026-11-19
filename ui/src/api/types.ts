@@ -37,8 +37,15 @@ export type DaemonNamingConfig = {
   model?: string | null;
 };
 
+export type DaemonAutocontinueConfig = {
+  enabled?: boolean;
+  provider?: InferenceConfig | null;
+  model?: string | null;
+};
+
 export type DaemonsConfig = {
   naming?: DaemonNamingConfig;
+  autocontinue?: DaemonAutocontinueConfig;
 };
 
 export type AgentConfig = {

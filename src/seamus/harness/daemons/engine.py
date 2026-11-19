@@ -24,6 +24,7 @@ async def _invoke_steerable_daemon(
     input_payload: str,
     occupied_slugs: set[str] | None,
     instance_id: str | None,
+    raw: bool = False,
 ) -> str | None:
     """Execute a daemon prompt against a steerable (scripted) model."""
     from seamus.harness.steerable import (
@@ -50,6 +51,14 @@ async def _invoke_steerable_daemon(
         if isinstance(raw_output, list):
             raw_output = " ".join(str(item) for item in raw_output)
 
+        if raw:
+            logger.info(
+                "Steerable daemon invoked on instance %s; raw output: %r",
+                resolved_instance_id,
+                raw_output,
+            )
+            return str(raw_output).strip()
+
         slug = parse_loose_slug(str(raw_output), occupied_slugs=occupied_slugs)
         logger.info(
             "Steerable daemon invoked on instance %s; raw output: %r; parsed slug: %r",
@@ -71,6 +80,7 @@ async def invoke_daemon(
     occupied_slugs: set[str] | None = None,
     api_key_override: str | None = None,
     steerable_instance_id: str | None = None,
+    raw: bool = False,
 ) -> str | None:
     """Execute a one-shot plain-prefill daemon prompt against the specified provider and model.
 
@@ -95,6 +105,7 @@ async def invoke_daemon(
             input_payload=input_payload,
             occupied_slugs=occupied_slugs,
             instance_id=steerable_instance_id,
+            raw=raw,
         )
 
     api_key = api_key_override or provider.api_key or ""
@@ -153,6 +164,14 @@ async def invoke_daemon(
         raw_output = response.content
         if isinstance(raw_output, list):
             raw_output = " ".join(str(item) for item in raw_output)
+
+        if raw:
+            logger.info(
+                "Daemon invoked with model %s; raw output: %r",
+                model,
+                raw_output,
+            )
+            return str(raw_output).strip()
 
         slug = parse_loose_slug(str(raw_output), occupied_slugs=occupied_slugs)
         logger.info(

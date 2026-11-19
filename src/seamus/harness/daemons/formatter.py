@@ -117,7 +117,7 @@ def format_thread_history(events: list[Any], max_chars: int = 4000) -> str:
             # Don't flush immediately if there might be adjacent artifacts or assistant events
             pass
 
-        elif ev_type in ("USER_MESSAGE",):
+        elif ev_type in ("USER_MESSAGE", "USER_INPUT"):
             flush_turn()
             current_role = "user"
             content = (

@@ -59,6 +59,13 @@ A specialized daemon service generating concise, descriptive slugs:
 - **Thread Naming Daemon**: Synthesizes a thread slug from user and assistant exchanges (including created artifacts and actions) while avoiding occupied slugs in the session.
 - **Session Naming Daemon**: Synthesizes an overarching session slug from the constituent thread slugs while avoiding occupied session slugs under the agent.
 
+### Autocontinue Daemon
+A specialized supervisory background daemon evaluating unhandled session failures:
+- Analyzes recent conversation messages, specific failure details (error type, message, traceback), and lineage/retry error frequency across recent execution spans.
+- Decides whether to retry execution as a boolean outcome (`yes` / `true` for transient or recoverable failures; `no` / `false` for unrecoverable/permanent errors, exhausted quotas, or repeated failure spirals).
+- On `true`: automatically branches a child session from the last fully successful bubble (user message, reasoning span, or completed error-free tool call set) and resumes execution.
+- On `false`: leaves the session in its failed state without further retries or branching.
+
 ### Full Exchange
 A completed conversational interaction spanning from the start of a user input (or unblocking artifact action) to either the end of an assistant text response (`TextMessageEndEvent`) or the moment an artifact blocks the conversation (`manifest.blocking = True`). Rounds down so in-progress turns are excluded.
 
@@ -230,6 +237,7 @@ An enum setting (`none` | `seamus`) on `AgentConfig` governing whether interacti
 - [0051-chat-bubble-timestamps-and-sequence-indexing.md](../decisions/0051-chat-bubble-timestamps-and-sequence-indexing.md)
 - [0052-backlog-low-hanging-fruits.md](../decisions/0052-backlog-low-hanging-fruits.md)
 - [0055-artifacts-implementation-toggle.md](../decisions/0055-artifacts-implementation-toggle.md)
+- [0070-autocontinue-daemon.md](../decisions/0070-autocontinue-daemon.md)
 - [artifacts.md](./artifacts.md)
 - [threads_modes_personas.md](./threads_modes_personas.md)
 - [architecture.md](./architecture.md)

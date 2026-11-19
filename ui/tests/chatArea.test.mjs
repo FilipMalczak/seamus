@@ -188,6 +188,7 @@ async function renderChatArea(options = {}) {
       sessionId: SESSION_ID,
       sessionName: "session",
       sessionStatus: options.sessionStatus ?? "ACTIVE",
+      sessionDisabled: options.sessionDisabled ?? false,
       thread: {
         id: THREAD_ID,
         name: "thread",

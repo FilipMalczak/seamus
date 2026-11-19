@@ -25,7 +25,7 @@ Seamus is an open, self-hosted, deep agent execution harness and developer works
    - [10. Telemetry & Observability (Pydantic Logfire & OpenTelemetry)](#10-telemetry--observability-pydantic-logfire--opentelemetry)
    - [11. 1-Click Zero-Friction Stack Launch](#11-1-click-zero-friction-stack-launch)
    - [12. Local Model Inference & Active Ollama Lifecycle Management](#12-local-model-inference--active-ollama-lifecycle-management)
-   - [13. Non-Agentic Daemons & Automated Naming](#13-non-agentic-daemons--automated-naming)
+   - [13. Non-Agentic Daemons, Automated Naming & Autocontinue Recovery](#13-non-agentic-daemons-automated-naming--autocontinue-recovery)
    - [14. Steerable Model Provider & Inspector Queue Editor](#14-steerable-model-provider--inspector-queue-editor)
 3. [Every Goddamn Flag (Exhaustive Configuration & Reference Manual)](#every-goddamn-flag-exhaustive-configuration--reference-manual)
    - [CLI Flags & Scripts (`run.sh`)](#cli-flags--scripts-runsh)
@@ -306,7 +306,7 @@ Run agents completely offline without external cloud API dependencies or recurri
 - **Active Model Verification & Pre-Loading**: Dispatches healthchecks and pre-loads the model into memory (`POST /api/generate`) before agent execution starts.
 - **Automated Model Pulling**: When the target model is not present, automatically triggers Ollama's model pull API (`POST /api/pull` with `stream: False`) and retries the load, providing zero-configuration setup for local models.
 
-### 13. Non-Agentic Daemons & Automated Naming
+### 13. Non-Agentic Daemons, Automated Naming & Autocontinue Recovery
 
 Lightweight, non-agentic one-shot LLM utilities using plain `Instructions: ... Input: ... Output:` prefill prompts on fast, cheap, or local models:
 
@@ -315,6 +315,12 @@ Lightweight, non-agentic one-shot LLM utilities using plain `Instructions: ... I
 - **Geometric Stepback Scheduling**: Triggers daemon runs on full completed user/assistant exchanges at doubling intervals ($N = 2^k - 1$: $1, 3, 7, 15, \dots$), balancing fresh naming with low token consumption.
 - **Parallel Slug Model**: User-assigned custom names take precedence over daemon-generated slugs while auto-naming continues running in the background, providing instantaneous fallback if the user clears their custom slug.
 - **Defensive Preemptive Output Parsing**: Resiliently cleans markdown code fences, triple quotes, blockquotes, and conversational prefixes from small or local model outputs into valid slug strings.
+- **Autocontinue Daemon & Branching Recovery**: When an agent session encounters an unhandled exception or provider failure, the autocontinue daemon analyzes short recent messages, specific failure details (exception class, message, formatted traceback), ancestor lineage depth, parent session, thread error counts, and failed tool results to evaluate whether to retry:
+  - **`yes` (`true`)**: Transient errors (temporary timeouts, momentary network glitches, tool execution hiccups) automatically trigger granular branching from the last fully successful "bubble" (message, reasoning span, or completed error-free tool call set), resuming execution seamlessly in a child session in the background.
+  - **`no` (`false`)**: Permanent failures (exhausted credits, quota limits, offline network, 401 unauthorized) or repeated retries across spans and lineage halt cleanly in `FAILED` status without wasteful retries or branching cascades.
+- **Smart Boolean Response Parsing**: The daemon output parser accepts standard truthy representations (`yes`, `true`, `True`, `1`, `retry`, `y`, `t`) and falsy representations (`no`, `false`, `False`, `0`, `stop`, empty/None), handling conversational and markdown variations robustly.
+- **Dedicated Steerable Daemon Instances**: Both `naming` and `autocontinue` daemons register independently addressable steerable model instances (`session:{id}:daemon:naming`, `session:{id}:daemon:autocontinue`), with invocation tracking (`invocations`) enabling fully deterministic verification of prompt payloads and multi-turn retry lifecycles.
+- **Config Modal Controls**: The Config modal provides full Form and Raw JSON configuration for autocontinue with status toggle, provider configuration, and model presets defaulting to `openai/gpt-oss-120b`.
 
 ### 14. Steerable Model Provider & Inspector Queue Editor
 
@@ -477,6 +483,23 @@ class ExternalRepositoryConfig(BaseModel):
     credentials_ref: str | None = None
 
 
+class DaemonNamingConfig(BaseModel):
+    enabled: bool = True
+    provider: InferenceConfig | None = None
+    model: str | None = "openai/gpt-oss-20b"
+
+
+class DaemonAutocontinueConfig(BaseModel):
+    enabled: bool = True
+    provider: InferenceConfig | None = None
+    model: str | None = "openai/gpt-oss-120b"
+
+
+class DaemonsConfig(BaseModel):
+    naming: DaemonNamingConfig = Field(default_factory=DaemonNamingConfig)
+    autocontinue: DaemonAutocontinueConfig = Field(default_factory=DaemonAutocontinueConfig)
+
+
 class AgentConfig(BaseModel):
     inference: InferenceConfig = Field(default_factory=InferenceConfig)
     model_name: str = "openai/gpt-oss-120b"
@@ -507,6 +530,9 @@ class AgentConfig(BaseModel):
 - `daemons.naming.enabled`: Enables automated thread and session naming daemons (default: `true`).
 - `daemons.naming.provider`: Optional provider configuration for naming daemons; if unset, inherits the agent's main `inference` settings.
 - `daemons.naming.model`: Dedicated model identifier for naming daemons (default: `openai/gpt-oss-20b`), keeping naming costs and latency minimal.
+- `daemons.autocontinue.enabled`: Enables the autonomous failure evaluation and autocontinue daemon (default: `true`).
+- `daemons.autocontinue.provider`: Optional provider configuration for the autocontinue daemon; if unset, inherits the agent's main `inference` settings.
+- `daemons.autocontinue.model`: Dedicated model identifier for the autocontinue daemon (default: `openai/gpt-oss-120b`).
 - `model_name`: Provider model identifier (e.g. `anthropic/claude-3.5-sonnet`, `openai/gpt-4o`, `openai/gpt-oss-120b`, `llama3.2:3b`, `qwen3.8:latest`, `gemma4:e4b`). When targeting Ollama, Seamus actively verifies daemon health and loads the requested model into memory prior to execution.
 - `mode`: Initial operational mode for sessions (`chat` or `plan`).
 - `system_prompt`: Optional custom prompt instructions appended to the dynamic LMXML scaffold.
