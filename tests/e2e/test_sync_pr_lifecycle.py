@@ -37,10 +37,11 @@ def _open_sync_prs(session: Any) -> list[dict[str, Any]]:
     """Return the open Sync PRs of the session's agent repository."""
     ws_mgr = get_workspace_manager()
     repo_name = ws_mgr.get_agent_repo_name(session.agent_id)
+    org_name = ws_mgr.get_agent_org_name(session.agent_id)
     head_branch = f"session/{session.id}"
     return [
         pr
-        for pr in ws_mgr.client.list_pull_requests(repo_name, state="open")
+        for pr in ws_mgr.client.list_pull_requests(repo_name, state="open", owner=org_name)
         if pr.get("head", {}).get("ref") == head_branch
     ]
 
@@ -198,5 +199,8 @@ async def test_acceptance_merges_data_deliverable_into_main(
 
     ws_mgr = get_workspace_manager()
     repo_name = ws_mgr.get_agent_repo_name(ctx["agent"].id)
-    content = ws_mgr.client.get_file_content(repo_name, "main", "data/merged.txt")
+    org_name = ws_mgr.get_agent_org_name(ctx["agent"].id)
+    content = ws_mgr.client.get_file_content(
+        repo_name, "main", "data/merged.txt", owner=org_name
+    )
     assert content == "merged\n"
