@@ -434,8 +434,6 @@ The issues are not catastrophic yet, but they might escalate soon. We should get
 
 ## Not formalized
 
-- pipeline fails on some swagger-related e2e tests??? [HIGHish]
-
 - deep-seamus variant of skills and todos: An intentional hybrid architecture combining DeepAgents execution and middleware mechanics with Seamus LMXML structured prompt composition (rather than raw markdown appending or vanilla prompt injection), intentionally kept outstanding.
 - instructional documentation (as in "to achieve this do this")
 - text field (the one for user message) is annoyingly small
@@ -443,8 +441,6 @@ The issues are not catastrophic yet, but they might escalate soon. We should get
 - instruct the agent to prepare walkthrough artifact after implementation
 - track errors (including failed tools) across sessions and agents, together with used model and other environmental factors; use to prepare hints for future usage, gauge model/task quality, etc
 - another daemon that observes the inference message stream and calls todo-related tools for the agent after every nth message to keep the local plan up to date
-- manual and automated testing of autoretry daemon
-
 
 Way ahead:
 - integrate with backlog.md or smth like that (in parallel to todo stack? as a separate todo impl?)
