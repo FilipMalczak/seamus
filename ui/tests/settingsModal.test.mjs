@@ -425,3 +425,59 @@ test("REQ-041: cancelling closes the modal without saving", async () => {
 
   await unmount();
 });
+
+test("REQ-071: settings modal renders and updates API, UI, and memory batch sizes", async () => {
+  const { container, unmount, calls } = await renderSettings({
+    settings: {
+      skill_directories: [],
+      api_batch_size: 50,
+      ui_batch_size: 200,
+      memory_batch_size: 300,
+    },
+  });
+
+  const apiInput = container.querySelector("#api-batch-size-input");
+  const uiInput = container.querySelector("#ui-batch-size-input");
+  const memInput = container.querySelector("#memory-batch-size-input");
+
+  assert.ok(apiInput, "API batch size input exists");
+  assert.ok(uiInput, "UI batch size input exists");
+  assert.ok(memInput, "Memory batch size input exists");
+
+  assert.equal(apiInput.value, "50");
+  assert.equal(uiInput.value, "200");
+  assert.equal(memInput.value, "300");
+
+  await type(apiInput, "30");
+  await type(uiInput, "120");
+  await type(memInput, "250");
+
+  await click(buttonByText(container, "Save Settings"));
+  await settle();
+
+  assert.equal(calls.saved.length, 1);
+  assert.equal(calls.saved[0].api_batch_size, 30);
+  assert.equal(calls.saved[0].ui_batch_size, 120);
+  assert.equal(calls.saved[0].memory_batch_size, 250);
+
+  await unmount();
+});
+
+test("REQ-071: settings modal validates batch size ordering invariants", async () => {
+  const { container, unmount, calls } = await renderSettings();
+
+  const apiInput = container.querySelector("#api-batch-size-input");
+  const uiInput = container.querySelector("#ui-batch-size-input");
+
+  // Set api batch size > ui batch size
+  await type(apiInput, "500");
+  await type(uiInput, "200");
+
+  await click(buttonByText(container, "Save Settings"));
+  await settle();
+
+  assert.equal(calls.saved.length, 0, "Save should be blocked by validation");
+  assert.match(container.textContent, /API batch size.*cannot exceed UI batch size/);
+
+  await unmount();
+});

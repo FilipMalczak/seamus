@@ -1,7 +1,7 @@
 """Pydantic schemas for the Seamus REST API under /api/v-alpha/."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -434,3 +434,62 @@ class SteerableStrategyRequest(BaseModel):
     strategy: Literal["error", "wait", "repeat"]
     default_response: str | None = None
     wait_timeout: float | None = Field(default=None, gt=0)
+
+
+class ToolCallRecordSchema(BaseModel):
+    """Normalized tool call record matching UI expectations."""
+
+    id: str
+    name: str
+    status: Literal["pending", "wip", "done", "error"] = "pending"
+    rawArgs: str | None = None
+    args: dict[str, Any] = Field(default_factory=dict)
+    result: Any | None = None
+    timestamp: str | None = None
+
+
+class MessagePartSchema(BaseModel):
+    """Granular part within a ChatMessage (text, reasoning, tool_call, artifact)."""
+
+    type: Literal["text", "reasoning", "tool_call", "artifact"]
+    id: str
+    content: str | None = None
+    isStreaming: bool | None = None
+    timestamp: str | None = None
+    toolCall: ToolCallRecordSchema | None = None
+    artifact: dict[str, Any] | None = None
+
+
+class ThreadTransitionInfoSchema(BaseModel):
+    """Metadata for thread transitions in unified session views."""
+
+    threadId: str
+    threadName: str | None = None
+    mode: str | None = None
+    phase: str | None = None
+    modeLabel: str | None = None
+
+
+class ChatMessageResponse(BaseModel):
+    """Single conversational turn or delimiter containing one or more visual bubbles."""
+
+    id: str
+    role: Literal["user", "assistant", "system"]
+    text: str = ""
+    reasoning: str | None = None
+    isReasoning: bool | None = None
+    toolCalls: list[ToolCallRecordSchema] | None = None
+    parts: list[MessagePartSchema] | None = None
+    timestamp: str
+    threadTransition: ThreadTransitionInfoSchema | None = None
+
+
+class PaginatedMessagesResponse(BaseModel):
+    """Paginated slice of conversation messages and bubble navigation metadata."""
+
+    messages: list[ChatMessageResponse] = Field(default_factory=list)
+    total_bubbles: int = 0
+    has_more_before: bool = False
+    has_more_after: bool = False
+    oldest_bubble_id: str | None = None
+    newest_bubble_id: str | None = None

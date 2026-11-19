@@ -573,7 +573,7 @@ export function MessageItem({
                                   onNavigateToSession={onNavigateToSession}
                                 />
                               ))}
-                            <div className="bubble-row tool-sub-row">
+                            <div className="bubble-row tool-sub-row" data-bubble-id={p.id}>
                               <ToolCallItem
                                 toolCall={p.toolCall}
                                 sequenceIndex={toolSeq}
@@ -629,7 +629,7 @@ export function MessageItem({
                 return (
                   <React.Fragment key={part.id}>
                     {renderSeparators(rBefore)}
-                    <div className="bubble-row assistant-bubble-row">
+                    <div className="bubble-row assistant-bubble-row" data-bubble-id={part.id}>
                       <ReasoningBlock
                         content={part.content}
                         isStreaming={part.isStreaming}
@@ -690,7 +690,7 @@ export function MessageItem({
                 const anchorSuffix = matchedTabbedArtifact?.is_closed ? " (Read-only)" : "";
                 return (
                   <React.Fragment key={part.id}>
-                    <div className="bubble-row assistant-bubble-row">
+                    <div className="bubble-row assistant-bubble-row" data-bubble-id={part.id}>
                       <ToolCallItem
                         toolCall={part.toolCall}
                         sequenceIndex={toolSeq}
@@ -730,12 +730,13 @@ export function MessageItem({
 
               if (part.type === "artifact") {
                 return (
-                  <ArtifactRenderer
-                    key={part.id}
-                    artifact={part.artifact}
-                    onSubmit={(data) => onSubmitArtifact?.(part.artifact, data)}
-                    isSubmitting={submittingArtifactId === part.artifact.name}
-                  />
+                  <div key={part.id} data-bubble-id={part.id}>
+                    <ArtifactRenderer
+                      artifact={part.artifact}
+                      onSubmit={(data) => onSubmitArtifact?.(part.artifact, data)}
+                      isSubmitting={submittingArtifactId === part.artifact.name}
+                    />
+                  </div>
                 );
               }
 
@@ -756,7 +757,7 @@ export function MessageItem({
                 return (
                   <React.Fragment key={part.id}>
                     {renderSeparators(tBefore)}
-                    <div className="bubble-row assistant-bubble-row">
+                    <div className="bubble-row assistant-bubble-row" data-bubble-id={part.id}>
                       <div className="message-bubble assistant-bubble">
                         {partSeq !== undefined && (
                           <div className="bubble-top-bar">
@@ -964,7 +965,7 @@ export function MessageItem({
                                     onNavigateToSession={onNavigateToSession}
                                   />
                                 ))}
-                              <div className="bubble-row tool-sub-row">
+                              <div className="bubble-row tool-sub-row" data-bubble-id={tc.id}>
                                 <ToolCallItem
                                   toolCall={tc}
                                   sequenceIndex={getSeq(tc.id)}

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   clickArtifact,
   getArtifact,
+  getSessionMessages,
+  getThreadMessages,
   getThreadStatus,
   listArtifacts,
   postUserInput,
@@ -16,6 +18,7 @@ import type {
   MessagePart,
   ToolCallRecord,
 } from "../api/types";
+import { extractBubblesFromMessages } from "../utils/sequence";
 
 function findLastIndex<T>(arr: T[], predicate: (val: T) => boolean): number {
   for (let i = arr.length - 1; i >= 0; i--) {
@@ -54,6 +57,89 @@ function stopStreamingReasoningParts(parts?: MessagePart[], timestamp?: string):
   return changed ? updated : parts;
 }
 
+function prependMessages(prev: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
+  if (!incoming || incoming.length === 0) return prev;
+  if (!prev || prev.length === 0) return incoming;
+
+  const prevMap = new Map<string, ChatMessage>();
+  for (const m of prev) {
+    prevMap.set(m.id, {
+      ...m,
+      parts: m.parts ? [...m.parts] : undefined,
+      toolCalls: m.toolCalls ? [...m.toolCalls] : undefined,
+    });
+  }
+
+  const result: ChatMessage[] = [];
+  for (const inc of incoming) {
+    if (prevMap.has(inc.id)) {
+      const existing = prevMap.get(inc.id)!;
+      const existingPartIds = new Set(existing.parts?.map((p) => p.id) || []);
+      const newParts = (inc.parts || []).filter((p) => !existingPartIds.has(p.id));
+      existing.parts = [...newParts, ...(existing.parts || [])];
+
+      const existingCallIds = new Set(existing.toolCalls?.map((tc) => tc.id) || []);
+      const newCalls = (inc.toolCalls || []).filter((tc) => !existingCallIds.has(tc.id));
+      existing.toolCalls = [...newCalls, ...(existing.toolCalls || [])];
+    } else {
+      result.push(inc);
+    }
+  }
+
+  for (const m of prev) {
+    result.push(prevMap.get(m.id)!);
+  }
+
+  return result;
+}
+
+function appendMessages(prev: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
+  if (!incoming || incoming.length === 0) return prev;
+  if (!prev || prev.length === 0) return incoming;
+
+  const incMap = new Map<string, ChatMessage>();
+  for (const inc of incoming) {
+    incMap.set(inc.id, {
+      ...inc,
+      parts: inc.parts ? [...inc.parts] : undefined,
+      toolCalls: inc.toolCalls ? [...inc.toolCalls] : undefined,
+    });
+  }
+
+  const result: ChatMessage[] = [];
+  const handledIncIds = new Set<string>();
+
+  for (const m of prev) {
+    if (incMap.has(m.id)) {
+      const inc = incMap.get(m.id)!;
+      const existingPartIds = new Set(m.parts?.map((p) => p.id) || []);
+      const newParts = (inc.parts || []).filter((p) => !existingPartIds.has(p.id));
+      const mergedParts = [...(m.parts || []), ...newParts];
+
+      const existingCallIds = new Set(m.toolCalls?.map((tc) => tc.id) || []);
+      const newCalls = (inc.toolCalls || []).filter((tc) => !existingCallIds.has(tc.id));
+      const mergedCalls = [...(m.toolCalls || []), ...newCalls];
+
+      result.push({
+        ...m,
+        parts: mergedParts.length ? mergedParts : m.parts,
+        toolCalls: mergedCalls.length ? mergedCalls : m.toolCalls,
+      });
+      handledIncIds.add(m.id);
+    } else {
+      result.push(m);
+    }
+  }
+
+  for (const inc of incoming) {
+    if (!handledIncIds.has(inc.id)) {
+      result.push(inc);
+    }
+  }
+
+  return result;
+}
+
 export interface StreamErrorDetails {
   message: string;
   errorType?: string;
@@ -72,9 +158,29 @@ export function useThreadStream(
   threadId: string | null,
   sessionStatus?: string,
   onThreadTransition?: (toThreadId: string, mode?: string, phase?: string | null) => void,
-  onNamed?: (event: any) => void
+  onNamed?: (event: any) => void,
+  apiBatchSize: number = 50
 ) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [hasMoreBefore, setHasMoreBefore] = useState<boolean>(false);
+  const [hasMoreAfter, setHasMoreAfter] = useState<boolean>(false);
+  const [oldestBubbleId, setOldestBubbleId] = useState<string | null>(null);
+  const [newestBubbleId, setNewestBubbleId] = useState<string | null>(null);
+  const [totalBubbles, setTotalBubbles] = useState<number>(0);
+  const [loadingOlder, setLoadingOlder] = useState<boolean>(false);
+  const [loadingNewer, setLoadingNewer] = useState<boolean>(false);
+
+  const hasMoreBeforeRef = useRef<boolean>(false);
+  hasMoreBeforeRef.current = hasMoreBefore;
+  const hasMoreAfterRef = useRef<boolean>(false);
+  hasMoreAfterRef.current = hasMoreAfter;
+  const oldestBubbleIdRef = useRef<string | null>(null);
+  oldestBubbleIdRef.current = oldestBubbleId;
+  const newestBubbleIdRef = useRef<string | null>(null);
+  newestBubbleIdRef.current = newestBubbleId;
+  const loadingOlderRef = useRef<boolean>(false);
+  const loadingNewerRef = useRef<boolean>(false);
+
   const [status, setStatus] = useState<AgentStatus>("AWAITING_USER");
   const [streamError, setStreamError] = useState<string | null>(null);
   const [streamErrorDetails, setStreamErrorDetails] = useState<StreamErrorDetails | null>(
@@ -290,8 +396,45 @@ export function useThreadStream(
     }
 
     setMessages([]);
+    setHasMoreBefore(false);
+    hasMoreBeforeRef.current = false;
+    setHasMoreAfter(false);
+    hasMoreAfterRef.current = false;
+    setOldestBubbleId(null);
+    oldestBubbleIdRef.current = null;
+    setNewestBubbleId(null);
+    newestBubbleIdRef.current = null;
+    setTotalBubbles(0);
     setStreamError(null);
     setStreamErrorDetails(null);
+
+    let active = true;
+    const fetchInitial = async () => {
+      try {
+        const res = threadId
+          ? await getThreadMessages(agentId, sessionId, threadId, { tail: true, limit: apiBatchSize })
+          : await getSessionMessages(agentId, sessionId, { tail: true, limit: apiBatchSize });
+        if (!active) return;
+        setMessages((prev) => {
+          const resIds = new Set((res.messages || []).map((m) => m.id));
+          const newLive = prev.filter((m) => !resIds.has(m.id));
+          return [...(res.messages || []), ...newLive];
+        });
+        setHasMoreBefore(Boolean(res.has_more_before));
+        hasMoreBeforeRef.current = Boolean(res.has_more_before);
+        setHasMoreAfter(Boolean(res.has_more_after));
+        hasMoreAfterRef.current = Boolean(res.has_more_after);
+        setOldestBubbleId(res.oldest_bubble_id || null);
+        oldestBubbleIdRef.current = res.oldest_bubble_id || null;
+        setNewestBubbleId(res.newest_bubble_id || null);
+        newestBubbleIdRef.current = res.newest_bubble_id || null;
+        setTotalBubbles(res.total_bubbles || 0);
+      } catch (err: any) {
+        if (!active) return;
+        console.error("Failed to fetch initial messages:", err);
+      }
+    };
+    void fetchInitial();
 
     const onEventHandler = (event: any) => {
       const type = event.type || event.event;
@@ -1325,13 +1468,190 @@ export function useThreadStream(
     };
 
     const unsubscribe = threadId
-      ? subscribeToThreadStream(agentId, sessionId, threadId, onEventHandler, onErrorHandler)
-      : subscribeToSessionStream(agentId, sessionId, onEventHandler, onErrorHandler);
+      ? subscribeToThreadStream(agentId, sessionId, threadId, onEventHandler, onErrorHandler, false)
+      : subscribeToSessionStream(agentId, sessionId, onEventHandler, onErrorHandler, false);
 
     return () => {
+      active = false;
       unsubscribe();
     };
-  }, [agentId, sessionId, threadId]);
+  }, [agentId, sessionId, threadId, apiBatchSize]);
+
+  const loadOlderMessages = useCallback(async () => {
+    if (
+      !agentId ||
+      !sessionId ||
+      loadingOlderRef.current ||
+      !hasMoreBeforeRef.current ||
+      !oldestBubbleIdRef.current
+    ) {
+      return 0;
+    }
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    try {
+      const res = threadId
+        ? await getThreadMessages(agentId, sessionId, threadId, {
+            beforeId: oldestBubbleIdRef.current,
+            limit: apiBatchSize,
+          })
+        : await getSessionMessages(agentId, sessionId, {
+            beforeId: oldestBubbleIdRef.current,
+            limit: apiBatchSize,
+          });
+
+      if (res.messages && res.messages.length > 0) {
+        setMessages((prev) => prependMessages(prev, res.messages));
+      }
+      setHasMoreBefore(Boolean(res.has_more_before));
+      hasMoreBeforeRef.current = Boolean(res.has_more_before);
+      setOldestBubbleId(res.oldest_bubble_id || null);
+      oldestBubbleIdRef.current = res.oldest_bubble_id || null;
+      return res.messages ? res.messages.length : 0;
+    } catch (err) {
+      console.error("Failed to load older messages:", err);
+      return 0;
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  }, [agentId, sessionId, threadId, apiBatchSize]);
+
+  const loadNewerMessages = useCallback(async () => {
+    if (
+      !agentId ||
+      !sessionId ||
+      loadingNewerRef.current ||
+      !hasMoreAfterRef.current ||
+      !newestBubbleIdRef.current
+    ) {
+      return 0;
+    }
+    loadingNewerRef.current = true;
+    setLoadingNewer(true);
+    try {
+      const res = threadId
+        ? await getThreadMessages(agentId, sessionId, threadId, {
+            afterId: newestBubbleIdRef.current,
+            limit: apiBatchSize,
+          })
+        : await getSessionMessages(agentId, sessionId, {
+            afterId: newestBubbleIdRef.current,
+            limit: apiBatchSize,
+          });
+
+      if (res.messages && res.messages.length > 0) {
+        setMessages((prev) => appendMessages(prev, res.messages));
+      }
+      setHasMoreAfter(Boolean(res.has_more_after));
+      hasMoreAfterRef.current = Boolean(res.has_more_after);
+      setNewestBubbleId(res.newest_bubble_id || null);
+      newestBubbleIdRef.current = res.newest_bubble_id || null;
+      return res.messages ? res.messages.length : 0;
+    } catch (err) {
+      console.error("Failed to load newer messages:", err);
+      return 0;
+    } finally {
+      loadingNewerRef.current = false;
+      setLoadingNewer(false);
+    }
+  }, [agentId, sessionId, threadId, apiBatchSize]);
+
+  const jumpToLatest = useCallback(async () => {
+    if (!agentId || !sessionId) return;
+    try {
+      const res = threadId
+        ? await getThreadMessages(agentId, sessionId, threadId, {
+            tail: true,
+            limit: apiBatchSize,
+          })
+        : await getSessionMessages(agentId, sessionId, {
+            tail: true,
+            limit: apiBatchSize,
+          });
+
+      setMessages(res.messages || []);
+      setHasMoreBefore(Boolean(res.has_more_before));
+      hasMoreBeforeRef.current = Boolean(res.has_more_before);
+      setHasMoreAfter(false);
+      hasMoreAfterRef.current = false;
+      setOldestBubbleId(res.oldest_bubble_id || null);
+      oldestBubbleIdRef.current = res.oldest_bubble_id || null;
+      setNewestBubbleId(res.newest_bubble_id || null);
+      newestBubbleIdRef.current = res.newest_bubble_id || null;
+    } catch (err) {
+      console.error("Failed to jump to latest messages:", err);
+    }
+  }, [agentId, sessionId, threadId, apiBatchSize]);
+
+  const pruneMemory = useCallback(
+    (anchorBubbleId: string, memoryLimit: number) => {
+      setMessages((prev) => {
+        if (prev.length === 0) return prev;
+        const bubbles = extractBubblesFromMessages(prev);
+        if (bubbles.length <= memoryLimit * 2) return prev;
+
+        const anchorIdx = bubbles.findIndex((b) => b.key === anchorBubbleId);
+        if (anchorIdx < 0) return prev;
+
+        const keepStartBubble = Math.max(0, anchorIdx - memoryLimit);
+        const keepEndBubble = Math.min(bubbles.length, anchorIdx + memoryLimit + 1);
+
+        const keepBubbles = new Set(
+          bubbles.slice(keepStartBubble, keepEndBubble).map((b) => b.key)
+        );
+
+        const pruned: ChatMessage[] = [];
+        for (const m of prev) {
+          if (m.threadTransition) {
+            if (keepBubbles.has(m.id)) pruned.push(m);
+          } else if (m.role === "user") {
+            if (keepBubbles.has(m.id)) pruned.push(m);
+          } else if (m.parts && m.parts.length > 0) {
+            const keptParts = m.parts.filter((p) => keepBubbles.has(p.id));
+            if (keptParts.length > 0) {
+              const keptCalls = m.toolCalls?.filter(
+                (tc) =>
+                  keepBubbles.has(tc.id) ||
+                  keptParts.some(
+                    (p) => p.type === "tool_call" && p.toolCall?.id === tc.id
+                  )
+              );
+              pruned.push({
+                ...m,
+                parts: keptParts,
+                toolCalls: keptCalls,
+              });
+            }
+          } else if (keepBubbles.has(m.id)) {
+            pruned.push(m);
+          }
+        }
+
+        if (keepStartBubble > 0) {
+          setHasMoreBefore(true);
+          hasMoreBeforeRef.current = true;
+          const newOldest = bubbles[keepStartBubble]?.key;
+          if (newOldest) {
+            setOldestBubbleId(newOldest);
+            oldestBubbleIdRef.current = newOldest;
+          }
+        }
+        if (keepEndBubble < bubbles.length) {
+          setHasMoreAfter(true);
+          hasMoreAfterRef.current = true;
+          const newNewest = bubbles[keepEndBubble - 1]?.key;
+          if (newNewest) {
+            setNewestBubbleId(newNewest);
+            newestBubbleIdRef.current = newNewest;
+          }
+        }
+
+        return pruned;
+      });
+    },
+    []
+  );
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -1456,6 +1776,15 @@ export function useThreadStream(
     hasOpenBlockingArtifact,
     refreshArtifacts,
     submitArtifact: submitArtifactHandler,
+    hasMoreBefore,
+    hasMoreAfter,
+    loadingOlder,
+    loadingNewer,
+    totalBubbles,
+    loadOlderMessages,
+    loadNewerMessages,
+    jumpToLatest,
+    pruneMemory,
   };
 }
 

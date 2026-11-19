@@ -73,6 +73,9 @@ export type SystemSettings = {
   skill_directories: string[];
   terminal_session_timeout_seconds?: number;
   enable_delete?: boolean;
+  api_batch_size?: number;
+  ui_batch_size?: number;
+  memory_batch_size?: number;
 };
 
 export type SystemSettingsResponse = {
@@ -243,6 +246,15 @@ export type ChatMessage = {
   timestamp: string;
   threadTransition?: ThreadTransitionInfo;
 };
+
+export interface PaginatedMessagesResponse {
+  messages: ChatMessage[];
+  total_bubbles: number;
+  has_more_before: boolean;
+  has_more_after: boolean;
+  oldest_bubble_id?: string | null;
+  newest_bubble_id?: string | null;
+}
 
 export interface SystemLogfireInfo {
   enabled: boolean;

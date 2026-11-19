@@ -440,7 +440,6 @@ The issues are not catastrophic yet, but they might escalate soon. We should get
 - track errors (including failed tools) across sessions and agents, together with used model and other environmental factors; use to prepare hints for future usage, gauge model/task quality, etc
 - steerable model needs to be able to emit errors (to test autoretry for example)
 - another daemon that observes the inference message stream and calls todo-related tools for the agent after every nth message to keep the local plan up to date
-- when we open UI, we should load 50 recent messages (bubbles) only and auto-load batches as we scroll up; "scroll to bottom" should not load intermediate messages; we should limit how many messages in total we're keeping in memory (this was supposed to be done, but it doesnt seem to be)
 - manual and automated testing of autoretry daemon
 
 

@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 if TYPE_CHECKING:
     from seamus.persistence.workspace import GitWorkspaceManager
@@ -49,6 +49,37 @@ class SystemSettings(BaseModel):
         default=False,
         description="Enable permanent deletion of agents and sessions in the UI",
     )
+    api_batch_size: int = Field(
+        default=50,
+        ge=1,
+        description="Number of message bubbles to fetch per API batch",
+    )
+    ui_batch_size: int = Field(
+        default=200,
+        ge=1,
+        description="Number of message bubbles rendered before and after viewport anchor",
+    )
+    memory_batch_size: int = Field(
+        default=300,
+        ge=1,
+        description="Number of message bubbles retained in memory before/after viewport",
+    )
+
+    @model_validator(mode="after")
+    def _validate_batch_sizes(self) -> Self:
+        if self.api_batch_size > self.ui_batch_size:
+            msg = (
+                f"api_batch_size ({self.api_batch_size}) cannot exceed "
+                f"ui_batch_size ({self.ui_batch_size})"
+            )
+            raise ValueError(msg)
+        if self.ui_batch_size > self.memory_batch_size:
+            msg = (
+                f"ui_batch_size ({self.ui_batch_size}) cannot exceed "
+                f"memory_batch_size ({self.memory_batch_size})"
+            )
+            raise ValueError(msg)
+        return self
 
 
 class SystemSettingsStore:

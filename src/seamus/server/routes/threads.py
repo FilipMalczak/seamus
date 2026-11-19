@@ -5,10 +5,16 @@ import asyncio
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import RedirectResponse, StreamingResponse
 
+from seamus.config.settings import get_system_settings_store
 from seamus.domain.resolution import EntityNotFoundError, resolve_session, resolve_thread
+from seamus.harness.messages import (
+    aggregate_events_to_chat_messages,
+    paginate_chat_messages,
+)
 from seamus.harness.runner import get_runner_registry
 from seamus.harness.store import SlugConflictError, get_harness_store
 from seamus.server.schemas import (
+    PaginatedMessagesResponse,
     ThreadCreateRequest,
     ThreadResponse,
     ThreadStatusResponse,
@@ -84,6 +90,7 @@ async def stream_thread(
     thread_identifier: str,
     request: Request,
     follow: bool = True,
+    replay: bool = True,
 ) -> StreamingResponse:
     """Stream thread messages over SSE (past events followed by live broadcasts)."""
     store = get_harness_store()
@@ -103,6 +110,7 @@ async def stream_thread(
             thread=thread,
             accept_header=accept_header,
             follow=follow,
+            replay=replay,
         ),
         media_type="text/event-stream",
         headers={
@@ -110,6 +118,39 @@ async def stream_thread(
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },
+    )
+
+
+@router.get("/{thread_identifier}/messages", response_model=PaginatedMessagesResponse)
+async def get_thread_messages(
+    agent_identifier: str,
+    session_identifier: str,
+    thread_identifier: str,
+    limit: int | None = None,
+    before_id: str | None = None,
+    after_id: str | None = None,
+    tail: bool = False,
+) -> PaginatedMessagesResponse:
+    """Retrieve paginated messages strictly scoped to a single thread."""
+    store = get_harness_store()
+    try:
+        agent = store.resolve_agent(agent_identifier)
+        session = resolve_session(agent, session_identifier)
+        thread = resolve_thread(session, thread_identifier)
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    if limit is None:
+        sys_settings = get_system_settings_store().get_settings()
+        limit = sys_settings.api_batch_size
+
+    chat_messages = aggregate_events_to_chat_messages(thread.events)
+    return paginate_chat_messages(
+        chat_messages,
+        limit=limit,
+        before_id=before_id,
+        after_id=after_id,
+        tail=tail,
     )
 
 

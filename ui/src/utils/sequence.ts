@@ -23,7 +23,14 @@ export function extractBubblesFromMessages(
   for (let mIdx = 0; mIdx < messages.length; mIdx++) {
     const msg = messages[mIdx];
     if (msg.threadTransition) {
-      bubbles.push({ key: `transition-${mIdx}`, role: "boundary" as any });
+      bubbles.push({
+        key:
+          msg.id ||
+          (msg.threadTransition.threadId
+            ? `transition-${msg.threadTransition.threadId}`
+            : `transition-${mIdx}`),
+        role: "boundary" as any,
+      });
       continue;
     }
 
@@ -31,7 +38,7 @@ export function extractBubblesFromMessages(
       msg.text?.startsWith(SYNTHETIC_MESSAGE_INDICATOR)
     );
     if (isSynthetic) {
-      bubbles.push({ key: `synthetic-${mIdx}`, role: "boundary" as any });
+      bubbles.push({ key: msg.id || `synthetic-${mIdx}`, role: "boundary" as any });
       continue;
     }
 

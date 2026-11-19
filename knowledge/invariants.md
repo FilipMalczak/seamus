@@ -336,6 +336,12 @@ Properties and rules that must always hold across the repository.
 - **Justification**: [REQ-053](./requirements.md#req-053-autonomous-autocontinue-daemon--branching-recovery), [0070-autocontinue-daemon.md](../decisions/0070-autocontinue-daemon.md).
 - **Enforcement**: `seamus.harness.daemons.autocontinue` (`execute_autocontinue`, `find_last_successful_bubble`, `parse_autocontinue_response`), `SessionAgentRunner._run_loop`, `tests/test_daemons.py`, and `tests/e2e/test_autocontinue_daemon.py`.
 
+### INV-066: Batch Size Ordering and Chat Bubble Virtualization
+- **Statement**: `SystemSettings` must validate and enforce `1 <= api_batch_size <= ui_batch_size <= memory_batch_size`. The frontend UI must never render more than $2 \times \text{ui\_batch\_size}$ bubbles in the DOM at once (plus the active anchor bubble), must retain unrendered cached messages solely as plain JSON/JavaScript objects in browser memory without detached DOM nodes, and must never exceed $2 \times \text{memory\_batch\_size}$ buffered bubbles around the active anchor. "Scroll to bottom" must clear out-of-buffer historical messages and jump directly to the tail batch without fetching intermediate pages.
+- **Rationale**: Keeps DOM layout small and predictable, prevents memory bloat from long-horizon agentic trajectories, and eliminates network latency when scrolling through recently visited bubble history.
+- **Justification**: [REQ-054](./requirements.md#req-054-paginated-chat-scroll-bubble-virtualization--memory-limits), [0071-paginated-chat-scroll-and-memory-limits.md](../decisions/0071-paginated-chat-scroll-and-memory-limits.md).
+- **Enforcement**: `src/seamus/config/settings.py` (`SystemSettings.validate_batch_sizes`), `src/seamus/harness/messages.py`, `ui/src/components/ChatArea.tsx`, `ui/src/hooks/useThreadStream.ts`, `tests/test_settings.py`, `tests/test_message_aggregation.py`, `tests/test_session_messages_api.py`, `tests/e2e/test_pagination_and_virtualization.py`, `ui/tests/paginationVirtualization.test.mjs`.
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [requirements.md](./requirements.md)
@@ -391,4 +397,5 @@ Properties and rules that must always hold across the repository.
 - [0057-e2e-test-suite.md](../decisions/0057-e2e-test-suite.md)
 - [0070-autocontinue-daemon.md](../decisions/0070-autocontinue-daemon.md)
 - [0067-stale-git-lock-recovery.md](../decisions/0067-stale-git-lock-recovery.md)
+- [0071-paginated-chat-scroll-and-memory-limits.md](../decisions/0071-paginated-chat-scroll-and-memory-limits.md)
 - [persistence.md](./persistence.md)

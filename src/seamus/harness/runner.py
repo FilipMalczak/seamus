@@ -2825,13 +2825,15 @@ class SessionAgentRunner:
         thread: Thread,
         accept_header: str | None = None,
         follow: bool = True,
+        replay: bool = True,
     ) -> AsyncGenerator[str, None]:
         """Stream past events from history, then stream live events if thread is open."""
         encoder = EventEncoder(accept=accept_header or "*/*")
 
-        # 1. Replay past events
-        for event in thread.events:
-            yield self._format_sse_event(encoder, event)
+        # 1. Replay past events if requested
+        if replay:
+            for event in thread.events:
+                yield self._format_sse_event(encoder, event)
 
         # If thread is closed or client requested replay only, finish stream immediately
         if not thread.is_open or not follow:
@@ -2858,28 +2860,30 @@ class SessionAgentRunner:
         session: Session,
         accept_header: str | None = None,
         follow: bool = True,
+        replay: bool = True,
     ) -> AsyncGenerator[str, None]:
         """Stream past events concatenated from all threads, then stream live events."""
         encoder = EventEncoder(accept=accept_header or "*/*")
         sorted_threads = sorted(session.threads.values(), key=lambda t: t.created_at)
 
-        # 1. Replay past events across all threads in chronological order
-        for idx, thread in enumerate(sorted_threads):
-            transition_ev = {
-                "type": "THREAD_TRANSITION",
-                "thread_id": str(thread.id),
-                "thread_name": thread.name,
-                "mode": thread.mode,
-                "phase": thread.phase,
-                "mode_label": thread.mode_label,
-                "is_first": idx == 0,
-                "is_open": thread.is_open,
-                "created_at": thread.created_at.isoformat(),
-            }
-            yield self._format_sse_event(encoder, transition_ev)
+        # 1. Replay past events across all threads in chronological order if requested
+        if replay:
+            for idx, thread in enumerate(sorted_threads):
+                transition_ev = {
+                    "type": "THREAD_TRANSITION",
+                    "thread_id": str(thread.id),
+                    "thread_name": thread.name,
+                    "mode": thread.mode,
+                    "phase": thread.phase,
+                    "mode_label": thread.mode_label,
+                    "is_first": idx == 0,
+                    "is_open": thread.is_open,
+                    "created_at": thread.created_at.isoformat(),
+                }
+                yield self._format_sse_event(encoder, transition_ev)
 
-            for event in thread.events:
-                yield self._format_sse_event(encoder, event)
+                for event in thread.events:
+                    yield self._format_sse_event(encoder, event)
 
         # If session is terminal or client requested replay only, finish stream immediately
         if session.status != SessionStatus.ACTIVE or not follow:

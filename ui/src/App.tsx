@@ -554,6 +554,9 @@ export function App() {
                 sessionLineage={activeSession?.lineage}
                 thread={activeThread || null}
                 isSessionView={selectedThreadId === null}
+                apiBatchSize={systemSettings?.api_batch_size}
+                uiBatchSize={systemSettings?.ui_batch_size}
+                memoryBatchSize={systemSettings?.memory_batch_size}
                 onSelectThread={selectThread}
                 onStatusChange={setActiveStatus}
                 onOpenArtifactTab={handleOpenArtifactTab}

@@ -211,6 +211,18 @@ The centralized JSON mapping resource (`src/seamus/harness/resources/tool_labeli
 ### Artifacts Implementation
 An enum setting (`none` | `seamus`) on `AgentConfig` governing whether interactive A2UI artifacts, questionnaires, forms, and plan artifacts are enabled for an agent session. When set to `none`, the harness excludes all artifact-related tools (`make_artifact`, `make_questionnaire`, `make_form`, `make_plan`, `update_plan`, `edit_plan`, `wait_for_click`), suppresses discovery of bundled skills (`artifacts`, `a2ui_components`), and sanitizes system prompts of all artifact instructions and `/artifacts` mount paths.
 
+### Chat Bubble
+A single atomic visual unit in the conversational message pane representing a user message, an assistant reasoning block, a text paragraph/part, an individual tool call card, or an inter-thread transition delimiter.
+
+### API Batch Size
+The number of chat bubbles fetched per HTTP request from the paginated `/messages` REST API endpoint (`api_batch_size`, default 50).
+
+### UI Batch Size
+The maximum number of chat bubbles rendered into the browser DOM before and after the active viewport anchor (`ui_batch_size`, default 200), keeping total DOM elements bounded to at most $2 \times \text{ui\_batch\_size} + 1$.
+
+### Memory Batch Size
+The maximum number of chat bubbles retained in browser memory before and after the active viewport anchor (`memory_batch_size`, default 300) as lightweight JSON objects, avoiding network requests during localized scrolling while strictly bounding JavaScript heap consumption.
+
 ## Cross-References
 - [0001-project-initialization.md](../decisions/0001-project-initialization.md)
 - [0002-harness-server-mvp.md](../decisions/0002-harness-server-mvp.md)
@@ -238,6 +250,7 @@ An enum setting (`none` | `seamus`) on `AgentConfig` governing whether interacti
 - [0052-backlog-low-hanging-fruits.md](../decisions/0052-backlog-low-hanging-fruits.md)
 - [0055-artifacts-implementation-toggle.md](../decisions/0055-artifacts-implementation-toggle.md)
 - [0070-autocontinue-daemon.md](../decisions/0070-autocontinue-daemon.md)
+- [0071-paginated-chat-scroll-and-memory-limits.md](../decisions/0071-paginated-chat-scroll-and-memory-limits.md)
 - [artifacts.md](./artifacts.md)
 - [threads_modes_personas.md](./threads_modes_personas.md)
 - [architecture.md](./architecture.md)

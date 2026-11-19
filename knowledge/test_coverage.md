@@ -161,6 +161,8 @@ All 50 requirements from [`requirements.md`](./requirements.md) (`REQ-001`–`RE
 | `REQ-050` Configurable Artifacts Implementation Toggle & Gating Guard | **E2E** (E2E + Unit + Frontend) | `e2e/test_capability_gating.py` (`test_disabling_artifacts_removes_the_artifact_tools`, `test_disabling_artifacts_keeps_the_plan_lifecycle_tools`, `test_disabling_artifacts_is_reported_by_the_inspector`), `tests/test_modes_and_plan.py::test_available_harness_tools_resolution_artifacts_none`, `tests/test_bundled_skills.py::test_bundled_skills_excluded_when_artifacts_implementation_none`, `ui/tests/configModal.test.mjs` |
 | `REQ-051` Steerable (Scripted) Model Provider & Inspector Queue Editor | **E2E** (E2E + Unit + Frontend) | `e2e/test_inspector_and_steerable.py` (steerable tests), `e2e/test_steerable_conversation.py::test_agent_and_daemon_queues_are_independent`, `tests/test_steerable.py` (19), `ui/tests/steerable.test.mjs` (23), `ui/tests/agentInspector.test.mjs` |
 | `REQ-052` Deterministic End-to-End Test Coverage of Features, Requirements, and Invariants | **E2E** (E2E + Config) | `tests/e2e/` (158 deterministic tests), `e2e/test_steerable_conversation.py::test_repeated_scripted_scenarios_are_deterministic`, `tests/test_launch_automation.py::test_ci_workflow_runs_the_end_to_end_suite` |
+| `REQ-053` Autonomous Autocontinue Daemon & Branching Recovery | **E2E** (E2E + Unit) | `tests/e2e/test_autocontinue_daemon.py`, `tests/test_daemons.py` |
+| `REQ-054` Paginated Chat Scroll, Bubble Virtualization & Memory Limits | **E2E** (E2E + Unit + Integration + Frontend) | `tests/e2e/test_pagination_and_virtualization.py`, `tests/test_settings.py`, `tests/test_message_aggregation.py`, `tests/test_session_messages_api.py`, `ui/tests/settingsModal.test.mjs`, `ui/tests/paginationVirtualization.test.mjs` |
 
 ## Invariant → Test Mapping
 
@@ -229,6 +231,9 @@ All 61 invariants from [`invariants.md`](./invariants.md) (`INV-001`–`INV-063`
 | `INV-061` Artifacts Implementation Capability Gating and Prompt Sanitization | **E2E** (E2E + Unit) | `e2e/test_capability_gating.py` (`test_disabling_artifacts_removes_the_artifact_tools`, `test_disabling_artifacts_keeps_the_plan_lifecycle_tools`, `test_disabling_artifacts_is_reported_by_the_inspector`), `tests/test_modes_and_plan.py::test_available_harness_tools_resolution_artifacts_none`, `tests/test_bundled_skills.py::test_bundled_skills_excluded_when_artifacts_implementation_none` |
 | `INV-062` Steerable Provider Isolation and Credential Freedom | **E2E** (E2E + Unit) | `e2e/test_inspector_and_steerable.py` (5 steerable control tests), `e2e/test_steerable_conversation.py::test_agent_and_daemon_queues_are_independent`, `tests/test_steerable.py` (19) |
 | `INV-063` Deterministic End-to-End Test Harness Isolation | **E2E** | `e2e/test_steerable_conversation.py::test_repeated_scripted_scenarios_are_deterministic`, `tests/e2e/conftest.py`, `tests/e2e/stub_sandbox.py` |
+| `INV-064` Resilient Stale Git Lock Recovery and Workspace Concurrency Serialization | **Unit** (Unit + Integration) | `tests/test_git_lock_recovery.py` (unit and concurrent stress tests) |
+| `INV-065` Autocontinue Failure Evaluation and Bubble Branching | **E2E** (E2E + Unit) | `tests/e2e/test_autocontinue_daemon.py`, `tests/test_daemons.py` |
+| `INV-066` Batch Size Ordering and Chat Bubble Virtualization | **E2E** (E2E + Unit + Integration + Frontend) | `tests/e2e/test_pagination_and_virtualization.py`, `tests/test_settings.py`, `tests/test_message_aggregation.py`, `tests/test_session_messages_api.py`, `ui/tests/settingsModal.test.mjs`, `ui/tests/paginationVirtualization.test.mjs` |
 
 ## Coverage Summary
 
@@ -275,6 +280,7 @@ unimplemented or broken in production code and are cross-linked in [`backlog.md`
 
 - [0058-coverage-baseline-and-tiering.md](../decisions/0058-coverage-baseline-and-tiering.md) — tier definitions, zero-uncovered & ≥60% E2E floors, and `xfail` policy
 - [0057-e2e-test-suite.md](../decisions/0057-e2e-test-suite.md) — creation of the deterministic end-to-end suite
+- [0071-paginated-chat-scroll-and-memory-limits.md](../decisions/0071-paginated-chat-scroll-and-memory-limits.md) — paginated chat scroll, bubble virtualization, and memory limits
 - [requirements.md](./requirements.md) — `REQ-052` defines end-to-end coverage requirements
 - [invariants.md](./invariants.md) — `INV-063` defines deterministic E2E isolation
 - [backlog.md](./backlog.md) — open work items and `xfail`-tracked implementation gaps

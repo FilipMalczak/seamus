@@ -44,6 +44,9 @@ export function SettingsModal({
   const [skillDirectories, setSkillDirectories] = useState<string[]>([]);
   const [terminalTimeoutSeconds, setTerminalTimeoutSeconds] = useState<number>(300);
   const [enableDelete, setEnableDelete] = useState<boolean>(false);
+  const [apiBatchSize, setApiBatchSize] = useState<number>(50);
+  const [uiBatchSize, setUiBatchSize] = useState<number>(200);
+  const [memoryBatchSize, setMemoryBatchSize] = useState<number>(300);
   const [newDirectory, setNewDirectory] = useState<string>("");
   const [rawJson, setRawJson] = useState<string>("");
   const [activeTab, setActiveTab] = useState<"paths" | "secrets" | "json">("paths");
@@ -92,6 +95,21 @@ export function SettingsModal({
           : 300
       );
       setEnableDelete(Boolean(initialSettings.enable_delete));
+      setApiBatchSize(
+        typeof initialSettings.api_batch_size === "number"
+          ? initialSettings.api_batch_size
+          : 50
+      );
+      setUiBatchSize(
+        typeof initialSettings.ui_batch_size === "number"
+          ? initialSettings.ui_batch_size
+          : 200
+      );
+      setMemoryBatchSize(
+        typeof initialSettings.memory_batch_size === "number"
+          ? initialSettings.memory_batch_size
+          : 300
+      );
       setRawJson(JSON.stringify(initialSettings, null, 2));
       setNewDirectory("");
       setError(null);
@@ -157,6 +175,9 @@ export function SettingsModal({
             skill_directories: skillDirectories,
             terminal_session_timeout_seconds: terminalTimeoutSeconds,
             enable_delete: enableDelete,
+            api_batch_size: apiBatchSize,
+            ui_batch_size: uiBatchSize,
+            memory_batch_size: memoryBatchSize,
           },
           null,
           2
@@ -201,6 +222,10 @@ export function SettingsModal({
     try {
       let finalTimeout = terminalTimeoutSeconds;
       let finalEnableDelete = enableDelete;
+      let finalApiBatchSize = apiBatchSize;
+      let finalUiBatchSize = uiBatchSize;
+      let finalMemoryBatchSize = memoryBatchSize;
+
       if (activeTab === "json") {
         const parsed = JSON.parse(rawJson);
         if (typeof parsed.terminal_session_timeout_seconds === "number") {
@@ -209,11 +234,35 @@ export function SettingsModal({
         if (typeof parsed.enable_delete === "boolean") {
           finalEnableDelete = parsed.enable_delete;
         }
+        if (typeof parsed.api_batch_size === "number") {
+          finalApiBatchSize = Math.max(1, Math.floor(parsed.api_batch_size));
+        }
+        if (typeof parsed.ui_batch_size === "number") {
+          finalUiBatchSize = Math.max(1, Math.floor(parsed.ui_batch_size));
+        }
+        if (typeof parsed.memory_batch_size === "number") {
+          finalMemoryBatchSize = Math.max(1, Math.floor(parsed.memory_batch_size));
+        }
       }
+
+      if (finalApiBatchSize > finalUiBatchSize) {
+        setError(`API batch size (${finalApiBatchSize}) cannot exceed UI batch size (${finalUiBatchSize}).`);
+        setSaving(false);
+        return;
+      }
+      if (finalUiBatchSize > finalMemoryBatchSize) {
+        setError(`UI batch size (${finalUiBatchSize}) cannot exceed memory batch size (${finalMemoryBatchSize}).`);
+        setSaving(false);
+        return;
+      }
+
       await onSave({
         skill_directories: finalDirs,
         terminal_session_timeout_seconds: finalTimeout,
         enable_delete: finalEnableDelete,
+        api_batch_size: finalApiBatchSize,
+        ui_batch_size: finalUiBatchSize,
+        memory_batch_size: finalMemoryBatchSize,
       });
       setSuccess(true);
       setTimeout(() => {
@@ -553,6 +602,60 @@ export function SettingsModal({
                   onChange={(e) => {
                     const val = Math.max(0, Number.parseInt(e.target.value || "0", 10) || 0);
                     setTerminalTimeoutSeconds(val);
+                  }}
+                />
+              </div>
+
+              <div className="form-group" style={{ marginTop: "10px" }}>
+                <label className="form-label" htmlFor="api-batch-size-input">
+                  API batch size (bubbles fetched per API batch)
+                </label>
+                <input
+                  id="api-batch-size-input"
+                  type="number"
+                  min={1}
+                  step={10}
+                  className="form-input"
+                  value={apiBatchSize}
+                  onChange={(e) => {
+                    const val = Math.max(1, Number.parseInt(e.target.value || "1", 10) || 1);
+                    setApiBatchSize(val);
+                  }}
+                />
+              </div>
+
+              <div className="form-group" style={{ marginTop: "10px" }}>
+                <label className="form-label" htmlFor="ui-batch-size-input">
+                  UI batch size (bubbles rendered before and after scroll position)
+                </label>
+                <input
+                  id="ui-batch-size-input"
+                  type="number"
+                  min={1}
+                  step={20}
+                  className="form-input"
+                  value={uiBatchSize}
+                  onChange={(e) => {
+                    const val = Math.max(1, Number.parseInt(e.target.value || "1", 10) || 1);
+                    setUiBatchSize(val);
+                  }}
+                />
+              </div>
+
+              <div className="form-group" style={{ marginTop: "10px" }}>
+                <label className="form-label" htmlFor="memory-batch-size-input">
+                  memory batch size (bubbles retained in memory before and after scroll position)
+                </label>
+                <input
+                  id="memory-batch-size-input"
+                  type="number"
+                  min={1}
+                  step={50}
+                  className="form-input"
+                  value={memoryBatchSize}
+                  onChange={(e) => {
+                    const val = Math.max(1, Number.parseInt(e.target.value || "1", 10) || 1);
+                    setMemoryBatchSize(val);
                   }}
                 />
               </div>

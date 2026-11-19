@@ -317,6 +317,12 @@ Requirements, rationale, provenance, and stable IDs.
 - **Provenance**: [0070-autocontinue-daemon.md](../decisions/0070-autocontinue-daemon.md), `src/seamus/config/models.py`, `src/seamus/harness/daemons/autocontinue.py`, `src/seamus/harness/runner.py`, `src/seamus/harness/steerable.py`, `ui/src/components/ConfigModal.tsx`, `tests/test_daemons.py`, `tests/e2e/test_autocontinue_daemon.py`.
 - **Linked Invariants**: [INV-065](./invariants.md#inv-065-autocontinue-failure-evaluation-and-bubble-branching).
 
+### REQ-054: Paginated Chat Scroll, Bubble Virtualization & Memory Limits
+- **Description**: The harness API and frontend UI must support paginated chat message loading, bidirectional DOM bubble windowing, and memory-limited caching. Opening a session or thread fetches only the latest `api_batch_size` (default 50) messages, presenting them scrolled to the bottom. Upward scroll requests older batches of messages on demand using cursor pagination. The frontend renders at most `ui_batch_size` (default 200) bubbles before and after the active scroll anchor (~400 bubbles max in DOM) and retains at most `memory_batch_size` (default 300) bubbles before and after the anchor in browser memory (~600 bubbles max) as JSON objects, pruning out-of-range historical bubbles. "Scroll to bottom" jumps directly to the latest batch without fetching intermediate history. Batch sizes are configurable in `SystemSettings` and validated such that `api_batch_size <= ui_batch_size <= memory_batch_size`.
+- **Rationale**: Prevents UI freezes, memory exhaustion, and unnecessary network traffic when opening and inspecting long-horizon agentic conversations with hundreds or thousands of messages.
+- **Provenance**: [0071-paginated-chat-scroll-and-memory-limits.md](../decisions/0071-paginated-chat-scroll-and-memory-limits.md), `src/seamus/config/settings.py`, `src/seamus/harness/messages.py`, `src/seamus/server/routes/sessions.py`, `src/seamus/server/routes/threads.py`, `ui/src/hooks/useThreadStream.ts`, `ui/src/components/ChatArea.tsx`, `ui/src/components/SettingsModal.tsx`, `tests/test_settings.py`, `tests/test_message_aggregation.py`, `tests/test_session_messages_api.py`, `tests/e2e/test_pagination_and_virtualization.py`, `ui/tests/paginationVirtualization.test.mjs`.
+- **Linked Invariants**: [INV-066](./invariants.md#inv-066-batch-size-ordering-and-chat-bubble-virtualization).
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [invariants.md](./invariants.md)
@@ -368,4 +374,5 @@ Requirements, rationale, provenance, and stable IDs.
 - [0056-steerable-model-provider.md](../decisions/0056-steerable-model-provider.md)
 - [0057-e2e-test-suite.md](../decisions/0057-e2e-test-suite.md)
 - [0070-autocontinue-daemon.md](../decisions/0070-autocontinue-daemon.md)
+- [0071-paginated-chat-scroll-and-memory-limits.md](../decisions/0071-paginated-chat-scroll-and-memory-limits.md)
 - [persistence.md](./persistence.md)

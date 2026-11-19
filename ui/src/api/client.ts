@@ -7,6 +7,7 @@ import type {
   ArtifactInfo,
   ClickResult,
   ConfigTemplateResponse,
+  PaginatedMessagesResponse,
   SessionDetail,
   SessionDiffResponse,
   SteerableEmptyQueueStrategy,
@@ -350,15 +351,61 @@ export async function postUserInput(
   return handleResponse<{ status: string; thread_id: string; message_id?: string }>(res);
 }
 
+export interface GetMessagesOptions {
+  limit?: number;
+  beforeId?: string;
+  afterId?: string;
+  tail?: boolean;
+}
+
+export async function getSessionMessages(
+  agentId: string,
+  sessionId: string,
+  options?: GetMessagesOptions
+): Promise<PaginatedMessagesResponse> {
+  const params = new URLSearchParams();
+  if (options?.limit !== undefined) params.set("limit", String(options.limit));
+  if (options?.beforeId) params.set("before_id", options.beforeId);
+  if (options?.afterId) params.set("after_id", options.afterId);
+  if (options?.tail !== undefined) params.set("tail", String(options.tail));
+  const qs = params.toString() ? `?${params.toString()}` : "";
+
+  const res = await fetch(
+    `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/messages${qs}`
+  );
+  return handleResponse<PaginatedMessagesResponse>(res);
+}
+
+export async function getThreadMessages(
+  agentId: string,
+  sessionId: string,
+  threadId: string,
+  options?: GetMessagesOptions
+): Promise<PaginatedMessagesResponse> {
+  const params = new URLSearchParams();
+  if (options?.limit !== undefined) params.set("limit", String(options.limit));
+  if (options?.beforeId) params.set("before_id", options.beforeId);
+  if (options?.afterId) params.set("after_id", options.afterId);
+  if (options?.tail !== undefined) params.set("tail", String(options.tail));
+  const qs = params.toString() ? `?${params.toString()}` : "";
+
+  const res = await fetch(
+    `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/thread/${encodeURIComponent(threadId)}/messages${qs}`
+  );
+  return handleResponse<PaginatedMessagesResponse>(res);
+}
+
 export function subscribeToThreadStream(
   agentId: string,
   sessionId: string,
   threadId: string,
   onEvent: (event: any) => void,
-  onError?: (err: Error) => void
+  onError?: (err: Error) => void,
+  replay: boolean = true
 ): () => void {
   const controller = new AbortController();
-  const url = `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/thread/${encodeURIComponent(threadId)}`;
+  const query = replay ? "" : "?replay=false";
+  const url = `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/thread/${encodeURIComponent(threadId)}${query}`;
 
   (async () => {
     try {
@@ -429,10 +476,12 @@ export function subscribeToSessionStream(
   agentId: string,
   sessionId: string,
   onEvent: (event: any) => void,
-  onError?: (err: Error) => void
+  onError?: (err: Error) => void,
+  replay: boolean = true
 ): () => void {
   const controller = new AbortController();
-  const url = `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/stream`;
+  const query = replay ? "" : "?replay=false";
+  const url = `${BASE_URL}/agent/${encodeURIComponent(agentId)}/session/${encodeURIComponent(sessionId)}/stream${query}`;
 
   (async () => {
     try {

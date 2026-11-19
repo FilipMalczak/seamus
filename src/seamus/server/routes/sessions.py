@@ -8,11 +8,16 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 
 from seamus.config.models import SteerableEmptyQueueStrategy
+from seamus.config.settings import get_system_settings_store
 from seamus.domain.resolution import EntityNotFoundError, resolve_session
 from seamus.harness.inspector import (
     AgentInspectReport,
     SteerableInspectInfo,
     build_agent_inspect_report,
+)
+from seamus.harness.messages import (
+    aggregate_events_to_chat_messages,
+    paginate_chat_messages,
 )
 from seamus.harness.runner import SessionBusyError, get_runner_registry
 from seamus.harness.steerable import get_steerable_registry
@@ -25,6 +30,7 @@ from seamus.server.schemas import (
     MountedRepoCommitInfo,
     MountedRepoDiffInfo,
     MountedRepoUncommittedFile,
+    PaginatedMessagesResponse,
     SessionCreateRequest,
     SessionDetailResponse,
     SessionDiffResponse,
@@ -120,6 +126,7 @@ async def stream_session(
     session_identifier: str,
     request: Request,
     follow: bool = True,
+    replay: bool = True,
 ) -> StreamingResponse:
     """Stream session messages over SSE across all threads.
 
@@ -144,6 +151,7 @@ async def stream_session(
             session=session,
             accept_header=accept_header,
             follow=follow,
+            replay=replay,
         ),
         media_type="text/event-stream",
         headers={
@@ -151,6 +159,55 @@ async def stream_session(
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },
+    )
+
+
+@router.get("/{session_identifier}/messages", response_model=PaginatedMessagesResponse)
+async def get_session_messages(
+    agent_identifier: str,
+    session_identifier: str,
+    limit: int | None = None,
+    before_id: str | None = None,
+    after_id: str | None = None,
+    tail: bool = False,
+) -> PaginatedMessagesResponse:
+    """Retrieve paginated session messages across all threads."""
+    store = get_harness_store()
+    try:
+        agent = store.resolve_agent(agent_identifier)
+        session = resolve_session(agent, session_identifier)
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    if limit is None:
+        sys_settings = get_system_settings_store().get_settings()
+        limit = sys_settings.api_batch_size
+
+    sorted_threads = sorted(session.threads.values(), key=lambda t: t.created_at)
+    all_events: list[Any] = []
+    for idx, thread in enumerate(sorted_threads):
+        all_events.append(
+            {
+                "type": "THREAD_TRANSITION",
+                "thread_id": str(thread.id),
+                "thread_name": thread.name,
+                "mode": thread.mode,
+                "phase": thread.phase,
+                "mode_label": thread.mode_label,
+                "is_first": idx == 0,
+                "is_open": thread.is_open,
+                "created_at": thread.created_at.isoformat(),
+            }
+        )
+        all_events.extend(thread.events)
+
+    chat_messages = aggregate_events_to_chat_messages(all_events)
+    return paginate_chat_messages(
+        chat_messages,
+        limit=limit,
+        before_id=before_id,
+        after_id=after_id,
+        tail=tail,
     )
 
 

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
   AlertCircle,
   AlertTriangle,
@@ -22,13 +22,14 @@ import {
   SYNTHETIC_MESSAGE_INDICATOR,
   type AgentStatus,
   type ArtifactInfo,
+  type ChatMessage,
   type SessionBranchProvenance,
   type SessionStatus,
   type ThreadInfo,
 } from "../api/types";
 import { useThreadStream } from "../hooks/useThreadStream";
 import { useInteractionNotifications } from "../hooks/useInteractionNotifications";
-import { computeBubbleSequenceIndices } from "../utils/sequence";
+import { computeBubbleSequenceIndices, extractBubblesFromMessages } from "../utils/sequence";
 import {
   MessageItem,
   BranchProvenanceSeparator,
@@ -76,6 +77,9 @@ interface ChatAreaProps {
   onOpenArtifactTab?: (kind: string, name: string) => void;
   onNamed?: (event: any) => void;
   sequenceThreshold?: number;
+  apiBatchSize?: number;
+  uiBatchSize?: number;
+  memoryBatchSize?: number;
 }
 
 export function ChatArea({
@@ -90,6 +94,9 @@ export function ChatArea({
   thread,
   isSessionView = false,
   sequenceThreshold = BUBBLE_SEQUENCE_THRESHOLD,
+  apiBatchSize = 50,
+  uiBatchSize = 200,
+  memoryBatchSize = 300,
   onSelectThread,
   onStatusChange,
   onKillSession,
@@ -113,6 +120,8 @@ export function ChatArea({
   const [copiedError, setCopiedError] = useState<boolean>(false);
   const [submittingArtifactId, setSubmittingArtifactId] = useState<string | null>(null);
   const [switchingMode, setSwitchingMode] = useState<boolean>(false);
+  const [anchorBubbleId, setAnchorBubbleId] = useState<string | null>(null);
+  const pendingScrollAdjustRef = useRef<{ oldScrollTop: number; oldScrollHeight: number } | null>(null);
 
   const {
     messages,
@@ -125,13 +134,22 @@ export function ChatArea({
     hasOpenBlockingArtifact,
     refreshArtifacts,
     submitArtifact,
+    hasMoreBefore,
+    hasMoreAfter,
+    loadingOlder,
+    loadingNewer,
+    loadOlderMessages,
+    loadNewerMessages,
+    jumpToLatest,
+    pruneMemory,
   } = useThreadStream(
     agentId,
     sessionId,
     isSessionView ? null : (thread?.id ?? null),
     sessionStatus,
     onThreadTransition,
-    onNamed
+    onNamed,
+    apiBatchSize
   );
 
   const handleSubmitArtifact = useCallback(
@@ -247,6 +265,59 @@ export function ChatArea({
     });
   }, [augmentedProvenanceList, messages]);
 
+  // Extract all bubbles in memory
+  const allBubbles = useMemo(() => extractBubblesFromMessages(messages), [messages]);
+
+  // Determine active rendered slice of messages (at most uiBatchSize bubbles before & after anchor)
+  const renderedMessages = useMemo(() => {
+    if (allBubbles.length <= uiBatchSize * 2) {
+      return messages;
+    }
+
+    let anchorIdx = -1;
+    if (anchorBubbleId) {
+      anchorIdx = allBubbles.findIndex((b) => b.key === anchorBubbleId);
+    }
+    if (anchorIdx < 0 || isAtBottomRef.current) {
+      anchorIdx = allBubbles.length - 1;
+    }
+
+    const startBubbleIdx = Math.max(0, anchorIdx - uiBatchSize);
+    const endBubbleIdx = Math.min(allBubbles.length, anchorIdx + uiBatchSize + 1);
+
+    const targetBubbleKeys = new Set(
+      allBubbles.slice(startBubbleIdx, endBubbleIdx).map((b) => b.key)
+    );
+
+    const result: ChatMessage[] = [];
+    for (const m of messages) {
+      if (m.threadTransition) {
+        if (targetBubbleKeys.has(m.id)) result.push(m);
+      } else if (m.role === "user") {
+        if (targetBubbleKeys.has(m.id)) result.push(m);
+      } else if (m.parts && m.parts.length > 0) {
+        const visibleParts = m.parts.filter((p) => targetBubbleKeys.has(p.id));
+        if (visibleParts.length > 0) {
+          const visibleCalls = m.toolCalls?.filter(
+            (tc) =>
+              targetBubbleKeys.has(tc.id) ||
+              visibleParts.some(
+                (p) => p.type === "tool_call" && p.toolCall?.id === tc.id
+              )
+          );
+          result.push({
+            ...m,
+            parts: visibleParts,
+            toolCalls: visibleCalls,
+          });
+        }
+      } else if (targetBubbleKeys.has(m.id)) {
+        result.push(m);
+      }
+    }
+    return result;
+  }, [messages, allBubbles, anchorBubbleId, uiBatchSize]);
+
   // Compute 1-based index for each bubble if part of a streak exceeding the threshold
   const sequenceIndices = useMemo(() => {
     return computeBubbleSequenceIndices(messages, sequenceThreshold);
@@ -268,7 +339,72 @@ export function ChatArea({
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 60;
     isAtBottomRef.current = atBottom;
     setIsAtBottom(atBottom);
-  }, []);
+
+    // Track anchor bubble near center of viewport
+    const containerRect = el.getBoundingClientRect();
+    const centerY = containerRect.top + containerRect.height / 2;
+    const bubbleElements = el.querySelectorAll("[data-bubble-id]");
+    let closestId: string | null = null;
+    let closestDist = Infinity;
+
+    bubbleElements.forEach((node) => {
+      const rect = node.getBoundingClientRect();
+      const nodeCenter = rect.top + rect.height / 2;
+      const dist = Math.abs(nodeCenter - centerY);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestId = node.getAttribute("data-bubble-id");
+      }
+    });
+
+    if (closestId) {
+      setAnchorBubbleId(closestId);
+      // Prune memory if memoryBatchSize exceeded
+      if (allBubbles.length > memoryBatchSize * 2) {
+        pruneMemory(closestId, memoryBatchSize);
+      }
+    }
+
+    // Upward infinite scroll: if scrolled near top and more older messages exist
+    if (el.scrollTop < 120 && hasMoreBefore && !loadingOlder) {
+      pendingScrollAdjustRef.current = {
+        oldScrollTop: el.scrollTop,
+        oldScrollHeight: el.scrollHeight,
+      };
+      void loadOlderMessages();
+    }
+
+    // Downward infinite scroll: if scrolled near bottom and more newer messages exist
+    if (
+      hasMoreAfter &&
+      !loadingNewer &&
+      el.scrollHeight - el.scrollTop - el.clientHeight < 120
+    ) {
+      void loadNewerMessages();
+    }
+  }, [
+    hasMoreBefore,
+    hasMoreAfter,
+    loadingOlder,
+    loadingNewer,
+    loadOlderMessages,
+    loadNewerMessages,
+    allBubbles.length,
+    memoryBatchSize,
+    pruneMemory,
+  ]);
+
+  useLayoutEffect(() => {
+    if (pendingScrollAdjustRef.current && viewportRef.current) {
+      const { oldScrollTop, oldScrollHeight } = pendingScrollAdjustRef.current;
+      const newScrollHeight = viewportRef.current.scrollHeight;
+      const delta = newScrollHeight - oldScrollHeight;
+      if (delta !== 0) {
+        viewportRef.current.scrollTop = oldScrollTop + delta;
+      }
+      pendingScrollAdjustRef.current = null;
+    }
+  }, [messages, renderedMessages]);
 
   // Auto-scroll to bottom ONLY when new messages or new tokens arrive, AND user was already at bottom
   useEffect(() => {
@@ -566,65 +702,99 @@ export function ChatArea({
             </div>
           </div>
         ) : (
-          messages.map((msg) => {
-            if (msg.threadTransition) {
-              return (
-                <div key={msg.id} className="thread-transition-separator">
-                  <div className="separator-line" />
-                  <div className="separator-content">
-                    <Sparkles className="size-3 text-sky-400" />
-                    <span className="separator-text">Thread switched to</span>
-                    {onSelectThread && agentId && sessionId ? (
-                      <button
-                        type="button"
-                        className="separator-link-btn"
-                        onClick={() =>
-                          onSelectThread(
-                            agentId,
-                            sessionId,
-                            msg.threadTransition!.threadId
-                          )
-                        }
-                        title={`Isolate and open thread: ${msg.threadTransition.threadName || msg.threadTransition.threadId}`}
+          <>
+            {loadingOlder && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "8px",
+                  padding: "8px",
+                  color: "var(--text-muted, #a1a1aa)",
+                  fontSize: "0.8rem",
+                }}
+              >
+                <Loader2 className="size-3.5 animate-spin" />
+                <span>Loading older messages...</span>
+              </div>
+            )}
+            {renderedMessages.map((msg) => {
+              if (msg.threadTransition) {
+                return (
+                  <div key={msg.id} data-bubble-id={msg.id} className="thread-transition-separator">
+                    <div className="separator-line" />
+                    <div className="separator-content">
+                      <Sparkles className="size-3 text-sky-400" />
+                      <span className="separator-text">Thread switched to</span>
+                      {onSelectThread && agentId && sessionId ? (
+                        <button
+                          type="button"
+                          className="separator-link-btn"
+                          onClick={() =>
+                            onSelectThread(
+                              agentId,
+                              sessionId,
+                              msg.threadTransition!.threadId
+                            )
+                          }
+                          title={`Isolate and open thread: ${msg.threadTransition.threadName || msg.threadTransition.threadId}`}
+                        >
+                          {msg.threadTransition.threadName ||
+                            msg.threadTransition.threadId.slice(0, 8)}
+                        </button>
+                      ) : (
+                        <span className="separator-name">
+                          {msg.threadTransition.threadName ||
+                            msg.threadTransition.threadId.slice(0, 8)}
+                        </span>
+                      )}
+                      <span
+                        className={`badge-mode badge-mode-${msg.threadTransition.mode || "chat"}`}
+                        title={`Thread Mode: ${msg.threadTransition.modeLabel || msg.threadTransition.mode}`}
                       >
-                        {msg.threadTransition.threadName ||
-                          msg.threadTransition.threadId.slice(0, 8)}
-                      </button>
-                    ) : (
-                      <span className="separator-name">
-                        {msg.threadTransition.threadName ||
-                          msg.threadTransition.threadId.slice(0, 8)}
+                        {msg.threadTransition.modeLabel || msg.threadTransition.mode}
                       </span>
-                    )}
-                    <span
-                      className={`badge-mode badge-mode-${msg.threadTransition.mode || "chat"}`}
-                      title={`Thread Mode: ${msg.threadTransition.modeLabel || msg.threadTransition.mode}`}
-                    >
-                      {msg.threadTransition.modeLabel || msg.threadTransition.mode}
-                    </span>
+                    </div>
+                    <div className="separator-line" />
                   </div>
-                  <div className="separator-line" />
+                );
+              }
+
+              return (
+                <div key={msg.id} data-bubble-id={msg.id}>
+                  <MessageItem
+                    message={msg}
+                    sequenceIndex={sequenceIndices.get(msg.id)}
+                    sequenceIndices={sequenceIndices}
+                    onBranch={onBranchMessage ? handleBranchItem : undefined}
+                    onSubmitArtifact={handleSubmitArtifact}
+                    submittingArtifactId={submittingArtifactId}
+                    provenanceList={augmentedProvenanceList}
+                    onNavigateToSession={onNavigateToSession}
+                    sessionArtifacts={artifacts}
+                    onOpenArtifactTab={onOpenArtifactTab}
+                  />
                 </div>
               );
-            }
-
-            return (
-              <React.Fragment key={msg.id}>
-                <MessageItem
-                  message={msg}
-                  sequenceIndex={sequenceIndices.get(msg.id)}
-                  sequenceIndices={sequenceIndices}
-                  onBranch={onBranchMessage ? handleBranchItem : undefined}
-                  onSubmitArtifact={handleSubmitArtifact}
-                  submittingArtifactId={submittingArtifactId}
-                  provenanceList={augmentedProvenanceList}
-                  onNavigateToSession={onNavigateToSession}
-                  sessionArtifacts={artifacts}
-                  onOpenArtifactTab={onOpenArtifactTab}
-                />
-              </React.Fragment>
-            );
-          })
+            })}
+            {loadingNewer && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "8px",
+                  padding: "8px",
+                  color: "var(--text-muted, #a1a1aa)",
+                  fontSize: "0.8rem",
+                }}
+              >
+                <Loader2 className="size-3.5 animate-spin" />
+                <span>Loading newer messages...</span>
+              </div>
+            )}
+          </>
         )}
         {messages.length > 0 &&
           unmatchedProvenance.map((prov, pIdx) => (
@@ -641,9 +811,10 @@ export function ChatArea({
         <button
           type="button"
           className="scroll-to-bottom-btn"
-          onClick={() => {
+          onClick={async () => {
             isAtBottomRef.current = true;
             setIsAtBottom(true);
+            await jumpToLatest();
             scrollToBottom("smooth");
           }}
           title="Scroll to bottom"

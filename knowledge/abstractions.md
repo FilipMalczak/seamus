@@ -73,6 +73,9 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - `AgentInspectReport`: Data model capturing identity, Gitea branch provenance, model & inference settings, decomposed system prompts (composite and scaffold including active `TodoListMiddleware` and `SkillsMiddleware` prompt sections, plus custom instructions), tool argument schemas with semantic labels (`tools: list[ToolInspectInfo]`), active todos (`todos: list[TodoInspectItem]`), discovered skills (`skills: list[SkillInspectInfo]` with `host_path` for system-mounted skills), mounted external Git repositories (`mounted_repositories: list[MountedRepoInspectInfo]`), execution status, and trajectory history.
 - `build_agent_inspect_report`: Harness inspection service extracting semi-live agent state from active `SessionAgentRunner` instances or persisted Gitea branch state.
 - `EventBroadcaster`: Fan-out pub-sub queue mechanism for multiplexing real-time AG-UI SSE events to multiple active thread consumers.
+- `aggregate_events_to_chat_messages` (`seamus.harness.messages`): Pure aggregation pipeline converting raw AG-UI events from one or more threads into sequential, typed `ChatMessageResponse` models with `MessagePartSchema`, `ToolCallRecordSchema`, and `ThreadTransitionInfoSchema`. Normalizes both enum and string `EventType` variants.
+- `extract_bubbles_from_messages` (`seamus.harness.messages`): Extracts atomic visual bubbles (user message, reasoning span, text part, tool call card, or thread transition) from aggregated chat messages for pagination and DOM virtualization.
+- `paginate_chat_messages` (`seamus.harness.messages`): Pure pagination algorithm slicing chat messages across bubble boundaries supporting `tail` (latest $N$ bubbles), `before` cursor (older bubbles), and `after` cursor (newer bubbles).
 - `HarnessStore`: In-memory repository managing agents, sessions, and threads with scope-bound slug uniqueness. Implements lifecycle governance including agent/session archival (`archive_agent`, `archive_session`) and hard deletion (`delete_agent`, `delete_session`) backed by Gitea and local workspace pruning, as well as granular bidirectional session branching (`branch_session`, `_find_branch_slice_point`, `_BranchSliceResult`) to fork sessions before/after user prompts, synthetic events, bot messages, reasoning tokens, and tool calls.
 
 ### `seamus.harness.daemons` (`src/seamus/harness/daemons`)
@@ -208,6 +211,7 @@ Interfaces, protocols, abstract base classes, implementations, package boundarie
 - [0047-discovered-context-and-project-skills.md](../decisions/0047-discovered-context-and-project-skills.md)
 - [0048-native-lmxml-skills-system.md](../decisions/0048-native-lmxml-skills-system.md)
 - [0057-e2e-test-suite.md](../decisions/0057-e2e-test-suite.md)
+- [0071-paginated-chat-scroll-and-memory-limits.md](../decisions/0071-paginated-chat-scroll-and-memory-limits.md)
 - [artifacts.md](./artifacts.md)
 - [architecture.md](./architecture.md)
 - [persistence.md](./persistence.md)

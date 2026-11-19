@@ -263,6 +263,12 @@ A desktop-grade React 19 single-page application built with Vite and TypeScript:
 - **Browser/Desktop Notifications**: Optional Web Notifications toggle (`Notify`) in the header alongside tab-title indicators (`●` / `!`) that alert the user when a background or hidden session pauses awaiting user input, blocking artifact interaction, or hits an error.
 - **Unmasked Symbolic Secret Expressions**: Configuration and settings modal input fields automatically unmask from password to readable text when containing symbolic `${secret(...)}` expressions, keeping secret paths clearly verifiable while preserving password masking for raw strings.
 - **Right-Aligned System and Daemon Events**: Background system notifications, phase shifts, and daemon events are styled and right-aligned to clearly distinguish harness logs from user inputs and assistant dialogue.
+- **Paginated Chat Loading, Upward Infinite Scroll & Bubble Virtualization**: Long-horizon agentic conversations with hundreds or thousands of messages load instantly without freezing the browser:
+  - *Tail-First Initial Load*: Opening a session or thread fetches only the latest `api_batch_size` (default 50) messages and scrolls smoothly to the bottom. Live events from active turns append seamlessly via SSE without full-history reloads (`replay=false`).
+  - *Upward & Downward Infinite Scroll*: Scrolling up dynamically fetches older batches of messages on demand using bubble cursor pagination, while maintaining continuous scroll-height calibration to prevent visual jumps.
+  - *Bidirectional DOM Virtualization*: Limits rendered chat bubbles in the DOM to at most `ui_batch_size` (default 200) ahead of and behind the current scroll anchor (~400 bubbles rendered max), avoiding DOM bloat and layout thrashing.
+  - *In-Memory JSON Buffering*: Retains up to `memory_batch_size` (default 300) bubbles before and after the scroll anchor in browser RAM as lightweight JavaScript objects, pruning bubbles farther away. Re-scrolling within buffer range renders instantly without network hits.
+  - *Direct Jump on "Scroll to Bottom"*: Clicking "Scroll to bottom" immediately re-anchors to the latest batch of messages, clearing out-of-range historical bubbles without traversing intermediate history.
 - **Interactive Markdown Renderer**: GitHub Flavored Markdown (GFM) with one-click code block copying, responsive tables, and sanitized external links.
 - **Dual-Mode Config Editor**: Edit agent and session configurations using either a guided form interface (with reasoning effort selection placed adjacent to the model identifier) or a raw JSON editor with client-side syntax validation.
 
@@ -553,11 +559,17 @@ class SystemSettings(BaseModel):
     skill_directories: list[str] = Field(default_factory=lambda: ["~/.seamus/skills", "~/.skills"])
     terminal_session_timeout_seconds: int = Field(default=300, ge=0)
     enable_delete: bool = Field(default=False)
+    api_batch_size: int = Field(default=50, ge=1)
+    ui_batch_size: int = Field(default=200, ge=1)
+    memory_batch_size: int = Field(default=300, ge=1)
 ```
 
 - `skill_directories`: Host directories containing system-wide Anthropic skills, mounted read-only into OpenSandbox containers at `/skills/system/{idx}`. Supports `~` and environment expansion.
 - `terminal_session_timeout_seconds`: Idle timeout in seconds for the interactive web terminal session (`0` disables automatic expiration; default `300`).
 - `enable_delete`: Global safety toggle governing hard delete capabilities across agents and sessions. When `false` (default), only Archiving is exposed in the UI navigation tree. When `true`, permanent Delete buttons become available.
+- `api_batch_size`: Number of chat bubbles loaded per API pagination request (default `50`).
+- `ui_batch_size`: Maximum number of rendered chat bubbles kept in the browser DOM before and after the active viewport anchor (default `200`, yielding up to ~400 rendered bubbles). Must be `>= api_batch_size`.
+- `memory_batch_size`: Maximum number of chat bubbles retained in browser memory before and after the active viewport anchor (default `300`, yielding up to ~600 buffered bubbles). Must be `>= ui_batch_size`.
 
 ---
 
@@ -662,7 +674,8 @@ The backend exposes a clean, typed REST API under prefix `/api/v-alpha/`:
 - `GET /api/v-alpha/agents/{agent_id}/sessions/{session_id}/diff`: Returns live unified git diff of `data/` deliverables.
 - `GET /api/v-alpha/agents/{agent_id}/sessions/{session_id}/inspect`: Surfaces complete Agent Inspector runtime manifest.
 - `PATCH /api/v-alpha/agents/{agent_id}/sessions/{session_id}/inspector/tools`: Enables or disables a specific tool for the session.
-- `GET /api/v-alpha/agents/{agent_id}/sessions/{session_id}/stream`: Session-level SSE feed streaming unified multi-thread events.
+- `GET /api/v-alpha/agents/{agent_id}/sessions/{session_id}/messages`: Returns paginated, aggregated chat bubbles across all threads in the session (`limit`, `before`, `after`, `tail`).
+- `GET /api/v-alpha/agents/{agent_id}/sessions/{session_id}/stream`: Session-level SSE feed streaming unified multi-thread events. Supports optional `replay=false` to omit historical events on reconnect.
 - `POST /api/v-alpha/agents/{agent_id}/sessions/{session_id}/terminal/stream`: Streams shell command execution inside the session's sandbox container via SSE.
 - `GET /api/v-alpha/agents/{agent_id}/sessions/{session_id}/terminal/info`: Returns active sandbox terminal status, operational directory, and configured idle timeout.
 - `POST /api/v-alpha/agents/{agent_id}/sessions/{session_id}/terminal/complete`: Returns shell autocomplete candidates (`token`, `common_prefix`, `candidates`) for the active sandbox working directory.
@@ -680,9 +693,10 @@ The backend exposes a clean, typed REST API under prefix `/api/v-alpha/`:
 - `GET /api/v-alpha/agents/{agent_id}/sessions/{session_id}/threads`: Lists all threads in a session.
 - `POST /api/v-alpha/agents/{agent_id}/sessions/{session_id}/threads`: Spawns a fresh thread in a specific mode/phase.
 - `GET /api/v-alpha/agents/{agent_id}/sessions/{session_id}/threads/{thread_id}`: Retrieves thread details and message history.
+- `GET /api/v-alpha/agents/{agent_id}/sessions/{session_id}/threads/{thread_id}/messages`: Returns paginated, aggregated chat bubbles for a single thread (`limit`, `before`, `after`, `tail`).
 - `POST /api/v-alpha/agents/{agent_id}/sessions/{session_id}/threads/{thread_id}/input`: Dispatches user prompt turn to active thread.
 - `POST /api/v-alpha/agents/{agent_id}/sessions/{session_id}/threads/{thread_id}/accept`: Executes human-in-the-loop thread acceptance (merges Sync PR to `main`).
-- `GET /api/v-alpha/agents/{agent_id}/sessions/{session_id}/threads/{thread_id}/stream`: Thread-level SSE stream for real-time AG-UI events.
+- `GET /api/v-alpha/agents/{agent_id}/sessions/{session_id}/threads/{thread_id}/stream`: Thread-level SSE stream for real-time AG-UI events. Supports optional `replay=false` to omit historical events on reconnect.
 
 #### Artifacts
 
