@@ -164,7 +164,6 @@ class Session(BaseModel):
     last_touched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     config: AgentConfig
     status: SessionStatus = Field(default=SessionStatus.ACTIVE)
-    disabled: bool = False
     active_plan_id: str | None = None
     secret_versions: dict[str, int] = Field(default_factory=dict)
     provenance: SessionBranchProvenance | None = None
@@ -205,8 +204,8 @@ class Session(BaseModel):
 
     @property
     def is_active(self) -> bool:
-        """Check if the session is active (not KILLED, FAILED, or disabled)."""
-        return self.status == SessionStatus.ACTIVE and not self.disabled
+        """Check if the session is active (not KILLED or FAILED)."""
+        return self.status == SessionStatus.ACTIVE
 
     def touch(self) -> None:
         """Update last_touched_at timestamp to current UTC time."""
@@ -226,13 +225,6 @@ class Session(BaseModel):
             if thread.is_open:
                 thread.status = AgentStatus.ERROR
             thread.is_open = False
-        self.touch()
-
-    def disable(self) -> None:
-        """Permanently disable the session due to persistent retry failure."""
-        self.disabled = True
-        self.config.daemons.autocontinue.enabled = False
-        self.fail()
         self.touch()
 
     def create_thread(

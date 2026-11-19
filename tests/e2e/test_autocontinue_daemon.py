@@ -1,7 +1,8 @@
 """End-to-end tests for the autocontinue daemon.
 
-Tests that a session failure triggers the autocontinue daemon via steerable simulation,
-branching a child session when retry is advised, or disabling the session on 'stop, its dead Jim'.
+Tests that session failures trigger the autocontinue daemon via steerable simulation,
+verifying both the exact input payload passed into the daemon and the resulting harness
+behavior for boolean retry and halt decisions across multi-turn lineage.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ import pytest
 from seamus.config.models import (
     AgentConfig,
     DaemonAutocontinueConfig,
+    DaemonNamingConfig,
     DaemonsConfig,
     InferenceConfig,
     InferenceFormat,
@@ -22,7 +24,13 @@ from seamus.config.models import (
     SteerableEmptyQueueStrategy,
 )
 from seamus.harness.runner import get_runner_registry
-from seamus.harness.steerable import SteerableResponse, daemon_instance_id, get_steerable_registry
+from seamus.harness.steerable import (
+    SteerableResponse,
+    SteerableToolCall,
+    agent_instance_id,
+    daemon_instance_id,
+    get_steerable_registry,
+)
 
 
 async def _drain(runner: Any, *, timeout: float = 30.0) -> None:
@@ -42,13 +50,14 @@ def _make_autocontinue_session(
             format=InferenceFormat.STEERABLE,
             base_url="https://openrouter.ai/api/v1",
             steerable=SteerableConfig(
-                empty_queue_strategy=SteerableEmptyQueueStrategy.ERROR,
-                wait_timeout=1.0,
+                empty_queue_strategy=SteerableEmptyQueueStrategy.WAIT,
+                wait_timeout=5.0,
             ),
         ),
         model_name="steerable-model",
         mode="chat",
         daemons=DaemonsConfig(
+            naming=DaemonNamingConfig(enabled=False),
             autocontinue=DaemonAutocontinueConfig(
                 enabled=True,
                 model="steerable-autocontinue",
@@ -60,7 +69,7 @@ def _make_autocontinue_session(
                         wait_timeout=5.0,
                     ),
                 ),
-            )
+            ),
         ),
     )
     agent = store.create_agent(config=config, name=name)
@@ -77,23 +86,27 @@ def _make_autocontinue_session(
 
 
 @pytest.mark.asyncio
-async def test_autocontinue_steerable_retry_branches_child_session(
+async def test_autocontinue_steerable_retry_confirms_input_and_branches(
     client: httpx.AsyncClient,
     steerable_store: Any,
     resolve_session: Any,
 ) -> None:
-    """When a session fails and autocontinue responds 'retry', a child session is branched."""
+    """When a session fails and autocontinue responds 'yes', daemon input is verified."""
     ctx = _make_autocontinue_session(steerable_store, "autocontinue-retry-agent")
     session = resolve_session(ctx["session_id"])
     agent = ctx["agent"]
 
-    # Script the autocontinue daemon response to 'retry'
-    daemon_id = daemon_instance_id(session.id, daemon="autocontinue")
+    # Configure session 1 agent model to fail immediately on empty queue
     reg = get_steerable_registry()
-    inst = reg.get_or_create(daemon_id, role="daemon")
-    inst.push(SteerableResponse(text="retry"))
+    inst_agent = reg.get_or_create(agent_instance_id(session.id), role="agent")
+    inst_agent.strategy = SteerableEmptyQueueStrategy.ERROR
 
-    # Post message to trigger unhandled provider failure (empty agent queue -> error)
+    # Script the autocontinue daemon response to 'yes'
+    daemon_id = daemon_instance_id(session.id, daemon="autocontinue")
+    inst_daemon = reg.get_or_create(daemon_id, role="daemon")
+    inst_daemon.push(SteerableResponse(text="yes"))
+
+    # Post message to trigger unhandled provider failure
     await client.post(
         f"/api/v-alpha/agent/{ctx['agent_id']}/session/{ctx['session_id']}/input",
         json={"message": "Please do something that fails."},
@@ -102,10 +115,22 @@ async def test_autocontinue_steerable_retry_branches_child_session(
     runner = get_runner_registry().get_runner(session)
     await _drain(runner)
 
-    # Verify session failed
+    # 1. Verify exact input passed into the autocontinue daemon
+    assert inst_daemon.last_invocation is not None
+    prompt_text = inst_daemon.last_invocation[0].content
+    assert isinstance(prompt_text, str)
+    assert "Instructions:" in prompt_text
+    assert "Retry History & Execution Span:" in prompt_text
+    assert "Session lineage depth: 0" in prompt_text
+    assert "Prior parent session: none" in prompt_text
+    assert "Total errors in current thread: 1" in prompt_text
+    assert "Error Type: SteerableQueueEmptyError" in prompt_text
+    assert "Please do something that fails." in prompt_text
+
+    # 2. Verify root session failed
     assert session.status.value == "FAILED"
 
-    # Verify a new child session was created under the agent
+    # 3. Verify a new child session was created under the agent
     assert len(agent.sessions) == 2
     child_session = [s for s in agent.sessions.values() if s.id != session.id][0]
     assert child_session.provenance is not None
@@ -114,37 +139,146 @@ async def test_autocontinue_steerable_retry_branches_child_session(
 
 
 @pytest.mark.asyncio
-async def test_autocontinue_steerable_dead_jim_disables_session(
+async def test_autocontinue_multi_turn_bubbles_and_second_failure(
     client: httpx.AsyncClient,
     steerable_store: Any,
     resolve_session: Any,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """When autocontinue responds 'stop, its dead Jim', the session is permanently disabled."""
-    ctx = _make_autocontinue_session(steerable_store, "autocontinue-deadjim-agent")
-    session = resolve_session(ctx["session_id"])
+    """Multi-turn test:
 
-    # Script the autocontinue daemon response to 'stop, its dead Jim'
-    daemon_id = daemon_instance_id(session.id, daemon="autocontinue")
+    I. Session 1 runs and encounters an exception.
+    II. Daemon decides to retry ('true'). Daemon input for Session 1 is verified.
+    III. Session 2 is branched; multiple bubbles succeed (reasoning, tool call, text).
+    IV. A second exception hits Session 2; daemon is called again.
+    V. Daemon input for Session 2 is verified (lineage depth, parent session, bubbles).
+    VI. Daemon decides 'no' ('false'); harness halts without further branching.
+    """
+    import seamus.harness.web_search as web_search_module
+
+    class StubDDGS:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        def text(self, query: str, max_results: int = 5) -> list[dict[str, str]]:
+            return [
+                {
+                    "title": "Deployment guide",
+                    "href": "https://example.invalid/deploy",
+                    "body": "Deployment instructions.",
+                }
+            ]
+
+    monkeypatch.setattr(web_search_module, "DDGS", StubDDGS)
+
+    ctx = _make_autocontinue_session(steerable_store, "autocontinue-multi-agent")
+    session_1 = resolve_session(ctx["session_id"])
+    agent = ctx["agent"]
+
     reg = get_steerable_registry()
-    inst = reg.get_or_create(daemon_id, role="daemon")
-    inst.push(SteerableResponse(text="stop, its dead Jim"))
+    inst_agent_1 = reg.get_or_create(agent_instance_id(session_1.id), role="agent")
+    inst_agent_1.strategy = SteerableEmptyQueueStrategy.ERROR
 
+    # I. Script daemon on session 1 to return 'true'
+    daemon_id_1 = daemon_instance_id(session_1.id, daemon="autocontinue")
+    inst_daemon_1 = reg.get_or_create(daemon_id_1, role="daemon")
+    inst_daemon_1.push(SteerableResponse(text="true"))
+
+    # Post initial user input on session 1 (empty agent queue -> SteerableQueueEmptyError)
     await client.post(
         f"/api/v-alpha/agent/{ctx['agent_id']}/session/{ctx['session_id']}/input",
-        json={"message": "Please do something that fails."},
+        json={"message": "First task: deploy application."},
     )
 
-    runner = get_runner_registry().get_runner(session)
-    await _drain(runner)
+    runner_1 = get_runner_registry().get_runner(session_1)
+    await _drain(runner_1)
 
-    # Verify session is failed and disabled
-    assert session.status.value == "FAILED"
-    assert session.disabled is True
-    assert session.config.daemons.autocontinue.enabled is False
+    # Verify session 1 failed
+    assert session_1.status.value == "FAILED"
 
-    # Check HTTP API response reflects disabled=True
-    resp = await client.get(f"/api/v-alpha/agent/{ctx['agent_id']}/session/{ctx['session_id']}")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["disabled"] is True
-    assert data["status"] == "FAILED"
+    # II. Verify daemon input on session 1
+    assert inst_daemon_1.last_invocation is not None
+    prompt_1 = inst_daemon_1.last_invocation[0].content
+    assert isinstance(prompt_1, str)
+    assert "Session lineage depth: 0" in prompt_1
+    assert "Prior parent session: none" in prompt_1
+    assert "Total errors in current thread: 1" in prompt_1
+    assert "Error Type: SteerableQueueEmptyError" in prompt_1
+    assert "First task: deploy application." in prompt_1
+
+    # Verify session 2 was branched
+    assert len(agent.sessions) == 2
+    session_2 = [s for s in agent.sessions.values() if s.id != session_1.id][0]
+    assert session_2.provenance is not None
+    assert session_2.provenance.parent_session_id == session_1.id
+
+    # III. Script session 2: 2-3 bubbles succeed
+    agent_id_2 = agent_instance_id(session_2.id)
+    daemon_id_2 = daemon_instance_id(session_2.id, daemon="autocontinue")
+    inst_agent_2 = reg.get_or_create(agent_id_2, role="agent")
+    inst_daemon_2 = reg.get_or_create(daemon_id_2, role="daemon")
+
+    # Script daemon 2 to reply 'no' when the second failure hits
+    inst_daemon_2.push(SteerableResponse(text="no"))
+
+    # Script agent 2 responses:
+    # Bubble 1: reasoning span
+    # Bubble 2: tool call to web_search (succeeds and produces a tool result bubble)
+    # Bubble 3: assistant text message
+    inst_agent_2.push(
+        SteerableResponse(
+            reasoning="Analyzing the deployment requirements carefully.",
+            tool_calls=[
+                SteerableToolCall(
+                    name="web_search",
+                    args={"query": "deploy instructions"},
+                )
+            ],
+        )
+    )
+    inst_agent_2.push(
+        SteerableResponse(
+            text="Deployment docs retrieved. Ready for subsequent pipeline step.",
+        )
+    )
+
+    runner_2 = get_runner_registry().get_runner(session_2)
+    await _drain(runner_2)
+
+    # Verify that session 2 successfully executed the bubbles
+    thread_2 = session_2.get_open_thread()
+    assert thread_2 is not None
+    event_types = [
+        getattr(e, "type", None) or (e.get("type") if isinstance(e, dict) else "")
+        for e in thread_2.events
+    ]
+    assert any("REASONING" in str(et) for et in event_types), "Reasoning bubble expected"
+    assert any("TOOL_CALL" in str(et) for et in event_types), "Tool call bubble expected"
+    assert any("TEXT_MESSAGE" in str(et) for et in event_types), "Text bubble expected"
+
+    # IV. Trigger a second exception on session 2
+    # Switch agent 2 strategy to ERROR so the next message triggers failure
+    inst_agent_2.strategy = SteerableEmptyQueueStrategy.ERROR
+    await client.post(
+        f"/api/v-alpha/agent/{ctx['agent_id']}/session/{session_2.id}/input",
+        json={"message": "Second task: execute integration tests."},
+    )
+    await _drain(runner_2)
+
+    # Session 2 has now failed
+    assert session_2.status.value == "FAILED"
+
+    # V. Verify all details of the second daemon invocation on session 2
+    assert inst_daemon_2.last_invocation is not None
+    prompt_2 = inst_daemon_2.last_invocation[0].content
+    assert isinstance(prompt_2, str)
+    assert "Session lineage depth: 1" in prompt_2
+    assert f"Prior parent session: {session_1.id}" in prompt_2
+    assert "Total errors in current thread: 1" in prompt_2
+    assert "Error Type: SteerableQueueEmptyError" in prompt_2
+    assert "First task: deploy application." in prompt_2
+    assert "Deployment docs retrieved. Ready for subsequent pipeline step." in prompt_2
+    assert "Second task: execute integration tests." in prompt_2
+
+    # VI. Verify daemon response 'no' halted recovery (no session 3 created)
+    assert len(agent.sessions) == 2

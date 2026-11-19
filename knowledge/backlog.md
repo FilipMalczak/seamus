@@ -422,6 +422,11 @@ The issues are not catastrophic yet, but they might escalate soon. We should get
 - **Rationale**: The current format lists only selected options under blockquotes (`> <picked label>`). While concise, explicit boolean indicators (`<choice>: yes` vs `<choice>: no` or checkboxes) make it immediately clear to readers and LLMs which options were actively declined versus simply unselected.
 - **Provenance**: [0053-artifact-event-snapshots-and-static-context.md](../decisions/0053-artifact-event-snapshots-and-static-context.md), `src/seamus/harness/artifacts.py`.
 
+### Comprehensive Manual and Automated Testing of Autoretry / Autocontinue Daemon
+- **Description**: Perform end-to-end manual and automated testing of the Autoretry / Autocontinue Daemon across a matrix of real-world and simulated error cases: transient network timeouts, rate limit spikes (429), fatal syntax/code execution exceptions, credit/quota exhaustion, and persistent multi-turn error loops. Verify the daemon input prompt structure, bubble boundary detection across diverse conversational trajectories (reasoning blocks, complex multi-tool calls, artifacts), branching recovery latency, and UI state consistency in the live environment.
+- **Rationale**: While steerable unit and E2E simulation tests verify the core decision logic and bubble branching, real-world testing against actual LLM providers and live container environments ensures prompt effectiveness, model alignment across smaller daemon models (e.g. gpt-oss-20b vs gpt-oss-120b), and seamless human operator experience during automatic recoveries.
+- **Provenance**: [0070-autocontinue-daemon.md](../decisions/0070-autocontinue-daemon.md), `src/seamus/harness/daemons/autocontinue.py`, `tests/e2e/test_autocontinue_daemon.py`.
+
 ## Not formalized
 
 - deep-seamus variant of skills and todos: An intentional hybrid architecture combining DeepAgents execution and middleware mechanics with Seamus LMXML structured prompt composition (rather than raw markdown appending or vanilla prompt injection), intentionally kept outstanding.
@@ -430,3 +435,13 @@ The issues are not catastrophic yet, but they might escalate soon. We should get
 - still some bullshit about branching indicator moving with new bubbles
 - instruct the agent to prepare walkthrough artifact after implementation
 - track errors (including failed tools) across sessions and agents, together with used model and other environmental factors; use to prepare hints for future usage, gauge model/task quality, etc
+- steerable model needs to be able to emit errors (to test autoretry for example)
+- another daemon that observes the inference message stream and calls todo-related tools for the agent after every nth message to keep the local plan up to date
+- when we open UI, we should load 50 recent messages (bubbles) only and auto-load batches as we scroll up; "scroll to bottom" should not load intermediate messages; we should limit how many messages in total we're keeping in memory (this was supposed to be done, but it doesnt seem to be)
+- manual and automated testing of autoretry daemon
+
+
+Way ahead:
+- integrate with backlog.md or smth like that (in parallel to todo stack? as a separate todo impl?)
+- add multimodality support
+

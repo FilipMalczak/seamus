@@ -411,16 +411,3 @@ test("REQ-032: a RUN_ERROR event moves the thread into the ERROR status", async 
 
   await unmount();
 });
-
-test("REQ-056: a disabled session displays the dead jim notice", async () => {
-  const { container, unmount } = await renderChatArea({
-    sessionStatus: "FAILED",
-    sessionDisabled: true,
-  });
-
-  const notice = container.querySelector(".notice-dead-jim");
-  assert.ok(notice, "a dead-jim notice must render for a disabled session");
-  assert.match(notice.textContent, /Stop, it's dead Jim/);
-
-  await unmount();
-});

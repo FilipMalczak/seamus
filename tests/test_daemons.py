@@ -14,9 +14,9 @@ from seamus.config.models import (
     InferenceConfig,
 )
 from seamus.domain.artifacts import SYNTHETIC_MESSAGE_INDICATOR
-from seamus.domain.entities import Session, Thread
+from seamus.domain.entities import Session, SessionBranchProvenance, Thread
 from seamus.harness.daemons.autocontinue import (
-    AutocontinueAction,
+    _format_autocontinue_payload,
     execute_autocontinue,
     find_last_successful_bubble,
     parse_autocontinue_response,
@@ -402,28 +402,36 @@ def test_autocontinue_config_validation() -> None:
 
 
 def test_parse_autocontinue_response() -> None:
-    # 1. Retry classifications
-    assert parse_autocontinue_response("retry") == AutocontinueAction.RETRY
-    assert parse_autocontinue_response("RETRY") == AutocontinueAction.RETRY
-    assert parse_autocontinue_response("'retry'") == AutocontinueAction.RETRY
-    assert parse_autocontinue_response("`retry`.") == AutocontinueAction.RETRY
-    assert parse_autocontinue_response("yes") == AutocontinueAction.RETRY
-    assert parse_autocontinue_response("YES") == AutocontinueAction.RETRY
+    # 1. Truthy / Retry classifications
+    assert parse_autocontinue_response("yes") is True
+    assert parse_autocontinue_response("YES") is True
+    assert parse_autocontinue_response("true") is True
+    assert parse_autocontinue_response("True") is True
+    assert parse_autocontinue_response("1") is True
+    assert parse_autocontinue_response("retry") is True
+    assert parse_autocontinue_response("RETRY") is True
+    assert parse_autocontinue_response("y") is True
+    assert parse_autocontinue_response("t") is True
+    assert parse_autocontinue_response("'true'") is True
+    assert parse_autocontinue_response("`yes`.") is True
+    assert parse_autocontinue_response("  1 \n") is True
+    assert parse_autocontinue_response("Yes, retry please.") is True
+    assert parse_autocontinue_response("Output: true") is True
 
-    # 2. Dead Jim classifications
-    assert parse_autocontinue_response("stop, its dead Jim") == AutocontinueAction.DEAD_JIM
-    assert parse_autocontinue_response("Stop, it's dead Jim!") == AutocontinueAction.DEAD_JIM
-    assert parse_autocontinue_response("`stop, its dead jim`") == AutocontinueAction.DEAD_JIM
-    assert parse_autocontinue_response("dead jim") == AutocontinueAction.DEAD_JIM
-    assert parse_autocontinue_response("It's dead, Jim") == AutocontinueAction.DEAD_JIM
-
-    # 3. No / fallback classifications
-    assert parse_autocontinue_response("no") == AutocontinueAction.NO
-    assert parse_autocontinue_response("NO") == AutocontinueAction.NO
-    assert parse_autocontinue_response("no.") == AutocontinueAction.NO
-    assert parse_autocontinue_response("unrecoverable") == AutocontinueAction.NO
-    assert parse_autocontinue_response("") == AutocontinueAction.NO
-    assert parse_autocontinue_response(None) == AutocontinueAction.NO
+    # 2. Falsy / No classifications
+    assert parse_autocontinue_response("no") is False
+    assert parse_autocontinue_response("NO") is False
+    assert parse_autocontinue_response("false") is False
+    assert parse_autocontinue_response("False") is False
+    assert parse_autocontinue_response("0") is False
+    assert parse_autocontinue_response("n") is False
+    assert parse_autocontinue_response("f") is False
+    assert parse_autocontinue_response("no.") is False
+    assert parse_autocontinue_response("unrecoverable") is False
+    assert parse_autocontinue_response("stop, its dead Jim") is False
+    assert parse_autocontinue_response("stop") is False
+    assert parse_autocontinue_response("") is False
+    assert parse_autocontinue_response(None) is False
 
 
 def test_find_last_successful_bubble() -> None:
@@ -505,8 +513,75 @@ def test_find_last_successful_bubble() -> None:
     assert bubble == ("call-1", "tool_call")
 
 
+def test_format_autocontinue_payload_deep_lineage() -> None:
+    parent_id = uuid4()
+    ancestor_id = uuid4()
+    session = Session(
+        agent_id=uuid4(),
+        config=AgentConfig(),
+        provenance=SessionBranchProvenance(
+            parent_session_id=parent_id,
+            parent_message_id="msg-parent-99",
+            parent_session_name="parent-session",
+        ),
+        lineage=[
+            SessionBranchProvenance(
+                parent_session_id=ancestor_id,
+                parent_message_id="msg-anc-1",
+                parent_session_name="ancestor-session",
+            ),
+            SessionBranchProvenance(
+                parent_session_id=parent_id,
+                parent_message_id="msg-parent-99",
+                parent_session_name="parent-session",
+            ),
+        ],
+    )
+    thread = session.create_thread()
+    thread.events = [
+        {"type": "USER_INPUT", "message_id": "u1", "content": "Fetch metrics and deploy."},
+        {"type": "TOOL_CALL_START", "tool_call_id": "t1", "name": "fetch_metrics"},
+        {
+            "type": "TOOL_CALL_RESULT",
+            "tool_call_id": "t1",
+            "content": "timeout error",
+            "is_error": True,
+        },
+        {"type": "RUN_ERROR", "message": "First error in span"},
+        {"type": "RUN_ERROR", "message": "Second fatal error in span"},
+    ]
+
+    mock_runner = MagicMock()
+    mock_runner.session = session
+
+    long_tb = "\n".join(f"  File 'foo.py', line {i}, in test_fn" for i in range(20))
+    err_event = {
+        "error_type": "DeploymentTimeoutError",
+        "message": "Gateway timeout during rollout",
+        "traceback": long_tb,
+    }
+
+    payload = _format_autocontinue_payload(
+        runner=mock_runner,
+        thread=thread,
+        exc=TimeoutError("Gateway timeout during rollout"),
+        err_event=err_event,
+    )
+
+    assert "Session lineage depth: 2" in payload
+    assert f"Prior parent session: {parent_id}" in payload
+    assert "Total errors in current thread: 2" in payload
+    assert "Failed tool executions in span: 1" in payload
+    assert "Error Type: DeploymentTimeoutError" in payload
+    assert "Error Message: Gateway timeout during rollout" in payload
+    assert "... [truncated] ..." in payload
+    assert "Fetch metrics and deploy." in payload
+
+
 @pytest.mark.asyncio
-async def test_execute_autocontinue_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_execute_autocontinue_retry_confirms_input_and_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     session = Session(
         agent_id=uuid4(),
         config=AgentConfig(
@@ -517,7 +592,7 @@ async def test_execute_autocontinue_retry(monkeypatch: pytest.MonkeyPatch) -> No
     )
     thread = session.create_thread()
     thread.events = [
-        {"type": "USER_INPUT", "message_id": "u1", "content": "hello"},
+        {"type": "USER_INPUT", "message_id": "u1", "content": "hello world"},
         {"type": "TOOL_CALL_START", "tool_call_id": "call-1", "name": "ls"},
         {
             "type": "TOOL_CALL_RESULT",
@@ -525,7 +600,7 @@ async def test_execute_autocontinue_retry(monkeypatch: pytest.MonkeyPatch) -> No
             "content": "file.txt",
             "is_error": False,
         },
-        {"type": "RUN_ERROR", "message": "connection timeout"},
+        {"type": "RUN_ERROR", "message": "temporary network hiccup"},
     ]
 
     mock_runner = MagicMock()
@@ -533,25 +608,42 @@ async def test_execute_autocontinue_retry(monkeypatch: pytest.MonkeyPatch) -> No
     mock_runner._llm = None
     mock_runner._loaded_secret_versions = {}
 
-    # Mock invoke_daemon returning 'retry'
+    captured_kwargs: dict[str, Any] = {}
+
     async def mock_invoke(*args: Any, **kwargs: Any) -> str:
-        return "retry"
+        captured_kwargs.update(kwargs)
+        return "yes"
 
     monkeypatch.setattr("seamus.harness.daemons.autocontinue.invoke_daemon", mock_invoke)
 
     mock_store = MagicMock()
     branched_session = Session(agent_id=session.agent_id, config=session.config)
     mock_store.branch_session.return_value = branched_session
-
     monkeypatch.setattr("seamus.harness.store.get_harness_store", lambda: mock_store)
 
     res = await execute_autocontinue(
         runner=mock_runner,
         thread=thread,
-        exc=RuntimeError("connection timeout"),
-        err_event={"error_type": "RuntimeError", "message": "connection timeout"},
+        exc=ConnectionResetError("temporary network hiccup"),
+        err_event={"error_type": "ConnectionResetError", "message": "temporary network hiccup"},
     )
 
+    # 1. Verify input payload passed into daemon
+    assert "input_payload" in captured_kwargs
+    payload = captured_kwargs["input_payload"]
+    assert "Session lineage depth: 0" in payload
+    assert "Prior parent session: none" in payload
+    assert "Total errors in current thread: 1" in payload
+    assert "Failed tool executions in span: 0" in payload
+    assert "Error Type: ConnectionResetError" in payload
+    assert "Error Message: temporary network hiccup" in payload
+    assert "hello world" in payload
+
+    # 2. Verify daemon instructions passed
+    instructions = captured_kwargs.get("instructions", "")
+    assert "supervisor" in instructions or "retry" in instructions
+
+    # 3. Verify output branching
     assert res is branched_session
     mock_store.branch_session.assert_called_once_with(
         agent_identifier=str(session.agent_id),
@@ -563,7 +655,9 @@ async def test_execute_autocontinue_retry(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 @pytest.mark.asyncio
-async def test_execute_autocontinue_no(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_execute_autocontinue_no_confirms_input_and_halts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     session = Session(
         agent_id=uuid4(),
         config=AgentConfig(
@@ -583,7 +677,10 @@ async def test_execute_autocontinue_no(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_runner._llm = None
     mock_runner._loaded_secret_versions = {}
 
+    captured_kwargs: dict[str, Any] = {}
+
     async def mock_invoke(*args: Any, **kwargs: Any) -> str:
+        captured_kwargs.update(kwargs)
         return "no"
 
     monkeypatch.setattr("seamus.harness.daemons.autocontinue.invoke_daemon", mock_invoke)
@@ -595,50 +692,12 @@ async def test_execute_autocontinue_no(monkeypatch: pytest.MonkeyPatch) -> None:
         err_event={"error_type": "RuntimeError", "message": "insufficient quota"},
     )
 
+    # 1. Confirm input details
+    payload = captured_kwargs["input_payload"]
+    assert "Session lineage depth: 0" in payload
+    assert "Total errors in current thread: 1" in payload
+    assert "Error Type: RuntimeError" in payload
+    assert "Error Message: insufficient quota" in payload
+
+    # 2. Confirm output is None (no branching, halts)
     assert res is None
-    assert session.disabled is False
-
-
-@pytest.mark.asyncio
-async def test_execute_autocontinue_dead_jim(monkeypatch: pytest.MonkeyPatch) -> None:
-    session = Session(
-        agent_id=uuid4(),
-        config=AgentConfig(
-            daemons=DaemonsConfig(
-                autocontinue=DaemonAutocontinueConfig(enabled=True, model="openai/gpt-oss-120b")
-            )
-        ),
-    )
-    thread = session.create_thread()
-    thread.events = [
-        {"type": "USER_INPUT", "message_id": "u1", "content": "hello"},
-        {"type": "RUN_ERROR", "message": "repeated failure loop"},
-    ]
-
-    mock_runner = MagicMock()
-    mock_runner.session = session
-    mock_runner._llm = None
-    mock_runner._loaded_secret_versions = {}
-
-    async def mock_invoke(*args: Any, **kwargs: Any) -> str:
-        return "stop, its dead Jim"
-
-    monkeypatch.setattr("seamus.harness.daemons.autocontinue.invoke_daemon", mock_invoke)
-
-    mock_ws = MagicMock()
-    monkeypatch.setattr(
-        "seamus.harness.daemons.autocontinue.get_workspace_manager",
-        lambda: mock_ws,
-    )
-
-    res = await execute_autocontinue(
-        runner=mock_runner,
-        thread=thread,
-        exc=RuntimeError("repeated failure loop"),
-        err_event={"error_type": "RuntimeError", "message": "repeated failure loop"},
-    )
-
-    assert res is None
-    assert session.disabled is True
-    assert session.config.daemons.autocontinue.enabled is False
-    mock_ws.commit_session_config.assert_called_once()

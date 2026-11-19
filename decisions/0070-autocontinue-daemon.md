@@ -25,49 +25,40 @@ To solve this, Seamus introduces the **Autocontinue Daemon**: a lightweight, non
    - Add `autocontinue: DaemonAutocontinueConfig = Field(default_factory=DaemonAutocontinueConfig)` to `DaemonsConfig`.
    - Update `AgentConfig` daemons container and copy overrides.
 
-2. **Session Disabling & Terminal State (`src/seamus/domain/entities.py`, `src/seamus/server/schemas.py`)**:
-   - Add `disabled: bool = False` to `Session`.
-   - Add `disable()` method to `Session` which sets `disabled = True`, sets `config.daemons.autocontinue.enabled = False`, calls `fail()`, and updates timestamps.
-   - Update `is_active` to return `self.status == SessionStatus.ACTIVE and not self.disabled`.
-   - Expose `disabled: bool = False` on `SessionSummaryResponse` and `SessionDetailResponse`.
-
-3. **Autocontinue Evaluation Engine (`src/seamus/harness/daemons/autocontinue.py`)**:
+2. **Autocontinue Evaluation Engine (`src/seamus/harness/daemons/autocontinue.py`)**:
    - Assemble evaluation payload:
-     - Short recent conversation exchanges from thread events via `format_thread_history`.
-     - Specific failure details: exception class name, error message, and traceback snippet.
+     - Short recent conversation messages from thread events via `format_thread_history`.
+     - Specific failure details: exception class name, error message, and formatted traceback.
      - Lineage and latest execution span history: ancestor lineage depth, prior parent session ID, error counts in current thread, and failed tool results.
-   - System instructions instruct the supervisor to evaluate failure and return one of three strict outputs:
-     - `retry`: For transient, recoverable, or intermittent failures.
-     - `no`: For permanent or external failures (credit exhaustion, quota limits, offline network, invalid credentials, model unavailable).
-     - `stop, its dead Jim`: For recurring failures across spans/lineage, persistent error loops, or frequent recent retries.
-   - `parse_autocontinue_response(raw)`: Normalizes loose LLM text into `AutocontinueAction.RETRY`, `AutocontinueAction.NO`, or `AutocontinueAction.DEAD_JIM`.
+   - Instruct the supervisor daemon to evaluate failure and return a boolean answer:
+     - `yes` (or `true`): If the failure appears transient, intermittent, or recoverable (e.g. temporary timeout, momentary network glitch, transient tool execution hiccup, rate limit).
+     - `no` (or `false`): If the failure is unrecoverable, permanent, or external (e.g. credits depleted, quota exhausted, network down, 401 unauthorized, syntax errors, or if repeated retries have already occurred across spans and lineage).
+   - `parse_autocontinue_response(raw) -> bool`: Robust, smart boolean parser accepting truthy values (`yes`, `true`, `True`, `1`, `retry`, `y`, `t`) and rejecting falsy/negative values (`no`, `false`, `False`, `0`, `stop`, empty/None).
 
-4. **Last Fully Successful Bubble Slicing & Branching**:
+3. **Last Fully Successful Bubble Slicing & Branching**:
    - `find_last_successful_bubble(thread: Thread) -> tuple[str, str] | None`:
      - Inspects thread events up to the fatal error to identify the last completed, fully successful bubble:
        - User messages (`"user_message"`).
        - Synthetic system events (`"system_event"`).
        - Assistant reasoning blocks (`"bot_thinking"`).
        - Completed tool call groups (`"tool_call"`) where all tools in the group finished without error.
-   - When action is `RETRY`:
+   - When decision is `True` (retry):
      - Calls `store.branch_session(..., target_id=target_id, position="after", item_type=item_type)`.
      - Granular branching slices event history right after the successful bubble, copies checkpoints, and immediately triggers background resumption of the turn in the child session (`AWAITING_LLM`).
-   - When action is `DEAD_JIM`:
-     - Calls `runner.session.disable()`, permanently disabling the session and disabling autocontinue on it.
-   - When action is `NO`:
-     - Leaves the session in `FAILED` status without retrying.
+   - When decision is `False` (no retry):
+     - Leaves the session in `FAILED` status without retrying or branching.
 
-5. **Daemon Steerable Simulation Support (`src/seamus/harness/daemons/engine.py`, `src/seamus/harness/runner.py`)**:
+4. **Daemon Steerable Simulation & Invocations Inspection (`src/seamus/harness/daemons/engine.py`, `src/seamus/harness/steerable.py`)**:
    - Extend `invoke_daemon` and `_invoke_steerable_daemon` with `raw: bool = False` to return unparsed text for non-slug daemons.
    - Register session-scoped steerable instance `daemon_instance_id(session.id, daemon="autocontinue")` (`session:{id}:daemon:autocontinue`).
+   - Add `invocations` and `record_invocation` to `SteerableInstance`, allowing deterministic test suites to inspect and verify the exact input payload passed into the daemon.
 
-6. **Web UI Updates (`ui/src/`)**:
+5. **Web UI Updates (`ui/src/`)**:
    - `ConfigModal.tsx`: Add Autocontinue Daemon configuration section with status toggle, model identifier input with presets (`openai/gpt-oss-120b`, `openai/gpt-oss-20b`, etc.), and custom provider configuration.
-   - `ChatArea.tsx`: When `sessionDisabled` is true, render a prominent "Stop, it's dead Jim" notice indicating that the session has been permanently disabled following persistent failures.
 
 ## Consequences
 
 - Transient execution failures automatically recover by branching from the exact last successful conversational element without manual intervention or context loss.
-- Permanent failures (credits, quotas, auth) fail fast without wasteful retries.
-- Persistent error loops are halted by the "dead Jim" condition, preventing infinite branching cascades.
+- Permanent failures (credits, quotas, auth) and repeated retry spirals across spans/lineage fail fast with a simple `no` decision without wasteful branching cascades.
+- Steerable testing allows full verification of daemon input payloads and multi-turn retry lifecycles.
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from seamus.domain.artifacts import SYNTHETIC_MESSAGE_INDICATOR
@@ -11,7 +10,6 @@ from seamus.harness.daemons.engine import invoke_daemon
 from seamus.harness.daemons.formatter import format_thread_history
 from seamus.harness.daemons.naming import _resolve_daemon_api_key
 from seamus.harness.steerable import daemon_instance_id
-from seamus.persistence.workspace import get_workspace_manager
 
 if TYPE_CHECKING:
     from seamus.domain.entities import Session, Thread
@@ -25,45 +23,46 @@ AUTOCONTINUE_INSTRUCTIONS = (
     "traceback), and retry/error history for this agent session, and determine whether it makes\n"
     "sense to retry execution.\n\n"
     "Guidelines:\n"
-    "- Reply 'retry' if the failure appears transient, intermittent, or recoverable\n"
+    "- Reply 'yes' (or 'true') if the failure appears transient, intermittent, or recoverable\n"
     "  (e.g. temporary timeout, momentary network glitch, transient tool execution hiccup,\n"
     "  recoverable API error, temporary rate limit).\n"
-    "- Reply 'no' if the failure is unrecoverable, permanent, or external (e.g. running out of\n"
-    "  credits or depleted balance, quota permanently exhausted, network completely down or host\n"
-    "  unreachable, invalid credentials / 401 unauthorized, model unavailable or deprecated,\n"
-    "  or fundamental configuration/syntax errors).\n"
-    "- Reply 'stop, its dead Jim' if there have been repeated or frequent recent retries, if\n"
-    "  recurring errors persist across retries in the recent span or lineage, or if the session\n"
-    "  is stuck in a failure loop where further retries will not succeed.\n\n"
+    "- Reply 'no' (or 'false') if the failure is unrecoverable, permanent, or external\n"
+    "  (e.g. running out of credits or depleted balance, quota permanently exhausted, network\n"
+    "  completely down or host unreachable, invalid credentials / 401 unauthorized, model\n"
+    "  unavailable or deprecated, syntax errors, or if frequent/repeated retries have already\n"
+    "  occurred across spans or lineage and further retries should not be attempted).\n\n"
     "Requirements:\n"
-    "- Output: Print ONLY one of the exact strings: 'retry', 'no', or 'stop, its dead Jim'.\n"
+    "- Output: Print ONLY 'yes' or 'no'.\n"
     "- Do NOT add markdown, quotes, explanations, or extra punctuation."
 )
 
 
-class AutocontinueAction(StrEnum):
-    """Categorized decision from the autocontinue daemon."""
+def parse_autocontinue_response(raw_output: str | None) -> bool:
+    """Parse loose LLM output into a boolean indicating whether to retry execution.
 
-    RETRY = "retry"
-    NO = "no"
-    DEAD_JIM = "stop, its dead Jim"
-
-
-def parse_autocontinue_response(raw_output: str | None) -> AutocontinueAction:
-    """Parse loose LLM output into a strict AutocontinueAction."""
+    Accepts 'yes', 'true', '1', 'retry', 'y', 't' (case-insensitive, stripped).
+    Returns False on 'no', 'false', '0', empty/None, or any other response.
+    """
     if not raw_output:
-        return AutocontinueAction.NO
+        return False
 
     cleaned = raw_output.strip().lower()
-    for char in ('"', "'", "`", "*", ".", "!", ";", ","):
+    for char in ('"', "'", "`", "*", ".", "!", ";", ",", ":"):
         cleaned = cleaned.replace(char, " ")
-    cleaned = " ".join(cleaned.split())
+    tokens = cleaned.split()
+    if not tokens:
+        return False
 
-    if "dead" in cleaned or "jim" in cleaned:
-        return AutocontinueAction.DEAD_JIM
-    if "retry" in cleaned or cleaned in ("yes", "y", "true"):
-        return AutocontinueAction.RETRY
-    return AutocontinueAction.NO
+    first_token = tokens[0]
+    if first_token in ("yes", "true", "1", "retry", "y", "t"):
+        return True
+
+    if any(tok in ("yes", "true", "1", "retry") for tok in tokens) and not any(
+        tok in ("no", "false", "0", "dont", "stop", "never") for tok in tokens
+    ):
+        return True
+
+    return False
 
 
 def find_last_successful_bubble(thread: Thread) -> tuple[str, str] | None:
@@ -273,8 +272,7 @@ def _format_autocontinue_payload(
 ) -> str:
     """Format short recent messages, specific failure details, and lineage/retry history."""
     # 1. Recent short conversation messages
-    sliced_events = thread.events[-20:] if len(thread.events) > 20 else thread.events
-    history_text = format_thread_history(sliced_events)
+    history_text = format_thread_history(thread.events)
 
     # 2. Failure details
     err_type = err_event.get("error_type") or (type(exc).__name__ if exc else "UnknownError")
@@ -296,6 +294,10 @@ def _format_autocontinue_payload(
         return str(raw_t).upper()
 
     thread_errors = [e for e in thread.events if ev_type(e) == "RUN_ERROR"]
+    total_thread_errors = len(thread_errors)
+    if total_thread_errors == 0 and (exc is not None or err_event.get("error_type")):
+        total_thread_errors = 1
+
     failed_tools = [
         e
         for e in thread.events
@@ -307,7 +309,7 @@ def _format_autocontinue_payload(
         f"Retry History & Execution Span:\n"
         f"- Session lineage depth: {lineage_depth}\n"
         f"- Prior parent session: {prior_session_id}\n"
-        f"- Total errors in current thread: {len(thread_errors)}\n"
+        f"- Total errors in current thread: {total_thread_errors}\n"
         f"- Failed tool executions in span: {len(failed_tools)}\n\n"
         f"Failure Details:\n"
         f"- Error Type: {err_type}\n"
@@ -346,63 +348,49 @@ async def execute_autocontinue(
         raw=True,
     )
 
-    action = parse_autocontinue_response(raw_response)
+    should_retry = parse_autocontinue_response(raw_response)
     logger.info(
-        "Autocontinue daemon decision for session %s: %s (raw output: %r)",
+        "Autocontinue daemon decision for session %s: retry=%s (raw output: %r)",
         runner.session.id,
-        action.value,
+        should_retry,
         raw_response,
     )
 
-    if action == AutocontinueAction.DEAD_JIM:
-        runner.session.disable()
-        try:
-            ws_mgr = get_workspace_manager()
-            ws_mgr.commit_session_config(
-                runner.session, secret_versions=runner._loaded_secret_versions
-            )
-        except Exception:
-            logger.exception(
-                "Failed to commit session config after disable on session %s",
-                runner.session.id,
-            )
+    if not should_retry:
         return None
 
-    if action == AutocontinueAction.RETRY:
-        bubble = find_last_successful_bubble(thread)
-        if not bubble:
-            logger.warning(
-                "Autocontinue daemon wanted to retry session %s but found no successful bubble",
-                runner.session.id,
-            )
-            return None
+    bubble = find_last_successful_bubble(thread)
+    if not bubble:
+        logger.warning(
+            "Autocontinue daemon wanted to retry session %s but found no successful bubble",
+            runner.session.id,
+        )
+        return None
 
-        target_id, item_type = bubble
-        from seamus.harness.store import get_harness_store
+    target_id, item_type = bubble
+    from seamus.harness.store import get_harness_store
 
-        store = get_harness_store()
-        try:
-            branched = store.branch_session(
-                agent_identifier=str(runner.session.agent_id),
-                session_identifier=str(runner.session.id),
-                target_id=target_id,
-                position="after",
-                item_type=item_type,
-            )
-            logger.info(
-                "Autocontinue daemon branched session %s -> %s from bubble %s (%s)",
-                runner.session.id,
-                branched.id,
-                target_id,
-                item_type,
-            )
-            return branched
-        except Exception:
-            logger.exception(
-                "Autocontinue daemon failed to branch session %s from bubble %s",
-                runner.session.id,
-                target_id,
-            )
-            return None
-
-    return None
+    store = get_harness_store()
+    try:
+        branched = store.branch_session(
+            agent_identifier=str(runner.session.agent_id),
+            session_identifier=str(runner.session.id),
+            target_id=target_id,
+            position="after",
+            item_type=item_type,
+        )
+        logger.info(
+            "Autocontinue daemon branched session %s -> %s from bubble %s (%s)",
+            runner.session.id,
+            branched.id,
+            target_id,
+            item_type,
+        )
+        return branched
+    except Exception:
+        logger.exception(
+            "Autocontinue daemon failed to branch session %s from bubble %s",
+            runner.session.id,
+            target_id,
+        )
+        return None

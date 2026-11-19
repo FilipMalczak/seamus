@@ -68,6 +68,7 @@ class SteerableInstance(BaseModel):
     wait_timeout: float = 300.0
     responses: list[SteerableResponse] = Field(default_factory=list)
     known_tools: list[str] = Field(default_factory=list)
+    invocations: list[list[BaseMessage]] = Field(default_factory=list)
 
     _condition: threading.Condition = PrivateAttr(default_factory=threading.Condition)
 
@@ -75,6 +76,22 @@ class SteerableInstance(BaseModel):
     def pending_count(self) -> int:
         """Return the number of queued responses awaiting consumption."""
         return len(self.responses)
+
+    @property
+    def last_invocation(self) -> list[BaseMessage] | None:
+        """Return the most recent invocation's input messages, if any."""
+        with self._condition:
+            return self.invocations[-1] if self.invocations else None
+
+    def record_invocation(self, messages: Sequence[BaseMessage]) -> None:
+        """Record an invocation's input messages."""
+        with self._condition:
+            self.invocations.append(list(messages))
+
+    def clear_invocations(self) -> None:
+        """Clear recorded invocation history."""
+        with self._condition:
+            self.invocations.clear()
 
     def push(self, response: SteerableResponse) -> None:
         """Append a scripted response to the queue and wake up any waiter."""
@@ -369,6 +386,7 @@ class SteerableChatModel(BaseChatModel):
         **kwargs: Any,
     ) -> ChatResult:
         """Produce a scripted response for the given messages."""
+        self.instance.record_invocation(messages)
         chunks = self._build_chunks(self._consume_response())
         message = _merge_chunks(chunks)
         return ChatResult(generations=[ChatGeneration(message=message)])
@@ -381,6 +399,7 @@ class SteerableChatModel(BaseChatModel):
         **kwargs: Any,
     ) -> ChatResult:
         """Produce a scripted response without blocking the event loop."""
+        self.instance.record_invocation(messages)
         chunks = self._build_chunks(await self._consume_response_async())
         message = _merge_chunks(chunks)
         return ChatResult(generations=[ChatGeneration(message=message)])
@@ -393,6 +412,7 @@ class SteerableChatModel(BaseChatModel):
         **kwargs: Any,
     ) -> Iterator[ChatGenerationChunk]:
         """Stream the scripted response as discrete chunks."""
+        self.instance.record_invocation(messages)
         for chunk in self._build_chunks(self._consume_response()):
             yield ChatGenerationChunk(message=chunk)
 
@@ -404,6 +424,7 @@ class SteerableChatModel(BaseChatModel):
         **kwargs: Any,
     ) -> AsyncIterator[ChatGenerationChunk]:
         """Stream the scripted response as discrete chunks (async path)."""
+        self.instance.record_invocation(messages)
         for chunk in self._build_chunks(await self._consume_response_async()):
             yield ChatGenerationChunk(message=chunk)
 

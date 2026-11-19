@@ -29,7 +29,6 @@ def _to_agent_detail(agent: Agent) -> AgentDetailResponse:
             last_touched_at=s.last_touched_at,
             config=s.config,
             status=s.status,
-            disabled=getattr(s, "disabled", False),
             active_plan_id=s.active_plan_id,
             provenance=s.provenance,
             lineage=s.lineage,

@@ -205,7 +205,6 @@ class SessionSummaryResponse(BaseModel):
     last_touched_at: datetime
     config: AgentConfig
     status: SessionStatus = SessionStatus.ACTIVE
-    disabled: bool = False
     active_plan_id: str | None = None
     provenance: SessionBranchProvenance | None = None
     lineage: list[SessionBranchProvenance] = Field(default_factory=list)
@@ -221,7 +220,6 @@ class SessionDetailResponse(BaseModel):
     last_touched_at: datetime
     config: AgentConfig
     status: SessionStatus = SessionStatus.ACTIVE
-    disabled: bool = False
     active_plan_id: str | None = None
     provenance: SessionBranchProvenance | None = None
     lineage: list[SessionBranchProvenance] = Field(default_factory=list)

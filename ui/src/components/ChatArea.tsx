@@ -43,7 +43,6 @@ interface ChatAreaProps {
   sessionName: string | null;
   sessionMode?: string;
   sessionStatus?: SessionStatus;
-  sessionDisabled?: boolean;
   sessionProvenance?: SessionBranchProvenance | null;
   sessionLineage?: SessionBranchProvenance[];
   thread: ThreadInfo | null;
@@ -86,7 +85,6 @@ export function ChatArea({
   sessionName,
   sessionMode,
   sessionStatus = "ACTIVE",
-  sessionDisabled = false,
   sessionProvenance,
   sessionLineage,
   thread,
@@ -502,33 +500,22 @@ export function ChatArea({
         </div>
       </div>
 
-      {sessionDisabled ? (
-        <div className="terminal-session-notice notice-failed notice-dead-jim">
-          <AlertTriangle className="size-4 text-rose-400" />
+      {sessionStatus === "KILLED" && (
+        <div className="terminal-session-notice notice-killed">
+          <Ban className="size-4 text-zinc-400" />
           <span>
-            Stop, it's dead Jim: this session has been permanently disabled following persistent execution failures.
+            This session was manually killed and cannot be continued. You can branch off any completed assistant message above to retry or continue.
           </span>
         </div>
-      ) : (
-        <>
-          {sessionStatus === "KILLED" && (
-            <div className="terminal-session-notice notice-killed">
-              <Ban className="size-4 text-zinc-400" />
-              <span>
-                This session was manually killed and cannot be continued. You can branch off any completed assistant message above to retry or continue.
-              </span>
-            </div>
-          )}
+      )}
 
-          {sessionStatus === "FAILED" && (
-            <div className="terminal-session-notice notice-failed">
-              <AlertTriangle className="size-4 text-rose-400" />
-              <span>
-                This session terminated due to an unrecoverable failure and cannot be continued. You can branch off any completed assistant message above to retry.
-              </span>
-            </div>
-          )}
-        </>
+      {sessionStatus === "FAILED" && (
+        <div className="terminal-session-notice notice-failed">
+          <AlertTriangle className="size-4 text-rose-400" />
+          <span>
+            This session terminated due to an unrecoverable failure and cannot be continued. You can branch off any completed assistant message above to retry.
+          </span>
+        </div>
       )}
 
       <div
