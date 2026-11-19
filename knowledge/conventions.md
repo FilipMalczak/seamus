@@ -42,7 +42,9 @@ Project-specific implementation, tooling, and development conventions not fully 
 - Pytest test files named `test_*.py` located under `tests/`.
 - Test observable behaviors and edge cases rather than private implementation details.
 - Avoid external network calls during unit and integration test runs by using test doubles or mock run providers.
-- Test suite execution uses an ephemeral, dedicated Gitea container (`tests/conftest.py`) with SQLite and dynamic port assignment (`127.0.0.1::3000`), completely shielding the live development stack (`http://localhost:3001`, `.seamus/workspaces`) from test pollution and permitting parallel test runs.
+- Test suite execution is driven by `./test.sh` (`--backend`, `--e2e`, `--ui`, `--all`).
+- Python test suites parallelize by default via `pytest-xdist` (`--parallel true`, mapping to `-n auto`). Local debugging or sequential trace inspection uses `--parallel false` (omitting `-n`), and custom worker concurrency uses `--parallel N` (mapping to `-n N`).
+- Containerized persistence execution uses an ephemeral, dedicated Gitea container (`tests/conftest.py`) with SQLite and dynamic port assignment, completely shielding the live development stack (`http://localhost:3001`, `.seamus/workspaces`) from test pollution and coordinating across parallel workers via file locking and cached runtime detection.
 - Logfire test assertions use `TestExporter` and `SimpleSpanProcessor` with `send_to_logfire=False`.
 - Frontend builds verified with `npm run build` in `ui/`.
 - End-to-end tests live under `tests/e2e/` and drive the real harness stack over the public HTTP API. Only two substitutions are permitted: the live inference provider (replaced by the `steerable` scripted provider) and the OpenSandbox container (replaced by the in-process host-filesystem stub in `tests/e2e/stub_sandbox.py`). No API key, network access, or live container may be required.

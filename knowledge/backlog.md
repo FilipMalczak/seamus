@@ -435,7 +435,6 @@ The issues are not catastrophic yet, but they might escalate soon. We should get
 ## Not formalized
 
 - pipeline fails on some swagger-related e2e tests??? [HIGHish]
-- enhance the instructions to make sure that agent parallelizes tests and that it assumes master to be working properly
 
 - deep-seamus variant of skills and todos: An intentional hybrid architecture combining DeepAgents execution and middleware mechanics with Seamus LMXML structured prompt composition (rather than raw markdown appending or vanilla prompt injection), intentionally kept outstanding.
 - instructional documentation (as in "to achieve this do this")

@@ -202,17 +202,22 @@ Seamus automatically snapshots working copies to internal Gitea storage (`projec
 
 ## Code Quality & Verification
 
-Run test suites via `./test.sh` (defaults to `--backend` and `--docker` when omitted) and static checks through `uv` and `npm`:
+Run test suites via `./test.sh` (defaults to `--backend`, `--docker`, and `--parallel true` when omitted) and static checks through `uv` and `npm`:
 
 ```bash
-# Backend unit and integration tests (default: --backend --docker)
+# Backend unit and integration tests (default: --backend --docker --parallel true)
 ./test.sh
 ./test.sh --backend --docker
 
 # Backend unit and integration tests in-memory (no Docker/container Gitea required)
 ./test.sh --backend --in-memory
 
-# End-to-end test suite only (runs parallel xdist; --in-memory deselects @pytest.mark.gitea tests)
+# Parallelism control (--parallel true|false|N, default: true -> -n auto)
+./test.sh --parallel true          # Default: parallel execution (-n auto)
+./test.sh --parallel false         # Sequential execution without pytest-xdist
+./test.sh --parallel 4             # Custom concurrency (-n 4)
+
+# End-to-end test suite only (--in-memory deselects @pytest.mark.gitea tests)
 ./test.sh --e2e
 ./test.sh --e2e --docker
 ./test.sh --e2e --in-memory
@@ -220,10 +225,11 @@ Run test suites via `./test.sh` (defaults to `--backend` and `--docker` when omi
 # Frontend React tests (Node test runner)
 ./test.sh --ui
 
-# All test suites sequentially (--backend, --e2e, and --ui)
+# All test suites (--backend and --e2e run with specified concurrency, --ui runs sequentially)
 ./test.sh --all
 ./test.sh --all --docker
 ./test.sh --all --in-memory
+./test.sh --all --parallel 4
 
 # Python linting and code formatting checks
 uv run ruff check .
@@ -240,6 +246,13 @@ cd ui && npm run build && cd ..
 
 - **`--docker` (default)**: Tests run against an ephemeral containerized Gitea persistence layer. Supports Docker, Podman, and containerd (`nerdctl`/`ctr`), probing candidate runtimes automatically and coordinating a single container across `pytest-xdist` parallel workers.
 - **`--in-memory`**: Tests run completely in memory without starting container infrastructure. In E2E runs, tests tagged with `@pytest.mark.gitea` (such as Sync PR lifecycle assertions) are automatically deselected.
+
+### Parallelism & Concurrency Control
+
+- **`--parallel true` (default)**: Python test suites (`--backend` and `--e2e`) run concurrently with `pytest-xdist -n auto`.
+- **`--parallel false`**: Runs Python test suites sequentially (without `-n`), useful for local debugging or step-by-step trace inspection.
+- **`--parallel <N>`**: Runs Python test suites with a specific worker count (`pytest-xdist -n N`).
+- Note: `--parallel` controls Python test suites (`--backend`, `--e2e`, or `--all`). If used with only `--ui`, it is ignored with a warning since UI tests run sequentially.
 
 To automatically format Python code:
 

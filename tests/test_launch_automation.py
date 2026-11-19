@@ -24,6 +24,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 COMPOSE_PATH = REPO_ROOT / "docker-compose.yml"
 RUN_SH_PATH = REPO_ROOT / "run.sh"
+TEST_SH_PATH = REPO_ROOT / "test.sh"
 CI_PATH = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 
 
@@ -258,6 +259,130 @@ def test_run_script_rejects_unknown_flags() -> None:
 
     assert result.returncode == 1
     assert "Unknown option" in result.stderr
+
+
+def test_test_sh_help_displays_parallel_options() -> None:
+    """test.sh --help must display usage and --parallel flag details."""
+    result = subprocess.run(
+        [str(TEST_SH_PATH), "--help"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=True,
+    )
+
+    assert "--parallel true|false|N" in result.stdout
+    assert "--backend" in result.stdout
+    assert "--e2e" in result.stdout
+    assert "--ui" in result.stdout
+    assert "--docker" in result.stdout
+    assert "--in-memory" in result.stdout
+
+
+def test_test_sh_rejects_invalid_parallel_arguments() -> None:
+    """test.sh must reject invalid --parallel arguments."""
+    result = subprocess.run(
+        [str(TEST_SH_PATH), "--parallel", "invalid-val"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert "Invalid value for --parallel" in result.stderr
+
+    missing_arg_result = subprocess.run(
+        [str(TEST_SH_PATH), "--parallel"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    assert missing_arg_result.returncode == 1
+    assert "--parallel requires an argument" in missing_arg_result.stderr
+
+
+def test_test_sh_warns_when_parallel_used_with_ui_only(tmp_path: Path) -> None:
+    """test.sh must warn and proceed when --parallel is used with only --ui."""
+    import os
+
+    fake_npm = tmp_path / "npm"
+    fake_npm.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_npm.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{tmp_path}:{env['PATH']}"
+
+    result = subprocess.run(
+        [str(TEST_SH_PATH), "--ui", "--parallel", "false"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0
+    assert "Warning: --parallel has no effect" in result.stderr
+
+
+def test_test_sh_parallel_flag_mapping(tmp_path: Path) -> None:
+    """test.sh must map --parallel true/false/N to appropriate pytest xdist args."""
+    import os
+
+    fake_uv = tmp_path / "uv"
+    fake_uv.write_text('#!/bin/sh\necho "pytest-args: $@"\nexit 0\n', encoding="utf-8")
+    fake_uv.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{tmp_path}:{env['PATH']}"
+
+    # Default should map to -n auto
+    default_res = subprocess.run(
+        [str(TEST_SH_PATH), "--backend"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+        env=env,
+    )
+    assert default_res.returncode == 0
+    assert "pytest-args: run pytest -n auto" in default_res.stdout
+
+    # --parallel false should run sequentially without -n
+    false_res = subprocess.run(
+        [str(TEST_SH_PATH), "--backend", "--parallel", "false"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+        env=env,
+    )
+    assert false_res.returncode == 0
+    assert "pytest-args: run pytest\n" in false_res.stdout
+
+    # --parallel N should pass -n N
+    n_res = subprocess.run(
+        [str(TEST_SH_PATH), "--backend", "--parallel=4"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+        env=env,
+    )
+    assert n_res.returncode == 0
+    assert "pytest-args: run pytest -n 4" in n_res.stdout
+
+    # --e2e should also honour --parallel false
+    e2e_res = subprocess.run(
+        [str(TEST_SH_PATH), "--e2e", "--parallel", "false"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+        env=env,
+    )
+    assert e2e_res.returncode == 0
+    assert "pytest-args: run pytest tests/e2e --e2e" in e2e_res.stdout
 
 
 def test_ci_workflow_runs_the_python_and_frontend_suites() -> None:

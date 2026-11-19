@@ -88,6 +88,9 @@ Workflow: `master → NNNN-feature → implementation → tests → verification
 ## Testing
 
 - Tests are part of implementation, not an afterthought. Run relevant subsets during development and the established full test, lint, type-check, and format checks before completion.
+- Execute test suites via `./test.sh` (`--backend`, `--e2e`, `--ui`, `--all`).
+- Python test suites parallelize by default (`--parallel true`, mapping to `pytest-xdist -n auto`). Use `--parallel false` for sequential execution during debugging, or `--parallel N` to pin worker concurrency. UI tests always run sequentially.
+- Assume `master` to be working properly; do not introduce regressions.
 - Do not finish while any check fails.
 - Never remove or weaken tests without explicit approval.
 - Prefer testing observable behavior and meaningful boundaries over implementation details.

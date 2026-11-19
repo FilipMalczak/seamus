@@ -34,23 +34,29 @@ and `node --test` under `ui/tests/`) and verified against the test bodies.
 | Suite | Location | Files | Count | Notes |
 | --- | --- | ---: | ---: | --- |
 | End-to-end | `tests/e2e/` | 23 | 176 | All 176 pass (non-Gitea tests run in-memory; `test_sync_pr_lifecycle.py` opts into the shared Gitea container via `gitea_enabled`) |
-| Unit & Integration | `tests/` | 36 | 443 | 443 pass |
-| **Total (Python)** | `tests/` | **59** | **619** | **619 pass, 0 `xfail`** |
+| Unit & Integration | `tests/` | 36 | 447 | 447 pass (includes launch automation and `test.sh` test runner tests) |
+| **Total (Python)** | `tests/` | **59** | **623** | **623 pass, 0 `xfail`** |
 | **Frontend** | `ui/tests/` | **18** | **275** | Node-native suite; 275 pass, 0 failed |
 
 ## Running Tests (`./test.sh`)
 
-The unified test runner script `./test.sh` automates running backend, end-to-end, and frontend test suites across different persistence configurations:
+The unified test runner script `./test.sh` automates running backend, end-to-end, and frontend test suites across different persistence configurations and concurrency options:
 
 ```bash
-# Default: runs backend tests with ephemeral Docker Gitea persistence
+# Default: runs backend tests with ephemeral Docker Gitea persistence and parallel execution (-n auto)
 ./test.sh
 
 # Run specific suites
 ./test.sh --backend              # Backend unit and integration tests
-./test.sh --e2e                  # End-to-end tests only (tests/e2e/, xdist -n auto)
+./test.sh --e2e                  # End-to-end tests only (tests/e2e/)
 ./test.sh --ui                   # Frontend tests (cd ui && npm test)
 ./test.sh --all                  # All three suites sequentially
+
+# Parallelism control (--parallel true|false|N, default: true)
+./test.sh --parallel true        # Default: parallel execution (pytest-xdist -n auto)
+./test.sh --parallel false       # Sequential execution without pytest-xdist
+./test.sh --parallel 4           # Custom worker count (pytest-xdist -n 4)
+./test.sh --all --parallel 4     # Python suites run with 4 workers; UI runs sequentially
 
 # Persistence modes
 ./test.sh --all --docker         # Default: Ephemeral container persistence (Docker, Podman, or containerd/nerdctl)
@@ -62,6 +68,13 @@ The unified test runner script `./test.sh` automates running backend, end-to-end
 - **`--docker` (default)**: Starts a single ephemeral Gitea container shared across `pytest-xdist` parallel workers via file-lock coordination. Candidate container runtimes are probed in order:
   `docker`, `podman`, `nerdctl`, `ctr`, `containerd`, and their `sudo -n` passwordless variants. Runtime detection is cached across workers to avoid daemon socket contention under high parallelism.
 - **`--in-memory`**: Sets `SEAMUS_TEST_IN_MEMORY="true"`, bypassing container startup and running all tests purely in-memory. For E2E tests, this automatically deselects `@pytest.mark.gitea` tests (such as Sync PR lifecycle tests).
+
+### Parallelism & Test Concurrency
+
+- **`--parallel true` (default)**: Python test suites (`--backend` and `--e2e`) run concurrently with `pytest-xdist -n auto`.
+- **`--parallel false`**: Runs Python test suites sequentially (without `-n`), ideal for local debugging or step-by-step trace inspection.
+- **`--parallel <N>`**: Runs Python test suites with exactly `N` workers (`pytest-xdist -n N`).
+- **Scope note**: `--parallel` controls Python test suites (`--backend`, `--e2e`, or `--all`). If passed with `--ui` only, it is ignored with a warning because Node UI tests run sequentially.
 
 ### Pytest Markers & Options
 
