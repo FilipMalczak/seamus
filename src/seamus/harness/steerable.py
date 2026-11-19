@@ -17,7 +17,7 @@ import json
 import logging
 import threading
 from collections.abc import AsyncIterator, Iterator, Sequence
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from langchain_core.callbacks.manager import (
@@ -46,12 +46,109 @@ class SteerableToolCall(BaseModel):
     args: dict[str, Any] = Field(default_factory=dict)
 
 
+class SteerableError(BaseModel):
+    """A scripted model failure to emit instead of or following normal assistant output."""
+
+    error_type: str = "RuntimeError"
+    message: str = "Simulated steerable error"
+    status_code: int | None = None
+
+
+STEERABLE_ERROR_PRESETS: dict[str, SteerableError] = {
+    "timeout": SteerableError(
+        error_type="APITimeoutError",
+        message="Request timed out while waiting for response.",
+        status_code=408,
+    ),
+    "network_timeout": SteerableError(
+        error_type="APITimeoutError",
+        message="Request timed out while waiting for response.",
+        status_code=408,
+    ),
+    "out_of_cash": SteerableError(
+        error_type="RateLimitError",
+        message="You exceeded your current quota, please check your plan and billing details.",
+        status_code=429,
+    ),
+    "insufficient_quota": SteerableError(
+        error_type="RateLimitError",
+        message="You exceeded your current quota, please check your plan and billing details.",
+        status_code=429,
+    ),
+    "rate_limit": SteerableError(
+        error_type="RateLimitError",
+        message="Rate limit reached for requests. Please slow down your requests.",
+        status_code=429,
+    ),
+    "auth_failure": SteerableError(
+        error_type="AuthenticationError",
+        message="Incorrect API key provided or token expired.",
+        status_code=401,
+    ),
+    "unauthorized": SteerableError(
+        error_type="AuthenticationError",
+        message="Incorrect API key provided or token expired.",
+        status_code=401,
+    ),
+    "server_error": SteerableError(
+        error_type="InternalServerError",
+        message="The server had an error processing your request. Please try again.",
+        status_code=500,
+    ),
+    "internal_server_error": SteerableError(
+        error_type="InternalServerError",
+        message="The server had an error processing your request. Please try again.",
+        status_code=500,
+    ),
+}
+
+
 class SteerableResponse(BaseModel):
-    """One scripted assistant turn: optional text, reasoning, and tool calls."""
+    """One scripted assistant turn: optional text, reasoning, tool calls, or error."""
 
     text: str | None = None
     reasoning: str | None = None
     tool_calls: list[SteerableToolCall] = Field(default_factory=list)
+    error: SteerableError | None = None
+
+    @classmethod
+    def for_error(
+        cls,
+        preset_or_error: str | SteerableError,
+        *,
+        reasoning: str | None = None,
+        text: str | None = None,
+    ) -> SteerableResponse:
+        """Create a scripted response configured to emit a preset or custom error."""
+        if isinstance(preset_or_error, str):
+            if preset_or_error not in STEERABLE_ERROR_PRESETS:
+                preset_keys = ", ".join(sorted(STEERABLE_ERROR_PRESETS.keys()))
+                raise ValueError(
+                    f"Unknown steerable error preset '{preset_or_error}'. "
+                    f"Available presets: {preset_keys}"
+                )
+            err = STEERABLE_ERROR_PRESETS[preset_or_error].model_copy()
+        else:
+            err = preset_or_error
+        return cls(error=err, reasoning=reasoning, text=text)
+
+
+class SteerableSimulatedError(RuntimeError):
+    """Base exception for errors simulated by a steerable model."""
+
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def create_steerable_exception(
+    error_type: str,
+    message: str,
+    status_code: int | None = None,
+) -> Exception:
+    """Create an exception instance with the specified class name and message."""
+    cls = type(error_type, (SteerableSimulatedError,), {})
+    return cast(Exception, cls(message, status_code))
 
 
 class SteerableQueueEmptyError(RuntimeError):
@@ -387,7 +484,14 @@ class SteerableChatModel(BaseChatModel):
     ) -> ChatResult:
         """Produce a scripted response for the given messages."""
         self.instance.record_invocation(messages)
-        chunks = self._build_chunks(self._consume_response())
+        resp = self._consume_response()
+        if resp.error is not None:
+            raise create_steerable_exception(
+                resp.error.error_type,
+                resp.error.message,
+                resp.error.status_code,
+            )
+        chunks = self._build_chunks(resp)
         message = _merge_chunks(chunks)
         return ChatResult(generations=[ChatGeneration(message=message)])
 
@@ -400,7 +504,14 @@ class SteerableChatModel(BaseChatModel):
     ) -> ChatResult:
         """Produce a scripted response without blocking the event loop."""
         self.instance.record_invocation(messages)
-        chunks = self._build_chunks(await self._consume_response_async())
+        resp = await self._consume_response_async()
+        if resp.error is not None:
+            raise create_steerable_exception(
+                resp.error.error_type,
+                resp.error.message,
+                resp.error.status_code,
+            )
+        chunks = self._build_chunks(resp)
         message = _merge_chunks(chunks)
         return ChatResult(generations=[ChatGeneration(message=message)])
 
@@ -413,7 +524,22 @@ class SteerableChatModel(BaseChatModel):
     ) -> Iterator[ChatGenerationChunk]:
         """Stream the scripted response as discrete chunks."""
         self.instance.record_invocation(messages)
-        for chunk in self._build_chunks(self._consume_response()):
+        resp = self._consume_response()
+        if resp.error is not None:
+            if resp.reasoning or resp.text:
+                partial = SteerableResponse(
+                    reasoning=resp.reasoning,
+                    text=resp.text,
+                    tool_calls=[],
+                )
+                for chunk in self._build_chunks(partial):
+                    yield ChatGenerationChunk(message=chunk)
+            raise create_steerable_exception(
+                resp.error.error_type,
+                resp.error.message,
+                resp.error.status_code,
+            )
+        for chunk in self._build_chunks(resp):
             yield ChatGenerationChunk(message=chunk)
 
     async def _astream(
@@ -425,7 +551,22 @@ class SteerableChatModel(BaseChatModel):
     ) -> AsyncIterator[ChatGenerationChunk]:
         """Stream the scripted response as discrete chunks (async path)."""
         self.instance.record_invocation(messages)
-        for chunk in self._build_chunks(await self._consume_response_async()):
+        resp = await self._consume_response_async()
+        if resp.error is not None:
+            if resp.reasoning or resp.text:
+                partial = SteerableResponse(
+                    reasoning=resp.reasoning,
+                    text=resp.text,
+                    tool_calls=[],
+                )
+                for chunk in self._build_chunks(partial):
+                    yield ChatGenerationChunk(message=chunk)
+            raise create_steerable_exception(
+                resp.error.error_type,
+                resp.error.message,
+                resp.error.status_code,
+            )
+        for chunk in self._build_chunks(resp):
             yield ChatGenerationChunk(message=chunk)
 
 
@@ -460,14 +601,18 @@ def build_steerable_model(
 
 __all__ = [
     "DEFAULT_STEERABLE_MODEL_NAME",
+    "STEERABLE_ERROR_PRESETS",
     "SteerableChatModel",
+    "SteerableError",
     "SteerableInstance",
     "SteerableModelRegistry",
     "SteerableQueueEmptyError",
     "SteerableResponse",
+    "SteerableSimulatedError",
     "SteerableToolCall",
     "agent_instance_id",
     "build_steerable_model",
+    "create_steerable_exception",
     "daemon_instance_id",
     "get_steerable_registry",
     "reset_steerable_registry",

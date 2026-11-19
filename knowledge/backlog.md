@@ -430,7 +430,7 @@ The issues are not catastrophic yet, but they might escalate soon. We should get
 ### Comprehensive Manual and Automated Testing of Autoretry / Autocontinue Daemon
 - **Description**: Perform end-to-end manual and automated testing of the Autoretry / Autocontinue Daemon across a matrix of real-world and simulated error cases: transient network timeouts, rate limit spikes (429), fatal syntax/code execution exceptions, credit/quota exhaustion, and persistent multi-turn error loops. Verify the daemon input prompt structure, bubble boundary detection across diverse conversational trajectories (reasoning blocks, complex multi-tool calls, artifacts), branching recovery latency, and UI state consistency in the live environment.
 - **Rationale**: While steerable unit and E2E simulation tests verify the core decision logic and bubble branching, real-world testing against actual LLM providers and live container environments ensures prompt effectiveness, model alignment across smaller daemon models (e.g. gpt-oss-20b vs gpt-oss-120b), and seamless human operator experience during automatic recoveries.
-- **Provenance**: [0070-autocontinue-daemon.md](../decisions/0070-autocontinue-daemon.md), `src/seamus/harness/daemons/autocontinue.py`, `tests/e2e/test_autocontinue_daemon.py`.
+- **Provenance**: [0070-autocontinue-daemon.md](../decisions/0070-autocontinue-daemon.md), [0072-steerable-model-error-fixtures.md](../decisions/0072-steerable-model-error-fixtures.md), `src/seamus/harness/daemons/autocontinue.py`, `tests/e2e/test_autocontinue_daemon.py`.
 
 ## Not formalized
 
@@ -443,7 +443,6 @@ The issues are not catastrophic yet, but they might escalate soon. We should get
 - still some bullshit about branching indicator moving with new bubbles
 - instruct the agent to prepare walkthrough artifact after implementation
 - track errors (including failed tools) across sessions and agents, together with used model and other environmental factors; use to prepare hints for future usage, gauge model/task quality, etc
-- steerable model needs to be able to emit errors (to test autoretry for example)
 - another daemon that observes the inference message stream and calls todo-related tools for the agent after every nth message to keep the local plan up to date
 - manual and automated testing of autoretry daemon
 

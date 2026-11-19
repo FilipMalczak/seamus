@@ -461,10 +461,17 @@ export interface SteerableToolCall {
   args: Record<string, unknown>;
 }
 
+export interface SteerableError {
+  error_type: string;
+  message: string;
+  status_code?: number | null;
+}
+
 export interface SteerableResponse {
   text?: string | null;
   reasoning?: string | null;
   tool_calls?: SteerableToolCall[];
+  error?: SteerableError | null;
 }
 
 export interface SteerableInspectInfo {

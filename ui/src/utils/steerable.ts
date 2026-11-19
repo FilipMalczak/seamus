@@ -1,8 +1,70 @@
 import type {
   SteerableEmptyQueueStrategy,
+  SteerableError,
   SteerableResponse,
   SteerableToolCall,
 } from "../api/types";
+
+/** Predefined steerable error fixtures for common simulated failure scenarios. */
+export interface SteerableErrorPreset {
+  id: string;
+  label: string;
+  description: string;
+  error: SteerableError;
+}
+
+export const STEERABLE_ERROR_PRESETS: SteerableErrorPreset[] = [
+  {
+    id: "network_timeout",
+    label: "Network Timeout",
+    description: "Simulates transient network/API timeout (APITimeoutError 408)",
+    error: {
+      error_type: "APITimeoutError",
+      message: "Request timed out while waiting for response.",
+      status_code: 408,
+    },
+  },
+  {
+    id: "out_of_cash",
+    label: "Out of Cash (Quota Exceeded)",
+    description: "Simulates depleted provider balance / billing limit (RateLimitError 429)",
+    error: {
+      error_type: "RateLimitError",
+      message: "You exceeded your current quota, please check your plan and billing details.",
+      status_code: 429,
+    },
+  },
+  {
+    id: "rate_limit",
+    label: "Rate Limit Exceeded",
+    description: "Simulates temporary API rate limit spike (RateLimitError 429)",
+    error: {
+      error_type: "RateLimitError",
+      message: "Rate limit reached for requests. Please slow down your requests.",
+      status_code: 429,
+    },
+  },
+  {
+    id: "auth_failure",
+    label: "Authentication Failed",
+    description: "Simulates invalid or expired API credentials (AuthenticationError 401)",
+    error: {
+      error_type: "AuthenticationError",
+      message: "Incorrect API key provided or token expired.",
+      status_code: 401,
+    },
+  },
+  {
+    id: "server_error",
+    label: "Internal Server Error",
+    description: "Simulates temporary provider 500 error (InternalServerError 500)",
+    error: {
+      error_type: "InternalServerError",
+      message: "The server had an error processing your request. Please try again.",
+      status_code: 500,
+    },
+  },
+];
 
 /** The placeholder used for an untouched tool-call argument field. */
 export const EMPTY_TOOL_ARGS = "{}";
@@ -146,6 +208,32 @@ function parseToolCalls(value: unknown, index: number): SteerableToolCall[] {
   });
 }
 
+function parseError(value: unknown, index: number): SteerableError | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (!isPlainObject(value)) {
+    throw new Error(`Response #${index + 1} has a non-object "error" field.`);
+  }
+  const errorType = value.error_type;
+  if (errorType !== undefined && errorType !== null && typeof errorType !== "string") {
+    throw new Error(`Response #${index + 1} has a non-string "error_type" field.`);
+  }
+  const message = value.message;
+  if (message !== undefined && message !== null && typeof message !== "string") {
+    throw new Error(`Response #${index + 1} has a non-string error "message" field.`);
+  }
+  const statusCode = value.status_code;
+  if (statusCode !== undefined && statusCode !== null && typeof statusCode !== "number") {
+    throw new Error(`Response #${index + 1} has a non-numeric "status_code" field.`);
+  }
+  return {
+    error_type: (errorType as string | undefined)?.trim() || "RuntimeError",
+    message: (message as string | undefined)?.trim() || "Simulated steerable error",
+    status_code: (statusCode as number | null | undefined) ?? null,
+  };
+}
+
 function parseResponse(raw: unknown, index: number): SteerableResponse {
   if (!isPlainObject(raw)) {
     throw new Error(`Response #${index + 1} is not an object.`);
@@ -158,10 +246,12 @@ function parseResponse(raw: unknown, index: number): SteerableResponse {
   if (reasoning !== undefined && reasoning !== null && typeof reasoning !== "string") {
     throw new Error(`Response #${index + 1} has a non-string "reasoning" field.`);
   }
+  const error = parseError(raw.error, index);
   return {
     text: (text as string | null | undefined) ?? null,
     reasoning: (reasoning as string | null | undefined) ?? null,
     tool_calls: parseToolCalls(raw.tool_calls, index),
+    ...(error ? { error } : {}),
   };
 }
 
