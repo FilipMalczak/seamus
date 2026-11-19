@@ -25,6 +25,7 @@ from seamus.config.models import (
 )
 from seamus.harness.runner import get_runner_registry
 from seamus.harness.steerable import (
+    SteerableError,
     SteerableResponse,
     SteerableToolCall,
     agent_instance_id,
@@ -414,3 +415,279 @@ async def test_autocontinue_with_reasoning_before_timeout_branches_after_reasoni
     assert child.provenance.parent_session_id == session.id
     assert child.provenance.item_type == "bot_thinking"
     assert child.provenance.branch_position == "after"
+
+
+@pytest.mark.asyncio
+async def test_autocontinue_matrix_transient_rate_limit_retry(
+    client: httpx.AsyncClient,
+    steerable_store: Any,
+    resolve_session: Any,
+) -> None:
+    """Transient rate limit (429) triggers autocontinue retry and child session finishes."""
+    ctx = _make_autocontinue_session(steerable_store, "matrix-rate-limit-agent")
+    session = resolve_session(ctx["session_id"])
+    agent = ctx["agent"]
+
+    reg = get_steerable_registry()
+    inst_agent = reg.get_or_create(agent_instance_id(session.id), role="agent")
+    inst_agent.push(SteerableResponse.for_error("rate_limit"))
+
+    daemon_id = daemon_instance_id(session.id, daemon="autocontinue")
+    inst_daemon = reg.get_or_create(daemon_id, role="daemon")
+    inst_daemon.push(SteerableResponse(text="yes, retry please"))
+
+    await client.post(
+        f"/api/v-alpha/agent/{ctx['agent_id']}/session/{ctx['session_id']}/input",
+        json={"message": "Perform high throughput calculation."},
+    )
+
+    runner = get_runner_registry().get_runner(session)
+    await _drain(runner)
+
+    # 1. Root session failed and daemon received RateLimitError payload
+    assert session.status.value == "FAILED"
+    assert inst_daemon.last_invocation is not None
+    prompt = inst_daemon.last_invocation[0].content
+    assert "Error Type: RateLimitError" in prompt
+    assert "Rate limit reached for requests" in prompt
+
+    # 2. Child session was branched and is resuming
+    assert len(agent.sessions) == 2
+    child = [s for s in agent.sessions.values() if s.id != session.id][0]
+    assert child.provenance is not None
+    assert child.provenance.parent_session_id == session.id
+
+    # 3. Supply successful response to child session model and drain
+    child_agent = reg.get_or_create(agent_instance_id(child.id), role="agent")
+    child_agent.push(SteerableResponse(text="Calculation finished successfully after backoff."))
+
+    runner_child = get_runner_registry().get_runner(child)
+    await _drain(runner_child)
+
+    # 4. Child session completed turn
+    assert child.status.value == "ACTIVE"
+    child_thread = child.get_open_thread()
+    assert child_thread is not None
+    assert child_thread.status.value == "AWAITING_USER"
+
+
+@pytest.mark.asyncio
+async def test_autocontinue_matrix_transient_server_error_retry(
+    client: httpx.AsyncClient,
+    steerable_store: Any,
+    resolve_session: Any,
+) -> None:
+    """Transient server 500 error triggers autocontinue retry with numeric truthy response."""
+    ctx = _make_autocontinue_session(steerable_store, "matrix-500-error-agent")
+    session = resolve_session(ctx["session_id"])
+    agent = ctx["agent"]
+
+    reg = get_steerable_registry()
+    inst_agent = reg.get_or_create(agent_instance_id(session.id), role="agent")
+    inst_agent.push(SteerableResponse.for_error("server_error"))
+
+    daemon_id = daemon_instance_id(session.id, daemon="autocontinue")
+    inst_daemon = reg.get_or_create(daemon_id, role="daemon")
+    inst_daemon.push(SteerableResponse(text="1"))  # Numeric truthy response
+
+    await client.post(
+        f"/api/v-alpha/agent/{ctx['agent_id']}/session/{ctx['session_id']}/input",
+        json={"message": "Process backend task."},
+    )
+
+    runner = get_runner_registry().get_runner(session)
+    await _drain(runner)
+
+    assert session.status.value == "FAILED"
+    assert inst_daemon.last_invocation is not None
+    prompt = inst_daemon.last_invocation[0].content
+    assert "Error Type: InternalServerError" in prompt
+
+    # Child branched
+    assert len(agent.sessions) == 2
+    child = [s for s in agent.sessions.values() if s.id != session.id][0]
+    assert child.provenance is not None
+    assert child.provenance.parent_session_id == session.id
+
+
+@pytest.mark.asyncio
+async def test_autocontinue_matrix_permanent_auth_failure_ignore(
+    client: httpx.AsyncClient,
+    steerable_store: Any,
+    resolve_session: Any,
+) -> None:
+    """Permanent authentication failure (401) is evaluated as no-retry and halts."""
+    ctx = _make_autocontinue_session(steerable_store, "matrix-auth-agent")
+    session = resolve_session(ctx["session_id"])
+    agent = ctx["agent"]
+
+    reg = get_steerable_registry()
+    inst_agent = reg.get_or_create(agent_instance_id(session.id), role="agent")
+    inst_agent.push(SteerableResponse.for_error("auth_failure"))
+
+    daemon_id = daemon_instance_id(session.id, daemon="autocontinue")
+    inst_daemon = reg.get_or_create(daemon_id, role="daemon")
+    inst_daemon.push(SteerableResponse(text="no"))
+
+    await client.post(
+        f"/api/v-alpha/agent/{ctx['agent_id']}/session/{ctx['session_id']}/input",
+        json={"message": "Execute privileged operation."},
+    )
+
+    runner = get_runner_registry().get_runner(session)
+    await _drain(runner)
+
+    assert session.status.value == "FAILED"
+    assert inst_daemon.last_invocation is not None
+    prompt = inst_daemon.last_invocation[0].content
+    assert "Error Type: AuthenticationError" in prompt
+    assert "Incorrect API key provided" in prompt
+
+    # No child session created
+    assert len(agent.sessions) == 1
+
+
+@pytest.mark.asyncio
+async def test_autocontinue_matrix_unexpected_exception_ignore(
+    client: httpx.AsyncClient,
+    steerable_store: Any,
+    resolve_session: Any,
+) -> None:
+    """Custom unrecoverable exception (e.g. ZeroDivisionError) halts on daemon stop decision."""
+    ctx = _make_autocontinue_session(steerable_store, "matrix-zero-div-agent")
+    session = resolve_session(ctx["session_id"])
+    agent = ctx["agent"]
+
+    reg = get_steerable_registry()
+    inst_agent = reg.get_or_create(agent_instance_id(session.id), role="agent")
+    inst_agent.push(
+        SteerableResponse(
+            error=SteerableError(
+                error_type="ZeroDivisionError",
+                message="division by zero in metric aggregation",
+            )
+        )
+    )
+
+    daemon_id = daemon_instance_id(session.id, daemon="autocontinue")
+    inst_daemon = reg.get_or_create(daemon_id, role="daemon")
+    inst_daemon.push(SteerableResponse(text="stop"))
+
+    await client.post(
+        f"/api/v-alpha/agent/{ctx['agent_id']}/session/{ctx['session_id']}/input",
+        json={"message": "Compute metrics average."},
+    )
+
+    runner = get_runner_registry().get_runner(session)
+    await _drain(runner)
+
+    assert session.status.value == "FAILED"
+    assert inst_daemon.last_invocation is not None
+    prompt = inst_daemon.last_invocation[0].content
+    assert "Error Type: ZeroDivisionError" in prompt
+    assert "division by zero in metric aggregation" in prompt
+
+    # No child session created
+    assert len(agent.sessions) == 1
+
+
+@pytest.mark.asyncio
+async def test_autocontinue_matrix_unrecognized_response_defaults_to_halt(
+    client: httpx.AsyncClient,
+    steerable_store: Any,
+    resolve_session: Any,
+) -> None:
+    """When the daemon produces ambiguous or unrecognized output, it safely defaults to halt."""
+    ctx = _make_autocontinue_session(steerable_store, "matrix-gibberish-agent")
+    session = resolve_session(ctx["session_id"])
+    agent = ctx["agent"]
+
+    reg = get_steerable_registry()
+    inst_agent = reg.get_or_create(agent_instance_id(session.id), role="agent")
+    inst_agent.push(SteerableResponse.for_error("timeout"))
+
+    daemon_id = daemon_instance_id(session.id, daemon="autocontinue")
+    inst_daemon = reg.get_or_create(daemon_id, role="daemon")
+    inst_daemon.push(
+        SteerableResponse(text="I am not sure whether to proceed or abort, consult human.")
+    )
+
+    await client.post(
+        f"/api/v-alpha/agent/{ctx['agent_id']}/session/{ctx['session_id']}/input",
+        json={"message": "Wait for slow service."},
+    )
+
+    runner = get_runner_registry().get_runner(session)
+    await _drain(runner)
+
+    # Defaults to false / no retry
+    assert session.status.value == "FAILED"
+    assert len(agent.sessions) == 1
+
+
+@pytest.mark.asyncio
+async def test_autocontinue_matrix_daemon_craps_out_with_simulated_error(
+    client: httpx.AsyncClient,
+    steerable_store: Any,
+    resolve_session: Any,
+) -> None:
+    """When the autocontinue daemon itself encounters a model error, runner handles it safely."""
+    ctx = _make_autocontinue_session(steerable_store, "matrix-daemon-crapout-agent")
+    session = resolve_session(ctx["session_id"])
+    agent = ctx["agent"]
+
+    reg = get_steerable_registry()
+    inst_agent = reg.get_or_create(agent_instance_id(session.id), role="agent")
+    inst_agent.push(SteerableResponse.for_error("timeout"))
+
+    # Autocontinue daemon's own steerable model emits an InternalServerError
+    daemon_id = daemon_instance_id(session.id, daemon="autocontinue")
+    inst_daemon = reg.get_or_create(daemon_id, role="daemon")
+    inst_daemon.push(SteerableResponse.for_error("server_error"))
+
+    await client.post(
+        f"/api/v-alpha/agent/{ctx['agent_id']}/session/{ctx['session_id']}/input",
+        json={"message": "Trigger failure where daemon also fails."},
+    )
+
+    runner = get_runner_registry().get_runner(session)
+    # Drain must finish without throwing unhandled exceptions
+    await _drain(runner)
+
+    # Root session failed cleanly
+    assert session.status.value == "FAILED"
+    # No branching occurred
+    assert len(agent.sessions) == 1
+
+
+@pytest.mark.asyncio
+async def test_autocontinue_matrix_daemon_craps_out_empty_queue(
+    client: httpx.AsyncClient,
+    steerable_store: Any,
+    resolve_session: Any,
+) -> None:
+    """When the daemon queue is empty under ERROR strategy, session remains failed."""
+    ctx = _make_autocontinue_session(steerable_store, "matrix-daemon-empty-agent")
+    session = resolve_session(ctx["session_id"])
+    agent = ctx["agent"]
+
+    reg = get_steerable_registry()
+    inst_agent = reg.get_or_create(agent_instance_id(session.id), role="agent")
+    inst_agent.push(SteerableResponse.for_error("timeout"))
+
+    # Autocontinue daemon's queue is configured to fail on empty queue
+    daemon_id = daemon_instance_id(session.id, daemon="autocontinue")
+    inst_daemon = reg.get_or_create(daemon_id, role="daemon")
+    inst_daemon.strategy = SteerableEmptyQueueStrategy.ERROR
+
+    await client.post(
+        f"/api/v-alpha/agent/{ctx['agent_id']}/session/{ctx['session_id']}/input",
+        json={"message": "Trigger failure where daemon has empty queue."},
+    )
+
+    runner = get_runner_registry().get_runner(session)
+    await _drain(runner)
+
+    # Root session failed cleanly without unhandled server crash
+    assert session.status.value == "FAILED"
+    assert len(agent.sessions) == 1

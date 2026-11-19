@@ -53,9 +53,18 @@ The Autocontinue Daemon introduced in [0070-autocontinue-daemon.md](./0070-autoc
 - **Composer Mode Switcher**: The composer offers `Assistant Response` and `Simulated Error` tabs. In error mode, users can specify error type (with datalist suggestions), optional HTTP status code, error message, and optional pre-failure reasoning.
 - **Queue Item Visualization**: Queued error items render with distinctive styling (`.is-error` with rose border/background), an `AlertCircle` icon, error type badge, HTTP status code badge, error message, and pre-failure reasoning indicators.
 
+### 5. Automated Autocontinue Daemon Test Matrix (`tests/e2e/test_autocontinue_daemon.py`)
+
+A comprehensive end-to-end test matrix verifies the interaction between steerable error injection and the Autocontinue Daemon:
+- **Transient error recovery**: Transient errors (`rate_limit` 429, `server_error` 500) paired with affirmative daemon decisions (`"yes"`, numeric `"1"`) automatically branch a child session and complete the task.
+- **Permanent error ignore**: Permanent errors (`auth_failure` 401, custom unhandled `ZeroDivisionError`) paired with negative daemon decisions (`"no"`, `"stop"`) halt execution without branching child sessions.
+- **Ambiguous output fallback**: Ambiguous or unparseable daemon text safely defaults to halting (`parse_autocontinue_response` returns `False`).
+- **Daemon failure resilience**: If the daemon's own inference model raises a simulated error (e.g. 500 `InternalServerError`) or runs out of queued responses under `ERROR` strategy, the runner logs the failure gracefully, the session remains safely in `SessionStatus.FAILED`, and the harness process does not crash.
+
 ## Consequences
 
 - Test suites can deterministically verify autocontinue daemon decisions for both transient and permanent failure modes without live LLM network calls.
 - Mid-stream reasoning failures can be simulated to verify last-successful-bubble slicing.
 - Operators can inject simulated error fixtures with a single click in the Agent Inspector.
 - Queue export and import files preserve scripted error definitions.
+
