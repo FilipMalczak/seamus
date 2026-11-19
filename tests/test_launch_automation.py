@@ -389,7 +389,8 @@ def test_ci_workflow_runs_the_python_and_frontend_suites() -> None:
     """REQ-028: CI must exercise both the Python and the frontend suites."""
     workflow = CI_PATH.read_text(encoding="utf-8")
 
-    assert "./test.sh --backend" in workflow
+    assert "./test.sh --backend --docker --parallel true" in workflow
+    assert "./test.sh --backend --in-memory --parallel true" in workflow
     assert "./test.sh --ui" in workflow
 
 
@@ -397,7 +398,7 @@ def test_ci_workflow_runs_the_end_to_end_suite() -> None:
     """REQ-052: the deterministic end-to-end suite must run in CI."""
     workflow = CI_PATH.read_text(encoding="utf-8")
 
-    assert "./test.sh --e2e" in workflow
+    assert "./test.sh --e2e --docker --parallel true" in workflow
 
 
 def test_pyproject_and_uv_lock_require_python_312() -> None:

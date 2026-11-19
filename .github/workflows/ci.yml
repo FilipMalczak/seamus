@@ -84,7 +84,7 @@ jobs:
         run: uv sync --frozen
 
       - name: Run unit and integration tests (docker persistence enabled)
-        run: ./test.sh --backend --docker
+        run: ./test.sh --backend --docker --parallel true
 
   test-in-memory:
     name: Pytest (Ubuntu, In-Memory)
@@ -105,7 +105,7 @@ jobs:
         run: uv sync --frozen
 
       - name: Run unit and integration tests (in-memory mode)
-        run: ./test.sh --backend --in-memory
+        run: ./test.sh --backend --in-memory --parallel true
 
   test-e2e:
     name: Pytest (End-to-End, Steerable LLM)
@@ -129,5 +129,5 @@ jobs:
       # `steerable` inference provider and an in-process sandbox stub, so it
       # needs neither an API key nor a live container.
       - name: Run end-to-end tests
-        run: ./test.sh --e2e
+        run: ./test.sh --e2e --docker --parallel true
 
