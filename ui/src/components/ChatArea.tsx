@@ -807,7 +807,7 @@ export function ChatArea({
         <div ref={viewportEndRef} />
       </div>
 
-      {!isAtBottom && messages.length > 0 && (
+      {(!isAtBottom || hasMoreAfter) && messages.length > 0 && (
         <button
           type="button"
           className="scroll-to-bottom-btn"

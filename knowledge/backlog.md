@@ -287,6 +287,11 @@ The issues are not catastrophic yet, but they might escalate soon. We should get
 - **Improvement**: Refactor `AgentConfig` into cohesive sub-models (e.g. `HarnessConfig`, `EnvironmentConfig`, `PlanningConfig`) and streamline override merging.
 - **Provenance**: `src/seamus/config/models.py`, `ui/src/components/ConfigModal.tsx`.
 
+### Backward Compatibility and Migration for Historical Pre-0071 Session Event Streams
+- **Current Problem**: Historical sessions generated prior to bubble aggregation standardization and paginated message slicing ([0071-paginated-chat-scroll-and-memory-limits.md](../decisions/0071-paginated-chat-scroll-and-memory-limits.md)) may have stored disparate raw event shapes or un-indexed bubble chunks in Gitea checkpoint history, causing irregular initial rendering or pagination cursor mismatch when re-opened in the modernized UI.
+- **Improvement**: Add a resilient backward-compatibility fallback / migrator in `aggregate_events_to_chat_messages` that gracefully synthesizes missing IDs and part wrappers for legacy event records so historical pre-0071 sessions load cleanly without requiring fresh session re-creation.
+- **Provenance**: [0071-paginated-chat-scroll-and-memory-limits.md](../decisions/0071-paginated-chat-scroll-and-memory-limits.md), `src/seamus/harness/messages.py`, `ui/src/hooks/useThreadStream.ts`.
+
 ## TODO
 
 ### Gitea Repository Feature Flags, Healthchecks, Protection Rules, and Merge Styles

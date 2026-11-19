@@ -57,7 +57,7 @@ function stopStreamingReasoningParts(parts?: MessagePart[], timestamp?: string):
   return changed ? updated : parts;
 }
 
-function prependMessages(prev: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
+export function prependMessages(prev: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
   if (!incoming || incoming.length === 0) return prev;
   if (!prev || prev.length === 0) return incoming;
 
@@ -93,7 +93,7 @@ function prependMessages(prev: ChatMessage[], incoming: ChatMessage[]): ChatMess
   return result;
 }
 
-function appendMessages(prev: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
+export function appendMessages(prev: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
   if (!incoming || incoming.length === 0) return prev;
   if (!prev || prev.length === 0) return incoming;
 
