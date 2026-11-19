@@ -33,10 +33,41 @@ and `node --test` under `ui/tests/`) and verified against the test bodies.
 
 | Suite | Location | Files | Count | Notes |
 | --- | --- | ---: | ---: | --- |
-| End-to-end | `tests/e2e/` | 22 | 161 | All 161 pass (non-Gitea tests run in-memory; `test_sync_pr_lifecycle.py` opts into the shared Gitea container via `gitea_enabled`) |
-| Unit & Config | `tests/` | 34 | 382 | 382 pass |
-| **Total (Python)** | `tests/` | **56** | **543** | **543 pass, 0 skipped, 0 `xfail`** |
-| **Frontend** | `ui/tests/` | **16** | **247** | Node-native suite; 247 pass, 0 failed |
+| End-to-end | `tests/e2e/` | 23 | 176 | All 176 pass (non-Gitea tests run in-memory; `test_sync_pr_lifecycle.py` opts into the shared Gitea container via `gitea_enabled`) |
+| Unit & Integration | `tests/` | 36 | 443 | 443 pass |
+| **Total (Python)** | `tests/` | **59** | **619** | **619 pass, 0 `xfail`** |
+| **Frontend** | `ui/tests/` | **18** | **275** | Node-native suite; 275 pass, 0 failed |
+
+## Running Tests (`./test.sh`)
+
+The unified test runner script `./test.sh` automates running backend, end-to-end, and frontend test suites across different persistence configurations:
+
+```bash
+# Default: runs backend tests with ephemeral Docker Gitea persistence
+./test.sh
+
+# Run specific suites
+./test.sh --backend              # Backend unit and integration tests
+./test.sh --e2e                  # End-to-end tests only (tests/e2e/, xdist -n auto)
+./test.sh --ui                   # Frontend tests (cd ui && npm test)
+./test.sh --all                  # All three suites sequentially
+
+# Persistence modes
+./test.sh --all --docker         # Default: Ephemeral container persistence (Docker, Podman, or containerd/nerdctl)
+./test.sh --all --in-memory      # Fast in-memory persistence (deselects @pytest.mark.gitea E2E tests)
+```
+
+### Persistence Modes & Container Runtime Detection
+
+- **`--docker` (default)**: Starts a single ephemeral Gitea container shared across `pytest-xdist` parallel workers via file-lock coordination. Candidate container runtimes are probed in order:
+  `docker`, `podman`, `nerdctl`, `ctr`, `containerd`, and their `sudo -n` passwordless variants. Runtime detection is cached across workers to avoid daemon socket contention under high parallelism.
+- **`--in-memory`**: Sets `SEAMUS_TEST_IN_MEMORY="true"`, bypassing container startup and running all tests purely in-memory. For E2E tests, this automatically deselects `@pytest.mark.gitea` tests (such as Sync PR lifecycle tests).
+
+### Pytest Markers & Options
+
+- `@pytest.mark.e2e`: Attached automatically to all tests under `tests/e2e/`. Tests are skipped by default when running `uv run pytest` unless `--e2e` is passed.
+- `@pytest.mark.gitea`: Marks tests requiring live Gitea persistence container (`tests/e2e/test_sync_pr_lifecycle.py`). Deselected when running `--in-memory`.
+
 
 ### End-to-end suite breakdown (`tests/e2e/`)
 

@@ -59,35 +59,86 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
                 item.add_marker(skip_e2e)
 
 
+_DETECTED_RUNTIME: list[str] | None = None
+
+CANDIDATE_RUNTIMES: list[list[str]] = [
+    ["docker"],
+    ["podman"],
+    ["nerdctl"],
+    ["ctr"],
+    ["containerd"],
+    ["sudo", "-n", "docker"],
+    ["sudo", "-n", "podman"],
+    ["sudo", "-n", "nerdctl"],
+    ["sudo", "-n", "ctr"],
+    ["sudo", "-n", "containerd"],
+]
+
+
 def _probe_runtime(cmd: list[str]) -> bool:
     """Return True if the given container runtime CLI is installed and responsive."""
     if not all(shutil.which(part) for part in cmd if not part.startswith("-")):
         return False
+    probe_subcmd = "version" if cmd[-1] in ("ctr", "containerd") else "info"
     try:
         res = subprocess.run(
-            [*cmd, "info"],
+            [*cmd, probe_subcmd],
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=15,
             check=False,
         )
-        return res.returncode == 0
-    except (subprocess.SubprocessError, OSError):
+        if res.returncode == 0:
+            logger.debug("Container runtime responsive: %s (%s)", cmd, probe_subcmd)
+            return True
+        logger.debug(
+            "Container runtime candidate %s failed probe (code=%d, stderr=%s)",
+            cmd,
+            res.returncode,
+            res.stderr.strip()[:200],
+        )
+        return False
+    except subprocess.TimeoutExpired:
+        logger.warning("Container runtime candidate %s timed out after 15s during probe", cmd)
+        return False
+    except (subprocess.SubprocessError, OSError) as exc:
+        logger.debug("Container runtime candidate %s failed probe with error: %s", cmd, exc)
         return False
 
 
-def get_container_runtime() -> list[str] | None:
-    """Return the available container runtime command prefix (docker or nerdctl), or None."""
+def get_container_runtime(shared_root: Path | None = None) -> list[str] | None:
+    """Return the available container runtime command prefix, or None."""
+    global _DETECTED_RUNTIME
     if os.environ.get("SEAMUS_TEST_IN_MEMORY", "").lower() in ("true", "1", "yes"):
         return None
-    for candidate in (["docker"], ["nerdctl"], ["sudo", "-n", "nerdctl"]):
+
+    if _DETECTED_RUNTIME is not None:
+        return _DETECTED_RUNTIME
+
+    if shared_root is not None:
+        cached_file = shared_root / "container_runtime.json"
+        if cached_file.exists():
+            try:
+                cached: list[str] = json.loads(cached_file.read_text())
+                _DETECTED_RUNTIME = cached
+                return cached
+            except Exception:
+                pass
+
+    for candidate in CANDIDATE_RUNTIMES:
         if _probe_runtime(candidate):
+            _DETECTED_RUNTIME = candidate
+            if shared_root is not None:
+                try:
+                    (shared_root / "container_runtime.json").write_text(json.dumps(candidate))
+                except Exception:
+                    pass
             return candidate
     return None
 
 
 def is_docker_available() -> bool:
-    """Return True if a supported container runtime (Docker or containerd/nerdctl) is available."""
+    """Return True if a supported container runtime is available."""
     return get_container_runtime() is not None
 
 
@@ -112,7 +163,7 @@ def _start_gitea_container(runtime: list[str]) -> dict[str, Any]:
     # nerdctl's dynamic host port allocation can fall back to a static port; pick one explicitly.
     port_arg = (
         "127.0.0.1::3000"
-        if runtime[-1] == "docker"
+        if runtime[-1] in ("docker", "podman")
         else f"127.0.0.1:{_allocate_ephemeral_port()}:3000"
     )
     run_cmd = [
@@ -240,14 +291,6 @@ def ephemeral_gitea_session(
         yield None
         return
 
-    runtime = get_container_runtime()
-    if runtime is None:
-        raise RuntimeError(
-            "No container runtime (Docker or containerd/nerdctl) is available, "
-            "but SEAMUS_TEST_IN_MEMORY is not enabled. "
-            "Start Docker/containerd or set SEAMUS_TEST_IN_MEMORY=true."
-        )
-
     shared_root = _gitea_shared_root(tmp_path_factory)
     lock_path = shared_root / "gitea_session.lock"
     info_path = shared_root / "gitea_session.json"
@@ -261,6 +304,13 @@ def ephemeral_gitea_session(
                 refs = int(refs_path.read_text()) if refs_path.exists() else 0
                 refs_path.write_text(str(refs + 1))
             else:
+                runtime = get_container_runtime(shared_root=shared_root)
+                if runtime is None:
+                    raise RuntimeError(
+                        "No container runtime (Docker, Podman, or containerd/nerdctl/ctr) "
+                        "is responsive, but SEAMUS_TEST_IN_MEMORY is not enabled. "
+                        "Start a container runtime or set SEAMUS_TEST_IN_MEMORY=true."
+                    )
                 gitea_info = _start_gitea_container(runtime)
                 info_path.write_text(json.dumps(gitea_info))
                 refs_path.write_text("1")
@@ -282,7 +332,7 @@ def ephemeral_gitea_session(
                 refs = int(refs_path.read_text()) if refs_path.exists() else 1
                 remaining = refs - 1
                 if remaining <= 0:
-                    runtime_cmd = gitea_info.get("runtime", runtime)
+                    runtime_cmd: list[str] = gitea_info.get("runtime") or ["docker"]
                     subprocess.run(
                         [*runtime_cmd, "rm", "-f", str(gitea_info["container_name"])],
                         capture_output=True,

@@ -85,6 +85,10 @@ if [ "$ANY_SELECTED" = false ]; then
   RUN_BACKEND=true
 fi
 
+if [ -z "$PERSISTENCE_MODE" ]; then
+  PERSISTENCE_MODE="docker"
+fi
+
 if [ "$PERSISTENCE_MODE" = "in-memory" ]; then
   export SEAMUS_TEST_IN_MEMORY="true"
 else
@@ -92,12 +96,12 @@ else
 fi
 
 if [ "$RUN_BACKEND" = true ]; then
-  echo "==> Running backend tests..."
+  echo "==> Running backend tests (persistence: $PERSISTENCE_MODE)..."
   uv run pytest
 fi
 
 if [ "$RUN_E2E" = true ]; then
-  echo "==> Running end-to-end tests..."
+  echo "==> Running end-to-end tests (persistence: $PERSISTENCE_MODE)..."
   if [ "$PERSISTENCE_MODE" = "in-memory" ]; then
     uv run pytest tests/e2e --e2e -n auto -m "not gitea"
   else
@@ -109,4 +113,6 @@ if [ "$RUN_UI" = true ]; then
   echo "==> Running UI tests..."
   (cd ui && npm test)
 fi
+
+echo "==> All selected test suites passed successfully!"
 

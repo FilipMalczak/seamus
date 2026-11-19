@@ -209,18 +209,21 @@ Run test suites via `./test.sh` (defaults to `--backend` and `--docker` when omi
 ./test.sh
 ./test.sh --backend --docker
 
-# Backend unit and integration tests in-memory (no Docker Gitea)
+# Backend unit and integration tests in-memory (no Docker/container Gitea required)
 ./test.sh --backend --in-memory
 
-# End-to-end test suite only (runs in parallel with --e2e; --in-memory deselects @pytest.mark.gitea tests)
+# End-to-end test suite only (runs parallel xdist; --in-memory deselects @pytest.mark.gitea tests)
 ./test.sh --e2e
+./test.sh --e2e --docker
 ./test.sh --e2e --in-memory
 
-# Frontend React tests
+# Frontend React tests (Node test runner)
 ./test.sh --ui
 
-# All test suites (--backend, --e2e, and --ui)
+# All test suites sequentially (--backend, --e2e, and --ui)
 ./test.sh --all
+./test.sh --all --docker
+./test.sh --all --in-memory
 
 # Python linting and code formatting checks
 uv run ruff check .
@@ -232,6 +235,11 @@ uv run mypy
 # Frontend TypeScript check and production build
 cd ui && npm run build && cd ..
 ```
+
+### Persistence Modes
+
+- **`--docker` (default)**: Tests run against an ephemeral containerized Gitea persistence layer. Supports Docker, Podman, and containerd (`nerdctl`/`ctr`), probing candidate runtimes automatically and coordinating a single container across `pytest-xdist` parallel workers.
+- **`--in-memory`**: Tests run completely in memory without starting container infrastructure. In E2E runs, tests tagged with `@pytest.mark.gitea` (such as Sync PR lifecycle assertions) are automatically deselected.
 
 To automatically format Python code:
 

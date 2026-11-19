@@ -38,11 +38,12 @@ def _open_sync_prs(session: Any) -> list[dict[str, Any]]:
     ws_mgr = get_workspace_manager()
     repo_name = ws_mgr.get_agent_repo_name(session.agent_id)
     org_name = ws_mgr.get_agent_org_name(session.agent_id)
-    head_branch = f"session/{session.id}"
+    session_repo = ws_mgr.get_session_repo_name(session.id)
     return [
         pr
         for pr in ws_mgr.client.list_pull_requests(repo_name, state="open", owner=org_name)
-        if pr.get("head", {}).get("ref") == head_branch
+        if pr.get("head", {}).get("repo", {}).get("name") == session_repo
+        or session_repo in pr.get("head", {}).get("label", "")
     ]
 
 
@@ -58,7 +59,11 @@ async def test_session_creation_opens_sync_pr(
     prs = _open_sync_prs(ctx["session"])
     assert len(prs) == 1
     pr = prs[0]
-    assert pr["head"]["ref"] == f"session/{ctx['session_id']}"
+    ws_mgr = get_workspace_manager()
+    session_repo = ws_mgr.get_session_repo_name(ctx["session"].id)
+    assert pr.get("head", {}).get("repo", {}).get("name") == session_repo or session_repo in pr.get(
+        "head", {}
+    ).get("label", "")
     assert pr["base"]["ref"] == "main"
 
 
@@ -155,9 +160,13 @@ async def test_thread_acceptance_merges_sync_pr_and_renews_it(
     after = _open_sync_prs(session)
     assert all(pr["number"] != original_pr_number for pr in after)
 
-    # A renewed Sync PR exists for the same session branch.
+    # A renewed Sync PR exists for the same session repo.
     assert len(after) == 1
-    assert after[0]["head"]["ref"] == f"session/{ctx['session_id']}"
+    ws_mgr = get_workspace_manager()
+    session_repo = ws_mgr.get_session_repo_name(ctx["session"].id)
+    assert after[0].get("head", {}).get("repo", {}).get(
+        "name"
+    ) == session_repo or session_repo in after[0].get("head", {}).get("label", "")
     assert after[0]["base"]["ref"] == "main"
 
 
@@ -200,7 +209,5 @@ async def test_acceptance_merges_data_deliverable_into_main(
     ws_mgr = get_workspace_manager()
     repo_name = ws_mgr.get_agent_repo_name(ctx["agent"].id)
     org_name = ws_mgr.get_agent_org_name(ctx["agent"].id)
-    content = ws_mgr.client.get_file_content(
-        repo_name, "main", "data/merged.txt", owner=org_name
-    )
+    content = ws_mgr.client.get_file_content(repo_name, "main", "data/merged.txt", owner=org_name)
     assert content == "merged\n"
