@@ -550,6 +550,7 @@ export function App() {
                 sessionName={activeSession?.name || null}
                 sessionMode={activeSession?.config?.mode}
                 sessionStatus={activeSession?.status || "ACTIVE"}
+                sessionDisabled={Boolean(activeSession?.disabled)}
                 sessionProvenance={activeSession?.provenance || null}
                 sessionLineage={activeSession?.lineage}
                 thread={activeThread || null}

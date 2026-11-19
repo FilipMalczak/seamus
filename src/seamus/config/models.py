@@ -184,10 +184,39 @@ class DaemonNamingConfig(BaseModel):
         return self
 
 
+class DaemonAutocontinueConfig(BaseModel):
+    """Configuration for autonomous session retry and continuation daemon."""
+
+    enabled: bool = True
+    provider: InferenceConfig | None = None
+    model: str | None = "openai/gpt-oss-120b"
+
+    @model_validator(mode="after")
+    def _validate_model_if_enabled(self) -> Self:
+        if self.enabled and not (self.model and self.model.strip()):
+            msg = (
+                "daemons.autocontinue.model must be specified when daemons.autocontinue is enabled."
+            )
+            raise ValueError(msg)
+        return self
+
+    @model_validator(mode="after")
+    def _validate_secret_refs(self) -> Self:
+        for field_name in ("model",):
+            val = getattr(self, field_name)
+            if isinstance(val, str) and "${" in val:
+                try:
+                    find_secret_references(val, allow_version=False)
+                except SecretSyntaxError as exc:
+                    raise ValueError(str(exc)) from exc
+        return self
+
+
 class DaemonsConfig(BaseModel):
     """Configuration container for all agent daemon services."""
 
     naming: DaemonNamingConfig = Field(default_factory=DaemonNamingConfig)
+    autocontinue: DaemonAutocontinueConfig = Field(default_factory=DaemonAutocontinueConfig)
 
 
 class AgentConfig(BaseModel):

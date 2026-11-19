@@ -413,9 +413,9 @@ The issues are not catastrophic yet, but they might escalate soon. We should get
 - **Provenance**: `src/seamus/harness/runner.py`, `ui/src/components/MessageItem.tsx`.
 
 ### Session Health Scoring and Automated Thrashing Safeguard
-- **Description**: Track a dynamic session health score that decays on repeated tool errors or rapid identical tool calls and recovers over successful turns; pause execution and prompt the operator if health falls below an operational threshold.
+- **Description**: Track a dynamic session health score that decays on repeated tool errors or rapid identical tool calls and recovers over successful turns; pause execution and prompt the operator if health falls below an operational threshold. While fatal unhandled exceptions and persistent retry loops are managed by the Autocontinue Daemon ([0070-autocontinue-daemon.md](../decisions/0070-autocontinue-daemon.md)), this safeguard monitors in-turn non-fatal tool error spirals before an unhandled crash occurs.
 - **Rationale**: Prevents agents from getting stuck in tight failure loops that consume tokens without making progress.
-- **Provenance**: `src/seamus/harness/runner.py`, `src/seamus/telemetry.py`.
+- **Provenance**: `src/seamus/harness/runner.py`, `src/seamus/telemetry.py`, [0070-autocontinue-daemon.md](../decisions/0070-autocontinue-daemon.md).
 
 ### Alternative Formatting and Presentation Formats in `answers.md`
 - **Description**: Explore and evaluate alternative markdown representations for structured questionnaire and form responses in `answers.md`. In particular, test displaying multiple-choice sets and checkbox options explicitly showing both affirmative and negative selections (e.g. `<option label>: yes/no` or markdown task list checkmarks `- [x] <option>` / `- [ ] <option>`), tabular answer matrices, or grouped question sections.

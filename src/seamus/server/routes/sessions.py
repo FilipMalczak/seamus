@@ -67,6 +67,7 @@ def _to_session_detail(session: Any) -> SessionDetailResponse:
         last_touched_at=session.last_touched_at,
         config=session.config,
         status=session.status,
+        disabled=getattr(session, "disabled", False),
         active_plan_id=session.active_plan_id,
         provenance=session.provenance,
         lineage=session.lineage,

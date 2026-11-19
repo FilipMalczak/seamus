@@ -8,12 +8,19 @@ import pytest
 
 from seamus.config.models import (
     AgentConfig,
+    DaemonAutocontinueConfig,
     DaemonNamingConfig,
     DaemonsConfig,
     InferenceConfig,
 )
 from seamus.domain.artifacts import SYNTHETIC_MESSAGE_INDICATOR
 from seamus.domain.entities import Session, Thread
+from seamus.harness.daemons.autocontinue import (
+    AutocontinueAction,
+    execute_autocontinue,
+    find_last_successful_bubble,
+    parse_autocontinue_response,
+)
 from seamus.harness.daemons.formatter import format_thread_history
 from seamus.harness.daemons.naming import (
     execute_session_naming,
@@ -349,3 +356,289 @@ def test_agent_coolname_slug_generation_and_fallback() -> None:
     a2.name = None
     assert a2.custom_name is None
     assert a2.name == a2.generated_name
+
+
+def test_autocontinue_config_validation() -> None:
+    # 1. Default enabled with openai/gpt-oss-120b
+    ac_cfg = DaemonAutocontinueConfig()
+    assert ac_cfg.enabled is True
+    assert ac_cfg.provider is None
+    assert ac_cfg.model == "openai/gpt-oss-120b"
+
+    # 2. Enabled without model raises ValueError
+    with pytest.raises(ValueError, match="daemons.autocontinue.model must be specified"):
+        DaemonAutocontinueConfig(enabled=True, model=None)
+
+    # 3. Enabled with explicit model succeeds
+    valid_cfg = DaemonAutocontinueConfig(enabled=True, model="openai/gpt-4o-mini")
+    assert valid_cfg.enabled is True
+    assert valid_cfg.model == "openai/gpt-4o-mini"
+    assert valid_cfg.provider is None
+
+    # 4. Disabled with details provided is valid
+    disabled = DaemonAutocontinueConfig(
+        enabled=False,
+        provider=InferenceConfig(base_url="http://localhost:11434/v1"),
+        model="llama3.2:3b",
+    )
+    assert disabled.enabled is False
+    assert disabled.model == "llama3.2:3b"
+
+    # 5. AgentConfig daemons container and copy_with_overrides
+    base_agent = AgentConfig(model_name="openai/gpt-oss-120b")
+    assert base_agent.daemons.autocontinue.enabled is True
+    assert base_agent.daemons.autocontinue.model == "openai/gpt-oss-120b"
+
+    overridden = base_agent.copy_with_overrides(
+        AgentConfig(
+            daemons=DaemonsConfig(
+                autocontinue=DaemonAutocontinueConfig(enabled=False, model="llama3.2:3b")
+            )
+        )
+    )
+    assert overridden.daemons.autocontinue.enabled is False
+    assert overridden.daemons.autocontinue.model == "llama3.2:3b"
+    assert base_agent.daemons.autocontinue.enabled is True
+
+
+def test_parse_autocontinue_response() -> None:
+    # 1. Retry classifications
+    assert parse_autocontinue_response("retry") == AutocontinueAction.RETRY
+    assert parse_autocontinue_response("RETRY") == AutocontinueAction.RETRY
+    assert parse_autocontinue_response("'retry'") == AutocontinueAction.RETRY
+    assert parse_autocontinue_response("`retry`.") == AutocontinueAction.RETRY
+    assert parse_autocontinue_response("yes") == AutocontinueAction.RETRY
+    assert parse_autocontinue_response("YES") == AutocontinueAction.RETRY
+
+    # 2. Dead Jim classifications
+    assert parse_autocontinue_response("stop, its dead Jim") == AutocontinueAction.DEAD_JIM
+    assert parse_autocontinue_response("Stop, it's dead Jim!") == AutocontinueAction.DEAD_JIM
+    assert parse_autocontinue_response("`stop, its dead jim`") == AutocontinueAction.DEAD_JIM
+    assert parse_autocontinue_response("dead jim") == AutocontinueAction.DEAD_JIM
+    assert parse_autocontinue_response("It's dead, Jim") == AutocontinueAction.DEAD_JIM
+
+    # 3. No / fallback classifications
+    assert parse_autocontinue_response("no") == AutocontinueAction.NO
+    assert parse_autocontinue_response("NO") == AutocontinueAction.NO
+    assert parse_autocontinue_response("no.") == AutocontinueAction.NO
+    assert parse_autocontinue_response("unrecoverable") == AutocontinueAction.NO
+    assert parse_autocontinue_response("") == AutocontinueAction.NO
+    assert parse_autocontinue_response(None) == AutocontinueAction.NO
+
+
+def test_find_last_successful_bubble() -> None:
+    thread = Thread()
+
+    # 1. Empty thread
+    assert find_last_successful_bubble(thread) is None
+
+    # 2. Only user message before failure
+    thread.events = [
+        {"type": "USER_INPUT", "message_id": "u1", "content": "hello"},
+        {"type": "RUN_ERROR", "message": "unhandled failure"},
+    ]
+    bubble = find_last_successful_bubble(thread)
+    assert bubble == ("u1", "user_message")
+
+    # 3. User message, reasoning block, fatal error
+    thread.events = [
+        {"type": "USER_INPUT", "message_id": "u1", "content": "hello"},
+        {"type": "REASONING_START", "message_id": "r1"},
+        {"type": "REASONING_MESSAGE_CONTENT", "message_id": "r1", "delta": "thinking"},
+        {"type": "REASONING_END", "message_id": "r1"},
+        {"type": "RUN_ERROR", "message": "unhandled failure"},
+    ]
+    bubble = find_last_successful_bubble(thread)
+    assert bubble == ("r1", "bot_thinking")
+
+    # 4. User message, completed tool call group without error, fatal error
+    thread.events = [
+        {"type": "USER_INPUT", "message_id": "u1", "content": "hello"},
+        {"type": "TOOL_CALL_START", "tool_call_id": "call-1", "name": "ls"},
+        {
+            "type": "TOOL_CALL_RESULT",
+            "tool_call_id": "call-1",
+            "content": "file.txt",
+            "is_error": False,
+        },
+        {"type": "RUN_ERROR", "message": "unhandled failure"},
+    ]
+    bubble = find_last_successful_bubble(thread)
+    assert bubble == ("call-1", "tool_call")
+
+    # 5. Tool call group where tool execution had an error (is_error=True)
+    # The failed tool is not successful, falls back to user message
+    thread.events = [
+        {"type": "USER_INPUT", "message_id": "u1", "content": "hello"},
+        {"type": "TOOL_CALL_START", "tool_call_id": "call-1", "name": "bad_tool"},
+        {
+            "type": "TOOL_CALL_RESULT",
+            "tool_call_id": "call-1",
+            "content": "error",
+            "is_error": True,
+        },
+        {"type": "RUN_ERROR", "message": "unhandled failure"},
+    ]
+    bubble = find_last_successful_bubble(thread)
+    assert bubble == ("u1", "user_message")
+
+    # 6. Two tool groups: group 1 succeeded, group 2 failed/interrupted
+    thread.events = [
+        {"type": "USER_INPUT", "message_id": "u1", "content": "hello"},
+        {"type": "TOOL_CALL_START", "tool_call_id": "call-1", "name": "ls"},
+        {
+            "type": "TOOL_CALL_RESULT",
+            "tool_call_id": "call-1",
+            "content": "file.txt",
+            "is_error": False,
+        },
+        {"type": "TOOL_CALL_START", "tool_call_id": "call-2", "name": "run"},
+        {
+            "type": "TOOL_CALL_RESULT",
+            "tool_call_id": "call-2",
+            "content": "interrupted",
+            "is_error": True,
+        },
+        {"type": "RUN_ERROR", "message": "unhandled failure"},
+    ]
+    bubble = find_last_successful_bubble(thread)
+    assert bubble == ("call-1", "tool_call")
+
+
+@pytest.mark.asyncio
+async def test_execute_autocontinue_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = Session(
+        agent_id=uuid4(),
+        config=AgentConfig(
+            daemons=DaemonsConfig(
+                autocontinue=DaemonAutocontinueConfig(enabled=True, model="openai/gpt-oss-120b")
+            )
+        ),
+    )
+    thread = session.create_thread()
+    thread.events = [
+        {"type": "USER_INPUT", "message_id": "u1", "content": "hello"},
+        {"type": "TOOL_CALL_START", "tool_call_id": "call-1", "name": "ls"},
+        {
+            "type": "TOOL_CALL_RESULT",
+            "tool_call_id": "call-1",
+            "content": "file.txt",
+            "is_error": False,
+        },
+        {"type": "RUN_ERROR", "message": "connection timeout"},
+    ]
+
+    mock_runner = MagicMock()
+    mock_runner.session = session
+    mock_runner._llm = None
+    mock_runner._loaded_secret_versions = {}
+
+    # Mock invoke_daemon returning 'retry'
+    async def mock_invoke(*args: Any, **kwargs: Any) -> str:
+        return "retry"
+
+    monkeypatch.setattr("seamus.harness.daemons.autocontinue.invoke_daemon", mock_invoke)
+
+    mock_store = MagicMock()
+    branched_session = Session(agent_id=session.agent_id, config=session.config)
+    mock_store.branch_session.return_value = branched_session
+
+    monkeypatch.setattr("seamus.harness.store.get_harness_store", lambda: mock_store)
+
+    res = await execute_autocontinue(
+        runner=mock_runner,
+        thread=thread,
+        exc=RuntimeError("connection timeout"),
+        err_event={"error_type": "RuntimeError", "message": "connection timeout"},
+    )
+
+    assert res is branched_session
+    mock_store.branch_session.assert_called_once_with(
+        agent_identifier=str(session.agent_id),
+        session_identifier=str(session.id),
+        target_id="call-1",
+        position="after",
+        item_type="tool_call",
+    )
+
+
+@pytest.mark.asyncio
+async def test_execute_autocontinue_no(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = Session(
+        agent_id=uuid4(),
+        config=AgentConfig(
+            daemons=DaemonsConfig(
+                autocontinue=DaemonAutocontinueConfig(enabled=True, model="openai/gpt-oss-120b")
+            )
+        ),
+    )
+    thread = session.create_thread()
+    thread.events = [
+        {"type": "USER_INPUT", "message_id": "u1", "content": "hello"},
+        {"type": "RUN_ERROR", "message": "insufficient quota"},
+    ]
+
+    mock_runner = MagicMock()
+    mock_runner.session = session
+    mock_runner._llm = None
+    mock_runner._loaded_secret_versions = {}
+
+    async def mock_invoke(*args: Any, **kwargs: Any) -> str:
+        return "no"
+
+    monkeypatch.setattr("seamus.harness.daemons.autocontinue.invoke_daemon", mock_invoke)
+
+    res = await execute_autocontinue(
+        runner=mock_runner,
+        thread=thread,
+        exc=RuntimeError("insufficient quota"),
+        err_event={"error_type": "RuntimeError", "message": "insufficient quota"},
+    )
+
+    assert res is None
+    assert session.disabled is False
+
+
+@pytest.mark.asyncio
+async def test_execute_autocontinue_dead_jim(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = Session(
+        agent_id=uuid4(),
+        config=AgentConfig(
+            daemons=DaemonsConfig(
+                autocontinue=DaemonAutocontinueConfig(enabled=True, model="openai/gpt-oss-120b")
+            )
+        ),
+    )
+    thread = session.create_thread()
+    thread.events = [
+        {"type": "USER_INPUT", "message_id": "u1", "content": "hello"},
+        {"type": "RUN_ERROR", "message": "repeated failure loop"},
+    ]
+
+    mock_runner = MagicMock()
+    mock_runner.session = session
+    mock_runner._llm = None
+    mock_runner._loaded_secret_versions = {}
+
+    async def mock_invoke(*args: Any, **kwargs: Any) -> str:
+        return "stop, its dead Jim"
+
+    monkeypatch.setattr("seamus.harness.daemons.autocontinue.invoke_daemon", mock_invoke)
+
+    mock_ws = MagicMock()
+    monkeypatch.setattr(
+        "seamus.harness.daemons.autocontinue.get_workspace_manager",
+        lambda: mock_ws,
+    )
+
+    res = await execute_autocontinue(
+        runner=mock_runner,
+        thread=thread,
+        exc=RuntimeError("repeated failure loop"),
+        err_event={"error_type": "RuntimeError", "message": "repeated failure loop"},
+    )
+
+    assert res is None
+    assert session.disabled is True
+    assert session.config.daemons.autocontinue.enabled is False
+    mock_ws.commit_session_config.assert_called_once()

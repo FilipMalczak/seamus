@@ -40,6 +40,14 @@ const DAEMON_MODEL_PRESETS = [
   "qwen3.8:latest",
 ];
 
+const AUTOCONTINUE_MODEL_PRESETS = [
+  "openai/gpt-oss-120b",
+  "openai/gpt-oss-20b",
+  "openai/gpt-4.1-mini",
+  "google/gemini-2.5-flash",
+  "llama3.2:3b",
+];
+
 const BASE_URL_PRESETS = [
   { label: "OpenRouter", url: "https://openrouter.ai/api/v1" },
   { label: "OpenAI", url: "https://api.openai.com/v1" },
@@ -58,6 +66,7 @@ export function ConfigModal({
   const [jsonText, setJsonText] = useState<string>("");
   const [showApiKey, setShowApiKey] = useState<boolean>(false);
   const [showDaemonApiKey, setShowDaemonApiKey] = useState<boolean>(false);
+  const [showAutocontinueApiKey, setShowAutocontinueApiKey] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
@@ -185,6 +194,14 @@ export function ConfigModal({
       return;
     }
 
+    if (
+      parsed.daemons?.autocontinue?.enabled &&
+      (!parsed.daemons?.autocontinue?.model || !parsed.daemons.autocontinue.model.trim())
+    ) {
+      setError("Autocontinue daemon model must be specified when autocontinue daemon is enabled.");
+      return;
+    }
+
     setSaving(true);
     try {
       await onSave(parsed as AgentConfig);
@@ -235,6 +252,17 @@ export function ConfigModal({
   const daemonFormat = namingProvider?.format ?? "openai";
   const daemonBaseUrl = namingProvider?.base_url ?? "";
   const daemonApiKey = namingProvider?.api_key ?? null;
+
+  const daemonAutocontinue =
+    parsedDraft?.daemons?.autocontinue ?? initialConfig.daemons?.autocontinue;
+  const isAutocontinueEnabled = daemonAutocontinue?.enabled ?? true;
+  const autocontinueModel = daemonAutocontinue?.model ?? "openai/gpt-oss-120b";
+  const autocontinueProvider = daemonAutocontinue?.provider ?? null;
+  const hasCustomAutocontinueProvider =
+    autocontinueProvider !== null && typeof autocontinueProvider === "object";
+  const autocontinueFormat = autocontinueProvider?.format ?? "openai";
+  const autocontinueBaseUrl = autocontinueProvider?.base_url ?? "";
+  const autocontinueApiKey = autocontinueProvider?.api_key ?? null;
 
   const isPresetModel = MODEL_PRESETS.includes(currentModel);
 
@@ -752,6 +780,239 @@ export function ConfigModal({
                         title={showDaemonApiKey ? "Hide daemon API key" : "Show daemon API key"}
                       >
                         {showDaemonApiKey ? (
+                          <EyeOff className="size-4" />
+                        ) : (
+                          <Eye className="size-4" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <div className="config-section-divider">
+                <div className="config-section-title">Background Daemons (Autocontinue & Retry)</div>
+              </div>
+
+              <div className="config-form-row">
+                <div className="config-field">
+                  <label className="config-label">Autocontinue Daemon Status</label>
+                  <select
+                    className="config-select"
+                    value={isAutocontinueEnabled ? "enabled" : "disabled"}
+                    onChange={(e) => {
+                      const enabled = e.target.value === "enabled";
+                      updateDraft((d) => {
+                        if (!d.daemons) d.daemons = {};
+                        if (!d.daemons.autocontinue) d.daemons.autocontinue = {};
+                        d.daemons.autocontinue.enabled = enabled;
+                        if (enabled && !d.daemons.autocontinue.model) {
+                          d.daemons.autocontinue.model = "openai/gpt-oss-120b";
+                        }
+                      });
+                    }}
+                  >
+                    <option value="enabled">Enabled (Auto-evaluate and retry failed sessions)</option>
+                    <option value="disabled">Disabled</option>
+                  </select>
+                </div>
+
+                <div className="config-field">
+                  <div className="config-label-row">
+                    <label className="config-label">Autocontinue Model Identifier</label>
+                    <div className="config-preset-pills">
+                      {AUTOCONTINUE_MODEL_PRESETS.map((p) => (
+                        <button
+                          key={p}
+                          type="button"
+                          className={`config-preset-pill ${autocontinueModel === p ? "active" : ""}`}
+                          onClick={() =>
+                            updateDraft((d) => {
+                              if (!d.daemons) d.daemons = {};
+                              if (!d.daemons.autocontinue) d.daemons.autocontinue = {};
+                              d.daemons.autocontinue.model = p;
+                            })
+                          }
+                        >
+                          {p.split("/").pop()}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <input
+                    type="text"
+                    className="config-input"
+                    value={autocontinueModel}
+                    placeholder="e.g. openai/gpt-oss-120b"
+                    onChange={(e) =>
+                      updateDraft((d) => {
+                        if (!d.daemons) d.daemons = {};
+                        if (!d.daemons.autocontinue) d.daemons.autocontinue = {};
+                        d.daemons.autocontinue.model = e.target.value;
+                      })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="config-field">
+                <div className="config-label-row">
+                  <label className="config-label">
+                    Daemon Inference Provider:{" "}
+                    <span className="config-label-subtle">
+                      {hasCustomAutocontinueProvider
+                        ? "Custom provider configured"
+                        : "Inherits agent-level provider"}
+                    </span>
+                  </label>
+                  {hasCustomAutocontinueProvider ? (
+                    <button
+                      type="button"
+                      className="config-clear-btn"
+                      onClick={() =>
+                        updateDraft((d) => {
+                          if (d.daemons?.autocontinue) {
+                            d.daemons.autocontinue.provider = null;
+                          }
+                        })
+                      }
+                    >
+                      Reset to Agent Provider
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="config-clear-btn"
+                      onClick={() =>
+                        updateDraft((d) => {
+                          if (!d.daemons) d.daemons = {};
+                          if (!d.daemons.autocontinue) d.daemons.autocontinue = {};
+                          d.daemons.autocontinue.provider = {
+                            format: "openai",
+                            base_url: "https://openrouter.ai/api/v1",
+                            api_key: null,
+                          };
+                        })
+                      }
+                    >
+                      Override with Custom Provider
+                    </button>
+                  )}
+                </div>
+                <div className="config-hint">
+                  Autocontinue daemon evaluates unhandled session failures, branch-retrying from the last successful bubble.
+                </div>
+              </div>
+
+              {hasCustomAutocontinueProvider && (
+                <>
+                  <div className="config-form-row">
+                    <div className="config-field">
+                      <label className="config-label">Provider API Format</label>
+                      <select
+                        className="config-select"
+                        value={autocontinueFormat}
+                        onChange={(e) => {
+                          updateDraft((d) => {
+                            if (!d.daemons) d.daemons = {};
+                            if (!d.daemons.autocontinue) d.daemons.autocontinue = {};
+                            if (!d.daemons.autocontinue.provider) d.daemons.autocontinue.provider = {};
+                            d.daemons.autocontinue.provider.format = e.target.value;
+                          });
+                        }}
+                      >
+                        <option value="openai">OpenAI / OpenRouter Compatible</option>
+                        <option value="ollama">Ollama (Native Local Engine)</option>
+                        <option value="steerable">Steerable (Scripted Simulation Provider)</option>
+                      </select>
+                    </div>
+
+                    <div className="config-field">
+                      <div className="config-label-row">
+                        <label className="config-label">Provider Base URL</label>
+                        <div className="config-preset-pills">
+                          {BASE_URL_PRESETS.map((p) => (
+                            <button
+                              key={p.label}
+                              type="button"
+                              className={`config-preset-pill ${autocontinueBaseUrl === p.url ? "active" : ""}`}
+                              onClick={() => {
+                                updateDraft((d) => {
+                                  if (!d.daemons) d.daemons = {};
+                                  if (!d.daemons.autocontinue) d.daemons.autocontinue = {};
+                                  if (!d.daemons.autocontinue.provider) d.daemons.autocontinue.provider = {};
+                                  d.daemons.autocontinue.provider.base_url = p.url;
+                                });
+                              }}
+                            >
+                              {p.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <input
+                        type="text"
+                        className="config-input"
+                        value={autocontinueBaseUrl}
+                        placeholder="https://..."
+                        onChange={(e) => {
+                          updateDraft((d) => {
+                            if (!d.daemons) d.daemons = {};
+                            if (!d.daemons.autocontinue) d.daemons.autocontinue = {};
+                            if (!d.daemons.autocontinue.provider) d.daemons.autocontinue.provider = {};
+                            d.daemons.autocontinue.provider.base_url = e.target.value;
+                          });
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="config-field">
+                    <div className="config-label-row">
+                      <label className="config-label">API Key</label>
+                      {autocontinueApiKey && (
+                        <button
+                          type="button"
+                          className="config-clear-btn"
+                          onClick={() => {
+                            updateDraft((d) => {
+                              if (d.daemons?.autocontinue?.provider) {
+                                d.daemons.autocontinue.provider.api_key = null;
+                              }
+                            });
+                          }}
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                    <div className="config-api-key-wrapper">
+                      <input
+                        type={
+                          showAutocontinueApiKey || (autocontinueApiKey ?? "").trim().startsWith("${secret(")
+                            ? "text"
+                            : "password"
+                        }
+                        className="config-input"
+                        value={autocontinueApiKey ?? ""}
+                        placeholder="Daemon API key or ${secret('/api-key/...')}"
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          updateDraft((d) => {
+                            if (!d.daemons) d.daemons = {};
+                            if (!d.daemons.autocontinue) d.daemons.autocontinue = {};
+                            if (!d.daemons.autocontinue.provider) d.daemons.autocontinue.provider = {};
+                            d.daemons.autocontinue.provider.api_key = val === "" ? null : val;
+                          });
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        onClick={() => setShowAutocontinueApiKey((v) => !v)}
+                        title={showAutocontinueApiKey ? "Hide daemon API key" : "Show daemon API key"}
+                      >
+                        {showAutocontinueApiKey ? (
                           <EyeOff className="size-4" />
                         ) : (
                           <Eye className="size-4" />

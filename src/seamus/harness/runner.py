@@ -1044,18 +1044,26 @@ class SessionAgentRunner:
         )
 
     def _ensure_steerable_daemon_instance(self, resolved_config: Any) -> None:
-        """Register the session's daemon steerable instance so it can be queued up front."""
+        """Register the session's daemon steerable instances so they can be queued up front."""
         naming_cfg = resolved_config.daemons.naming
-        if not naming_cfg.enabled:
-            return
-        provider = naming_cfg.provider or resolved_config.inference
-        if provider.format != InferenceFormat.STEERABLE:
-            return
-        get_steerable_registry().get_or_create(
-            daemon_instance_id(self.session.id),
-            "daemon",
-            provider.steerable,
-        )
+        if naming_cfg.enabled:
+            provider = naming_cfg.provider or resolved_config.inference
+            if provider.format == InferenceFormat.STEERABLE:
+                get_steerable_registry().get_or_create(
+                    daemon_instance_id(self.session.id, "naming"),
+                    "daemon",
+                    provider.steerable,
+                )
+
+        autocontinue_cfg = resolved_config.daemons.autocontinue
+        if autocontinue_cfg.enabled:
+            provider = autocontinue_cfg.provider or resolved_config.inference
+            if provider.format == InferenceFormat.STEERABLE:
+                get_steerable_registry().get_or_create(
+                    daemon_instance_id(self.session.id, "autocontinue"),
+                    "daemon",
+                    provider.steerable,
+                )
 
     def _get_active_plan_title(self) -> str | None:
         """Return the display title of the session's active plan if one exists."""
@@ -2670,13 +2678,58 @@ class SessionAgentRunner:
                                 ws_mgr.close_sync_pr(self.session, agent_entity)
                         except Exception:
                             logger.exception("Failed to close Sync PR on session failure")
+                        if self.session.config.daemons.autocontinue.enabled:
+                            try:
+                                from seamus.harness.daemons.autocontinue import (
+                                    execute_autocontinue,
+                                )
+
+                                await execute_autocontinue(self, thread, exc, err_event)
+                            except Exception:
+                                logger.exception("Autocontinue daemon execution failed")
                     finally:
                         pending_transition = self._pending_phase_transition
                         pending_skills = self._pending_retained_skills
                         self._pending_phase_transition = None
                         self._pending_retained_skills = None
                         self._turn_created_artifact_ids.clear()
-                        if thread.status != AgentStatus.ERROR and self.session.is_active:
+                        if thread.status == AgentStatus.ERROR and self.session.is_active:
+                            self.session.fail()
+                            if self._sandbox_backend is not None:
+                                self._sandbox_backend.destroy()
+                            try:
+                                ws_mgr = get_workspace_manager()
+                                agent_entity = self._resolve_agent_entity()
+                                if agent_entity is not None:
+                                    ws_mgr.close_sync_pr(self.session, agent_entity)
+                            except Exception:
+                                logger.exception("Failed to close Sync PR on session failure")
+                            if self.session.config.daemons.autocontinue.enabled:
+                                try:
+                                    from seamus.harness.daemons.autocontinue import (
+                                        execute_autocontinue,
+                                    )
+
+                                    last_err_ev: Any = next(
+                                        (
+                                            e
+                                            for e in reversed(thread.events)
+                                            if getattr(e, "type", None) == EventType.RUN_ERROR
+                                            or (
+                                                isinstance(e, dict) and e.get("type") == "RUN_ERROR"
+                                            )
+                                        ),
+                                        {},
+                                    )
+                                    err_dict = (
+                                        last_err_ev.model_dump()
+                                        if hasattr(last_err_ev, "model_dump")
+                                        else (last_err_ev if isinstance(last_err_ev, dict) else {})
+                                    )
+                                    await execute_autocontinue(self, thread, None, err_dict)
+                                except Exception:
+                                    logger.exception("Autocontinue daemon execution failed")
+                        elif thread.status != AgentStatus.ERROR and self.session.is_active:
                             thread.status = AgentStatus.AWAITING_USER
                             thread.exchange_count += 1
                             naming_cfg = self.session.config.daemons.naming

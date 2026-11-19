@@ -363,6 +363,28 @@ test("REQ-039: enabling the naming daemon without a model is rejected", async ()
   await unmount();
 });
 
+test("REQ-056: enabling the autocontinue daemon without a model is rejected", async () => {
+  const { container, unmount, calls } = await renderConfig();
+
+  await click(buttonByText(container, "Raw JSON"));
+  const textarea = container.querySelector(".json-textarea");
+  await type(
+    textarea,
+    JSON.stringify({
+      ...makeConfig(),
+      daemons: { autocontinue: { enabled: true, model: "" } },
+    })
+  );
+
+  await click(saveButton(container));
+  await settle();
+
+  assert.equal(calls.saved.length, 0);
+  assert.match(container.querySelector(".alert-error").textContent, /Autocontinue daemon model/);
+
+  await unmount();
+});
+
 test("REQ-041: invalid JSON blocks the switch back to the form view", async () => {
   const { container, unmount } = await renderConfig();
 

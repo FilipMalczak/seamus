@@ -188,6 +188,7 @@ async function renderChatArea(options = {}) {
       sessionId: SESSION_ID,
       sessionName: "session",
       sessionStatus: options.sessionStatus ?? "ACTIVE",
+      sessionDisabled: options.sessionDisabled ?? false,
       thread: {
         id: THREAD_ID,
         name: "thread",
@@ -407,6 +408,19 @@ test("REQ-032: a RUN_ERROR event moves the thread into the ERROR status", async 
   // The composer becomes usable again once the thread is in ERROR.
   await type(composer(container), "retry");
   assert.equal(sendButton(container).disabled, false);
+
+  await unmount();
+});
+
+test("REQ-056: a disabled session displays the dead jim notice", async () => {
+  const { container, unmount } = await renderChatArea({
+    sessionStatus: "FAILED",
+    sessionDisabled: true,
+  });
+
+  const notice = container.querySelector(".notice-dead-jim");
+  assert.ok(notice, "a dead-jim notice must render for a disabled session");
+  assert.match(notice.textContent, /Stop, it's dead Jim/);
 
   await unmount();
 });

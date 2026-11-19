@@ -328,6 +328,15 @@ Properties and rules that must always hold across the repository.
 - **Enforcement**: `seamus.persistence.git_lock` (`clean_stale_locks`, `is_git_process_running_in_repo`, `sweep_workspace_stale_locks`, `get_repo_lock`), `GitWorkspaceManager._run_git`, `ExternalRepositoryManager._run_git`, `create_app()`, and unit/integration tests in `tests/test_git_lock_recovery.py`.
 
 
+### INV-065: Autocontinue Failure Evaluation, Bubble Branching, and Dead Jim Session Disabling
+- **Statement**: When a session execution enters a fatal error state (`SessionStatus.FAILED` or `AgentStatus.ERROR`), the autocontinue daemon must be triggered if enabled (`daemons.autocontinue.enabled = True`). The daemon must evaluate failure context against three strict classifications:
+  1. `retry`: Must locate the last fully successful bubble (user message, reasoning span, or completed tool call set where all calls completed with `is_error=False`) and branch a child session (`position="after"`), retaining lineage history and immediately resuming execution in the background.
+  2. `no`: Must decline retry on permanent or external failures (quota/credit exhaustion, offline network, 401 unauthorized), keeping the session in `SessionStatus.FAILED`.
+  3. `stop, its dead Jim`: Must permanently disable the session (`session.disabled = True`, `session.config.daemons.autocontinue.enabled = False`) when repeated failure loops or frequent recent retries are detected across spans or lineage, rendering a dedicated dead-jim notice in the UI.
+- **Rationale**: Prevents human intervention for transient errors while guaranteeing that repeated failures or hard external resource limits never trigger infinite retry loops or runaway token consumption.
+- **Justification**: [REQ-053](./requirements.md#req-053-autonomous-autocontinue-daemon--branching-recovery), [0070-autocontinue-daemon.md](../decisions/0070-autocontinue-daemon.md).
+- **Enforcement**: `seamus.harness.daemons.autocontinue` (`execute_autocontinue`, `find_last_successful_bubble`, `parse_autocontinue_response`), `SessionAgentRunner._run_loop`, `Session.disable()`, `tests/test_daemons.py`, and `tests/e2e/test_autocontinue_daemon.py`.
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [requirements.md](./requirements.md)
@@ -381,5 +390,6 @@ Properties and rules that must always hold across the repository.
 - [0055-artifacts-implementation-toggle.md](../decisions/0055-artifacts-implementation-toggle.md)
 - [0056-steerable-model-provider.md](../decisions/0056-steerable-model-provider.md)
 - [0057-e2e-test-suite.md](../decisions/0057-e2e-test-suite.md)
+- [0070-autocontinue-daemon.md](../decisions/0070-autocontinue-daemon.md)
 - [0067-stale-git-lock-recovery.md](../decisions/0067-stale-git-lock-recovery.md)
 - [persistence.md](./persistence.md)

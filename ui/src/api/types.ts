@@ -37,8 +37,15 @@ export type DaemonNamingConfig = {
   model?: string | null;
 };
 
+export type DaemonAutocontinueConfig = {
+  enabled?: boolean;
+  provider?: InferenceConfig | null;
+  model?: string | null;
+};
+
 export type DaemonsConfig = {
   naming?: DaemonNamingConfig;
+  autocontinue?: DaemonAutocontinueConfig;
 };
 
 export type AgentConfig = {
@@ -106,6 +113,7 @@ export type SessionSummary = {
   last_touched_at: string;
   config: AgentConfig;
   status: SessionStatus;
+  disabled?: boolean;
   active_plan_id?: string | null;
   provenance?: SessionBranchProvenance | null;
   lineage?: SessionBranchProvenance[];
@@ -119,6 +127,7 @@ export type SessionDetail = {
   last_touched_at: string;
   config: AgentConfig;
   status: SessionStatus;
+  disabled?: boolean;
   active_plan_id?: string | null;
   provenance?: SessionBranchProvenance | null;
   lineage?: SessionBranchProvenance[];

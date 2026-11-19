@@ -311,6 +311,12 @@ Requirements, rationale, provenance, and stable IDs.
 - **Coverage Map**: [test_coverage.md](./test_coverage.md) maps every requirement and invariant to the tests that confirm it, and records the undertested surface.
 
 
+### REQ-053: Autonomous Autocontinue Daemon & Branching Recovery
+- **Description**: The harness must support an autonomous autocontinue daemon configured under `daemons.autocontinue` (defaulting to `openai/gpt-oss-120b`). When a session fails due to an unhandled execution exception or fatal error in `SessionAgentRunner._run_loop`, the daemon must evaluate recent short conversation messages, detailed failure attributes (error type, message, traceback snippet), and recent retry/error frequency across the session's lineage and execution spans. If the failure is deemed transient, the daemon must reply `retry`, automatically locating the last fully successful bubble (user message, reasoning span, or completed tool call set) and branching a child session (`position="after"`) which immediately resumes execution in the background. If the failure is unrecoverable (credits depleted, quota exhausted, network down, 401 unauthorized), the daemon must reply `no` leaving the session in its `FAILED` state. If persistent error loops or frequent recent retries occur, the daemon must reply `stop, its dead Jim`, permanently disabling the session (`disabled = True`).
+- **Rationale**: Eliminates manual intervention for transient model/tool hiccups while protecting against runaway retries and infinite branching loops when underlying infrastructure or quotas fail.
+- **Provenance**: [0070-autocontinue-daemon.md](../decisions/0070-autocontinue-daemon.md), `src/seamus/config/models.py`, `src/seamus/domain/entities.py`, `src/seamus/harness/daemons/autocontinue.py`, `src/seamus/harness/runner.py`, `ui/src/components/ConfigModal.tsx`, `ui/src/components/ChatArea.tsx`, `tests/test_daemons.py`, `tests/e2e/test_autocontinue_daemon.py`.
+- **Linked Invariants**: [INV-065](./invariants.md#inv-065-autocontinue-failure-evaluation-bubble-branching-and-dead-jim-session-disabling).
+
 ## Cross-References
 - [backlog.md](./backlog.md)
 - [invariants.md](./invariants.md)
@@ -361,4 +367,5 @@ Requirements, rationale, provenance, and stable IDs.
 - [0055-artifacts-implementation-toggle.md](../decisions/0055-artifacts-implementation-toggle.md)
 - [0056-steerable-model-provider.md](../decisions/0056-steerable-model-provider.md)
 - [0057-e2e-test-suite.md](../decisions/0057-e2e-test-suite.md)
+- [0070-autocontinue-daemon.md](../decisions/0070-autocontinue-daemon.md)
 - [persistence.md](./persistence.md)
